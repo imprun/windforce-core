@@ -108,6 +108,8 @@ type Job struct {
 	Attempt        int        `json:"attempt"`
 	LeaseOwner     string     `json:"leaseOwner,omitempty"`
 	LeaseExpiresAt *time.Time `json:"leaseExpiresAt,omitempty"`
+	CanceledBy     *string    `json:"canceledBy,omitempty"`
+	CanceledReason *string    `json:"canceledReason,omitempty"`
 	CreatedAt      time.Time  `json:"createdAt"`
 	UpdatedAt      time.Time  `json:"updatedAt"`
 }
@@ -278,7 +280,7 @@ type Store interface {
 	CompleteJobWaitingHuman(ctx context.Context, lease Lease, result contract.JobResult, task HumanTask) error
 	ResumeHumanTask(ctx context.Context, taskID string, resumeInput json.RawMessage) (Run, Job, error)
 	ResumeRun(ctx context.Context, runID string, resumeInput json.RawMessage) (Run, Job, error)
-	CancelJob(ctx context.Context, workspaceID string, jobID string, reason string) (CancelResult, error)
+	CancelJob(ctx context.Context, workspaceID string, jobID string, by string, reason string) (CancelResult, error)
 	CancelRun(ctx context.Context, runID string, reason string) (Run, error)
 	RetryRun(ctx context.Context, runID string) (Run, Job, error)
 }
@@ -370,6 +372,23 @@ func actorPermissionedAs(run Run) string {
 	}
 	return actorCreatedBy(run)
 }
+
+func cancelActorSubject(job Job, run Run, by string) string {
+	return firstNonEmpty(
+		strings.TrimSpace(by),
+		strings.TrimSpace(run.PermissionedAs),
+		strings.TrimSpace(run.CreatedBy),
+		strings.TrimSpace(job.Payload.PermissionedAs),
+		strings.TrimSpace(job.Payload.CreatedBy),
+		defaultActorSubject,
+	)
+}
+
+const (
+	cancelBeforeExecutionMessage = "job canceled before execution"
+	cancelDuringExecutionMessage = "job canceled"
+	cancelWorkerLostMessage      = "job canceled; worker lost during execution"
+)
 
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
@@ -780,6 +799,10 @@ func (s *LocalStore) CompleteJobSucceeded(ctx context.Context, lease Lease, resu
 		if err != nil {
 			return err
 		}
+		if job.CanceledBy != nil {
+			applyCanceledJob(snapshot, job, run, *job.CanceledBy, canceledReasonValue(job), cancelDuringExecutionMessage, now)
+			return nil
+		}
 		job.State = JobSucceeded
 		job.LeaseOwner = ""
 		job.LeaseExpiresAt = nil
@@ -802,6 +825,10 @@ func (s *LocalStore) CompleteJobFailed(ctx context.Context, lease Lease, result 
 		job, run, err := leasedJobAndRun(snapshot, lease, now)
 		if err != nil {
 			return err
+		}
+		if job.CanceledBy != nil {
+			applyCanceledJob(snapshot, job, run, *job.CanceledBy, canceledReasonValue(job), cancelDuringExecutionMessage, now)
+			return nil
 		}
 		if result.Error == "" && result.ExitCode != 0 {
 			result.Error = fmt.Sprintf("action exited with code %d", result.ExitCode)
@@ -826,6 +853,10 @@ func (s *LocalStore) CompleteJobWaitingHuman(ctx context.Context, lease Lease, r
 		job, run, err := leasedJobAndRun(snapshot, lease, now)
 		if err != nil {
 			return err
+		}
+		if job.CanceledBy != nil {
+			applyCanceledJob(snapshot, job, run, *job.CanceledBy, canceledReasonValue(job), cancelDuringExecutionMessage, now)
+			return nil
 		}
 		if task.ID == "" {
 			task.ID = NewID("human")
@@ -915,7 +946,7 @@ func (s *LocalStore) ResumeRun(ctx context.Context, runID string, resumeInput js
 	return s.ResumeHumanTask(ctx, run.TaskID, resumeInput)
 }
 
-func (s *LocalStore) CancelJob(ctx context.Context, workspaceID string, jobID string, reason string) (CancelResult, error) {
+func (s *LocalStore) CancelJob(ctx context.Context, workspaceID string, jobID string, by string, reason string) (CancelResult, error) {
 	var result CancelResult
 	err := s.update(ctx, func(snapshot *Snapshot, now time.Time) error {
 		job, ok := snapshot.Jobs[jobID]
@@ -931,12 +962,17 @@ func (s *LocalStore) CancelJob(ctx context.Context, workspaceID string, jobID st
 			result.AlreadyCompleted = true
 			return nil
 		}
+		canceledBy := cancelActorSubject(job, run, by)
 		if job.State == JobRunning {
+			job.CanceledBy = &canceledBy
+			job.CanceledReason = &reason
+			job.UpdatedAt = now
+			snapshot.Jobs[job.ID] = job
 			result.SoftCanceled = true
 		} else {
 			result.CompletedNow = true
+			applyCanceledJob(snapshot, job, run, canceledBy, reason, cancelBeforeExecutionMessage, now)
 		}
-		applyCanceledJob(snapshot, job, run, reason, now)
 		return nil
 	})
 	return result, err
@@ -1142,6 +1178,12 @@ func requeueExpiredJobs(snapshot *Snapshot, now time.Time) {
 		if job.State != JobRunning || job.LeaseExpiresAt == nil || job.LeaseExpiresAt.After(now) {
 			continue
 		}
+		if job.CanceledBy != nil {
+			if run, ok := snapshot.Runs[job.RunID]; ok {
+				applyCanceledJob(snapshot, job, run, *job.CanceledBy, canceledReasonValue(job), cancelWorkerLostMessage, now)
+			}
+			continue
+		}
 		job.State = JobQueued
 		job.LeaseOwner = ""
 		job.LeaseExpiresAt = nil
@@ -1180,14 +1222,16 @@ func appendEvent(snapshot *Snapshot, runID string, eventType string, payload any
 	})
 }
 
-func applyCanceledJob(snapshot *Snapshot, job Job, run Run, reason string, now time.Time) {
-	message := reason
-	if strings.TrimSpace(message) == "" {
+func applyCanceledJob(snapshot *Snapshot, job Job, run Run, by string, reason string, message string, now time.Time) {
+	message = strings.TrimSpace(message)
+	if message == "" {
 		message = "job canceled"
 	}
 	job.State = JobFailed
 	job.LeaseOwner = ""
 	job.LeaseExpiresAt = nil
+	job.CanceledBy = &by
+	job.CanceledReason = &reason
 	job.UpdatedAt = now
 	run.State = RunCanceled
 	run.Result = &contract.JobResult{
@@ -1197,11 +1241,15 @@ func applyCanceledJob(snapshot *Snapshot, job Job, run Run, reason string, now t
 		ExitCode: -1,
 		Error:    message,
 	}
-	run.Error = mustRaw(map[string]string{"message": message})
+	run.Error = mustRaw(map[string]string{
+		"message":        message,
+		"canceledBy":     by,
+		"canceledReason": reason,
+	})
 	run.UpdatedAt = now
 	snapshot.Jobs[job.ID] = job
 	snapshot.Runs[run.ID] = run
-	appendEvent(snapshot, run.ID, "run_canceled", eventPayload(run.CorrelationID, map[string]any{"jobId": job.ID, "reason": reason}), now)
+	appendEvent(snapshot, run.ID, "run_canceled", eventPayload(run.CorrelationID, map[string]any{"jobId": job.ID, "by": by, "reason": reason}), now)
 }
 
 type jobRunRecord struct {
@@ -1378,7 +1426,8 @@ func newJobListItem(workspaceID string, job Job, run Run) JobListItem {
 		Tag:            jobTag(job),
 		CreatedBy:      firstNonEmpty(strings.TrimSpace(job.Payload.CreatedBy), strings.TrimSpace(run.CreatedBy), defaultActorSubject),
 		PermissionedAs: firstNonEmpty(strings.TrimSpace(job.Payload.PermissionedAs), strings.TrimSpace(run.PermissionedAs), strings.TrimSpace(job.Payload.CreatedBy), strings.TrimSpace(run.CreatedBy), defaultActorSubject),
-		CanceledReason: canceledReason(run),
+		CanceledBy:     firstPresentStringPtr(job.CanceledBy, canceledBy(run)),
+		CanceledReason: firstPresentStringPtr(job.CanceledReason, canceledReason(run)),
 		ErrorSnippet:   failureSnippet(status, run),
 	}
 }
@@ -1502,10 +1551,45 @@ func canceledReason(run Run) *string {
 		return nil
 	}
 	var payload struct {
-		Message string `json:"message"`
+		Message        string  `json:"message"`
+		CanceledReason *string `json:"canceledReason"`
 	}
-	if json.Unmarshal(run.Error, &payload) == nil && payload.Message != "" {
-		return stringPtr(payload.Message)
+	if json.Unmarshal(run.Error, &payload) == nil {
+		if payload.CanceledReason != nil {
+			return payload.CanceledReason
+		}
+		if payload.Message != "" {
+			return stringPtr(payload.Message)
+		}
+	}
+	return nil
+}
+
+func canceledReasonValue(job Job) string {
+	if job.CanceledReason == nil {
+		return ""
+	}
+	return *job.CanceledReason
+}
+
+func canceledBy(run Run) *string {
+	if run.State != RunCanceled || len(run.Error) == 0 {
+		return nil
+	}
+	var payload struct {
+		CanceledBy string `json:"canceledBy"`
+	}
+	if json.Unmarshal(run.Error, &payload) == nil {
+		return stringPtr(strings.TrimSpace(payload.CanceledBy))
+	}
+	return nil
+}
+
+func firstPresentStringPtr(values ...*string) *string {
+	for _, value := range values {
+		if value != nil {
+			return value
+		}
 	}
 	return nil
 }

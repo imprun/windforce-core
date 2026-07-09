@@ -22,7 +22,7 @@ const runColumns = `
 
 const jobColumns = `
 	id, run_id, state, kind, payload, priority, attempt, lease_owner,
-	lease_expires_at, created_at, updated_at
+	lease_expires_at, canceled_by, canceled_reason, created_at, updated_at
 `
 
 const humanTaskColumns = `
@@ -86,6 +86,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     attempt INTEGER NOT NULL DEFAULT 0,
     lease_owner TEXT,
     lease_expires_at TIMESTAMPTZ,
+    canceled_by TEXT,
+    canceled_reason TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -149,6 +151,8 @@ CREATE TABLE IF NOT EXISTS resource (
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS result JSONB;
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS correlation_id TEXT;
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS env JSONB;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS canceled_by TEXT;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS canceled_reason TEXT;
 ALTER TABLE job_logs ADD COLUMN IF NOT EXISTS workspace_id TEXT NOT NULL DEFAULT 'default';
 
 CREATE INDEX IF NOT EXISTS jobs_claim_idx
@@ -505,10 +509,10 @@ INSERT INTO runs (
 		if _, err := tx.Exec(ctx, `
 INSERT INTO jobs (
 	id, run_id, state, kind, payload, priority, attempt, lease_owner,
-	lease_expires_at, created_at, updated_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+	lease_expires_at, canceled_by, canceled_reason, created_at, updated_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 `, job.ID, job.RunID, string(job.State), job.Kind, mustRaw(job.Payload), job.Priority, job.Attempt,
-			nullableString(job.LeaseOwner), job.LeaseExpiresAt, job.CreatedAt, job.UpdatedAt); err != nil {
+			nullableString(job.LeaseOwner), job.LeaseExpiresAt, nullableStringPtr(job.CanceledBy), nullableStringPtr(job.CanceledReason), job.CreatedAt, job.UpdatedAt); err != nil {
 			return err
 		}
 		runCreated := eventPayload(run.CorrelationID, map[string]any{"app": run.App, "action": run.Action})
@@ -552,10 +556,36 @@ func (s *PostgresStore) ClaimJobForTags(ctx context.Context, workerID string, ta
 	var lease Lease
 	err := s.withTx(ctx, func(tx pgx.Tx) error {
 		now := time.Now().UTC()
+		canceledRows, err := tx.Query(ctx, `SELECT `+jobColumns+` FROM jobs WHERE state='running' AND lease_expires_at < $1 AND canceled_by IS NOT NULL FOR UPDATE`, now)
+		if err != nil {
+			return err
+		}
+		canceledJobs := []Job{}
+		for canceledRows.Next() {
+			job, err := scanJob(canceledRows)
+			if err != nil {
+				canceledRows.Close()
+				return err
+			}
+			canceledJobs = append(canceledJobs, job)
+		}
+		canceledRows.Close()
+		if err := canceledRows.Err(); err != nil {
+			return err
+		}
+		for _, job := range canceledJobs {
+			run, err := scanRun(tx.QueryRow(ctx, `SELECT `+runColumns+` FROM runs WHERE id=$1 FOR UPDATE`, job.RunID))
+			if err != nil {
+				return err
+			}
+			if err := completeCanceledJobPostgres(ctx, tx, job, run, *job.CanceledBy, canceledReasonValue(job), cancelWorkerLostMessage, now); err != nil {
+				return err
+			}
+		}
 		if _, err := tx.Exec(ctx, `
 UPDATE jobs
 SET state='queued', lease_owner=NULL, lease_expires_at=NULL, updated_at=$1
-WHERE state='running' AND lease_expires_at < $1
+WHERE state='running' AND lease_expires_at < $1 AND canceled_by IS NULL
 `, now); err != nil {
 			return err
 		}
@@ -676,6 +706,9 @@ func (s *PostgresStore) CompleteJobSucceeded(ctx context.Context, lease Lease, r
 			return err
 		}
 		now := time.Now().UTC()
+		if job.CanceledBy != nil {
+			return completeCanceledJobPostgres(ctx, tx, job, run, *job.CanceledBy, canceledReasonValue(job), cancelDuringExecutionMessage, now)
+		}
 		if err := updateJobComplete(ctx, tx, job.ID, JobSucceeded, now); err != nil {
 			return err
 		}
@@ -700,6 +733,9 @@ func (s *PostgresStore) CompleteJobFailed(ctx context.Context, lease Lease, resu
 			result.Error = fmt.Sprintf("action exited with code %d", result.ExitCode)
 		}
 		now := time.Now().UTC()
+		if job.CanceledBy != nil {
+			return completeCanceledJobPostgres(ctx, tx, job, run, *job.CanceledBy, canceledReasonValue(job), cancelDuringExecutionMessage, now)
+		}
 		if err := updateJobComplete(ctx, tx, job.ID, JobFailed, now); err != nil {
 			return err
 		}
@@ -731,6 +767,9 @@ func (s *PostgresStore) CompleteJobWaitingHuman(ctx context.Context, lease Lease
 			task.State = HumanTaskPending
 		}
 		task.CreatedAt = nonZeroTime(task.CreatedAt, now)
+		if job.CanceledBy != nil {
+			return completeCanceledJobPostgres(ctx, tx, job, run, *job.CanceledBy, canceledReasonValue(job), cancelDuringExecutionMessage, now)
+		}
 		if err := updateJobComplete(ctx, tx, job.ID, JobSucceeded, now); err != nil {
 			return err
 		}
@@ -837,7 +876,7 @@ func (s *PostgresStore) ResumeRun(ctx context.Context, runID string, resumeInput
 	return s.ResumeHumanTask(ctx, run.TaskID, resumeInput)
 }
 
-func (s *PostgresStore) CancelJob(ctx context.Context, workspaceID string, jobID string, reason string) (CancelResult, error) {
+func (s *PostgresStore) CancelJob(ctx context.Context, workspaceID string, jobID string, by string, reason string) (CancelResult, error) {
 	workspaceID = contract.NormalizeWorkspace(workspaceID)
 	var result CancelResult
 	err := s.withTx(ctx, func(tx pgx.Tx) error {
@@ -863,45 +902,21 @@ FOR UPDATE
 			result.AlreadyCompleted = true
 			return nil
 		}
+		canceledBy := cancelActorSubject(job, run, by)
 		if job.State == JobRunning {
-			result.SoftCanceled = true
-		} else {
-			result.CompletedNow = true
-		}
-		message := reason
-		if message == "" {
-			message = "job canceled"
-		}
-		now := time.Now().UTC()
-		job.State = JobFailed
-		job.LeaseOwner = ""
-		job.LeaseExpiresAt = nil
-		job.UpdatedAt = now
-		run.State = RunCanceled
-		run.Result = &contract.JobResult{
-			JobID:    job.ID,
-			App:      run.App,
-			Action:   run.Action,
-			ExitCode: -1,
-			Error:    message,
-		}
-		run.Error = mustRaw(map[string]string{"message": message})
-		run.UpdatedAt = now
-		if _, err := tx.Exec(ctx, `
+			if _, err := tx.Exec(ctx, `
 UPDATE jobs
-SET state=$1, lease_owner=NULL, lease_expires_at=NULL, updated_at=$2
-WHERE id=$3
-`, string(job.State), job.UpdatedAt, job.ID); err != nil {
-			return err
+SET canceled_by=$1, canceled_reason=$2, updated_at=$3
+WHERE id=$4
+`, canceledBy, reason, time.Now().UTC(), job.ID); err != nil {
+				return err
+			}
+			result.SoftCanceled = true
+			return insertEvent(ctx, tx, run.ID, "job_cancel_requested", eventPayload(run.CorrelationID, map[string]any{"jobId": job.ID, "by": canceledBy, "reason": reason}))
 		}
-		if _, err := tx.Exec(ctx, `
-UPDATE runs
-SET state=$1, result=$2, error=$3, updated_at=$4
-WHERE id=$5
-`, string(run.State), mustRaw(run.Result), run.Error, run.UpdatedAt, run.ID); err != nil {
-			return err
-		}
-		return insertEvent(ctx, tx, run.ID, "run_canceled", eventPayload(run.CorrelationID, map[string]any{"jobId": job.ID, "reason": reason}))
+		result.CompletedNow = true
+		now := time.Now().UTC()
+		return completeCanceledJobPostgres(ctx, tx, job, run, canceledBy, reason, cancelBeforeExecutionMessage, now)
 	})
 	return result, err
 }
@@ -1068,9 +1083,11 @@ func scanJob(row rowScanner) (Job, error) {
 	var payload json.RawMessage
 	var leaseOwner sql.NullString
 	var leaseExpiresAt sql.NullTime
+	var canceledBy sql.NullString
+	var canceledReason sql.NullString
 	if err := row.Scan(
 		&job.ID, &job.RunID, &stateValue, &job.Kind, &payload, &job.Priority, &job.Attempt,
-		&leaseOwner, &leaseExpiresAt, &job.CreatedAt, &job.UpdatedAt,
+		&leaseOwner, &leaseExpiresAt, &canceledBy, &canceledReason, &job.CreatedAt, &job.UpdatedAt,
 	); err != nil {
 		return Job{}, err
 	}
@@ -1083,6 +1100,12 @@ func scanJob(row rowScanner) (Job, error) {
 	}
 	if leaseExpiresAt.Valid {
 		job.LeaseExpiresAt = &leaseExpiresAt.Time
+	}
+	if canceledBy.Valid {
+		job.CanceledBy = &canceledBy.String
+	}
+	if canceledReason.Valid {
+		job.CanceledReason = &canceledReason.String
 	}
 	return job, nil
 }
@@ -1134,6 +1157,42 @@ func leasedJobAndRunPostgres(ctx context.Context, tx pgx.Tx, lease Lease) (Job, 
 	return job, run, nil
 }
 
+func completeCanceledJobPostgres(ctx context.Context, tx pgx.Tx, job Job, run Run, by string, reason string, message string, now time.Time) error {
+	message = strings.TrimSpace(message)
+	if message == "" {
+		message = "job canceled"
+	}
+	run.State = RunCanceled
+	run.Result = &contract.JobResult{
+		JobID:    job.ID,
+		App:      run.App,
+		Action:   run.Action,
+		ExitCode: -1,
+		Error:    message,
+	}
+	run.Error = mustRaw(map[string]string{
+		"message":        message,
+		"canceledBy":     by,
+		"canceledReason": reason,
+	})
+	run.UpdatedAt = now
+	if _, err := tx.Exec(ctx, `
+UPDATE jobs
+SET state=$1, lease_owner=NULL, lease_expires_at=NULL, canceled_by=$2, canceled_reason=$3, updated_at=$4
+WHERE id=$5
+`, string(JobFailed), by, reason, now, job.ID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `
+UPDATE runs
+SET state=$1, result=$2, error=$3, updated_at=$4
+WHERE id=$5
+`, string(run.State), mustRaw(run.Result), run.Error, run.UpdatedAt, run.ID); err != nil {
+		return err
+	}
+	return insertEvent(ctx, tx, run.ID, "run_canceled", eventPayload(run.CorrelationID, map[string]any{"jobId": job.ID, "by": by, "reason": reason}))
+}
+
 func updateJobComplete(ctx context.Context, tx pgx.Tx, jobID string, state JobState, now time.Time) error {
 	_, err := tx.Exec(ctx, `
 UPDATE jobs
@@ -1177,6 +1236,13 @@ func nullableString(value string) any {
 		return nil
 	}
 	return value
+}
+
+func nullableStringPtr(value *string) any {
+	if value == nil {
+		return nil
+	}
+	return *value
 }
 
 func nullableStrings(value []string) any {

@@ -470,20 +470,64 @@ func exerciseStoreLifecycle(t *testing.T, store Store) {
 	if retryInput.Message != "hello" {
 		t.Fatalf("retry job input = %s", retryJob.Payload.Input)
 	}
-	cancelResult, err := store.CancelJob(context.Background(), "default", retryJob.ID, "operator canceled")
+	cancelResult, err := store.CancelJob(context.Background(), "default", retryJob.ID, "operator@example.test", "operator canceled")
 	if err != nil {
 		t.Fatalf("CancelJob returned error: %v", err)
 	}
 	if !cancelResult.Found || !cancelResult.CompletedNow || cancelResult.SoftCanceled || cancelResult.AlreadyCompleted {
 		t.Fatalf("cancel result = %#v", cancelResult)
 	}
-	canceledAgain, err := store.CancelJob(context.Background(), "default", retryJob.ID, "")
+	canceledAgain, err := store.CancelJob(context.Background(), "default", retryJob.ID, "operator@example.test", "")
 	if err != nil {
 		t.Fatalf("CancelJob second call returned error: %v", err)
 	}
 	if !canceledAgain.Found || !canceledAgain.AlreadyCompleted {
 		t.Fatalf("second cancel result = %#v", canceledAgain)
 	}
+
+	softRun := NewRun("windforce", "run-soft-cancel", "echo", "echo", deployment, json.RawMessage(`{"message":"soft"}`))
+	softJob := NewActionJob(softRun, nil)
+	if err := store.CreateRunAndEnqueue(context.Background(), softRun, softJob); err != nil {
+		t.Fatalf("CreateRunAndEnqueue soft cancel returned error: %v", err)
+	}
+	_, softLease, err := store.ClaimJob(context.Background(), "worker-soft", time.Minute)
+	if err != nil {
+		t.Fatalf("ClaimJob soft cancel returned error: %v", err)
+	}
+	softCancel, err := store.CancelJob(context.Background(), "default", softJob.ID, "operator@example.test", "stop running")
+	if err != nil {
+		t.Fatalf("CancelJob soft cancel returned error: %v", err)
+	}
+	if !softCancel.Found || !softCancel.SoftCanceled || softCancel.CompletedNow || softCancel.AlreadyCompleted {
+		t.Fatalf("soft cancel result = %#v", softCancel)
+	}
+	runningJob, _, found, err := store.GetJob(context.Background(), "default", softJob.ID)
+	if err != nil {
+		t.Fatalf("GetJob soft-canceled running returned error: %v", err)
+	}
+	if !found || runningJob.State != JobRunning {
+		t.Fatalf("soft-canceled job state = found:%v job:%#v", found, runningJob)
+	}
+	if runningJob.CanceledBy == nil || *runningJob.CanceledBy != "operator@example.test" {
+		t.Fatalf("soft-canceled job canceled_by = %v", runningJob.CanceledBy)
+	}
+	if runningJob.CanceledReason == nil || *runningJob.CanceledReason != "stop running" {
+		t.Fatalf("soft-canceled job canceled_reason = %v", runningJob.CanceledReason)
+	}
+	if err := store.CompleteJobSucceeded(context.Background(), softLease, contract.JobResult{JobID: softJob.ID, App: "echo", Action: "echo", ExitCode: 0, Output: json.RawMessage(`{"ok":true}`)}); err != nil {
+		t.Fatalf("CompleteJobSucceeded soft-canceled job returned error: %v", err)
+	}
+	completedSoftJob, completedSoftRun, found, err := store.GetJob(context.Background(), "default", softJob.ID)
+	if err != nil {
+		t.Fatalf("GetJob completed soft-canceled returned error: %v", err)
+	}
+	if !found || completedSoftJob.State != JobFailed || completedSoftRun.State != RunCanceled {
+		t.Fatalf("completed soft-canceled state = found:%v job:%s run:%s", found, completedSoftJob.State, completedSoftRun.State)
+	}
+	if completedSoftJob.CanceledBy == nil || *completedSoftJob.CanceledBy != "operator@example.test" {
+		t.Fatalf("completed soft-canceled canceled_by = %v", completedSoftJob.CanceledBy)
+	}
+
 	items, err := store.ListJobs(context.Background(), JobListQuery{
 		WorkspaceID: "default",
 		Status:      "canceled",
@@ -497,6 +541,12 @@ func exerciseStoreLifecycle(t *testing.T, store Store) {
 	foundCanceledRetry := false
 	for _, item := range items {
 		if item.ID == retryJob.ID && item.Completed && item.Status == "canceled" {
+			if item.CanceledBy == nil || *item.CanceledBy != "operator@example.test" {
+				t.Fatalf("canceled_by = %v, want operator@example.test", item.CanceledBy)
+			}
+			if item.CanceledReason == nil || *item.CanceledReason != "operator canceled" {
+				t.Fatalf("canceled_reason = %v, want operator canceled", item.CanceledReason)
+			}
 			foundCanceledRetry = true
 			break
 		}

@@ -769,7 +769,13 @@ func TestCanonicalJobCancelAPI(t *testing.T) {
 		t.Fatalf("missing job id")
 	}
 
-	cancelResp, err := http.Post(server.URL+"/api/w/ws-a/jobs/"+runBody.JobID+"/cancel", "application/json", bytes.NewBufferString(`{"reason":"operator canceled"}`))
+	cancelReq, err := http.NewRequest(http.MethodPost, server.URL+"/api/w/ws-a/jobs/"+runBody.JobID+"/cancel", bytes.NewBufferString(`{"reason":"operator canceled"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancelReq.Header.Set("Content-Type", "application/json")
+	cancelReq.Header.Set("X-Windforce-Actor", "operator@example.test")
+	cancelResp, err := http.DefaultClient.Do(cancelReq)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -800,7 +806,7 @@ func TestCanonicalJobCancelAPI(t *testing.T) {
 	if err := json.NewDecoder(resultResp.Body).Decode(&resultBody); err != nil {
 		t.Fatal(err)
 	}
-	if resultBody.Status != "canceled" || !bytes.Contains(resultBody.Result, []byte("operator canceled")) {
+	if resultBody.Status != "canceled" || !bytes.Contains(resultBody.Result, []byte("job canceled before execution")) {
 		t.Fatalf("result body = %#v result=%s", resultBody, resultBody.Result)
 	}
 
@@ -812,6 +818,7 @@ func TestCanonicalJobCancelAPI(t *testing.T) {
 	var statusBody struct {
 		State          string  `json:"state"`
 		Status         string  `json:"status"`
+		CanceledBy     *string `json:"canceled_by"`
 		CanceledReason *string `json:"canceled_reason"`
 	}
 	if err := json.NewDecoder(statusResp.Body).Decode(&statusBody); err != nil {
@@ -819,6 +826,9 @@ func TestCanonicalJobCancelAPI(t *testing.T) {
 	}
 	if statusBody.State != "completed" || statusBody.Status != "canceled" {
 		t.Fatalf("job status = %#v", statusBody)
+	}
+	if statusBody.CanceledBy == nil || *statusBody.CanceledBy != "operator@example.test" {
+		t.Fatalf("canceled_by = %v, want operator@example.test", statusBody.CanceledBy)
 	}
 	if statusBody.CanceledReason == nil || *statusBody.CanceledReason != "operator canceled" {
 		t.Fatalf("canceled_reason = %v, want operator canceled", statusBody.CanceledReason)

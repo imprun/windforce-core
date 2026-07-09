@@ -1873,7 +1873,7 @@ func (h *Handler) handleJobCancel(w http.ResponseWriter, r *http.Request, worksp
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	result, err := h.store.CancelJob(r.Context(), workspaceID, jobID, request.Reason)
+	result, err := h.store.CancelJob(r.Context(), workspaceID, jobID, requestActorSubject(r), request.Reason)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -2451,7 +2451,8 @@ func newJobStatus(workspaceID string, job state.Job, run state.Run) jobStatusRes
 		CreatedAt:      &job.CreatedAt,
 		StartedAt:      startedAt,
 		CompletedAt:    completedAt,
-		CanceledReason: jobStatusCanceledReason(run),
+		CanceledBy:     firstPresentStringPtr(job.CanceledBy, jobStatusCanceledBy(run)),
+		CanceledReason: firstPresentStringPtr(job.CanceledReason, jobStatusCanceledReason(run)),
 	}
 	if run.Result != nil {
 		response.DurationMs = run.Result.DurationMs
@@ -2478,10 +2479,29 @@ func jobStatusCanceledReason(run state.Run) *string {
 		return nil
 	}
 	var payload struct {
-		Message string `json:"message"`
+		Message        string  `json:"message"`
+		CanceledReason *string `json:"canceledReason"`
 	}
-	if json.Unmarshal(run.Error, &payload) == nil && strings.TrimSpace(payload.Message) != "" {
-		return stringPtr(payload.Message)
+	if json.Unmarshal(run.Error, &payload) == nil {
+		if payload.CanceledReason != nil {
+			return payload.CanceledReason
+		}
+		if strings.TrimSpace(payload.Message) != "" {
+			return stringPtr(payload.Message)
+		}
+	}
+	return nil
+}
+
+func jobStatusCanceledBy(run state.Run) *string {
+	if run.State != state.RunCanceled || len(run.Error) == 0 {
+		return nil
+	}
+	var payload struct {
+		CanceledBy string `json:"canceledBy"`
+	}
+	if json.Unmarshal(run.Error, &payload) == nil {
+		return stringPtr(strings.TrimSpace(payload.CanceledBy))
 	}
 	return nil
 }
@@ -2752,6 +2772,24 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func requestActorSubject(r *http.Request) string {
+	for _, name := range []string{"X-Windforce-Actor", "X-Windforce-User"} {
+		if value := strings.TrimSpace(r.Header.Get(name)); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func firstPresentStringPtr(values ...*string) *string {
+	for _, value := range values {
+		if value != nil {
+			return value
+		}
+	}
+	return nil
 }
 
 func authorized(r *http.Request, token string) bool {

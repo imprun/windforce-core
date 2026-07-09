@@ -282,6 +282,12 @@ Action schemas are exposed through the Windforce control-plane API. Protocol
 adapters may translate trigger ingress and response envelopes, but they do not
 publish separate schema routes or own schema discovery.
 
+The full Windforce control plane derives job actor provenance from the
+authenticated principal. Lite deployments that use only the admin token can pass
+`X-Windforce-Actor` or `X-Windforce-User` on cancel requests so `canceled_by`
+matches the operator identity; without either header it falls back to the job's
+recorded actor.
+
 PostgreSQL is the production state backend. All runtime modes accept
 `--state-backend postgres`, `--database-url`, and `--migrate`:
 
