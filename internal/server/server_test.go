@@ -1034,6 +1034,22 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 	if _, ok := history[0]["status"]; ok {
 		t.Fatalf("history = %#v", history)
 	}
+
+	deploymentResp, err := http.Get(server.URL + "/api/w/ws-a/deployments/echo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer deploymentResp.Body.Close()
+	if deploymentResp.StatusCode != http.StatusNotFound {
+		t.Fatalf("deployment status = %d, want %d", deploymentResp.StatusCode, http.StatusNotFound)
+	}
+	var deploymentError map[string]string
+	if err := json.NewDecoder(deploymentResp.Body).Decode(&deploymentError); err != nil {
+		t.Fatal(err)
+	}
+	if deploymentError["error"] != "deployment not found" {
+		t.Fatalf("deployment error = %#v", deploymentError)
+	}
 }
 
 func TestCanonicalGitSourceProbePatchAndDelete(t *testing.T) {

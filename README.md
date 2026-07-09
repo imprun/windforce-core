@@ -236,7 +236,7 @@ Implemented control-plane endpoints:
 - `GET /api/w/{workspace}/apps/{app}/openapi.json` (app invocation OpenAPI generated from materialized action schemas)
 - `GET /api/w/{workspace}/apps/{app}/actions/{action}` (`input_schema` and `output_schema` are the canonical control-plane schema surface)
 - `PATCH /api/w/{workspace}/apps/{app}/actions/{action}`
-- `GET /api/w/{workspace}/deployments/{app}`
+- `GET /api/w/{workspace}/deployments/{deploymentID}` (canonical deployment status lookup; app metadata is under `/apps/{app}`)
 - `GET /api/w/{workspace}/worker-tags`
 - `POST /api/w/{workspace}/jobs/run/{app}/{action}`
 - `POST /api/w/{workspace}/jobs/run/{app}/{action}/wait?timeout_ms={ms}`
