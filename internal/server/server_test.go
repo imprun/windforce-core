@@ -167,7 +167,7 @@ func TestCanonicalJobRunStatusAndResultAPI(t *testing.T) {
 		App:         "echo",
 		Commit:      "commit-a",
 		Actions: map[string]contract.Action{
-			"echo": {Action: "echo", Command: []string{"helper"}},
+			"echo": {Action: "echo", Entrypoint: "main.ts", Command: []string{"helper"}, TimeoutMs: 45000},
 		},
 	}); err != nil {
 		t.Fatal(err)
@@ -206,7 +206,9 @@ func TestCanonicalJobRunStatusAndResultAPI(t *testing.T) {
 	if err := json.NewDecoder(statusResp.Body).Decode(&statusBody); err != nil {
 		t.Fatal(err)
 	}
-	if statusBody["id"] != runResponse.JobID || statusBody["state"] != "queued" || statusBody["app_key"] != "echo" || statusBody["action_key"] != "echo" {
+	if statusBody["id"] != runResponse.JobID || statusBody["state"] != "queued" || statusBody["app_key"] != "echo" ||
+		statusBody["action_key"] != "echo" || statusBody["trigger_kind"] != "api" || statusBody["entrypoint"] != "main.ts" ||
+		statusBody["timeout_s"] != float64(45) {
 		t.Fatalf("job status = %#v", statusBody)
 	}
 

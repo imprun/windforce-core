@@ -1868,7 +1868,7 @@ func (h *Handler) handleJobLogs(w http.ResponseWriter, r *http.Request, workspac
 		return
 	}
 	if !exists {
-		writeError(w, http.StatusNotFound, "not found")
+		writeError(w, http.StatusNotFound, "job not found")
 		return
 	}
 	tailBytes, err := parseTailBytes(r.URL.Query().Get("tail_bytes"))
@@ -2211,9 +2211,12 @@ type jobStatusResponse struct {
 	Worker      *string         `json:"worker,omitempty"`
 	AppKey      *string         `json:"app_key,omitempty"`
 	ActionKey   *string         `json:"action_key,omitempty"`
+	TriggerKind *string         `json:"trigger_kind,omitempty"`
 	Kind        *string         `json:"kind,omitempty"`
 	CommitSha   *string         `json:"commit_sha,omitempty"`
+	Entrypoint  *string         `json:"entrypoint,omitempty"`
 	Tag         string          `json:"tag,omitempty"`
+	TimeoutS    int32           `json:"timeout_s,omitempty"`
 	Input       json.RawMessage `json:"input,omitempty"`
 	CreatedAt   *time.Time      `json:"created_at,omitempty"`
 	StartedAt   *time.Time      `json:"started_at,omitempty"`
@@ -2254,9 +2257,12 @@ func newJobStatus(workspaceID string, job state.Job, run state.Run) jobStatusRes
 		Worker:      worker,
 		AppKey:      stringPtr(app),
 		ActionKey:   stringPtr(action),
+		TriggerKind: stringPtr(jobStatusTriggerKind(job, run)),
 		Kind:        stringPtr(kind),
 		CommitSha:   stringPtr(commit),
+		Entrypoint:  stringPtr(job.Payload.ActionSpec.Entrypoint),
 		Tag:         tag,
+		TimeoutS:    timeoutSeconds(job.Payload.ActionSpec.TimeoutMs),
 		Input:       cloneRaw(job.Payload.Input),
 		CreatedAt:   &job.CreatedAt,
 		StartedAt:   startedAt,
@@ -2266,6 +2272,20 @@ func newJobStatus(workspaceID string, job state.Job, run state.Run) jobStatusRes
 		response.DurationMs = run.Result.DurationMs
 	}
 	return response
+}
+
+func jobStatusTriggerKind(job state.Job, run state.Run) string {
+	if job.Payload.TriggerKind != "" {
+		return job.Payload.TriggerKind
+	}
+	return run.Adapter
+}
+
+func timeoutSeconds(timeoutMs int64) int32 {
+	if timeoutMs <= 0 {
+		return 0
+	}
+	return int32((timeoutMs + 999) / 1000)
 }
 
 func jobResult(job state.Job, run state.Run) (string, json.RawMessage, bool) {
