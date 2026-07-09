@@ -1126,7 +1126,7 @@ type canonicalAppModel struct {
 	ID                   string    `json:"id"`
 	WorkspaceID          string    `json:"workspace_id"`
 	AppKey               string    `json:"app_key"`
-	GitSourceID          *int64    `json:"git_source_id"`
+	GitSourceID          int64     `json:"git_source_id"`
 	CommitSha            string    `json:"commit_sha"`
 	Entrypoint           string    `json:"entrypoint"`
 	Tag                  string    `json:"tag"`
@@ -1229,7 +1229,7 @@ func newCanonicalAppModel(deployment contract.Deployment) canonicalAppModel {
 		ID:                   canonicalAppID(deployment),
 		WorkspaceID:          contract.NormalizeWorkspace(deployment.SourceWorkspace()),
 		AppKey:               deployment.App,
-		GitSourceID:          canonicalGitSourceIDPtr(deployment.SourceGitSourceID()),
+		GitSourceID:          parseCanonicalGitSourceID(deployment.SourceGitSourceID()),
 		CommitSha:            deployment.Commit,
 		Entrypoint:           canonicalDeploymentEntrypoint(deployment),
 		Tag:                  firstNonEmpty(strings.TrimSpace(deployment.Tag), defaultRouteTag()),
