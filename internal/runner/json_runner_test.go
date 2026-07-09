@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -46,6 +47,7 @@ func TestRunActionAdapterSubprocessSuccess(t *testing.T) {
 	tempDir := t.TempDir()
 	outputPath := filepath.Join(tempDir, "output.json")
 	resultPath := filepath.Join(tempDir, "adapter-result.json")
+	var logs bytes.Buffer
 
 	res, err := RunActionAdapterSubprocess(context.Background(), ActionAdapterSubprocessRequest{
 		Command:     []string{os.Args[0], "-test.run=TestHelperProcess", "--"},
@@ -60,12 +62,18 @@ func TestRunActionAdapterSubprocessSuccess(t *testing.T) {
 		App:    "test-app",
 		Action: "test-action",
 		Env:    []string{"WINDFORCE_LITE_HELPER=adapter"},
+		LogSink: func(chunk []byte) {
+			_, _ = logs.Write(chunk)
+		},
 	})
 	if err != nil {
 		t.Fatalf("RunActionAdapterSubprocess returned error: %v", err)
 	}
-	if res.ExitCode != 0 || res.Stdout != "script stdout" {
+	if res.ExitCode != 0 || res.Stdout != "script stdout" || res.Stderr != "script stderr" {
 		t.Fatalf("adapter result = %#v", res)
+	}
+	if !bytes.Contains(logs.Bytes(), []byte("script stdout")) || !bytes.Contains(logs.Bytes(), []byte("script stderr")) {
+		t.Fatalf("adapter logs = %q", logs.String())
 	}
 	output, err := os.ReadFile(outputPath)
 	if err != nil {
@@ -109,7 +117,7 @@ func TestHelperProcess(t *testing.T) {
 		if err := os.WriteFile(request.OutputPath, []byte(`{"adapter":"ok"}`), 0o644); err != nil {
 			os.Exit(5)
 		}
-		resultBytes, err := json.Marshal(JSONSubprocessResult{ExitCode: 0, Stdout: "script stdout"})
+		resultBytes, err := json.Marshal(JSONSubprocessResult{ExitCode: 0, Stdout: "script stdout", Stderr: "script stderr"})
 		if err != nil {
 			os.Exit(6)
 		}

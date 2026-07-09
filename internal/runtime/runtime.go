@@ -28,6 +28,7 @@ type RunRequest struct {
 	OutputPath string
 	Timeout    time.Duration
 	Env        []string
+	LogSink    func([]byte)
 }
 
 const actionAdapterProtocolVersion = "windforce.action-adapter/v1"
@@ -140,6 +141,7 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (contract.JobResult, e
 			Action:     req.Action,
 			Timeout:    timeout,
 			Env:        req.Env,
+			LogSink:    req.LogSink,
 		})
 	case contract.ActionAdapterCommand:
 		adapterRequestPath := filepath.Join(jobDir, "adapter-request.json")
@@ -170,6 +172,7 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (contract.JobResult, e
 			Action:  req.Action,
 			Timeout: timeout,
 			Env:     adapterEnv,
+			LogSink: req.LogSink,
 		})
 	default:
 		return contract.JobResult{}, fmt.Errorf("unsupported action adapter %q", adapterType)

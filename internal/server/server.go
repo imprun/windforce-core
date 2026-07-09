@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -184,6 +185,10 @@ func (h *Handler) handleTrigger(w http.ResponseWriter, r *http.Request, route tr
 
 func (h *Handler) handleAPI(w http.ResponseWriter, r *http.Request) bool {
 	parts := splitPath(r.URL.Path)
+	if len(parts) == 6 && parts[0] == "api" && parts[1] == "w" && parts[3] == "jobs" && parts[5] == "logs" && r.Method == http.MethodGet {
+		h.handleJobLogs(w, r, parts[2], parts[4])
+		return true
+	}
 	if len(parts) == 0 || parts[0] != "v1" {
 		return false
 	}
@@ -469,6 +474,34 @@ func (h *Handler) handleCatalog(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, snapshot)
 }
 
+func (h *Handler) handleJobLogs(w http.ResponseWriter, r *http.Request, workspaceID string, jobID string) {
+	if h.store == nil {
+		writeError(w, http.StatusServiceUnavailable, "state store is not configured")
+		return
+	}
+	logs, exists, err := h.store.GetLogs(r.Context(), workspaceID, jobID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !exists {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	tailBytes, err := parseTailBytes(r.URL.Query().Get("tail_bytes"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	data := []byte(logs)
+	if tailBytes >= 0 && len(data) > tailBytes {
+		data = data[len(data)-tailBytes:]
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
+}
+
 func (h *Handler) handleSchema(w http.ResponseWriter, r *http.Request, route triggerRoute) {
 	if h.catalog == nil {
 		writeError(w, http.StatusServiceUnavailable, "catalog is not configured")
@@ -702,6 +735,23 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "  ")
 	_ = encoder.Encode(value)
+}
+
+const maxTailBytes = 1048576
+
+func parseTailBytes(raw string) (int, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return -1, nil
+	}
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || value < 0 {
+		return 0, errors.New("tail_bytes must be a non-negative integer")
+	}
+	if value > maxTailBytes {
+		return 0, errors.New("tail_bytes exceeds server limit")
+	}
+	return int(value), nil
 }
 
 func firstNonEmpty(values ...string) string {

@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 )
 
@@ -21,6 +23,7 @@ type JSONSubprocessRequest struct {
 	Action     string
 	Timeout    time.Duration
 	Env        []string
+	LogSink    func([]byte)
 }
 
 // JSONSubprocessResult captures process output. Non-zero exit is represented
@@ -46,6 +49,7 @@ type ActionAdapterSubprocessRequest struct {
 	Action      string
 	Timeout     time.Duration
 	Env         []string
+	LogSink     func([]byte)
 }
 
 // RunJSONSubprocess executes an action subprocess with file-based JSON IO.
@@ -76,8 +80,8 @@ func RunJSONSubprocess(ctx context.Context, req JSONSubprocessRequest) (JSONSubp
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	cmd.Stdout = logWriter(&stdout, req.LogSink)
+	cmd.Stderr = logWriter(&stderr, req.LogSink)
 
 	err := cmd.Run()
 	exitCode := 0
@@ -151,8 +155,8 @@ func RunActionAdapterSubprocess(ctx context.Context, req ActionAdapterSubprocess
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	cmd.Stdout = logWriter(&stdout, req.LogSink)
+	cmd.Stderr = logWriter(&stderr, req.LogSink)
 
 	err = cmd.Run()
 	processResult := JSONSubprocessResult{
@@ -184,5 +188,44 @@ func RunActionAdapterSubprocess(ctx context.Context, req ActionAdapterSubprocess
 	if adapterResult.DurationMs == 0 {
 		adapterResult.DurationMs = processResult.DurationMs
 	}
+	if adapterResult.Stdout != "" && req.LogSink != nil {
+		req.LogSink([]byte(adapterResult.Stdout))
+	}
+	if adapterResult.Stderr != "" && req.LogSink != nil {
+		req.LogSink([]byte(adapterResult.Stderr))
+	}
+	adapterResult.Stdout = joinLogText(processResult.Stdout, adapterResult.Stdout)
+	adapterResult.Stderr = joinLogText(processResult.Stderr, adapterResult.Stderr)
 	return adapterResult, nil
+}
+
+func logWriter(buffer *bytes.Buffer, sink func([]byte)) io.Writer {
+	if sink == nil {
+		return buffer
+	}
+	return io.MultiWriter(buffer, logSinkWriter{sink: sink})
+}
+
+type logSinkWriter struct {
+	sink func([]byte)
+}
+
+func (w logSinkWriter) Write(chunk []byte) (int, error) {
+	if len(chunk) > 0 {
+		w.sink(append([]byte(nil), chunk...))
+	}
+	return len(chunk), nil
+}
+
+func joinLogText(left string, right string) string {
+	if left == "" {
+		return right
+	}
+	if right == "" {
+		return left
+	}
+	if strings.HasSuffix(left, "\n") || strings.HasSuffix(left, "\r") {
+		return left + right
+	}
+	return left + "\n" + right
 }

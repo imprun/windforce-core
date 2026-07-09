@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -107,6 +108,50 @@ func TestTriggerCreatesRunAndAPIReadsIt(t *testing.T) {
 	}
 	if retryResponse["state"] != string(state.RunQueued) || retryResponse["jobId"] == "" {
 		t.Fatalf("retry response = %#v", retryResponse)
+	}
+}
+
+func TestJobLogsAPI(t *testing.T) {
+	tempDir := t.TempDir()
+	store := state.NewLocalStore(filepath.Join(tempDir, "state.json"))
+	deployment := contract.Deployment{
+		Workspace:   "ws-a",
+		GitSourceID: "source-a",
+		App:         "echo",
+		Commit:      "commit-a",
+		Actions: map[string]contract.Action{
+			"echo": {Action: "echo", Command: []string{"helper"}},
+		},
+	}
+	run := state.NewRun("windforce", "run-a", "echo", "echo", deployment, json.RawMessage(`{"message":"hello"}`))
+	job := state.NewActionJob(run, nil)
+	if err := store.CreateRunAndEnqueue(context.Background(), run, job); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AppendLogs(context.Background(), job.ID, "ws-a", "hello world"); err != nil {
+		t.Fatal(err)
+	}
+
+	server := httptest.NewServer(New(Config{Store: store, EnableAPI: true}))
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/api/w/ws-a/jobs/" + job.ID + "/logs?tail_bytes=5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	if got := resp.Header.Get("Content-Type"); got != "text/plain; charset=utf-8" {
+		t.Fatalf("content type = %q", got)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "world" {
+		t.Fatalf("logs body = %q", body)
 	}
 }
 

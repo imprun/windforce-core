@@ -111,9 +111,17 @@ CREATE TABLE IF NOT EXISTS run_events (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS job_logs (
+    job_id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL DEFAULT 'default',
+    logs TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS result JSONB;
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS correlation_id TEXT;
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS env JSONB;
+ALTER TABLE job_logs ADD COLUMN IF NOT EXISTS workspace_id TEXT NOT NULL DEFAULT 'default';
 
 CREATE INDEX IF NOT EXISTS jobs_claim_idx
     ON jobs (priority, created_at)
@@ -132,6 +140,46 @@ CREATE INDEX IF NOT EXISTS runs_correlation_id_idx
     WHERE correlation_id IS NOT NULL;
 `)
 	return err
+}
+
+func (s *PostgresStore) AppendLogs(ctx context.Context, jobID string, workspaceID string, chunk string) error {
+	if chunk == "" {
+		return nil
+	}
+	workspaceID = contract.NormalizeWorkspace(workspaceID)
+	_, err := s.pool.Exec(ctx, `
+INSERT INTO job_logs (job_id, workspace_id, logs)
+VALUES ($1, $2, $3)
+ON CONFLICT (job_id) DO UPDATE SET logs = job_logs.logs || EXCLUDED.logs
+`, jobID, workspaceID, chunk)
+	return err
+}
+
+func (s *PostgresStore) GetLogs(ctx context.Context, workspaceID string, jobID string) (string, bool, error) {
+	workspaceID = contract.NormalizeWorkspace(workspaceID)
+	var logs string
+	err := s.pool.QueryRow(ctx, `
+SELECT logs FROM job_logs
+WHERE job_id=$1 AND workspace_id=$2
+`, jobID, workspaceID).Scan(&logs)
+	if err == nil {
+		return logs, true, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return "", false, err
+	}
+	var exists bool
+	if err := s.pool.QueryRow(ctx, `
+SELECT EXISTS (
+    SELECT 1
+    FROM jobs
+    WHERE id=$1
+      AND COALESCE(NULLIF(payload->>'workspace', ''), NULLIF(payload->'deployment'->>'workspace', ''), 'default')=$2
+)
+`, jobID, workspaceID).Scan(&exists); err != nil {
+		return "", false, err
+	}
+	return "", exists, nil
 }
 
 func (s *PostgresStore) CreateRunAndEnqueue(ctx context.Context, run Run, job Job) error {

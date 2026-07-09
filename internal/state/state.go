@@ -131,18 +131,28 @@ type RunEvent struct {
 	CreatedAt time.Time       `json:"createdAt"`
 }
 
+type JobLog struct {
+	JobID       string    `json:"jobId"`
+	WorkspaceID string    `json:"workspaceId"`
+	Logs        string    `json:"logs"`
+	CreatedAt   time.Time `json:"createdAt"`
+}
+
 type Snapshot struct {
 	Sequence   int64                `json:"sequence"`
 	Runs       map[string]Run       `json:"runs"`
 	Jobs       map[string]Job       `json:"jobs"`
 	HumanTasks map[string]HumanTask `json:"humanTasks"`
 	Events     []RunEvent           `json:"events"`
+	JobLogs    map[string]JobLog    `json:"jobLogs"`
 }
 
 type Store interface {
 	CreateRunAndEnqueue(ctx context.Context, run Run, job Job) error
 	GetRun(ctx context.Context, runID string) (Run, error)
 	GetHumanTask(ctx context.Context, taskID string) (HumanTask, error)
+	AppendLogs(ctx context.Context, jobID string, workspaceID string, chunk string) error
+	GetLogs(ctx context.Context, workspaceID string, jobID string) (string, bool, error)
 	ClaimJob(ctx context.Context, workerID string, leaseTTL time.Duration) (Job, Lease, error)
 	CompleteJobSucceeded(ctx context.Context, lease Lease, result contract.JobResult) error
 	CompleteJobFailed(ctx context.Context, lease Lease, result contract.JobResult) error
@@ -292,6 +302,47 @@ func (s *LocalStore) GetHumanTask(ctx context.Context, taskID string) (HumanTask
 		return HumanTask{}, fmt.Errorf("%w: human task %q", ErrNotFound, taskID)
 	}
 	return task, nil
+}
+
+func (s *LocalStore) AppendLogs(ctx context.Context, jobID string, workspaceID string, chunk string) error {
+	if chunk == "" {
+		return nil
+	}
+	return s.update(ctx, func(snapshot *Snapshot, now time.Time) error {
+		job, ok := snapshot.Jobs[jobID]
+		if !ok {
+			return fmt.Errorf("%w: job %q", ErrNotFound, jobID)
+		}
+		workspaceID = normalizedJobWorkspace(workspaceID, job)
+		log := snapshot.JobLogs[jobID]
+		if log.JobID == "" {
+			log.JobID = jobID
+			log.WorkspaceID = workspaceID
+			log.CreatedAt = now
+		}
+		if log.WorkspaceID == "" {
+			log.WorkspaceID = workspaceID
+		}
+		log.Logs += chunk
+		snapshot.JobLogs[jobID] = log
+		return nil
+	})
+}
+
+func (s *LocalStore) GetLogs(ctx context.Context, workspaceID string, jobID string) (string, bool, error) {
+	snapshot, err := s.Load(ctx)
+	if err != nil {
+		return "", false, err
+	}
+	workspaceID = contract.NormalizeWorkspace(workspaceID)
+	if log, ok := snapshot.JobLogs[jobID]; ok && contract.NormalizeWorkspace(log.WorkspaceID) == workspaceID {
+		return log.Logs, true, nil
+	}
+	job, ok := snapshot.Jobs[jobID]
+	if !ok || normalizedJobWorkspace("", job) != workspaceID {
+		return "", false, nil
+	}
+	return "", true, nil
 }
 
 func (s *LocalStore) ClaimJob(ctx context.Context, workerID string, leaseTTL time.Duration) (Job, Lease, error) {
@@ -673,6 +724,9 @@ func ensureSnapshot(snapshot *Snapshot) {
 	if snapshot.Events == nil {
 		snapshot.Events = []RunEvent{}
 	}
+	if snapshot.JobLogs == nil {
+		snapshot.JobLogs = map[string]JobLog{}
+	}
 }
 
 func requeueExpiredJobs(snapshot *Snapshot, now time.Time) {
@@ -775,6 +829,16 @@ func cloneResult(result contract.JobResult) *contract.JobResult {
 	cloned := result
 	cloned.Output = cloneRaw(result.Output)
 	return &cloned
+}
+
+func normalizedJobWorkspace(workspaceID string, job Job) string {
+	if workspaceID == "" {
+		workspaceID = job.Payload.Workspace
+	}
+	if workspaceID == "" {
+		workspaceID = job.Payload.Deployment.SourceWorkspace()
+	}
+	return contract.NormalizeWorkspace(workspaceID)
 }
 
 func nonZeroTime(value time.Time, fallback time.Time) time.Time {

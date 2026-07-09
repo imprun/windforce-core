@@ -29,7 +29,7 @@ func TestPostgresStoreClaimCompleteAndResumeLifecycle(t *testing.T) {
 	if err := store.Migrate(context.Background()); err != nil {
 		t.Fatalf("Migrate returned error: %v", err)
 	}
-	if _, err := store.pool.Exec(context.Background(), `TRUNCATE run_events, human_tasks, jobs, runs RESTART IDENTITY CASCADE`); err != nil {
+	if _, err := store.pool.Exec(context.Background(), `TRUNCATE job_logs, run_events, human_tasks, jobs, runs RESTART IDENTITY CASCADE`); err != nil {
 		t.Fatalf("TRUNCATE returned error: %v", err)
 	}
 	exerciseStoreLifecycle(t, store)
@@ -60,6 +60,19 @@ func exerciseStoreLifecycle(t *testing.T, store Store) {
 	}
 	if claimed.ID != job.ID {
 		t.Fatalf("claimed job = %q, want %q", claimed.ID, job.ID)
+	}
+	if err := store.AppendLogs(context.Background(), job.ID, "default", "first\n"); err != nil {
+		t.Fatalf("AppendLogs returned error: %v", err)
+	}
+	if err := store.AppendLogs(context.Background(), job.ID, "default", "second\n"); err != nil {
+		t.Fatalf("AppendLogs returned error: %v", err)
+	}
+	logs, exists, err := store.GetLogs(context.Background(), "default", job.ID)
+	if err != nil {
+		t.Fatalf("GetLogs returned error: %v", err)
+	}
+	if !exists || logs != "first\nsecond\n" {
+		t.Fatalf("logs = %q, exists = %v", logs, exists)
 	}
 	if err := store.CompleteJobWaitingHuman(context.Background(), lease, contract.JobResult{
 		JobID:    job.ID,

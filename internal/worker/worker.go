@@ -35,13 +35,23 @@ func (p *Processor) ProcessOne(ctx context.Context) (bool, error) {
 		return false, err
 	}
 
+	workspaceID := job.Payload.Workspace
+	if workspaceID == "" {
+		workspaceID = job.Payload.PinnedDeployment().SourceWorkspace()
+	}
+	workspaceID = contract.NormalizeWorkspace(workspaceID)
 	result, runErr := p.Runner.Run(ctx, actionruntime.RunRequest{
 		Deployment: job.Payload.PinnedDeployment(),
 		Action:     job.Payload.Action,
 		Input:      job.Payload.Input,
 		Env:        job.Payload.Env,
+		LogSink: func(chunk []byte) {
+			_ = p.Store.AppendLogs(context.Background(), job.ID, workspaceID, string(chunk))
+		},
 	})
 	result.JobID = job.ID
+	result.Stdout = ""
+	result.Stderr = ""
 	if runErr != nil {
 		if result.Error == "" {
 			result.Error = runErr.Error()

@@ -47,7 +47,7 @@ worker cannot fetch.
 
 ## Run
 
-`run` executes an action from the active catalog:
+A queued run executes an action from the active catalog:
 
 1. Read the app deployment from the catalog.
 2. Find the requested action.
@@ -55,7 +55,11 @@ worker cannot fetch.
    workspace/git-source/commit into a local runtime cache.
 4. Execute the action command from the fetched source directory.
 5. Pass JSON input/output paths through environment variables.
-6. Return stdout, stderr, exit code, duration, and output JSON.
+6. Store stdout/stderr as job logs and return exit code, duration, and output
+   JSON.
+
+The direct `run` CLI is a local smoke-test path and still prints the observed
+subprocess fields in its JSON result.
 
 ## Manifest
 
@@ -119,7 +123,8 @@ The request JSON includes `version`, `workDir`, `command`, `inputPath`,
 `actionSpec`, `deployment`, and `options`. The adapter should write the action
 output JSON to `outputPath`, then write a result JSON compatible with
 `JobResult` subprocess fields: `exitCode`, `stdout`, `stderr`, and
-`durationMs`.
+`durationMs`. In worker/API mode, `stdout` and `stderr` are appended to the
+job log stream rather than exposed as the run result.
 
 ## JSON file adapter contract
 
@@ -210,6 +215,7 @@ Implemented control-plane endpoints:
 - `GET /v1/deployments/{app}`
 - `GET /v1/apps/{app}/actions/{action}/schema`
 - `GET /v1/runs/{runID}`
+- `GET /api/w/{workspace}/jobs/{jobID}/logs?tail_bytes={bytes}`
 - `POST /v1/runs/{runID}/cancel`
 - `POST /v1/runs/{runID}/retry`
 - `GET /v1/human-tasks/{humanTaskID}`

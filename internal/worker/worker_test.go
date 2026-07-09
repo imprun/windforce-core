@@ -34,6 +34,19 @@ func TestProcessorCompletesQueuedRun(t *testing.T) {
 	if completed.State != state.RunSucceeded {
 		t.Fatalf("run state = %s, want %s", completed.State, state.RunSucceeded)
 	}
+	if completed.Result == nil || completed.Result.JobID == "" {
+		t.Fatalf("completed result missing job id: %#v", completed.Result)
+	}
+	if completed.Result.Stdout != "" || completed.Result.Stderr != "" {
+		t.Fatalf("completed result should not expose logs: %#v", completed.Result)
+	}
+	logs, exists, err := stateStore.GetLogs(context.Background(), "workspace-a", completed.Result.JobID)
+	if err != nil {
+		t.Fatalf("GetLogs returned error: %v", err)
+	}
+	if !exists || !strings.Contains(logs, "worker stdout") || !strings.Contains(logs, "worker stderr") {
+		t.Fatalf("logs = %q, exists = %v", logs, exists)
+	}
 	var output struct {
 		OK    bool `json:"ok"`
 		Input struct {
@@ -146,6 +159,8 @@ func TestWorkerHelperProcess(t *testing.T) {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(2)
 		}
+		fmt.Println("worker stdout")
+		fmt.Fprintln(os.Stderr, "worker stderr")
 	case "human":
 		output := []byte(`{"$windforce":{"type":"human_task","title":"Approve","fields":[{"name":"approved","type":"boolean","required":true}]}}`)
 		if err := os.WriteFile(os.Getenv("WINDFORCE_OUTPUT_JSON"), output, 0o644); err != nil {
