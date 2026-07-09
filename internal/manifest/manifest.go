@@ -60,7 +60,7 @@ func Parse(data []byte) (contract.App, error) {
 		return contract.App{}, fmt.Errorf("app %s capabilities: %w", app.App, err)
 	}
 	app.Capabilities = caps
-	if len(app.Capabilities) > 0 && strings.TrimSpace(app.Tag) != "" {
+	if len(app.Capabilities) > 0 && app.Tag != "" {
 		return contract.App{}, fmt.Errorf("app %s declares both tag and capabilities in %s", app.App, FileName)
 	}
 
@@ -81,8 +81,8 @@ func Parse(data []byte) (contract.App, error) {
 			action.Capabilities = &caps
 		}
 		effectiveCaps := contract.EffectiveCapabilities(app.Capabilities, action.Capabilities)
-		actionTag := action.Tag != nil && strings.TrimSpace(*action.Tag) != ""
-		if len(effectiveCaps) > 0 && (strings.TrimSpace(app.Tag) != "" || actionTag) {
+		actionTag := action.Tag != nil && *action.Tag != ""
+		if len(effectiveCaps) > 0 && (app.Tag != "" || actionTag) {
 			return contract.App{}, fmt.Errorf("action %s.%s declares both tag and capabilities in %s", app.App, name, FileName)
 		}
 		applyAppDefaults(app, &action)

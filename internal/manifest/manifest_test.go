@@ -113,6 +113,16 @@ func TestParseRejectsCapabilityTagConflicts(t *testing.T) {
 			want: "declares both tag and capabilities",
 		},
 		{
+			name: "app whitespace tag",
+			body: `{"app":"echo","entrypoint":"main.ts","tag":" ","capabilities":["browser"],"actions":{"run":{}}}`,
+			want: "declares both tag and capabilities",
+		},
+		{
+			name: "action whitespace tag",
+			body: `{"app":"echo","entrypoint":"main.ts","capabilities":["browser"],"actions":{"run":{"tag":" "}}}`,
+			want: "declares both tag and capabilities",
+		},
+		{
 			name: "unsupported",
 			body: `{"app":"echo","entrypoint":"main.ts","capabilities":["gpu"],"actions":{"run":{}}}`,
 			want: "unsupported capability",
