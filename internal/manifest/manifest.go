@@ -42,6 +42,14 @@ func Parse(data []byte) (contract.App, error) {
 	if app.MaxConcurrent != nil && *app.MaxConcurrent <= 0 {
 		return contract.App{}, fmt.Errorf("app %s maxConcurrent must be positive in %s", app.App, FileName)
 	}
+	caps, err := contract.NormalizeCapabilities(app.Capabilities)
+	if err != nil {
+		return contract.App{}, fmt.Errorf("app %s capabilities: %w", app.App, err)
+	}
+	app.Capabilities = caps
+	if len(app.Capabilities) > 0 && strings.TrimSpace(app.Tag) != "" {
+		return contract.App{}, fmt.Errorf("app %s declares both tag and capabilities in %s", app.App, FileName)
+	}
 
 	for name, action := range app.Actions {
 		if !contract.ValidActionKey(name) {
@@ -52,6 +60,21 @@ func Parse(data []byte) (contract.App, error) {
 		}
 		if action.Action != name {
 			return contract.App{}, fmt.Errorf("action %q has mismatched action field %q", name, action.Action)
+		}
+		if action.Capabilities != nil {
+			caps, err := contract.NormalizeCapabilities(*action.Capabilities)
+			if err != nil {
+				return contract.App{}, fmt.Errorf("action %s.%s capabilities: %w", app.App, name, err)
+			}
+			if caps == nil {
+				caps = []string{}
+			}
+			action.Capabilities = &caps
+		}
+		effectiveCaps := contract.EffectiveCapabilities(app.Capabilities, action.Capabilities)
+		actionTag := action.Tag != nil && strings.TrimSpace(*action.Tag) != ""
+		if len(effectiveCaps) > 0 && (strings.TrimSpace(app.Tag) != "" || actionTag) {
+			return contract.App{}, fmt.Errorf("action %s.%s declares both tag and capabilities in %s", app.App, name, FileName)
 		}
 		applyAppDefaults(app, &action)
 		if err := validateActionPath(app.App, name, "entrypoint", action.Entrypoint); err != nil {

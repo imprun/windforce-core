@@ -1,6 +1,7 @@
 package manifest
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -48,6 +49,62 @@ func TestParseAppliesCanonicalAppDefaults(t *testing.T) {
 	fast := app.Actions["fast"]
 	if fast.Entrypoint != "fast.ts" || fast.Runtime != "go" || fast.TimeoutMs != 45000 {
 		t.Fatalf("fast overrides = %#v", fast)
+	}
+}
+
+func TestParsePreservesCapabilities(t *testing.T) {
+	app, err := Parse([]byte(`{
+		"app": "echo",
+		"capabilities": ["browser", "browser"],
+		"actions": {
+			"run": {},
+			"plain": {"capabilities": []}
+		}
+	}`))
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	if !reflect.DeepEqual(app.Capabilities, []string{"browser"}) {
+		t.Fatalf("app capabilities = %#v", app.Capabilities)
+	}
+	if app.Actions["run"].Capabilities != nil {
+		t.Fatalf("run capabilities = %#v, want nil inheritance", app.Actions["run"].Capabilities)
+	}
+	plain := app.Actions["plain"].Capabilities
+	if plain == nil || len(*plain) != 0 {
+		t.Fatalf("plain capabilities = %#v, want explicit empty override", plain)
+	}
+}
+
+func TestParseRejectsCapabilityTagConflicts(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "app tag",
+			body: `{"app":"echo","tag":"default","capabilities":["browser"],"actions":{"run":{}}}`,
+			want: "declares both tag and capabilities",
+		},
+		{
+			name: "action tag",
+			body: `{"app":"echo","capabilities":["browser"],"actions":{"run":{"tag":"fast"}}}`,
+			want: "declares both tag and capabilities",
+		},
+		{
+			name: "unsupported",
+			body: `{"app":"echo","capabilities":["gpu"],"actions":{"run":{}}}`,
+			want: "unsupported capability",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := Parse([]byte(test.body))
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("Parse error = %v, want %q", err, test.want)
+			}
+		})
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -646,6 +647,7 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 		"scriptLang": "typescript",
 		"timeout": 120,
 		"maxConcurrent": 2,
+		"capabilities": ["browser"],
 		"actions": {
 			"echo": {
 				"command": ["helper"],
@@ -838,16 +840,19 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 	defer summaryResp.Body.Close()
 	var summary struct {
 		Apps []struct {
-			AppKey       string `json:"app_key"`
-			GitSourceID  string `json:"git_source_id"`
-			ActionsCount int64  `json:"actions_count"`
+			AppKey            string   `json:"app_key"`
+			GitSourceID       string   `json:"git_source_id"`
+			ActionsCount      int64    `json:"actions_count"`
+			EffectiveRouteTag string   `json:"effective_route_tag"`
+			Capabilities      []string `json:"required_capabilities"`
 		} `json:"apps"`
 	}
 	if err := json.NewDecoder(summaryResp.Body).Decode(&summary); err != nil {
 		t.Fatal(err)
 	}
 	if len(summary.Apps) != 1 || summary.Apps[0].AppKey != "echo" ||
-		summary.Apps[0].GitSourceID != "source-a" || summary.Apps[0].ActionsCount != 1 {
+		summary.Apps[0].GitSourceID != "source-a" || summary.Apps[0].ActionsCount != 1 ||
+		summary.Apps[0].EffectiveRouteTag != "browser" || !reflect.DeepEqual(summary.Apps[0].Capabilities, []string{"browser"}) {
 		t.Fatalf("summary = %#v", summary)
 	}
 
@@ -895,17 +900,21 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 	}
 	var appBody struct {
 		App struct {
-			AppKey        string    `json:"app_key"`
-			GitSourceID   string    `json:"git_source_id"`
-			Entrypoint    string    `json:"entrypoint"`
-			ScriptLang    string    `json:"script_lang"`
-			TimeoutS      int32     `json:"timeout_s"`
-			MaxConcurrent *int32    `json:"max_concurrent"`
-			UpdatedAt     time.Time `json:"updated_at"`
+			AppKey               string    `json:"app_key"`
+			GitSourceID          string    `json:"git_source_id"`
+			Entrypoint           string    `json:"entrypoint"`
+			ScriptLang           string    `json:"script_lang"`
+			TimeoutS             int32     `json:"timeout_s"`
+			MaxConcurrent        *int32    `json:"max_concurrent"`
+			RequiredCapabilities []string  `json:"required_capabilities"`
+			EffectiveRouteTag    string    `json:"effective_route_tag"`
+			UpdatedAt            time.Time `json:"updated_at"`
 		} `json:"app"`
 		Actions []struct {
-			ActionKey   string          `json:"action_key"`
-			InputSchema json.RawMessage `json:"input_schema"`
+			ActionKey             string          `json:"action_key"`
+			InputSchema           json.RawMessage `json:"input_schema"`
+			EffectiveCapabilities []string        `json:"effective_capabilities"`
+			EffectiveRouteTag     string          `json:"effective_route_tag"`
 		} `json:"actions"`
 	}
 	if err := json.NewDecoder(appResp.Body).Decode(&appBody); err != nil {
@@ -914,10 +923,36 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 	if appBody.App.AppKey != "echo" || appBody.App.GitSourceID != "source-a" ||
 		appBody.App.Entrypoint != "main.ts" || appBody.App.ScriptLang != "typescript" ||
 		appBody.App.TimeoutS != 120 || appBody.App.MaxConcurrent == nil || *appBody.App.MaxConcurrent != 2 ||
+		!reflect.DeepEqual(appBody.App.RequiredCapabilities, []string{"browser"}) || appBody.App.EffectiveRouteTag != "browser" ||
 		appBody.App.UpdatedAt.IsZero() ||
 		len(appBody.Actions) != 1 || appBody.Actions[0].ActionKey != "echo" ||
+		!reflect.DeepEqual(appBody.Actions[0].EffectiveCapabilities, []string{"browser"}) || appBody.Actions[0].EffectiveRouteTag != "browser" ||
 		!bytes.Contains(appBody.Actions[0].InputSchema, []byte(`"message"`)) {
 		t.Fatalf("app body = %#v", appBody)
+	}
+
+	workerTagsResp, err := http.Get(server.URL + "/api/w/ws-a/worker-tags")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer workerTagsResp.Body.Close()
+	if workerTagsResp.StatusCode != http.StatusOK {
+		t.Fatalf("worker-tags status = %d, want %d", workerTagsResp.StatusCode, http.StatusOK)
+	}
+	var workerTags struct {
+		Tags []struct {
+			Tag string `json:"tag"`
+		} `json:"tags"`
+	}
+	if err := json.NewDecoder(workerTagsResp.Body).Decode(&workerTags); err != nil {
+		t.Fatal(err)
+	}
+	seenTags := map[string]bool{}
+	for _, item := range workerTags.Tags {
+		seenTags[item.Tag] = true
+	}
+	if !seenTags["default"] || !seenTags["browser"] {
+		t.Fatalf("worker tags = %#v, want default and browser", workerTags.Tags)
 	}
 
 	runResp, err := http.Post(server.URL+"/api/w/ws-a/jobs/run/echo/echo", "application/json", bytes.NewBufferString(`{"message":"hello"}`))
@@ -946,13 +981,15 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 		InputSchema  json.RawMessage `json:"input_schema"`
 		OutputSchema json.RawMessage `json:"output_schema"`
 		Input        json.RawMessage `json:"input"`
+		Tag          string          `json:"tag"`
 	}
 	if err := json.NewDecoder(statusResp.Body).Decode(&statusBody); err != nil {
 		t.Fatal(err)
 	}
 	if !bytes.Contains(statusBody.InputSchema, []byte(`"message"`)) ||
 		!bytes.Contains(statusBody.OutputSchema, []byte(`"ok"`)) ||
-		!bytes.Contains(statusBody.Input, []byte(`"hello"`)) {
+		!bytes.Contains(statusBody.Input, []byte(`"hello"`)) ||
+		statusBody.Tag != "browser" {
 		t.Fatalf("status body schemas/input = input_schema:%s output_schema:%s input:%s", statusBody.InputSchema, statusBody.OutputSchema, statusBody.Input)
 	}
 
@@ -993,7 +1030,7 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 		t.Fatalf("openapi request schema missing message: %#v", requestSchema)
 	}
 	statusEnum := runWait["responses"].(map[string]any)["200"].(map[string]any)["content"].(map[string]any)["application/json"].(map[string]any)["schema"].(map[string]any)["properties"].(map[string]any)["status"].(map[string]any)["enum"].([]any)
-	if fmt.Sprint(statusEnum) != "[success failure canceled]" {
+	if fmt.Sprint(statusEnum) != "[completed failed canceled]" {
 		t.Fatalf("openapi status enum = %#v", statusEnum)
 	}
 	if paths["/api/w/ws-a/jobs/run/echo/echo"] == nil || paths["/api/w/ws-a/jobs/webhook/echo/echo"] == nil ||

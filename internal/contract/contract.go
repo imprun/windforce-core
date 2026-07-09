@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -16,7 +17,13 @@ const (
 
 	ActionAdapterJSONFile = "json-file"
 	ActionAdapterCommand  = "command"
+
+	CapabilityBrowser = "browser"
 )
+
+var capabilityRouteTags = map[string]string{
+	CapabilityBrowser: "browser",
+}
 
 // App is the deployable source bundle described by windforce.json.
 type App struct {
@@ -29,6 +36,7 @@ type App struct {
 	Tag        string `json:"tag,omitempty"`
 	// MaxConcurrent caps concurrently running jobs for this app. Nil means unlimited.
 	MaxConcurrent *int32            `json:"maxConcurrent,omitempty"`
+	Capabilities  []string          `json:"capabilities,omitempty"`
 	Actions       map[string]Action `json:"actions"`
 }
 
@@ -45,6 +53,7 @@ type Action struct {
 	OutputSchema string         `json:"outputSchema,omitempty"`
 	TimeoutS     *int32         `json:"timeout,omitempty"`
 	TimeoutMs    int64          `json:"timeoutMs,omitempty"`
+	Capabilities *[]string      `json:"capabilities,omitempty"`
 	UpdatedAt    *time.Time     `json:"updatedAt,omitempty"`
 }
 
@@ -62,22 +71,23 @@ type ActionAdapter struct {
 
 // Deployment is the active source bundle selected by the catalog.
 type Deployment struct {
-	Workspace     string            `json:"workspace,omitempty"`
-	GitSourceID   string            `json:"gitSourceId,omitempty"`
-	App           string            `json:"app"`
-	Version       string            `json:"version,omitempty"`
-	Tag           string            `json:"tag,omitempty"`
-	TagOverride   *string           `json:"tagOverride,omitempty"`
-	Entrypoint    string            `json:"entrypoint,omitempty"`
-	Runtime       string            `json:"runtime,omitempty"`
-	ScriptLang    string            `json:"scriptLang,omitempty"`
-	TimeoutS      int32             `json:"timeout,omitempty"`
-	MaxConcurrent *int32            `json:"maxConcurrent,omitempty"`
-	Commit        string            `json:"commit"`
-	BundleDigest  string            `json:"bundleDigest,omitempty"`
-	ObjectURI     string            `json:"objectUri"`
-	Actions       map[string]Action `json:"actions"`
-	UpdatedAt     *time.Time        `json:"updatedAt,omitempty"`
+	Workspace            string            `json:"workspace,omitempty"`
+	GitSourceID          string            `json:"gitSourceId,omitempty"`
+	App                  string            `json:"app"`
+	Version              string            `json:"version,omitempty"`
+	Tag                  string            `json:"tag,omitempty"`
+	TagOverride          *string           `json:"tagOverride,omitempty"`
+	Entrypoint           string            `json:"entrypoint,omitempty"`
+	Runtime              string            `json:"runtime,omitempty"`
+	ScriptLang           string            `json:"scriptLang,omitempty"`
+	TimeoutS             int32             `json:"timeout,omitempty"`
+	MaxConcurrent        *int32            `json:"maxConcurrent,omitempty"`
+	RequiredCapabilities []string          `json:"requiredCapabilities,omitempty"`
+	Commit               string            `json:"commit"`
+	BundleDigest         string            `json:"bundleDigest,omitempty"`
+	ObjectURI            string            `json:"objectUri"`
+	Actions              map[string]Action `json:"actions"`
+	UpdatedAt            *time.Time        `json:"updatedAt,omitempty"`
 }
 
 // JobRequest is the runtime request passed into windforce-lite.
@@ -127,6 +137,78 @@ func EffectiveRouteTag(appTag string, appTagOverride *string, actionTag *string,
 		return strings.TrimSpace(appTag)
 	}
 	return DefaultRouteTag
+}
+
+func NormalizeCapabilities(caps []string) ([]string, error) {
+	if len(caps) == 0 {
+		return nil, nil
+	}
+	seen := map[string]bool{}
+	out := make([]string, 0, len(caps))
+	for _, raw := range caps {
+		capability := strings.TrimSpace(raw)
+		if capability == "" {
+			return nil, fmt.Errorf("capability must not be empty")
+		}
+		if _, ok := capabilityRouteTags[capability]; !ok {
+			return nil, fmt.Errorf("unsupported capability %q", capability)
+		}
+		if !seen[capability] {
+			seen[capability] = true
+			out = append(out, capability)
+		}
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+func CapabilityRouteTag(caps []string) (string, bool, error) {
+	normalized, err := NormalizeCapabilities(caps)
+	if err != nil {
+		return "", false, err
+	}
+	if len(normalized) == 0 {
+		return "", false, nil
+	}
+	if len(normalized) > 1 {
+		return "", false, fmt.Errorf("capability combination %v is not supported", normalized)
+	}
+	return capabilityRouteTags[normalized[0]], true, nil
+}
+
+func EffectiveCapabilities(appCaps []string, actionCaps *[]string) []string {
+	if actionCaps != nil {
+		return *actionCaps
+	}
+	return appCaps
+}
+
+func EffectiveRouteTagWithCapabilities(appTag string, appTagOverride *string, actionTag *string, actionTagOverride *string, effectiveCaps []string) (string, error) {
+	capabilityTag, ok, err := CapabilityRouteTag(effectiveCaps)
+	if err != nil {
+		return "", err
+	}
+	if ok {
+		return capabilityTag, nil
+	}
+	return EffectiveRouteTag(appTag, appTagOverride, actionTag, actionTagOverride), nil
+}
+
+func EffectiveRouteTagForApp(deployment Deployment) string {
+	tag, err := EffectiveRouteTagWithCapabilities(deployment.Tag, deployment.TagOverride, nil, nil, deployment.RequiredCapabilities)
+	if err != nil {
+		return EffectiveRouteTag(deployment.Tag, deployment.TagOverride, nil, nil)
+	}
+	return tag
+}
+
+func EffectiveRouteTagForAction(deployment Deployment, action Action) string {
+	caps := EffectiveCapabilities(deployment.RequiredCapabilities, action.Capabilities)
+	tag, err := EffectiveRouteTagWithCapabilities(deployment.Tag, deployment.TagOverride, action.Tag, action.TagOverride, caps)
+	if err != nil {
+		return EffectiveRouteTag(deployment.Tag, deployment.TagOverride, action.Tag, action.TagOverride)
+	}
+	return tag
 }
 
 func NormalizeWorkspace(value string) string {

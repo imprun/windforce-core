@@ -309,7 +309,7 @@ func NewActionJob(run Run, input json.RawMessage) Job {
 			Commit:        run.Deployment.Commit,
 			App:           run.App,
 			Action:        run.Action,
-			Tag:           contract.EffectiveRouteTag(run.Deployment.Tag, run.Deployment.TagOverride, actionSpec.Tag, actionSpec.TagOverride),
+			Tag:           contract.EffectiveRouteTagForAction(run.Deployment, actionSpec),
 			TriggerKind:   run.Adapter,
 			ActionSpec:    actionSpec,
 			Input:         cloneRaw(input),
@@ -1218,7 +1218,7 @@ func jobTag(job Job) string {
 	if strings.TrimSpace(job.Payload.Tag) != "" {
 		return strings.TrimSpace(job.Payload.Tag)
 	}
-	return contract.EffectiveRouteTag(job.Payload.Deployment.Tag, job.Payload.Deployment.TagOverride, job.Payload.ActionSpec.Tag, job.Payload.ActionSpec.TagOverride)
+	return contract.EffectiveRouteTagForAction(job.Payload.Deployment, job.Payload.ActionSpec)
 }
 
 func normalizeClaimTags(tags []string) map[string]struct{} {

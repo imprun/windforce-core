@@ -1,6 +1,9 @@
 package contract
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func TestEffectiveRouteTagPrecedence(t *testing.T) {
 	appOverride := "app-blue"
@@ -21,5 +24,33 @@ func TestEffectiveRouteTagPrecedence(t *testing.T) {
 	}
 	if got := EffectiveRouteTag("", nil, nil, nil); got != DefaultRouteTag {
 		t.Fatalf("default tag = %q, want %q", got, DefaultRouteTag)
+	}
+}
+
+func TestCapabilitiesReduceRouteTag(t *testing.T) {
+	caps, err := NormalizeCapabilities([]string{"browser", "browser"})
+	if err != nil {
+		t.Fatalf("NormalizeCapabilities returned error: %v", err)
+	}
+	if !reflect.DeepEqual(caps, []string{"browser"}) {
+		t.Fatalf("capabilities = %#v, want [browser]", caps)
+	}
+
+	deployment := Deployment{Tag: "default", RequiredCapabilities: caps}
+	action := Action{}
+	if got := EffectiveRouteTagForAction(deployment, action); got != "browser" {
+		t.Fatalf("capability route tag = %q, want browser", got)
+	}
+
+	clear := []string{}
+	action.Capabilities = &clear
+	if got := EffectiveRouteTagForAction(deployment, action); got != "default" {
+		t.Fatalf("cleared action capability route tag = %q, want default", got)
+	}
+}
+
+func TestNormalizeCapabilitiesRejectsUnsupported(t *testing.T) {
+	if _, err := NormalizeCapabilities([]string{"gpu"}); err == nil {
+		t.Fatalf("expected unsupported capability error")
 	}
 }
