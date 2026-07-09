@@ -620,11 +620,11 @@ func (h *Handler) handleCanonicalGitSourceSync(w http.ResponseWriter, r *http.Re
 	}
 	source, err := h.gitSources.Get(r.Context(), workspaceID, sourceID)
 	if err != nil {
-		status := http.StatusInternalServerError
 		if errors.Is(err, gitsourcepkg.ErrGitSourceNotFound) {
-			status = http.StatusNotFound
+			writeError(w, http.StatusNotFound, "git source not found")
+			return
 		}
-		writeError(w, status, "git source not found")
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	deployment, ok := h.syncGitSource(w, r, workspaceID, source)

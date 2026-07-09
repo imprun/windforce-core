@@ -2545,6 +2545,49 @@ func TestCanonicalGitSourceSyncReturnsConflictWhenOperationInProgress(t *testing
 	}
 }
 
+func TestCanonicalGitSourceSyncReturnsRegistryErrors(t *testing.T) {
+	server := httptest.NewServer(New(Config{
+		Syncer:     &syncer.Syncer{},
+		GitSources: failingGitSourceRegistry{getErr: errors.New("registry unavailable")},
+		EnableAPI:  true,
+	}))
+	defer server.Close()
+
+	resp, err := http.Post(server.URL+"/api/w/ws-a/git_sources/1/sync", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var body struct {
+		Error string `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusInternalServerError || body.Error != "registry unavailable" {
+		t.Fatalf("sync registry error response = %d %#v, want 500 registry unavailable", resp.StatusCode, body)
+	}
+
+	server = httptest.NewServer(New(Config{
+		Syncer:     &syncer.Syncer{},
+		GitSources: failingGitSourceRegistry{getErr: gitsource.ErrGitSourceNotFound},
+		EnableAPI:  true,
+	}))
+	defer server.Close()
+
+	resp, err = http.Post(server.URL+"/api/w/ws-a/git_sources/1/sync", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusNotFound || body.Error != "git source not found" {
+		t.Fatalf("sync missing registry response = %d %#v, want 404 git source not found", resp.StatusCode, body)
+	}
+}
+
 func TestCanonicalAppSourceStorageErrors(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
@@ -3361,6 +3404,18 @@ func (s failingBundleStore) Materialize(context.Context, string, string, string,
 
 func (s failingBundleStore) FetchTo(context.Context, string, string, string, string) error {
 	return s.fetchErr
+}
+
+type failingGitSourceRegistry struct {
+	getErr error
+}
+
+func (r failingGitSourceRegistry) Upsert(context.Context, gitsource.Source) error {
+	return errors.New("unexpected upsert")
+}
+
+func (r failingGitSourceRegistry) Get(context.Context, string, string) (gitsource.Source, error) {
+	return gitsource.Source{}, r.getErr
 }
 
 func runTestGit(t *testing.T, dir string, args ...string) {
