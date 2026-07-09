@@ -14,7 +14,7 @@ import (
 )
 
 func TestRunPythonBuildsCanonicalCtxHelpers(t *testing.T) {
-	python := requirePython(t)
+	requirePython(t)
 	var stateSetBody map[string]string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/custom" && r.Header.Get("Authorization") != "Bearer job-token" {
@@ -67,7 +67,6 @@ async def main(ctx):
 	}
 
 	res, err := Run(context.Background(), RunParams{
-		PythonPath:        python,
 		ScriptLang:        "python",
 		BaseDir:           t.TempDir(),
 		EntrypointAbsPath: entrypoint,
@@ -126,15 +125,16 @@ func writeJSON(w http.ResponseWriter, value any) {
 	}
 }
 
-func requirePython(t *testing.T) string {
+func requirePython(t *testing.T) {
 	t.Helper()
 	python := "python3"
 	if runtime.GOOS == "windows" {
+		if _, err := exec.LookPath("py"); err == nil {
+			return
+		}
 		python = "python"
 	}
-	path, err := exec.LookPath(python)
-	if err != nil {
+	if _, err := exec.LookPath(python); err != nil {
 		t.Skipf("%s not found in PATH", python)
 	}
-	return path
 }

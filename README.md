@@ -9,7 +9,7 @@ It keeps the useful core of Windforce:
 - publish an active app/action deployment in a catalog
 - track deployment history
 - fetch the bundle before execution
-- run an action as a JSON subprocess
+- run the app entrypoint with `main(ctx)` and dispatch by action
 
 It intentionally does not include the full Windforce product surface:
 multi-tenant SaaS concerns, quota, scheduler, billing, or an operator. A small
@@ -57,8 +57,8 @@ A queued run executes an action from the active catalog:
 2. Find the requested action.
 3. Fetch the deployment source by the deployment's pinned
    workspace/git-source/commit into a local runtime cache.
-4. Execute the action command from the fetched source directory.
-5. Pass JSON input/output paths through environment variables.
+4. Execute the app-level entrypoint from the fetched source directory.
+5. Build the Windforce `ctx` object from `input.json` and `WF_*` environment.
 6. Store stdout/stderr as job logs and return exit code, duration, and output
    JSON.
 
@@ -72,13 +72,13 @@ Every app source has a `windforce.json` file:
 ```json
 {
   "app": "echo",
-  "entrypoint": "action.go",
-  "scriptLang": "go",
+  "entrypoint": "main.py",
+  "scriptLang": "python",
   "timeout": 30,
   "actions": {
     "echo": {
-      "command": ["go", "run", "./action.go"],
-      "adapter": { "type": "json-file" }
+      "inputSchema": "input.schema.json",
+      "outputSchema": "output.schema.json"
     }
   }
 }
@@ -87,20 +87,21 @@ Every app source has a `windforce.json` file:
 `entrypoint`, `scriptLang`, and `timeout` follow the canonical Windforce
 manifest shape. `entrypoint` and `scriptLang` are app-level; actions branch
 inside that entrypoint. `timeout` is the app default and an action may override
-it with its own `timeout` in seconds. `command` is the Lite execution command
-run from the fetched app source directory. If `adapter` is omitted,
-windforce-lite uses the built-in `json-file` adapter.
+it with its own `timeout` in seconds. Source manifests do not declare action
+commands or adapters; integration adapters live outside the app source contract.
 
-## Action adapters
+## Runtime adapter compatibility
 
-An action adapter defines the contract between windforce-lite and the action
-script. Built-in adapter types:
+The canonical runtime path runs `entrypoint -> main(ctx) -> result.json`.
+`windforce-lite` still keeps a lower-level adapter subprocess API for integration
+code that must adapt an existing script contract into the Windforce ctx contract.
+That compatibility API is runtime/catalog integration code, not a field in
+`windforce.json`.
 
-- `json-file`: runs `command` directly with file-based JSON IO.
-- `command`: runs an external adapter command. The external adapter receives a
-  Windforce adapter request and decides how to call the real script.
-
-Example external adapter:
+An external adapter receives a Windforce adapter request and decides how to call
+the real script. The shape below is deployment/catalog metadata owned by the
+runtime integration layer; it is not valid `windforce.json` source manifest
+content:
 
 ```json
 {
@@ -124,10 +125,10 @@ Example external adapter:
 
 The `command` adapter process receives:
 
-- `WINDFORCE_ADAPTER_REQUEST_JSON`: request JSON file path
-- `WINDFORCE_ADAPTER_RESULT_JSON`: result JSON file path
-- `WINDFORCE_APP`: app name
-- `WINDFORCE_ACTION`: action name
+- `WF_ADAPTER_REQUEST_JSON`: request JSON file path
+- `WF_ADAPTER_RESULT_JSON`: result JSON file path
+- `WF_APP`: app name
+- `WF_ACTION`: action name
 
 The request JSON includes `version`, `workDir`, `command`, `inputPath`,
 `outputPath`, `app`, `action`, `runtime`, `entrypoint`, `timeoutMs`, `env`,
@@ -137,17 +138,11 @@ output JSON to `outputPath`, then write a result JSON compatible with
 `durationMs`. In worker/API mode, `stdout` and `stderr` are appended to the
 job log stream rather than exposed as the run result.
 
-## JSON file adapter contract
+## Entrypoint contract
 
-The runner passes file paths through environment variables:
-
-- `WINDFORCE_INPUT_JSON`: input JSON file path
-- `WINDFORCE_OUTPUT_JSON`: output JSON file path
-- `WINDFORCE_APP`: app name
-- `WINDFORCE_ACTION`: action name
-
-An action reads `WINDFORCE_INPUT_JSON` and writes a JSON value to
-`WINDFORCE_OUTPUT_JSON`. A non-zero process exit is returned as an action result,
+The executor writes `input.json` in a per-job directory, builds `ctx` from
+`input.json` plus `WF_*`, imports the app entrypoint, calls `main(ctx)`, and
+expects `result.json`. A non-zero process exit is returned as an action result,
 not as a runner infrastructure error.
 
 ## Try it locally
@@ -251,6 +246,7 @@ Implemented control-plane endpoints:
 - `GET /api/w/{workspace}/jobs/{jobID}/result`
 - `GET /api/w/{workspace}/jobs/{jobID}/logs?tail_bytes={bytes}`
 - `POST /api/w/{workspace}/jobs/{jobID}/cancel`
+- `GET|POST /api/w/{workspace}/state?path={path}` (canonical `ctx.state` helper storage)
 
 For local development without the full UI, `tools/windforce_control.py` calls
 the same control-plane API:

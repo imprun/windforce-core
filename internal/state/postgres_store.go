@@ -119,6 +119,14 @@ CREATE TABLE IF NOT EXISTS job_logs (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS job_state (
+    workspace_id TEXT NOT NULL,
+    state_path TEXT NOT NULL,
+    value JSONB NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (workspace_id, state_path)
+);
+
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS result JSONB;
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS correlation_id TEXT;
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS env JSONB;
@@ -181,6 +189,40 @@ SELECT EXISTS (
 		return "", false, err
 	}
 	return "", exists, nil
+}
+
+func (s *PostgresStore) GetState(ctx context.Context, workspaceID string, statePath string) (json.RawMessage, bool, error) {
+	workspaceID = contract.NormalizeWorkspace(workspaceID)
+	var value json.RawMessage
+	err := s.pool.QueryRow(ctx, `
+SELECT value
+FROM job_state
+WHERE workspace_id=$1 AND state_path=$2
+`, workspaceID, statePath).Scan(&value)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return json.RawMessage("null"), false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	return cloneRaw(value), true, nil
+}
+
+func (s *PostgresStore) SetState(ctx context.Context, workspaceID string, statePath string, value json.RawMessage) error {
+	if len(value) == 0 {
+		value = json.RawMessage("null")
+	}
+	if !json.Valid(value) {
+		return errors.New("state value is not valid JSON")
+	}
+	workspaceID = contract.NormalizeWorkspace(workspaceID)
+	_, err := s.pool.Exec(ctx, `
+INSERT INTO job_state (workspace_id, state_path, value, updated_at)
+VALUES ($1, $2, $3, now())
+ON CONFLICT (workspace_id, state_path)
+DO UPDATE SET value=EXCLUDED.value, updated_at=now()
+`, workspaceID, statePath, value)
+	return err
 }
 
 func (s *PostgresStore) GetJob(ctx context.Context, workspaceID string, jobID string) (Job, Run, bool, error) {

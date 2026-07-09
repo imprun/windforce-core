@@ -250,6 +250,11 @@ func (r *Runner) runEntrypoint(ctx context.Context, req RunRequest, sourceDir st
 		Timeout:           actionTimeout(req, action),
 		LogSink:           req.LogSink,
 	})
+	if err == nil && req.OutputPath != "" {
+		if writeErr := writeOutputFile(req.OutputPath, result.Result); writeErr != nil {
+			err = writeErr
+		}
+	}
 	jobResult := contract.JobResult{
 		App:        req.Deployment.App,
 		Action:     req.Action,
@@ -266,6 +271,23 @@ func (r *Runner) runEntrypoint(ctx context.Context, req RunRequest, sourceDir st
 		jobResult.Error = resultErrorMessage(result)
 	}
 	return jobResult, nil
+}
+
+func writeOutputFile(path string, output json.RawMessage) error {
+	outputPath, err := filepath.Abs(path)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
+		return err
+	}
+	if len(output) == 0 {
+		output = json.RawMessage("null")
+	}
+	if !json.Valid(output) {
+		return errors.New("output is not valid JSON")
+	}
+	return os.WriteFile(outputPath, append(append([]byte(nil), output...), '\n'), 0o644)
 }
 
 func (r *Runner) jobEnv(req RunRequest, action contract.Action) []string {

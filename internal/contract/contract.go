@@ -57,11 +57,14 @@ type Action struct {
 	UpdatedAt    *time.Time     `json:"updatedAt,omitempty"`
 }
 
-// ActionAdapter selects the contract between windforce-lite and an action script.
+// ActionAdapter selects the contract between windforce-lite and integration
+// adapter code. Source windforce.json files use the app-level entrypoint model;
+// these fields are for deployment/runtime compatibility surfaces outside the
+// source manifest.
 //
-// The zero value is the built-in json-file adapter. The command adapter invokes
-// an external adapter subprocess, letting solution-specific script contracts live
-// outside the core runtime.
+// Source-manifest actions with no command run through the built-in ctx-first
+// entrypoint runner. A command adapter invokes an external adapter subprocess,
+// letting solution-specific script contracts live outside the core runtime.
 type ActionAdapter struct {
 	Type    string                     `json:"type,omitempty"`
 	Command []string                   `json:"command,omitempty"`

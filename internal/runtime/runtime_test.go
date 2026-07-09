@@ -44,6 +44,7 @@ func TestRunnerFetchesBundleAndRunsAction(t *testing.T) {
 	if err := os.WriteFile(inputPath, []byte(`{"message":"hello"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	outputPath := filepath.Join(tempDir, "output.json")
 
 	store := bundle.NewLocalStore(filepath.Join(tempDir, "store"))
 	if err := store.Materialize(context.Background(), "workspace-a", "source-a", "commit-a", sourceDir); err != nil {
@@ -69,6 +70,7 @@ func TestRunnerFetchesBundleAndRunsAction(t *testing.T) {
 		WorkspaceID:    "workspace-a",
 		Action:         "echo",
 		InputPath:      inputPath,
+		OutputPath:     outputPath,
 		TriggerKind:    "webhook",
 		TriggerHeaders: json.RawMessage(`{"X-Hub-Signature-256":"sha256=abc"}`),
 		Tag:            "default",
@@ -97,6 +99,22 @@ func TestRunnerFetchesBundleAndRunsAction(t *testing.T) {
 	if result.Stdout == "" {
 		t.Fatalf("stdout was not captured")
 	}
+	outputFile, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("output file was not written: %v", err)
+	}
+	var fileOutput struct {
+		App    string            `json:"app"`
+		Input  map[string]string `json:"input"`
+		Header map[string]string `json:"headers"`
+	}
+	if err := json.Unmarshal(outputFile, &fileOutput); err != nil {
+		t.Fatalf("output file is not JSON: %v", err)
+	}
+	if fileOutput.App != "echo" || fileOutput.Input["message"] != "hello" ||
+		fileOutput.Header["X-Hub-Signature-256"] != "sha256=abc" {
+		t.Fatalf("output file = %s", outputFile)
+	}
 }
 
 func TestRunnerRunsActionThroughCommandAdapter(t *testing.T) {
@@ -105,7 +123,7 @@ func TestRunnerRunsActionThroughCommandAdapter(t *testing.T) {
 	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(sourceDir, "windforce.json"), []byte(`{"app":"echo","actions":{"echo":{"command":["legacy","script"]}}}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(sourceDir, "windforce.json"), []byte(`{"app":"echo","entrypoint":"main.ts","actions":{"echo":{}}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	store := bundle.NewLocalStore(filepath.Join(tempDir, "store"))

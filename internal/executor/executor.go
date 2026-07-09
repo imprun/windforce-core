@@ -78,13 +78,13 @@ func runtimeFor(lang string) (langRuntime, error) {
 			wrapperContent: wrapperPy,
 			argv: func(p RunParams) []string {
 				py := p.PythonPath
-				if py == "" {
-					py = "python3"
-					if runtime.GOOS == "windows" {
-						py = "python"
-					}
+				if py != "" {
+					return []string{py, "wrapper.py"}
 				}
-				return []string{py, "wrapper.py"}
+				if runtime.GOOS == "windows" {
+					return []string{"py", "-3", "wrapper.py"}
+				}
+				return []string{"python3", "wrapper.py"}
 			},
 		}, nil
 	default:

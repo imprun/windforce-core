@@ -79,6 +79,12 @@ func Parse(data []byte) (contract.App, error) {
 		if action.TimeoutMs > 0 {
 			return contract.App{}, fmt.Errorf("action %s.%s timeoutMs is not supported in %s; use timeout seconds", app.App, name, FileName)
 		}
+		if len(action.Command) > 0 {
+			return contract.App{}, fmt.Errorf("action %s.%s command is not supported in %s; use app entrypoint", app.App, name, FileName)
+		}
+		if action.Adapter != nil {
+			return contract.App{}, fmt.Errorf("action %s.%s adapter is not supported in %s; adapters are runtime integration code", app.App, name, FileName)
+		}
 		if action.Capabilities != nil {
 			caps, err := contract.NormalizeCapabilities(*action.Capabilities)
 			if err != nil {

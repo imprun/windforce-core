@@ -1,11 +1,10 @@
 {
   "app": "echo",
-  "entrypoint": "action.go",
-  "scriptLang": "go",
+  "entrypoint": "main.py",
+  "scriptLang": "python",
   "timeout": 30,
   "actions": {
     "echo": {
-      "command": ["go", "run", "./action.go"],
       "inputSchema": "input.schema.json",
       "outputSchema": "output.schema.json"
     }

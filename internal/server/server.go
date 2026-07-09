@@ -215,6 +215,14 @@ func (h *Handler) handleAPI(w http.ResponseWriter, r *http.Request) bool {
 		h.handleJobSummary(w, r, parts[2])
 		return true
 	}
+	if len(parts) == 4 && parts[0] == "api" && parts[1] == "w" && parts[3] == "state" && r.Method == http.MethodGet {
+		h.handleGetState(w, r, parts[2])
+		return true
+	}
+	if len(parts) == 4 && parts[0] == "api" && parts[1] == "w" && parts[3] == "state" && r.Method == http.MethodPost {
+		h.handleSetState(w, r, parts[2])
+		return true
+	}
 	if len(parts) == 4 && parts[0] == "api" && parts[1] == "w" && parts[3] == "git_sources" && r.Method == http.MethodGet {
 		h.handleCanonicalGitSources(w, r, parts[2])
 		return true
@@ -1826,6 +1834,48 @@ func (h *Handler) handleJobLogs(w http.ResponseWriter, r *http.Request, workspac
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)
+}
+
+func (h *Handler) handleGetState(w http.ResponseWriter, r *http.Request, workspaceID string) {
+	if h.store == nil {
+		writeError(w, http.StatusServiceUnavailable, "state store is not configured")
+		return
+	}
+	statePath := r.URL.Query().Get("path")
+	if statePath == "" {
+		writeError(w, http.StatusBadRequest, "path query required")
+		return
+	}
+	value, _, err := h.store.GetState(r.Context(), workspaceID, statePath)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(rawOrNull(value))
+}
+
+func (h *Handler) handleSetState(w http.ResponseWriter, r *http.Request, workspaceID string) {
+	if h.store == nil {
+		writeError(w, http.StatusServiceUnavailable, "state store is not configured")
+		return
+	}
+	statePath := r.URL.Query().Get("path")
+	if statePath == "" {
+		writeError(w, http.StatusBadRequest, "path query required")
+		return
+	}
+	body, err := readJSONBody(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := h.store.SetState(r.Context(), workspaceID, statePath, body); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"path": statePath})
 }
 
 func (h *Handler) handleSchema(w http.ResponseWriter, r *http.Request, route triggerRoute) {

@@ -222,12 +222,13 @@ type JobLog struct {
 }
 
 type Snapshot struct {
-	Sequence   int64                `json:"sequence"`
-	Runs       map[string]Run       `json:"runs"`
-	Jobs       map[string]Job       `json:"jobs"`
-	HumanTasks map[string]HumanTask `json:"humanTasks"`
-	Events     []RunEvent           `json:"events"`
-	JobLogs    map[string]JobLog    `json:"jobLogs"`
+	Sequence   int64                                 `json:"sequence"`
+	Runs       map[string]Run                        `json:"runs"`
+	Jobs       map[string]Job                        `json:"jobs"`
+	HumanTasks map[string]HumanTask                  `json:"humanTasks"`
+	Events     []RunEvent                            `json:"events"`
+	JobLogs    map[string]JobLog                     `json:"jobLogs"`
+	JobState   map[string]map[string]json.RawMessage `json:"jobState"`
 }
 
 type Store interface {
@@ -240,6 +241,8 @@ type Store interface {
 	GetHumanTask(ctx context.Context, taskID string) (HumanTask, error)
 	AppendLogs(ctx context.Context, jobID string, workspaceID string, chunk string) error
 	GetLogs(ctx context.Context, workspaceID string, jobID string) (string, bool, error)
+	GetState(ctx context.Context, workspaceID string, statePath string) (json.RawMessage, bool, error)
+	SetState(ctx context.Context, workspaceID string, statePath string, value json.RawMessage) error
 	ClaimJob(ctx context.Context, workerID string, leaseTTL time.Duration) (Job, Lease, error)
 	ClaimJobForTags(ctx context.Context, workerID string, tags []string, leaseTTL time.Duration) (Job, Lease, error)
 	CompleteJobSucceeded(ctx context.Context, lease Lease, result contract.JobResult) error
@@ -511,6 +514,37 @@ func (s *LocalStore) GetLogs(ctx context.Context, workspaceID string, jobID stri
 		return "", false, nil
 	}
 	return "", true, nil
+}
+
+func (s *LocalStore) GetState(ctx context.Context, workspaceID string, statePath string) (json.RawMessage, bool, error) {
+	snapshot, err := s.Load(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	workspaceID = contract.NormalizeWorkspace(workspaceID)
+	if values, ok := snapshot.JobState[workspaceID]; ok {
+		if value, ok := values[statePath]; ok {
+			return cloneRaw(value), true, nil
+		}
+	}
+	return json.RawMessage("null"), false, nil
+}
+
+func (s *LocalStore) SetState(ctx context.Context, workspaceID string, statePath string, value json.RawMessage) error {
+	if len(value) == 0 {
+		value = json.RawMessage("null")
+	}
+	if !json.Valid(value) {
+		return errors.New("state value is not valid JSON")
+	}
+	workspaceID = contract.NormalizeWorkspace(workspaceID)
+	return s.update(ctx, func(snapshot *Snapshot, now time.Time) error {
+		if snapshot.JobState[workspaceID] == nil {
+			snapshot.JobState[workspaceID] = map[string]json.RawMessage{}
+		}
+		snapshot.JobState[workspaceID][statePath] = cloneRaw(value)
+		return nil
+	})
 }
 
 func (s *LocalStore) ClaimJob(ctx context.Context, workerID string, leaseTTL time.Duration) (Job, Lease, error) {
@@ -937,6 +971,9 @@ func ensureSnapshot(snapshot *Snapshot) {
 	}
 	if snapshot.JobLogs == nil {
 		snapshot.JobLogs = map[string]JobLog{}
+	}
+	if snapshot.JobState == nil {
+		snapshot.JobState = map[string]map[string]json.RawMessage{}
 	}
 }
 

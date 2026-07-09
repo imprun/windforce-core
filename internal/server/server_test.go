@@ -180,6 +180,88 @@ func TestJobLogsAPI(t *testing.T) {
 	}
 }
 
+func TestCanonicalStateAPI(t *testing.T) {
+	tempDir := t.TempDir()
+	server := httptest.NewServer(New(Config{
+		Store:     state.NewLocalStore(filepath.Join(tempDir, "state.json")),
+		EnableAPI: true,
+	}))
+	defer server.Close()
+
+	getResp, err := http.Get(server.URL + "/api/w/ws-a/state?path=flow/count")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer getResp.Body.Close()
+	if getResp.StatusCode != http.StatusOK {
+		t.Fatalf("missing state status = %d, want %d", getResp.StatusCode, http.StatusOK)
+	}
+	body, err := io.ReadAll(getResp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "null" {
+		t.Fatalf("missing state body = %q, want null", body)
+	}
+
+	setResp, err := http.Post(server.URL+"/api/w/ws-a/state?path=flow/count", "application/json", bytes.NewBufferString(`{"count":1}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer setResp.Body.Close()
+	if setResp.StatusCode != http.StatusOK {
+		t.Fatalf("set state status = %d, want %d", setResp.StatusCode, http.StatusOK)
+	}
+	var setBody struct {
+		Path string `json:"path"`
+	}
+	if err := json.NewDecoder(setResp.Body).Decode(&setBody); err != nil {
+		t.Fatal(err)
+	}
+	if setBody.Path != "flow/count" {
+		t.Fatalf("set state body = %#v", setBody)
+	}
+
+	getResp, err = http.Get(server.URL + "/api/w/ws-a/state?path=flow/count")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer getResp.Body.Close()
+	body, err = io.ReadAll(getResp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]int
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("state body is not JSON object: %v", err)
+	}
+	if got["count"] != 1 {
+		t.Fatalf("state body = %q", body)
+	}
+
+	getResp, err = http.Get(server.URL + "/api/w/ws-b/state?path=flow/count")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer getResp.Body.Close()
+	body, err = io.ReadAll(getResp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "null" {
+		t.Fatalf("other workspace state body = %q, want null", body)
+	}
+
+	missingPathResp, err := http.Get(server.URL + "/api/w/ws-a/state")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer missingPathResp.Body.Close()
+	if missingPathResp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("missing path status = %d, want %d", missingPathResp.StatusCode, http.StatusBadRequest)
+	}
+}
+
 func TestCanonicalJobRunStatusAndResultAPI(t *testing.T) {
 	tempDir := t.TempDir()
 	store := state.NewLocalStore(filepath.Join(tempDir, "state.json"))
@@ -650,7 +732,7 @@ func TestCanonicalActionExposesEmptySchemas(t *testing.T) {
 		App:       "echo",
 		Commit:    "commit-a",
 		Actions: map[string]contract.Action{
-			"echo": {Action: "echo", Command: []string{"helper"}},
+			"echo": {Action: "echo"},
 		},
 	}); err != nil {
 		t.Fatal(err)
@@ -835,7 +917,6 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 		"capabilities": ["browser"],
 		"actions": {
 			"echo": {
-				"command": ["helper"],
 				"inputSchema": "input.schema.json",
 				"outputSchema": "output.schema.json"
 			}
@@ -1310,7 +1391,7 @@ func TestCanonicalGitSourceProbePatchAndDelete(t *testing.T) {
 	if err := os.MkdirAll(repoDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(repoDir, "windforce.json"), []byte(`{"app":"echo","entrypoint":"main.ts","actions":{"echo":{"command":["helper"]}}}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repoDir, "windforce.json"), []byte(`{"app":"echo","entrypoint":"main.ts","actions":{"echo":{}}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	runTestGit(t, repoDir, "init")
@@ -1933,9 +2014,7 @@ func TestControlPlaneRegistersGitSourcePathAndSyncsIt(t *testing.T) {
 		"entrypoint": "main.ts",
 		"scriptLang": "typescript",
 		"actions": {
-			"echo": {
-				"command": ["helper"]
-			}
+			"echo": {}
 		}
 	}`), 0o644); err != nil {
 		t.Fatal(err)

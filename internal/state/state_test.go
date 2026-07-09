@@ -35,6 +35,30 @@ func TestPostgresStoreClaimCompleteAndResumeLifecycle(t *testing.T) {
 	exerciseStoreLifecycle(t, store)
 }
 
+func TestLocalStoreJobState(t *testing.T) {
+	store := NewLocalStore(t.TempDir() + "/state.json")
+	exerciseStoreJobState(t, store)
+}
+
+func TestPostgresStoreJobState(t *testing.T) {
+	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("WINDFORCE_LITE_POSTGRES_TEST_DSN is not set")
+	}
+	store, err := OpenPostgresStore(context.Background(), dsn)
+	if err != nil {
+		t.Fatalf("OpenPostgresStore returned error: %v", err)
+	}
+	defer store.Close()
+	if err := store.Migrate(context.Background()); err != nil {
+		t.Fatalf("Migrate returned error: %v", err)
+	}
+	if _, err := store.pool.Exec(context.Background(), `TRUNCATE job_state, job_logs, run_events, human_tasks, jobs, runs RESTART IDENTITY CASCADE`); err != nil {
+		t.Fatalf("TRUNCATE returned error: %v", err)
+	}
+	exerciseStoreJobState(t, store)
+}
+
 func TestLocalStoreClaimJobEnforcesMaxConcurrent(t *testing.T) {
 	store := NewLocalStore(t.TempDir() + "/state.json")
 	exerciseStoreMaxConcurrent(t, store)
@@ -89,6 +113,39 @@ func TestLocalStoreClaimJobForTags(t *testing.T) {
 	}
 	if _, _, err := store.ClaimJobForTags(context.Background(), "worker-green", []string{"green"}, time.Minute); err != ErrNoQueuedJob {
 		t.Fatalf("green claim error = %v, want %v", err, ErrNoQueuedJob)
+	}
+}
+
+func exerciseStoreJobState(t *testing.T, store Store) {
+	t.Helper()
+	ctx := context.Background()
+	value, found, err := store.GetState(ctx, "ws-a", "flow/count")
+	if err != nil {
+		t.Fatalf("GetState missing returned error: %v", err)
+	}
+	if found || string(value) != "null" {
+		t.Fatalf("missing state found=%v value=%s, want false null", found, value)
+	}
+	if err := store.SetState(ctx, "ws-a", "flow/count", json.RawMessage(`{"count":1}`)); err != nil {
+		t.Fatalf("SetState returned error: %v", err)
+	}
+	value, found, err = store.GetState(ctx, "ws-a", "flow/count")
+	if err != nil {
+		t.Fatalf("GetState returned error: %v", err)
+	}
+	var got map[string]int
+	if err := json.Unmarshal(value, &got); err != nil {
+		t.Fatalf("state value is not JSON object: %v", err)
+	}
+	if !found || got["count"] != 1 {
+		t.Fatalf("state found=%v value=%s", found, value)
+	}
+	value, found, err = store.GetState(ctx, "ws-b", "flow/count")
+	if err != nil {
+		t.Fatalf("GetState other workspace returned error: %v", err)
+	}
+	if found || string(value) != "null" {
+		t.Fatalf("other workspace state found=%v value=%s, want false null", found, value)
 	}
 }
 

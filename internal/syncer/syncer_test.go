@@ -44,8 +44,7 @@ func TestSyncMaterializesBeforeCatalogUpdate(t *testing.T) {
 		"maxConcurrent": 2,
 		"actions": {
 			"echo": {
-				"tag": "action-fast",
-				"command": ["go", "run", "./action.go"]
+				"tag": "action-fast"
 			}
 		}
 	}`), 0o644); err != nil {

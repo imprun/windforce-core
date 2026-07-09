@@ -9,12 +9,10 @@ import (
 func TestParseFillsActionName(t *testing.T) {
 	app, err := Parse([]byte(`{
 		"app": "echo",
-		"entrypoint": "action.go",
-		"scriptLang": "go",
+		"entrypoint": "main.ts",
+		"scriptLang": "typescript",
 		"actions": {
-			"run": {
-				"command": ["go", "run", "./action.go"]
-			}
+			"run": {}
 		}
 	}`))
 	if err != nil {
@@ -192,6 +190,16 @@ func TestParseRejectsNonCanonicalManifestFields(t *testing.T) {
 			name: "millisecond timeout",
 			body: `{"app":"echo","entrypoint":"main.ts","actions":{"run":{"timeoutMs":30000}}}`,
 			want: "use timeout seconds",
+		},
+		{
+			name: "action command",
+			body: `{"app":"echo","entrypoint":"main.ts","actions":{"run":{"command":["go","run","./main.go"]}}}`,
+			want: "use app entrypoint",
+		},
+		{
+			name: "action adapter",
+			body: `{"app":"echo","entrypoint":"main.ts","actions":{"run":{"adapter":{"type":"command","command":["adapter"]}}}}`,
+			want: "adapters are runtime integration code",
 		},
 	}
 	for _, test := range tests {
