@@ -911,11 +911,14 @@ func TestCanonicalJobCancelAPI(t *testing.T) {
 		t.Fatalf("canceled_reason = %v, want operator canceled", statusBody.CanceledReason)
 	}
 
-	secondCancelResp, err := http.Post(server.URL+"/api/w/ws-a/jobs/"+runBody.JobID+"/cancel", "application/json", bytes.NewBufferString(`{}`))
+	secondCancelResp, err := http.Post(server.URL+"/api/w/ws-a/jobs/"+runBody.JobID+"/cancel", "application/json", bytes.NewBufferString(`{`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer secondCancelResp.Body.Close()
+	if secondCancelResp.StatusCode != http.StatusOK {
+		t.Fatalf("second cancel status = %d, want %d", secondCancelResp.StatusCode, http.StatusOK)
+	}
 	var secondCancelBody state.CancelResult
 	if err := json.NewDecoder(secondCancelResp.Body).Decode(&secondCancelBody); err != nil {
 		t.Fatal(err)

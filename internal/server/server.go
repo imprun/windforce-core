@@ -1892,10 +1892,7 @@ func (h *Handler) handleJobCancel(w http.ResponseWriter, r *http.Request, worksp
 	var request struct {
 		Reason string `json:"reason"`
 	}
-	if err := readOptionalJSON(r, &request); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
+	_ = readOptionalJSON(r, &request)
 	result, err := h.store.CancelJob(r.Context(), workspaceID, jobID, requestActorSubject(r), request.Reason)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
