@@ -952,7 +952,7 @@ func (h *Handler) handleCanonicalRequeueApp(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
-	action := strings.TrimSpace(request.Action)
+	action := request.Action
 	var actionFilter *string
 	if action != "" {
 		if !validActionKey(action) {

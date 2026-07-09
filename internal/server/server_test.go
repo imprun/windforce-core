@@ -3303,6 +3303,44 @@ func TestCanonicalRequeueInvalidJSONMatchesCanonicalAPI(t *testing.T) {
 	}
 }
 
+func TestCanonicalRequeueRejectsUntrimmedActionKey(t *testing.T) {
+	tempDir := t.TempDir()
+	fileCatalog := catalog.NewFileCatalog(filepath.Join(tempDir, "catalog.json"))
+	if err := fileCatalog.UpsertDeployment(context.Background(), contract.Deployment{
+		Workspace: "ws-a",
+		App:       "echo",
+		Commit:    "commit-a",
+		Actions: map[string]contract.Action{
+			"echo": {Action: "echo"},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(New(Config{
+		Store:     state.NewLocalStore(filepath.Join(tempDir, "state.json")),
+		Catalog:   fileCatalog,
+		EnableAPI: true,
+	}))
+	defer server.Close()
+
+	for _, body := range []string{`{"action":" echo"}`, `{"action":"echo "}`} {
+		resp, err := http.Post(server.URL+"/api/w/ws-a/apps/echo/requeue", "application/json", bytes.NewBufferString(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var response struct {
+			Error string `json:"error"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+			t.Fatal(err)
+		}
+		if resp.StatusCode != http.StatusBadRequest || response.Error != "invalid action key" {
+			t.Fatalf("requeue body %q response = %d %#v, want 400 invalid action key", body, resp.StatusCode, response)
+		}
+	}
+}
+
 type fakeTriggerAdapter struct{}
 
 func (fakeTriggerAdapter) Name() string {

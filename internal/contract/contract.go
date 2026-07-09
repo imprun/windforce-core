@@ -241,7 +241,6 @@ func NormalizeGitSourceID(value string, app string) string {
 }
 
 func ValidAppKey(value string) bool {
-	value = strings.TrimSpace(value)
 	if len(value) < 2 || len(value) > 64 || !utf8.ValidString(value) {
 		return false
 	}
@@ -267,7 +266,6 @@ func ValidAppKey(value string) bool {
 }
 
 func ValidActionKey(value string) bool {
-	value = strings.TrimSpace(value)
 	if value == "" || len(value) > 128 || !utf8.ValidString(value) {
 		return false
 	}

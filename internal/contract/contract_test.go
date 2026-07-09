@@ -5,6 +5,36 @@ import (
 	"testing"
 )
 
+func TestValidAppKeyMatchesCanonicalCatalogRules(t *testing.T) {
+	valid := []string{"greet", "a1", "my_app"}
+	invalid := []string{"", "a", " Greet", "greet ", "1greet", "my-app", "my.app", "with space"}
+	for _, value := range valid {
+		if !ValidAppKey(value) {
+			t.Fatalf("ValidAppKey(%q) = false, want true", value)
+		}
+	}
+	for _, value := range invalid {
+		if ValidAppKey(value) {
+			t.Fatalf("ValidAppKey(%q) = true, want false", value)
+		}
+	}
+}
+
+func TestValidActionKeyMatchesCanonicalCatalogRules(t *testing.T) {
+	valid := []string{"hello", "a", "approval.sync", "a.b.c.d.e.f.g.h", "sync_now"}
+	invalid := []string{"", " hello", "hello ", "Hello", "a..b", ".a", "a.", "hel-lo", "a.b.c.d.e.f.g.h.i"}
+	for _, value := range valid {
+		if !ValidActionKey(value) {
+			t.Fatalf("ValidActionKey(%q) = false, want true", value)
+		}
+	}
+	for _, value := range invalid {
+		if ValidActionKey(value) {
+			t.Fatalf("ValidActionKey(%q) = true, want false", value)
+		}
+	}
+}
+
 func TestEffectiveRouteTagPrecedence(t *testing.T) {
 	appOverride := "app-blue"
 	actionTag := "action-main"
