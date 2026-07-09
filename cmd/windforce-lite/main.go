@@ -12,6 +12,7 @@ import (
 
 	"github.com/imprun/windforce-lite/internal/bundle"
 	"github.com/imprun/windforce-lite/internal/catalog"
+	"github.com/imprun/windforce-lite/internal/gitsource"
 	"github.com/imprun/windforce-lite/internal/runner"
 	"github.com/imprun/windforce-lite/internal/runtime"
 	"github.com/imprun/windforce-lite/internal/server"
@@ -168,6 +169,7 @@ func runServer(args []string, mode string) int {
 	adminTokenEnv := flags.String("admin-token-env", "", "environment variable that contains the admin/API bearer token")
 	storeDir := flags.String("store", defaultStoreDir(), "bundle store directory")
 	catalogPath := flags.String("catalog", defaultCatalogPath(), "catalog JSON path")
+	gitSourcesPath := flags.String("git-sources", defaultGitSourcesPath(), "registered git sources JSON path")
 	cacheRoot := flags.String("cache", defaultCacheDir(), "runtime cache directory")
 	wait := flags.Duration("wait", 0, "maximum trigger wait for a completed or pending run")
 	poll := flags.Duration("poll", 500*time.Millisecond, "standalone worker poll interval")
@@ -184,10 +186,12 @@ func runServer(args []string, mode string) int {
 	}
 	defer closeState()
 	fileCatalog := catalog.NewFileCatalog(*catalogPath)
+	gitSources := gitsource.NewFileRegistry(*gitSourcesPath)
 	handler := server.New(server.Config{
 		Store:         stateStore,
 		Catalog:       fileCatalog,
 		Syncer:        &syncer.Syncer{Store: bundle.NewLocalStore(*storeDir), Catalog: fileCatalog},
+		GitSources:    gitSources,
 		EnableTrigger: mode == "trigger" || mode == "standalone",
 		EnableAPI:     mode == "api" || mode == "standalone",
 		TriggerToken:  tokenFromEnv(*triggerTokenEnv),
@@ -353,6 +357,10 @@ func defaultCatalogPath() string {
 	return filepath.Join(".windforce-lite", "catalog.json")
 }
 
+func defaultGitSourcesPath() string {
+	return filepath.Join(".windforce-lite", "git-sources.json")
+}
+
 func defaultCacheDir() string {
 	return filepath.Join(".windforce-lite", "cache")
 }
@@ -367,9 +375,9 @@ func printUsage(file *os.File) {
 	fmt.Fprintln(file, "  windforce-lite sync --source <dir> [--store <dir>] [--catalog <path>]")
 	fmt.Fprintln(file, "  windforce-lite sync --repo <url> [--branch main] [--store <dir>] [--catalog <path>]")
 	fmt.Fprintln(file, "  windforce-lite run --app <app> --action <action> [--input <path>] [--output <path>]")
-	fmt.Fprintln(file, "  windforce-lite trigger [--addr :8080] [--state-backend local|postgres] [--wait 30s]")
-	fmt.Fprintln(file, "  windforce-lite api [--addr :8080] [--state-backend local|postgres]")
+	fmt.Fprintln(file, "  windforce-lite trigger [--addr :8080] [--state-backend local|postgres] [--wait 30s] [--git-sources <path>]")
+	fmt.Fprintln(file, "  windforce-lite api [--addr :8080] [--state-backend local|postgres] [--git-sources <path>]")
 	fmt.Fprintln(file, "  windforce-lite worker [--state-backend local|postgres] [--once]")
-	fmt.Fprintln(file, "  windforce-lite standalone [--addr :8080] [--state-backend local|postgres] [--wait 30s]")
+	fmt.Fprintln(file, "  windforce-lite standalone [--addr :8080] [--state-backend local|postgres] [--wait 30s] [--git-sources <path>]")
 	fmt.Fprintln(file, "  windforce-lite run-json [flags] -- <command> [args...]")
 }

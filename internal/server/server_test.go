@@ -7,12 +7,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
 	"github.com/imprun/windforce-lite/internal/bundle"
 	"github.com/imprun/windforce-lite/internal/catalog"
 	"github.com/imprun/windforce-lite/internal/contract"
+	"github.com/imprun/windforce-lite/internal/gitsource"
 	"github.com/imprun/windforce-lite/internal/state"
 	"github.com/imprun/windforce-lite/internal/syncer"
 )
@@ -272,5 +274,92 @@ func TestControlPlaneSyncCatalogDeploymentAndSchema(t *testing.T) {
 			t.Fatalf("GET %s status = %d, want %d", path, resp.StatusCode, http.StatusOK)
 		}
 		_ = resp.Body.Close()
+	}
+}
+
+func TestControlPlaneRegistersGitSourceAndSyncsIt(t *testing.T) {
+	tempDir := t.TempDir()
+	repoDir := filepath.Join(tempDir, "repo")
+	if err := os.MkdirAll(repoDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repoDir, "windforce.json"), []byte(`{
+		"app": "echo",
+		"actions": {
+			"echo": {
+				"command": ["helper"]
+			}
+		}
+	}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runTestGit(t, repoDir, "init")
+	runTestGit(t, repoDir, "checkout", "-b", "main")
+	runTestGit(t, repoDir, "config", "user.email", "test@example.com")
+	runTestGit(t, repoDir, "config", "user.name", "Test User")
+	runTestGit(t, repoDir, "add", "windforce.json")
+	runTestGit(t, repoDir, "commit", "-m", "initial")
+
+	fileCatalog := catalog.NewFileCatalog(filepath.Join(tempDir, "catalog.json"))
+	handler := New(Config{
+		Store:      state.NewLocalStore(filepath.Join(tempDir, "state.json")),
+		Catalog:    fileCatalog,
+		Syncer:     &syncer.Syncer{Store: bundle.NewLocalStore(filepath.Join(tempDir, "store")), Catalog: fileCatalog, CloneRoot: tempDir},
+		GitSources: gitsource.NewFileRegistry(filepath.Join(tempDir, "git-sources.json")),
+		EnableAPI:  true,
+	})
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	registerBody, err := json.Marshal(map[string]string{
+		"id":      "source-a",
+		"repoUrl": filepath.ToSlash(repoDir),
+		"branch":  "main",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	registerResp, err := http.Post(server.URL+"/v1/git-sources", "application/json", bytes.NewReader(registerBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer registerResp.Body.Close()
+	if registerResp.StatusCode != http.StatusOK {
+		t.Fatalf("register status = %d, want %d", registerResp.StatusCode, http.StatusOK)
+	}
+
+	getResp, err := http.Get(server.URL + "/v1/git-sources/source-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = getResp.Body.Close()
+	if getResp.StatusCode != http.StatusOK {
+		t.Fatalf("get git source status = %d, want %d", getResp.StatusCode, http.StatusOK)
+	}
+
+	syncResp, err := http.Post(server.URL+"/v1/sync", "application/json", bytes.NewBufferString(`{"app":"echo","gitSourceId":"source-a"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer syncResp.Body.Close()
+	if syncResp.StatusCode != http.StatusOK {
+		t.Fatalf("sync status = %d, want %d", syncResp.StatusCode, http.StatusOK)
+	}
+	var deployment contract.Deployment
+	if err := json.NewDecoder(syncResp.Body).Decode(&deployment); err != nil {
+		t.Fatal(err)
+	}
+	if deployment.GitSourceID != "source-a" {
+		t.Fatalf("deployment gitSourceId = %q, want source-a", deployment.GitSourceID)
+	}
+}
+
+func runTestGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v: %s", args, err, string(out))
 	}
 }

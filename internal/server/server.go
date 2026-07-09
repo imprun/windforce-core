@@ -14,12 +14,18 @@ import (
 
 	catalogpkg "github.com/imprun/windforce-lite/internal/catalog"
 	"github.com/imprun/windforce-lite/internal/contract"
+	gitsourcepkg "github.com/imprun/windforce-lite/internal/gitsource"
 	"github.com/imprun/windforce-lite/internal/state"
 	"github.com/imprun/windforce-lite/internal/syncer"
 )
 
 type Catalog interface {
 	GetDeployment(ctx context.Context, app string) (contract.Deployment, error)
+}
+
+type GitSourceRegistry interface {
+	Upsert(ctx context.Context, source gitsourcepkg.Source) error
+	Get(ctx context.Context, workspace string, id string) (gitsourcepkg.Source, error)
 }
 
 type AdapterRoute struct {
@@ -40,6 +46,7 @@ type Config struct {
 	Store              state.Store
 	Catalog            Catalog
 	Syncer             *syncer.Syncer
+	GitSources         GitSourceRegistry
 	EnableTrigger      bool
 	EnableAPI          bool
 	DisableCoreTrigger bool
@@ -53,6 +60,7 @@ type Handler struct {
 	store              state.Store
 	catalog            Catalog
 	syncer             *syncer.Syncer
+	gitSources         GitSourceRegistry
 	enableTrigger      bool
 	enableAPI          bool
 	disableCoreTrigger bool
@@ -67,6 +75,7 @@ func New(config Config) http.Handler {
 		store:              config.Store,
 		catalog:            config.Catalog,
 		syncer:             config.Syncer,
+		gitSources:         config.GitSources,
 		enableTrigger:      config.EnableTrigger,
 		enableAPI:          config.EnableAPI,
 		disableCoreTrigger: config.DisableCoreTrigger,
@@ -180,6 +189,18 @@ func (h *Handler) handleAPI(w http.ResponseWriter, r *http.Request) bool {
 	}
 	if len(parts) == 2 && parts[1] == "sync" && r.Method == http.MethodPost {
 		h.handleSync(w, r)
+		return true
+	}
+	if len(parts) == 2 && parts[1] == "git-sources" && r.Method == http.MethodPost {
+		h.handleRegisterGitSource(w, r)
+		return true
+	}
+	if len(parts) == 2 && parts[1] == "git-sources" && r.Method == http.MethodGet {
+		h.handleGitSources(w, r)
+		return true
+	}
+	if len(parts) == 3 && parts[1] == "git-sources" && r.Method == http.MethodGet {
+		h.handleGitSource(w, r, parts[2])
 		return true
 	}
 	if len(parts) == 2 && parts[1] == "catalog" && r.Method == http.MethodGet {
@@ -296,7 +317,28 @@ func (h *Handler) handleSync(w http.ResponseWriter, r *http.Request) {
 	}
 	sourceDir := firstNonEmpty(request.SourceDir, request.Source)
 	repoURL := firstNonEmpty(request.RepoURL, request.Repo)
+	workspace := contract.NormalizeWorkspace(request.Workspace)
+	gitSourceID := firstNonEmpty(request.GitSourceID, request.GitSourceIDSnake)
 	branch := request.Branch
+	if repoURL == "" && sourceDir == "" && gitSourceID != "" && h.gitSources != nil {
+		registered, err := h.gitSources.Get(r.Context(), workspace, gitSourceID)
+		if err != nil {
+			status := http.StatusBadRequest
+			if errors.Is(err, gitsourcepkg.ErrGitSourceNotFound) {
+				status = http.StatusNotFound
+			}
+			writeError(w, status, err.Error())
+			return
+		}
+		repoURL = registered.RepoURL
+		if branch == "" {
+			branch = registered.Branch
+		}
+		if request.TokenEnv == "" {
+			request.TokenEnv = registered.TokenEnv
+		}
+		gitSourceID = registered.ID
+	}
 	if branch == "" {
 		branch = "main"
 	}
@@ -309,8 +351,8 @@ func (h *Handler) handleSync(w http.ResponseWriter, r *http.Request) {
 		s.CloneRoot = request.CloneRoot
 	}
 	deployment, err := s.Sync(r.Context(), syncer.Source{
-		Workspace:   request.Workspace,
-		GitSourceID: firstNonEmpty(request.GitSourceID, request.GitSourceIDSnake),
+		Workspace:   workspace,
+		GitSourceID: gitSourceID,
 		App:         request.App,
 		RepoURL:     repoURL,
 		Branch:      branch,
@@ -323,6 +365,77 @@ func (h *Handler) handleSync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, deployment)
+}
+
+func (h *Handler) handleRegisterGitSource(w http.ResponseWriter, r *http.Request) {
+	if h.gitSources == nil {
+		writeError(w, http.StatusServiceUnavailable, "git source registry is not configured")
+		return
+	}
+	var request struct {
+		Workspace        string `json:"workspace"`
+		ID               string `json:"id"`
+		GitSourceID      string `json:"gitSourceId"`
+		GitSourceIDSnake string `json:"git_source_id"`
+		Repo             string `json:"repo"`
+		RepoURL          string `json:"repoUrl"`
+		Branch           string `json:"branch"`
+		TokenEnv         string `json:"tokenEnv"`
+	}
+	if err := readOptionalJSON(r, &request); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	source := gitsourcepkg.Source{
+		Workspace: request.Workspace,
+		ID:        firstNonEmpty(request.ID, request.GitSourceID, request.GitSourceIDSnake),
+		RepoURL:   firstNonEmpty(request.RepoURL, request.Repo),
+		Branch:    request.Branch,
+		TokenEnv:  request.TokenEnv,
+	}
+	if err := h.gitSources.Upsert(r.Context(), source); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	source.Workspace = contract.NormalizeWorkspace(source.Workspace)
+	source.ID = contract.NormalizeGitSourceID(source.ID, "")
+	if source.Branch == "" {
+		source.Branch = "main"
+	}
+	writeJSON(w, http.StatusOK, source)
+}
+
+func (h *Handler) handleGitSources(w http.ResponseWriter, r *http.Request) {
+	loader, ok := h.gitSources.(interface {
+		Load(context.Context) (gitsourcepkg.Snapshot, error)
+	})
+	if !ok {
+		writeError(w, http.StatusNotImplemented, "git source snapshot is not supported")
+		return
+	}
+	snapshot, err := loader.Load(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, snapshot)
+}
+
+func (h *Handler) handleGitSource(w http.ResponseWriter, r *http.Request, id string) {
+	if h.gitSources == nil {
+		writeError(w, http.StatusServiceUnavailable, "git source registry is not configured")
+		return
+	}
+	source, err := h.gitSources.Get(r.Context(), r.URL.Query().Get("workspace"), id)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, gitsourcepkg.ErrGitSourceNotFound) {
+			status = http.StatusNotFound
+		}
+		writeError(w, status, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, source)
 }
 
 func (h *Handler) handleCatalog(w http.ResponseWriter, r *http.Request) {

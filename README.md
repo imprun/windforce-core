@@ -27,15 +27,18 @@ in scope.
 
 ## Sync
 
-`sync` turns a source tree into an active deployment:
+`sync` turns a registered or directly supplied source tree into an active
+deployment:
 
-1. Resolve the source version.
+1. Register a git source through the control-plane API, or pass a source
+   explicitly for local smoke tests.
+2. Resolve the source version.
    - local source: compute a source tree digest
    - git source: resolve the branch or commit
-2. Load `windforce.json`.
-3. Materialize the source tree into the bundle store under
+3. Load `windforce.json`.
+4. Materialize the source tree into the bundle store under
    `{workspace}/{gitSourceId}/{commit}`.
-4. Write the catalog entry after the bundle is complete.
+5. Write the catalog entry after the bundle is complete.
 
 The ordering is intentional: a catalog entry must not point at a bundle that a
 worker cannot fetch.
@@ -196,6 +199,9 @@ tests and scripted smoke checks.
 Implemented control-plane endpoints:
 
 - `POST /v1/apps/{app}/actions/{action}`
+- `POST /v1/git-sources`
+- `GET /v1/git-sources`
+- `GET /v1/git-sources/{gitSourceId}`
 - `POST /v1/sync`
 - `GET /v1/catalog`
 - `GET /v1/deployments/{app}`
