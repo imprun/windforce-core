@@ -307,11 +307,20 @@ func TestCanonicalJobRunStatusAndResultAPI(t *testing.T) {
 	if err := json.NewDecoder(listResp.Body).Decode(&listBody); err != nil {
 		t.Fatal(err)
 	}
-	if len(listBody.Items) != 1 || listBody.Items[0].ID != runResponse.JobID || listBody.Items[0].Status != "completed" || !listBody.Items[0].Completed {
+	if len(listBody.Items) != 1 || listBody.Items[0].ID != runResponse.JobID || listBody.Items[0].Status != "success" || !listBody.Items[0].Completed {
 		t.Fatalf("list body = %#v", listBody)
 	}
 	if listBody.Pagination.Limit != 1 || listBody.Pagination.Count != 1 {
 		t.Fatalf("pagination = %#v", listBody.Pagination)
+	}
+
+	failedFilterResp, err := http.Get(server.URL + "/api/w/ws-a/jobs?status=failed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer failedFilterResp.Body.Close()
+	if failedFilterResp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("failed filter status = %d, want %d", failedFilterResp.StatusCode, http.StatusBadRequest)
 	}
 
 	summaryResp, err := http.Get(server.URL + "/api/w/ws-a/jobs/summary?recent_seconds=3600")

@@ -2490,7 +2490,7 @@ func parseJobListQuery(w http.ResponseWriter, r *http.Request, workspaceID strin
 
 func validJobStatusFilter(status string) bool {
 	switch status {
-	case "queued", "running", "success", "failure", "completed", "failed", "canceled", "all":
+	case "queued", "running", "success", "failure", "completed", "canceled", "all":
 		return true
 	default:
 		return false
