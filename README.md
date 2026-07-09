@@ -94,11 +94,14 @@ entrypoints. Other `scriptLang` values are still accepted and pinned during sync
 so the manifest contract stays canonical; an unwired language fails at runtime
 with the executor's unsupported-language error.
 
-For TypeScript entrypoints, the lite worker prepares the fetched source like the
-canonical worker subset: if `package.json` is present it runs
-`bun install --frozen-lockfile --no-progress`, then injects the vendored
-`windforce-client` package into `node_modules` so author scripts can use the
-canonical bare import.
+For TypeScript and Python entrypoints, the lite worker prepares the fetched
+source like the canonical worker subset. TypeScript apps run
+`bun install --frozen-lockfile --no-progress` when `package.json` is present and
+receive the vendored `windforce-client` package in `node_modules`. Python apps
+run `pip install --target .windforce/site-packages` when `requirements.txt` is
+present and receive the vendored `windforce_client` package in the same vendor
+dir. This keeps canonical bare imports working without baking app dependencies
+into the worker image.
 
 ## Runtime adapter compatibility
 

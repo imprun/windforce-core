@@ -17,11 +17,12 @@ import (
 )
 
 type Runner struct {
-	Store     bundle.Store
-	CacheRoot string
-	BaseURL   string
-	APIToken  string
-	BunPath   string
+	Store      bundle.Store
+	CacheRoot  string
+	BaseURL    string
+	APIToken   string
+	BunPath    string
+	PythonPath string
 }
 
 type RunRequest struct {
@@ -142,6 +143,7 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (contract.JobResult, e
 	}
 
 	env := r.jobEnv(req, action)
+	env = appendPreparedSourceEnv(env, sourceDir, scriptLang)
 	if len(req.TriggerHeaders) > 0 {
 		if !json.Valid(req.TriggerHeaders) {
 			return contract.JobResult{}, errors.New("trigger headers are not valid JSON")
@@ -253,9 +255,12 @@ func (r *Runner) runEntrypoint(ctx context.Context, req RunRequest, sourceDir st
 	if err != nil {
 		return contract.JobResult{}, err
 	}
+	scriptLang := firstNonEmpty(req.Deployment.ScriptLang, "typescript")
+	env = appendPreparedSourceEnv(env, sourceDir, scriptLang)
 	result, err := executor.Run(ctx, executor.RunParams{
 		BunPath:           r.BunPath,
-		ScriptLang:        firstNonEmpty(req.Deployment.ScriptLang, "typescript"),
+		PythonPath:        r.PythonPath,
+		ScriptLang:        scriptLang,
 		EntrypointAbsPath: entrypointPath,
 		Input:             input,
 		Env:               env,
