@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -54,6 +55,36 @@ func TestListRemoteBranches(t *testing.T) {
 	}
 	if len(branches) != 2 || branches[0] != "feature" || branches[1] != "main" {
 		t.Fatalf("branches = %#v", branches)
+	}
+}
+
+func TestCloneCommitPreservesTags(t *testing.T) {
+	tempDir := t.TempDir()
+	repoDir := filepath.Join(tempDir, "repo")
+	if err := os.MkdirAll(repoDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runTestGit(t, repoDir, "init")
+	runTestGit(t, repoDir, "checkout", "-b", "main")
+	runTestGit(t, repoDir, "config", "user.email", "test@example.com")
+	runTestGit(t, repoDir, "config", "user.name", "Test User")
+	if err := os.WriteFile(filepath.Join(repoDir, "README.md"), []byte("hello\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runTestGit(t, repoDir, "add", "README.md")
+	runTestGit(t, repoDir, "commit", "-m", "initial")
+	runTestGit(t, repoDir, "tag", "v1")
+
+	cloneDir := filepath.Join(tempDir, "clone")
+	if err := CloneCommit(context.Background(), filepath.ToSlash(repoDir), "main", "", cloneDir, ""); err != nil {
+		t.Fatalf("CloneCommit returned error: %v", err)
+	}
+	out, err := exec.Command("git", "-C", cloneDir, "tag", "--list", "v1").CombinedOutput()
+	if err != nil {
+		t.Fatalf("git tag --list: %v: %s", err, string(out))
+	}
+	if strings.TrimSpace(string(out)) != "v1" {
+		t.Fatalf("cloned tags = %q, want v1", string(out))
 	}
 }
 

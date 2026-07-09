@@ -70,13 +70,13 @@ func CommitSubject(ctx context.Context, repoDir string) (string, error) {
 
 func CloneCommit(ctx context.Context, repoURL string, branch string, commit string, destinationDir string, token string) error {
 	cloneURL := authURL(repoURL, token)
-	args := []string{"clone", "--no-tags"}
+	args := []string{"clone"}
 	if branch != "" {
 		args = append(args, "--branch", branch)
 	}
 	args = append(args, cloneURL, destinationDir)
 	if _, err := runGit(ctx, "", args...); err != nil {
-		if _, retryErr := runGit(ctx, "", "clone", "--no-tags", cloneURL, destinationDir); retryErr != nil {
+		if _, retryErr := runGit(ctx, "", "clone", cloneURL, destinationDir); retryErr != nil {
 			return fmt.Errorf("git clone: %w", retryErr)
 		}
 	}
@@ -96,7 +96,7 @@ func CloneCommitSparse(ctx context.Context, repoURL string, branch string, commi
 		return fmt.Errorf("sparse clone requires a subpath")
 	}
 	cloneURL := authURL(repoURL, token)
-	args := []string{"clone", "--depth", "1", "--filter=blob:none", "--no-tags", "--no-checkout", "--sparse"}
+	args := []string{"clone", "--depth", "1", "--filter=blob:none", "--no-checkout", "--sparse"}
 	if branch != "" {
 		args = append(args, "--branch", branch)
 	}
