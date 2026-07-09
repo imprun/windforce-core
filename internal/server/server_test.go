@@ -1211,7 +1211,11 @@ func TestCanonicalControlPlaneNotFoundMessagesMatchCanonicalAPI(t *testing.T) {
 		{http.MethodGet, "/api/w/ws-a/apps/missing/source", "", "app not found"},
 		{http.MethodPatch, "/api/w/ws-a/apps/missing", `{"tag_override":null}`, "app not found"},
 		{http.MethodPost, "/api/w/ws-a/apps/missing/requeue", `{}`, "app not found"},
+		{http.MethodGet, "/api/w/ws-a/apps/missing/actions/echo", "", "action not found"},
+		{http.MethodGet, "/api/w/ws-a/apps/missing/actions/echo/schema", "", "action not found"},
+		{http.MethodPatch, "/api/w/ws-a/apps/missing/actions/echo", `{"tag_override":null}`, "action not found"},
 		{http.MethodGet, "/api/w/ws-a/apps/echo/actions/missing", "", "action not found"},
+		{http.MethodGet, "/api/w/ws-a/apps/echo/actions/missing/schema", "", "action not found"},
 		{http.MethodPatch, "/api/w/ws-a/apps/echo/actions/missing", `{"tag_override":null}`, "action not found"},
 	} {
 		req, err := http.NewRequest(tc.method, server.URL+tc.path, bytes.NewBufferString(tc.body))

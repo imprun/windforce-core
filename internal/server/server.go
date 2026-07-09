@@ -794,7 +794,7 @@ func (h *Handler) handleCanonicalAction(w http.ResponseWriter, r *http.Request, 
 		writeError(w, http.StatusBadRequest, "invalid app/action key")
 		return
 	}
-	deployment, ok := h.getCanonicalDeployment(w, r, workspaceID, app, "app not found")
+	deployment, ok := h.getCanonicalDeployment(w, r, workspaceID, app, "action not found")
 	if !ok {
 		return
 	}
@@ -818,7 +818,7 @@ func (h *Handler) handleCanonicalActionSchema(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusBadRequest, "invalid app/action key")
 		return
 	}
-	deployment, ok := h.getCanonicalDeployment(w, r, workspaceID, app, "app not found")
+	deployment, ok := h.getCanonicalDeployment(w, r, workspaceID, app, "action not found")
 	if !ok {
 		return
 	}
@@ -883,7 +883,7 @@ func (h *Handler) handleCanonicalPatchAction(w http.ResponseWriter, r *http.Requ
 	}
 	action, err := patcher.SetActionTagOverride(r.Context(), workspaceID, app, actionKey, tagOverride)
 	if errors.Is(err, catalogpkg.ErrDeploymentNotFound) {
-		writeError(w, http.StatusNotFound, "app not found")
+		writeError(w, http.StatusNotFound, "action not found")
 		return
 	}
 	if errors.Is(err, catalogpkg.ErrActionNotFound) {
