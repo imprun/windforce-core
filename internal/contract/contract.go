@@ -15,6 +15,7 @@ const (
 	DefaultWorkspace   = "default"
 	DefaultGitSourceID = "local"
 	DefaultRouteTag    = "default"
+	DefaultTimeoutS    = int32(300)
 
 	ActionAdapterJSONFile = "json-file"
 	ActionAdapterCommand  = "command"

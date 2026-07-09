@@ -71,6 +71,26 @@ func TestParseAppliesCanonicalAppDefaults(t *testing.T) {
 	}
 }
 
+func TestParseAppliesCanonicalDefaultTimeout(t *testing.T) {
+	app, err := Parse([]byte(`{
+		"app": "echo",
+		"entrypoint": "main.ts",
+		"actions": {
+			"run": {}
+		}
+	}`))
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	if app.TimeoutS != 300 {
+		t.Fatalf("app timeout = %d, want 300", app.TimeoutS)
+	}
+	run := app.Actions["run"]
+	if run.TimeoutMs != 300000 {
+		t.Fatalf("run timeout ms = %d, want 300000", run.TimeoutMs)
+	}
+}
+
 func TestParsePreservesCapabilities(t *testing.T) {
 	app, err := Parse([]byte(`{
 		"app": "echo",

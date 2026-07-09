@@ -52,6 +52,9 @@ func Parse(data []byte) (contract.App, error) {
 	if strings.TrimSpace(app.ScriptLang) == "" {
 		app.ScriptLang = "typescript"
 	}
+	if app.TimeoutS == 0 {
+		app.TimeoutS = contract.DefaultTimeoutS
+	}
 	if app.MaxConcurrent != nil && *app.MaxConcurrent <= 0 {
 		return contract.App{}, fmt.Errorf("app %s maxConcurrent must be positive in %s", app.App, FileName)
 	}
