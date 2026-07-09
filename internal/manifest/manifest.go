@@ -86,12 +86,6 @@ func Parse(data []byte) (contract.App, error) {
 			return contract.App{}, fmt.Errorf("action %s.%s declares both tag and capabilities in %s", app.App, name, FileName)
 		}
 		applyAppDefaults(app, &action)
-		if err := validateActionPath(app.App, name, "input schema", action.InputSchema); err != nil {
-			return contract.App{}, err
-		}
-		if err := validateActionPath(app.App, name, "output schema", action.OutputSchema); err != nil {
-			return contract.App{}, err
-		}
 		app.Actions[name] = action
 	}
 	return app, nil

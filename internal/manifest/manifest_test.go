@@ -259,7 +259,7 @@ func TestParseIgnoresNonCanonicalManifestFields(t *testing.T) {
 	}
 }
 
-func TestParseRejectsEscapingActionPaths(t *testing.T) {
+func TestParseRejectsEscapingEntrypoint(t *testing.T) {
 	tests := []struct {
 		name string
 		body string
@@ -275,21 +275,6 @@ func TestParseRejectsEscapingActionPaths(t *testing.T) {
 			body: `{"app":"echo","entrypoint":"/main.ts","actions":{"run":{}}}`,
 			want: "app echo entrypoint path",
 		},
-		{
-			name: "input schema",
-			body: `{"app":"echo","entrypoint":"main.ts","actions":{"run":{"inputSchema":"schemas/../input.json"}}}`,
-			want: "input schema path",
-		},
-		{
-			name: "absolute input schema",
-			body: `{"app":"echo","entrypoint":"main.ts","actions":{"run":{"inputSchema":"/input.json"}}}`,
-			want: "input schema path",
-		},
-		{
-			name: "output schema",
-			body: `{"app":"echo","entrypoint":"main.ts","actions":{"run":{"outputSchema":"../output.json"}}}`,
-			want: "output schema path",
-		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -298,5 +283,25 @@ func TestParseRejectsEscapingActionPaths(t *testing.T) {
 				t.Fatalf("Parse error = %v, want %q", err, test.want)
 			}
 		})
+	}
+}
+
+func TestParsePreservesSchemaPathsForMaterialization(t *testing.T) {
+	app, err := Parse([]byte(`{
+		"app": "echo",
+		"entrypoint": "main.ts",
+		"actions": {
+			"run": {
+				"inputSchema": "../input.json",
+				"outputSchema": "/output.json"
+			}
+		}
+	}`))
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	run := app.Actions["run"]
+	if run.InputSchema != "../input.json" || run.OutputSchema != "/output.json" {
+		t.Fatalf("schema paths = input:%q output:%q", run.InputSchema, run.OutputSchema)
 	}
 }
