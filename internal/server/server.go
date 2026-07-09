@@ -2037,7 +2037,7 @@ func (h *Handler) handleSetVariable(w http.ResponseWriter, r *http.Request, work
 	}
 	body, err := readJSONBody(r)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, http.StatusBadRequest, "path required")
 		return
 	}
 	if err := json.Unmarshal(body, &request); err != nil || request.Path == "" {
@@ -2124,7 +2124,7 @@ func (h *Handler) handleSetResource(w http.ResponseWriter, r *http.Request, work
 	}
 	body, err := readJSONBody(r)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, http.StatusBadRequest, "path required")
 		return
 	}
 	if err := json.Unmarshal(body, &request); err != nil || request.Path == "" {

@@ -299,6 +299,21 @@ func TestCanonicalVariablesAndResourcesAPI(t *testing.T) {
 		t.Fatalf("set scoped variable status = %d, want %d", setVariableResp.StatusCode, http.StatusOK)
 	}
 
+	invalidVariableResp, err := http.Post(server.URL+"/api/w/ws-a/variables", "application/json", bytes.NewBufferString(`{`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer invalidVariableResp.Body.Close()
+	var invalidVariableBody struct {
+		Error string `json:"error"`
+	}
+	if err := json.NewDecoder(invalidVariableResp.Body).Decode(&invalidVariableBody); err != nil {
+		t.Fatal(err)
+	}
+	if invalidVariableResp.StatusCode != http.StatusBadRequest || invalidVariableBody.Error != "path required" {
+		t.Fatalf("invalid variable response = %d %#v, want 400 path required", invalidVariableResp.StatusCode, invalidVariableBody)
+	}
+
 	getVariableResp, err := http.Get(server.URL + "/api/w/ws-a/variables/get/p/config/token?app=echo")
 	if err != nil {
 		t.Fatal(err)
@@ -428,6 +443,20 @@ func TestCanonicalVariablesAndResourcesAPI(t *testing.T) {
 	defer setResourceResp.Body.Close()
 	if setResourceResp.StatusCode != http.StatusOK {
 		t.Fatalf("set resource status = %d, want %d", setResourceResp.StatusCode, http.StatusOK)
+	}
+	invalidResourceResp, err := http.Post(server.URL+"/api/w/ws-a/resources", "application/json", bytes.NewBufferString(`{`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer invalidResourceResp.Body.Close()
+	var invalidResourceBody struct {
+		Error string `json:"error"`
+	}
+	if err := json.NewDecoder(invalidResourceResp.Body).Decode(&invalidResourceBody); err != nil {
+		t.Fatal(err)
+	}
+	if invalidResourceResp.StatusCode != http.StatusBadRequest || invalidResourceBody.Error != "path required" {
+		t.Fatalf("invalid resource response = %d %#v, want 400 path required", invalidResourceResp.StatusCode, invalidResourceBody)
 	}
 	getResourceResp, err := http.Get(server.URL + "/api/w/ws-a/resources/get/p/browser/profile")
 	if err != nil {
