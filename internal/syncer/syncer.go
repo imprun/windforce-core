@@ -60,7 +60,7 @@ func (s *Syncer) Sync(ctx context.Context, src Source) (contract.Deployment, err
 		}
 	}
 
-	sourceDir, cleanup, err := s.prepareSource(ctx, src, commit)
+	repoDir, sourceDir, cleanup, err := s.prepareSource(ctx, src, commit)
 	if err != nil {
 		return contract.Deployment{}, err
 	}
@@ -95,7 +95,9 @@ func (s *Syncer) Sync(ctx context.Context, src Source) (contract.Deployment, err
 	updatedAt := time.Now().UTC()
 	var message *string
 	if src.RepoURL != "" {
-		if subject, err := source.CommitSubject(ctx, sourceDir); err == nil && strings.TrimSpace(subject) != "" {
+		if subject, err := source.CommitSubject(ctx, repoDir); err != nil {
+			log.Printf("syncer: read commit subject %s@%s: %v", src.GitSourceID, commit, err)
+		} else if strings.TrimSpace(subject) != "" {
 			trimmed := strings.TrimSpace(subject)
 			message = &trimmed
 		}
@@ -131,16 +133,16 @@ func (s *Syncer) Sync(ctx context.Context, src Source) (contract.Deployment, err
 	return deployment, nil
 }
 
-func (s *Syncer) prepareSource(ctx context.Context, src Source, commit string) (string, func(), error) {
+func (s *Syncer) prepareSource(ctx context.Context, src Source, commit string) (string, string, func(), error) {
 	if src.LocalDir != "" {
 		sourceDir, err := sourceDirForSubpath(src.LocalDir, src.Subpath)
 		if err != nil {
-			return "", nil, err
+			return "", "", nil, err
 		}
-		return sourceDir, func() {}, nil
+		return src.LocalDir, sourceDir, func() {}, nil
 	}
 	if src.RepoURL == "" {
-		return "", nil, errors.New("repo URL is required")
+		return "", "", nil, errors.New("repo URL is required")
 	}
 
 	cloneRoot := s.CloneRoot
@@ -148,11 +150,11 @@ func (s *Syncer) prepareSource(ctx context.Context, src Source, commit string) (
 		cloneRoot = os.TempDir()
 	}
 	if err := os.MkdirAll(cloneRoot, 0o755); err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 	cloneDir, err := os.MkdirTemp(cloneRoot, "windforce-lite-clone-")
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 	cleanup := func() {
 		_ = os.RemoveAll(cloneDir)
@@ -171,15 +173,15 @@ func (s *Syncer) prepareSource(ctx context.Context, src Source, commit string) (
 	if !cloned {
 		if err := source.CloneCommit(ctx, src.RepoURL, src.Branch, commit, repoDir, src.Token); err != nil {
 			cleanup()
-			return "", nil, err
+			return "", "", nil, err
 		}
 	}
 	sourceDir, err := sourceDirForSubpath(repoDir, src.Subpath)
 	if err != nil {
 		cleanup()
-		return "", nil, err
+		return "", "", nil, err
 	}
-	return sourceDir, cleanup, nil
+	return repoDir, sourceDir, cleanup, nil
 }
 
 func materializeActionSchemas(root string, app *contract.App) error {

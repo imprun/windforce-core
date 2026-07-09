@@ -311,6 +311,57 @@ func TestSyncCapturesGitCommitMessageInHistory(t *testing.T) {
 	}
 }
 
+func TestSyncCapturesGitCommitMessageForSubpathSource(t *testing.T) {
+	tempDir := t.TempDir()
+	repoDir := filepath.Join(tempDir, "repo")
+	appDir := filepath.Join(repoDir, "apps", "echo")
+	if err := os.MkdirAll(appDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runSyncerTestGit(t, repoDir, "init")
+	runSyncerTestGit(t, repoDir, "checkout", "-b", "main")
+	runSyncerTestGit(t, repoDir, "config", "user.email", "test@example.com")
+	runSyncerTestGit(t, repoDir, "config", "user.name", "Test User")
+	if err := os.WriteFile(filepath.Join(appDir, "windforce.json"), []byte(`{
+		"app": "echo",
+		"entrypoint": "main.ts",
+		"actions": {"echo": {}}
+	}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(appDir, "main.ts"), []byte(`export async function main(ctx) { return ctx.input }`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runSyncerTestGit(t, repoDir, "add", ".")
+	runSyncerTestGit(t, repoDir, "commit", "-m", "Add nested echo app")
+
+	store := bundle.NewLocalStore(filepath.Join(tempDir, "store"))
+	catalog := catalogpkg.NewFileCatalog(filepath.Join(tempDir, "catalog.json"))
+	syncer := Syncer{Store: store, Catalog: catalog, CloneRoot: filepath.Join(tempDir, "clones")}
+
+	deployment, err := syncer.Sync(context.Background(), Source{
+		Workspace:   "workspace-a",
+		GitSourceID: "1",
+		App:         "echo",
+		RepoURL:     filepath.ToSlash(repoDir),
+		Branch:      "main",
+		Subpath:     "apps/echo",
+	})
+	if err != nil {
+		t.Fatalf("Sync returned error: %v", err)
+	}
+	if deployment.Message == nil || *deployment.Message != "Add nested echo app" {
+		t.Fatalf("deployment message = %v, want Add nested echo app", deployment.Message)
+	}
+	snapshot, err := catalog.Load(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.History) != 1 || snapshot.History[0].Message == nil || *snapshot.History[0].Message != "Add nested echo app" {
+		t.Fatalf("history message = %#v", snapshot.History)
+	}
+}
+
 func TestSyncRejectsInvalidSchemaReferences(t *testing.T) {
 	tests := []struct {
 		name        string
