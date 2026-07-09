@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -39,29 +40,33 @@ func (r *Runner) ensureSource(ctx context.Context, workspace string, gitSourceID
 		defer cancel()
 		exists, err := r.Store.Exists(pctx, workspace, gitSourceID, commit)
 		if err != nil {
-			return "", err
+			return "", prepareErr(pctx, err)
 		}
 		if !exists {
-			return "", os.ErrNotExist
+			return "", fmt.Errorf("commit %s not materialized in object cache", commit)
 		}
 		if err := r.Store.FetchTo(pctx, sourceDir, workspace, gitSourceID, commit); err != nil {
-			return "", err
+			return "", prepareErr(pctx, err)
 		}
 		if err := r.prepareSource(pctx, sourceDir, scriptLang, entrypoint); err != nil {
-			return "", err
+			return "", prepareErr(pctx, err)
 		}
 		if err := os.WriteFile(filepath.Join(sourceDir, sourceReadyFile), []byte("ok"), 0o644); err != nil {
-			return "", err
+			return "", prepareErr(pctx, err)
 		}
 		return sourceDir, nil
 	})
 
 	select {
 	case <-ctx.Done():
-		return "", ctx.Err()
+		return "", newNamedError("PrepareCanceled", ctx.Err())
 	case result := <-ch:
 		if result.Err != nil {
-			return "", result.Err
+			name := "PrepareError"
+			if errors.Is(result.Err, context.DeadlineExceeded) {
+				name = "PrepareTimeout"
+			}
+			return "", newNamedError(name, result.Err)
 		}
 		sourceDir, _ := result.Val.(string)
 		if sourceDir == "" {
@@ -69,6 +74,13 @@ func (r *Runner) ensureSource(ctx context.Context, workspace string, gitSourceID
 		}
 		return sourceDir, nil
 	}
+}
+
+func prepareErr(ctx context.Context, err error) error {
+	if ctx.Err() != nil {
+		return fmt.Errorf("prepare exceeded WORKER_PREPARE_TIMEOUT_S: %w", ctx.Err())
+	}
+	return err
 }
 
 func (r *Runner) prepareTimeout() time.Duration {

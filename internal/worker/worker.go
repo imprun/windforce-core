@@ -68,9 +68,18 @@ func (p *Processor) ProcessOne(ctx context.Context) (bool, error) {
 		if result.Error == "" {
 			result.Error = runErr.Error()
 		}
+		if len(result.Output) == 0 {
+			result.Output = namedErrorResult(runErr, result.Error)
+		}
 		return completeProcessed(p.Store.CompleteJobFailed(ctx, lease, result))
 	}
 	if result.ExitCode != 0 {
+		if result.Error == "" {
+			result.Error = fmt.Sprintf("action exited with code %d", result.ExitCode)
+		}
+		if len(result.Output) == 0 {
+			result.Output = actionruntime.ErrorResult("ExecutionError", result.Error)
+		}
 		return completeProcessed(p.Store.CompleteJobFailed(ctx, lease, result))
 	}
 
@@ -90,6 +99,14 @@ func completeProcessed(err error) (bool, error) {
 		return true, nil
 	}
 	return true, err
+}
+
+func namedErrorResult(err error, message string) json.RawMessage {
+	name := "ExecutionError"
+	if runtimeName, ok := actionruntime.ErrorName(err); ok {
+		name = runtimeName
+	}
+	return actionruntime.ErrorResult(name, message)
 }
 
 func (p *Processor) RunLoop(ctx context.Context, pollInterval time.Duration) error {

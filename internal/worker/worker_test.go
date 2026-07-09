@@ -111,6 +111,40 @@ func TestProcessorStoresFailedActionOutputAndLogsSeparately(t *testing.T) {
 	}
 }
 
+func TestProcessorStoresPrepareErrorResult(t *testing.T) {
+	processor, stateStore, run := newProcessorTestHarness(t, "echo")
+	processor.Runner.Store = bundle.NewLocalStore(filepath.Join(t.TempDir(), "empty-store"))
+
+	processed, err := processor.ProcessOne(context.Background())
+	if err != nil {
+		t.Fatalf("ProcessOne returned error: %v", err)
+	}
+	if !processed {
+		t.Fatalf("ProcessOne processed no job")
+	}
+
+	completed, err := stateStore.GetRun(context.Background(), run.ID)
+	if err != nil {
+		t.Fatalf("GetRun returned error: %v", err)
+	}
+	if completed.State != state.RunFailed {
+		t.Fatalf("run state = %s, want %s", completed.State, state.RunFailed)
+	}
+	if completed.Result == nil {
+		t.Fatalf("completed result is nil")
+	}
+	var output struct {
+		Name    string `json:"name"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(completed.Result.Output, &output); err != nil {
+		t.Fatalf("prepare output is not JSON: %v", err)
+	}
+	if output.Name != "PrepareError" || !strings.Contains(output.Message, "not materialized in object cache") {
+		t.Fatalf("prepare output = %s", completed.Result.Output)
+	}
+}
+
 func TestProcessorCreatesHumanTask(t *testing.T) {
 	processor, stateStore, run := newProcessorTestHarness(t, "human")
 
