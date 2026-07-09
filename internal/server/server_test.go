@@ -1011,6 +1011,19 @@ func TestCanonicalGitSourceProbePatchAndDelete(t *testing.T) {
 		t.Fatalf("register status = %d, want %d", registerResp.StatusCode, http.StatusCreated)
 	}
 
+	emptyPatchReq, err := http.NewRequest(http.MethodPatch, server.URL+"/api/w/ws-a/git_sources/source-a", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	emptyPatchResp, err := http.DefaultClient.Do(emptyPatchReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer emptyPatchResp.Body.Close()
+	if emptyPatchResp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("empty patch status = %d, want %d", emptyPatchResp.StatusCode, http.StatusBadRequest)
+	}
+
 	patchBody, err := json.Marshal(map[string]string{
 		"name":      "source-b",
 		"branch":    "feature",
