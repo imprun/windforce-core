@@ -33,11 +33,20 @@ func Parse(data []byte) (contract.App, error) {
 	if !contract.ValidAppKey(app.App) {
 		return contract.App{}, fmt.Errorf("invalid app key %q in %s", app.App, FileName)
 	}
+	if strings.TrimSpace(app.Runtime) != "" {
+		return contract.App{}, fmt.Errorf("app %s runtime is not supported in %s; use scriptLang", app.App, FileName)
+	}
+	if strings.TrimSpace(app.Entrypoint) == "" {
+		return contract.App{}, fmt.Errorf("app %s has no entrypoint in %s", app.App, FileName)
+	}
 	if len(app.Actions) == 0 {
 		return contract.App{}, errors.New("at least one action is required")
 	}
 	if err := validateActionPath(app.App, "", "entrypoint", app.Entrypoint); err != nil {
 		return contract.App{}, err
+	}
+	if strings.TrimSpace(app.ScriptLang) == "" {
+		app.ScriptLang = "typescript"
 	}
 	if app.MaxConcurrent != nil && *app.MaxConcurrent <= 0 {
 		return contract.App{}, fmt.Errorf("app %s maxConcurrent must be positive in %s", app.App, FileName)
@@ -61,6 +70,15 @@ func Parse(data []byte) (contract.App, error) {
 		if action.Action != name {
 			return contract.App{}, fmt.Errorf("action %q has mismatched action field %q", name, action.Action)
 		}
+		if strings.TrimSpace(action.Entrypoint) != "" {
+			return contract.App{}, fmt.Errorf("action %s.%s entrypoint is not supported in %s; use app entrypoint", app.App, name, FileName)
+		}
+		if strings.TrimSpace(action.Runtime) != "" {
+			return contract.App{}, fmt.Errorf("action %s.%s runtime is not supported in %s; use app scriptLang", app.App, name, FileName)
+		}
+		if action.TimeoutMs > 0 {
+			return contract.App{}, fmt.Errorf("action %s.%s timeoutMs is not supported in %s; use timeout seconds", app.App, name, FileName)
+		}
 		if action.Capabilities != nil {
 			caps, err := contract.NormalizeCapabilities(*action.Capabilities)
 			if err != nil {
@@ -77,9 +95,6 @@ func Parse(data []byte) (contract.App, error) {
 			return contract.App{}, fmt.Errorf("action %s.%s declares both tag and capabilities in %s", app.App, name, FileName)
 		}
 		applyAppDefaults(app, &action)
-		if err := validateActionPath(app.App, name, "entrypoint", action.Entrypoint); err != nil {
-			return contract.App{}, err
-		}
 		if err := validateActionPath(app.App, name, "input schema", action.InputSchema); err != nil {
 			return contract.App{}, err
 		}
@@ -92,12 +107,8 @@ func Parse(data []byte) (contract.App, error) {
 }
 
 func applyAppDefaults(app contract.App, action *contract.Action) {
-	if action.Entrypoint == "" {
-		action.Entrypoint = app.Entrypoint
-	}
-	if action.Runtime == "" {
-		action.Runtime = firstNonEmpty(app.Runtime, app.ScriptLang)
-	}
+	action.Entrypoint = app.Entrypoint
+	action.Runtime = app.ScriptLang
 	if action.TimeoutMs == 0 {
 		if action.TimeoutS != nil {
 			action.TimeoutMs = int64(*action.TimeoutS) * 1000
@@ -105,15 +116,6 @@ func applyAppDefaults(app contract.App, action *contract.Action) {
 			action.TimeoutMs = int64(app.TimeoutS) * 1000
 		}
 	}
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return value
-		}
-	}
-	return ""
 }
 
 func validateActionPath(app string, action string, field string, value string) error {

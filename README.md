@@ -69,10 +69,10 @@ Every app source has a `windforce.json` file:
 {
   "app": "echo",
   "entrypoint": "action.go",
+  "scriptLang": "go",
   "timeout": 30,
   "actions": {
     "echo": {
-      "runtime": "go",
       "command": ["go", "run", "./action.go"],
       "adapter": { "type": "json-file" }
     }
@@ -80,10 +80,12 @@ Every app source has a `windforce.json` file:
 }
 ```
 
-`entrypoint` and `timeout` follow the canonical Windforce manifest shape and
-are pinned onto each action unless the action overrides them. `command` is the
-Lite execution command run from the fetched app source directory. If `adapter`
-is omitted, windforce-lite uses the built-in `json-file` adapter.
+`entrypoint`, `scriptLang`, and `timeout` follow the canonical Windforce
+manifest shape. `entrypoint` and `scriptLang` are app-level; actions branch
+inside that entrypoint. `timeout` is the app default and an action may override
+it with its own `timeout` in seconds. `command` is the Lite execution command
+run from the fetched app source directory. If `adapter` is omitted,
+windforce-lite uses the built-in `json-file` adapter.
 
 ## Action adapters
 
@@ -99,6 +101,8 @@ Example external adapter:
 ```json
 {
   "app": "legacy-app",
+  "entrypoint": "main.py",
+  "scriptLang": "python",
   "actions": {
     "run": {
       "command": ["legacy-runtime", "run"],

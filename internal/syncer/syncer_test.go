@@ -45,7 +45,6 @@ func TestSyncMaterializesBeforeCatalogUpdate(t *testing.T) {
 		"actions": {
 			"echo": {
 				"tag": "action-fast",
-				"runtime": "go",
 				"command": ["go", "run", "./action.go"]
 			}
 		}
@@ -105,6 +104,7 @@ func TestSyncRejectsInvalidSchemaReferences(t *testing.T) {
 			name: "missing input schema",
 			manifest: `{
 				"app": "echo",
+				"entrypoint": "main.ts",
 				"actions": {"echo": {"inputSchema": "missing.schema.json"}}
 			}`,
 			wantMessage: `manifest references schema "missing.schema.json" but the file is missing`,
@@ -113,6 +113,7 @@ func TestSyncRejectsInvalidSchemaReferences(t *testing.T) {
 			name: "invalid output schema json",
 			manifest: `{
 				"app": "echo",
+				"entrypoint": "main.ts",
 				"actions": {"echo": {"outputSchema": "output.schema.json"}}
 			}`,
 			files:       map[string]string{"output.schema.json": `{bad json`},
@@ -122,6 +123,7 @@ func TestSyncRejectsInvalidSchemaReferences(t *testing.T) {
 			name: "escaping schema path",
 			manifest: `{
 				"app": "echo",
+				"entrypoint": "main.ts",
 				"actions": {"echo": {"inputSchema": "../input.schema.json"}}
 			}`,
 			wantMessage: `schema path "../input.schema.json" must be a relative path inside the app`,

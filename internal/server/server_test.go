@@ -1741,6 +1741,8 @@ func TestControlPlaneSyncCatalogDeploymentAndSchema(t *testing.T) {
 	}
 	if err := os.WriteFile(filepath.Join(sourceDir, "windforce.json"), []byte(`{
 		"app": "echo",
+		"entrypoint": "main.ts",
+		"scriptLang": "typescript",
 		"actions": {
 			"echo": {
 				"command": ["helper"],
@@ -1816,6 +1818,8 @@ func TestControlPlaneRegistersGitSourceAndSyncsIt(t *testing.T) {
 	}
 	if err := os.WriteFile(filepath.Join(repoDir, "windforce.json"), []byte(`{
 		"app": "echo",
+		"entrypoint": "main.ts",
+		"scriptLang": "typescript",
 		"actions": {
 			"echo": {
 				"command": ["helper"]
@@ -1897,6 +1901,8 @@ func TestControlPlaneRegistersGitSourcePathAndSyncsIt(t *testing.T) {
 	}
 	if err := os.WriteFile(filepath.Join(appDir, "windforce.json"), []byte(`{
 		"app": "echo",
+		"entrypoint": "main.ts",
+		"scriptLang": "typescript",
 		"actions": {
 			"echo": {
 				"command": ["helper"]

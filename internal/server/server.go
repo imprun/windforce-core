@@ -1527,37 +1527,14 @@ func canonicalAppID(deployment contract.Deployment) string {
 }
 
 func canonicalDeploymentEntrypoint(deployment contract.Deployment) string {
-	if strings.TrimSpace(deployment.Entrypoint) != "" {
-		return strings.TrimSpace(deployment.Entrypoint)
-	}
-	keys := make([]string, 0, len(deployment.Actions))
-	for key := range deployment.Actions {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		if deployment.Actions[key].Entrypoint != "" {
-			return deployment.Actions[key].Entrypoint
-		}
-	}
-	return ""
+	return strings.TrimSpace(deployment.Entrypoint)
 }
 
 func canonicalDeploymentScriptLang(deployment contract.Deployment) string {
-	if value := firstNonEmpty(deployment.Runtime, deployment.ScriptLang); value != "" {
-		return value
+	if strings.TrimSpace(deployment.ScriptLang) == "" {
+		return "typescript"
 	}
-	keys := make([]string, 0, len(deployment.Actions))
-	for key := range deployment.Actions {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		if deployment.Actions[key].Runtime != "" {
-			return deployment.Actions[key].Runtime
-		}
-	}
-	return ""
+	return strings.TrimSpace(deployment.ScriptLang)
 }
 
 func canonicalDeploymentTimeoutSeconds(deployment contract.Deployment) int32 {

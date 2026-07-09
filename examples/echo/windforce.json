@@ -1,12 +1,13 @@
 {
   "app": "echo",
+  "entrypoint": "action.go",
+  "scriptLang": "go",
+  "timeout": 30,
   "actions": {
     "echo": {
-      "runtime": "go",
       "command": ["go", "run", "./action.go"],
       "inputSchema": "input.schema.json",
-      "outputSchema": "output.schema.json",
-      "timeoutMs": 30000
+      "outputSchema": "output.schema.json"
     }
   }
 }

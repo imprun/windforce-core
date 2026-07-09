@@ -9,9 +9,10 @@ import (
 func TestParseFillsActionName(t *testing.T) {
 	app, err := Parse([]byte(`{
 		"app": "echo",
+		"entrypoint": "action.go",
+		"scriptLang": "go",
 		"actions": {
 			"run": {
-				"runtime": "go",
 				"command": ["go", "run", "./action.go"]
 			}
 		}
@@ -33,7 +34,7 @@ func TestParseAppliesCanonicalAppDefaults(t *testing.T) {
 		"maxConcurrent": 2,
 		"actions": {
 			"run": {},
-			"fast": {"entrypoint": "fast.ts", "runtime": "go", "timeout": 45}
+			"fast": {"timeout": 45}
 		}
 	}`))
 	if err != nil {
@@ -47,7 +48,7 @@ func TestParseAppliesCanonicalAppDefaults(t *testing.T) {
 		t.Fatalf("run defaults = %#v", run)
 	}
 	fast := app.Actions["fast"]
-	if fast.Entrypoint != "fast.ts" || fast.Runtime != "go" || fast.TimeoutMs != 45000 {
+	if fast.Entrypoint != "main.ts" || fast.Runtime != "typescript" || fast.TimeoutMs != 45000 {
 		t.Fatalf("fast overrides = %#v", fast)
 	}
 }
@@ -55,6 +56,7 @@ func TestParseAppliesCanonicalAppDefaults(t *testing.T) {
 func TestParsePreservesCapabilities(t *testing.T) {
 	app, err := Parse([]byte(`{
 		"app": "echo",
+		"entrypoint": "main.ts",
 		"capabilities": ["browser", "browser"],
 		"actions": {
 			"run": {},
@@ -84,17 +86,17 @@ func TestParseRejectsCapabilityTagConflicts(t *testing.T) {
 	}{
 		{
 			name: "app tag",
-			body: `{"app":"echo","tag":"default","capabilities":["browser"],"actions":{"run":{}}}`,
+			body: `{"app":"echo","entrypoint":"main.ts","tag":"default","capabilities":["browser"],"actions":{"run":{}}}`,
 			want: "declares both tag and capabilities",
 		},
 		{
 			name: "action tag",
-			body: `{"app":"echo","capabilities":["browser"],"actions":{"run":{"tag":"fast"}}}`,
+			body: `{"app":"echo","entrypoint":"main.ts","capabilities":["browser"],"actions":{"run":{"tag":"fast"}}}`,
 			want: "declares both tag and capabilities",
 		},
 		{
 			name: "unsupported",
-			body: `{"app":"echo","capabilities":["gpu"],"actions":{"run":{}}}`,
+			body: `{"app":"echo","entrypoint":"main.ts","capabilities":["gpu"],"actions":{"run":{}}}`,
 			want: "unsupported capability",
 		},
 	}
@@ -111,6 +113,7 @@ func TestParseRejectsCapabilityTagConflicts(t *testing.T) {
 func TestParseRejectsInvalidMaxConcurrent(t *testing.T) {
 	_, err := Parse([]byte(`{
 		"app": "echo",
+		"entrypoint": "main.ts",
 		"maxConcurrent": 0,
 		"actions": {"run": {}}
 	}`))
@@ -122,6 +125,7 @@ func TestParseRejectsInvalidMaxConcurrent(t *testing.T) {
 func TestParseRejectsMismatchedActionName(t *testing.T) {
 	_, err := Parse([]byte(`{
 		"app": "echo",
+		"entrypoint": "main.ts",
 		"actions": {
 			"run": { "action": "other" }
 		}
@@ -139,13 +143,55 @@ func TestParseRejectsInvalidCanonicalKeys(t *testing.T) {
 	}{
 		{
 			name: "app",
-			body: `{"app":"Echo","actions":{"run":{}}}`,
+			body: `{"app":"Echo","entrypoint":"main.ts","actions":{"run":{}}}`,
 			want: "invalid app key",
 		},
 		{
 			name: "action",
-			body: `{"app":"echo","actions":{"bad-action":{}}}`,
+			body: `{"app":"echo","entrypoint":"main.ts","actions":{"bad-action":{}}}`,
 			want: "invalid action key",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := Parse([]byte(test.body))
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("Parse error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestParseRejectsNonCanonicalManifestFields(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "missing app entrypoint",
+			body: `{"app":"echo","actions":{"run":{}}}`,
+			want: "has no entrypoint",
+		},
+		{
+			name: "app runtime alias",
+			body: `{"app":"echo","entrypoint":"main.ts","runtime":"typescript","actions":{"run":{}}}`,
+			want: "use scriptLang",
+		},
+		{
+			name: "action entrypoint",
+			body: `{"app":"echo","entrypoint":"main.ts","actions":{"run":{"entrypoint":"run.ts"}}}`,
+			want: "use app entrypoint",
+		},
+		{
+			name: "action runtime",
+			body: `{"app":"echo","entrypoint":"main.ts","actions":{"run":{"runtime":"go"}}}`,
+			want: "use app scriptLang",
+		},
+		{
+			name: "millisecond timeout",
+			body: `{"app":"echo","entrypoint":"main.ts","actions":{"run":{"timeoutMs":30000}}}`,
+			want: "use timeout seconds",
 		},
 	}
 	for _, test := range tests {
@@ -165,23 +211,18 @@ func TestParseRejectsEscapingActionPaths(t *testing.T) {
 		want string
 	}{
 		{
-			name: "entrypoint",
-			body: `{"app":"echo","actions":{"run":{"entrypoint":"../run.js"}}}`,
-			want: "entrypoint path",
-		},
-		{
 			name: "app entrypoint",
 			body: `{"app":"echo","entrypoint":"../main.ts","actions":{"run":{}}}`,
 			want: "app echo entrypoint path",
 		},
 		{
 			name: "input schema",
-			body: `{"app":"echo","actions":{"run":{"inputSchema":"schemas/../input.json"}}}`,
+			body: `{"app":"echo","entrypoint":"main.ts","actions":{"run":{"inputSchema":"schemas/../input.json"}}}`,
 			want: "input schema path",
 		},
 		{
 			name: "output schema",
-			body: `{"app":"echo","actions":{"run":{"outputSchema":"../output.json"}}}`,
+			body: `{"app":"echo","entrypoint":"main.ts","actions":{"run":{"outputSchema":"../output.json"}}}`,
 			want: "output schema path",
 		},
 	}
