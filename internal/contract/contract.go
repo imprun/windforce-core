@@ -19,10 +19,14 @@ const (
 
 // App is the deployable source bundle described by windforce.json.
 type App struct {
-	App     string            `json:"app"`
-	Name    string            `json:"name,omitempty"`
-	Tag     string            `json:"tag,omitempty"`
-	Actions map[string]Action `json:"actions"`
+	App        string            `json:"app"`
+	Name       string            `json:"name,omitempty"`
+	Entrypoint string            `json:"entrypoint,omitempty"`
+	Runtime    string            `json:"runtime,omitempty"`
+	ScriptLang string            `json:"scriptLang,omitempty"`
+	TimeoutS   int32             `json:"timeout,omitempty"`
+	Tag        string            `json:"tag,omitempty"`
+	Actions    map[string]Action `json:"actions"`
 }
 
 // Action is one executable unit inside an app.
@@ -36,6 +40,7 @@ type Action struct {
 	Adapter      *ActionAdapter `json:"adapter,omitempty"`
 	InputSchema  string         `json:"inputSchema,omitempty"`
 	OutputSchema string         `json:"outputSchema,omitempty"`
+	TimeoutS     *int32         `json:"timeout,omitempty"`
 	TimeoutMs    int64          `json:"timeoutMs,omitempty"`
 }
 

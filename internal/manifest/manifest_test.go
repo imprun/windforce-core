@@ -23,6 +23,30 @@ func TestParseFillsActionName(t *testing.T) {
 	}
 }
 
+func TestParseAppliesCanonicalAppDefaults(t *testing.T) {
+	app, err := Parse([]byte(`{
+		"app": "echo",
+		"entrypoint": "main.ts",
+		"scriptLang": "typescript",
+		"timeout": 120,
+		"actions": {
+			"run": {},
+			"fast": {"entrypoint": "fast.ts", "runtime": "go", "timeout": 45}
+		}
+	}`))
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	run := app.Actions["run"]
+	if run.Entrypoint != "main.ts" || run.Runtime != "typescript" || run.TimeoutMs != 120000 {
+		t.Fatalf("run defaults = %#v", run)
+	}
+	fast := app.Actions["fast"]
+	if fast.Entrypoint != "fast.ts" || fast.Runtime != "go" || fast.TimeoutMs != 45000 {
+		t.Fatalf("fast overrides = %#v", fast)
+	}
+}
+
 func TestParseRejectsMismatchedActionName(t *testing.T) {
 	_, err := Parse([]byte(`{
 		"app": "echo",
@@ -72,6 +96,11 @@ func TestParseRejectsEscapingActionPaths(t *testing.T) {
 			name: "entrypoint",
 			body: `{"app":"echo","actions":{"run":{"entrypoint":"../run.js"}}}`,
 			want: "entrypoint path",
+		},
+		{
+			name: "app entrypoint",
+			body: `{"app":"echo","entrypoint":"../main.ts","actions":{"run":{}}}`,
+			want: "app echo entrypoint path",
 		},
 		{
 			name: "input schema",
