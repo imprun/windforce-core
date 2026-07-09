@@ -22,6 +22,7 @@ DEFAULT_WORKSPACE = "default"
 
 
 def main(argv: list[str] | None = None) -> int:
+    configure_stdio()
     parser = argparse.ArgumentParser(description="windforce-lite control-plane API client")
     parser.add_argument(
         "--api-url",
@@ -111,6 +112,17 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     print_json(payload, args.pretty)
     return 0
+
+
+def configure_stdio() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8")
+        except Exception:
+            pass
 
 
 class APIError(RuntimeError):

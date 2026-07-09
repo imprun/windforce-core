@@ -1,6 +1,6 @@
 .PHONY: help fmt test test-postgres build clean \
 	sync-example run-example smoke \
-	compose-up compose-down compose-reset compose-logs compose-ps postgres-dsn \
+	compose-up compose-db compose-build compose-down compose-reset compose-logs compose-ps postgres-dsn \
 	dev-standalone dev-standalone-postgres dev-trigger dev-api dev-worker worker-once \
 	windforce-register windforce-sync windforce-schema windforce-openapi
 
@@ -34,7 +34,8 @@ OUTPUT ?= $(DEV_DIR)/output.json
 ADDR ?= 127.0.0.1:8080
 WAIT ?= 30s
 
-WF_API_URL ?= http://127.0.0.1:8080
+WINDFORCE_LITE_API_PORT ?= 18090
+WF_API_URL ?= http://127.0.0.1:$(WINDFORCE_LITE_API_PORT)
 WF_WORKSPACE ?= default
 WF_APP ?= echo
 WF_ACTION ?= echo
@@ -51,6 +52,7 @@ POSTGRES_DSN ?= postgres://$(WINDFORCE_POSTGRES_USER)@127.0.0.1:$(WINDFORCE_POST
 export WINDFORCE_POSTGRES_DB
 export WINDFORCE_POSTGRES_USER
 export WINDFORCE_POSTGRES_PORT
+export WINDFORCE_LITE_API_PORT
 
 help:
 	@echo "targets:"
@@ -69,7 +71,10 @@ help:
 	@echo "  windforce-sync         sync WF_GIT_SOURCE_ID through the control API"
 	@echo "  windforce-schema       print WF_APP/WF_ACTION schemas from the control API"
 	@echo "  windforce-openapi      print WF_APP invocation OpenAPI from the control API"
-	@echo "  compose-up/down/reset/logs/ps"
+	@echo "  compose-up             start Postgres and control-plane API"
+	@echo "  compose-db             start only Postgres"
+	@echo "  compose-build          build the control-plane API image"
+	@echo "  compose-down/reset/logs/ps"
 
 fmt:
 	$(GO) fmt ./...
@@ -77,7 +82,7 @@ fmt:
 test:
 	$(GO) test ./...
 
-test-postgres: compose-up
+test-postgres: compose-db
 	WINDFORCE_LITE_POSTGRES_TEST_DSN="$(POSTGRES_DSN)" $(GO) test ./internal/state -run Postgres -count=1 -v
 
 build:
@@ -96,7 +101,13 @@ smoke: run-example
 	@cat "$(OUTPUT)"
 
 compose-up:
+	$(COMPOSE) up -d postgres control-plane
+
+compose-db:
 	$(COMPOSE) up -d postgres
+
+compose-build:
+	$(COMPOSE) build control-plane
 
 compose-down:
 	$(COMPOSE) down
@@ -105,7 +116,7 @@ compose-reset:
 	$(COMPOSE) down -v
 
 compose-logs:
-	$(COMPOSE) logs -f postgres
+	$(COMPOSE) logs -f postgres control-plane
 
 compose-ps:
 	$(COMPOSE) ps

@@ -1,0 +1,10 @@
+.git/
+.serena/
+.tmp/
+.windforce-lite/
+bin/
+dist/
+tmp/
+__pycache__/
+*.exe
+*.pyc

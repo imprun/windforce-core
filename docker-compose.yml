@@ -18,5 +18,36 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
 
+  control-plane:
+    image: ${WINDFORCE_LITE_IMAGE:-imprun/windforce-lite:local}
+    build:
+      context: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${WINDFORCE_LITE_API_PORT:-18090}:8080"
+    environment:
+      WINDFORCE_LITE_GIT_TOKEN: ${WINDFORCE_LITE_GIT_TOKEN:-}
+    command:
+      - api
+      - --addr
+      - :8080
+      - --state-backend
+      - postgres
+      - --database-url
+      - postgres://${WINDFORCE_POSTGRES_USER:-postgres}@postgres:5432/${WINDFORCE_POSTGRES_DB:-windforce_lite}?sslmode=disable
+      - --migrate
+      - --store
+      - /data/store
+      - --catalog
+      - /data/catalog.json
+      - --git-sources
+      - /data/git-sources.json
+    volumes:
+      - windforce-data:/data
+
 volumes:
   postgres-data:
+  windforce-data:
