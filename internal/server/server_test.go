@@ -325,6 +325,61 @@ func TestCanonicalJobRunStatusAndResultAPI(t *testing.T) {
 	}
 }
 
+func TestCanonicalJobWebhookAPI(t *testing.T) {
+	tempDir := t.TempDir()
+	store := state.NewLocalStore(filepath.Join(tempDir, "state.json"))
+	fileCatalog := catalog.NewFileCatalog(filepath.Join(tempDir, "catalog.json"))
+	if err := fileCatalog.UpsertDeployment(context.Background(), contract.Deployment{
+		Workspace:   "ws-a",
+		GitSourceID: "source-a",
+		App:         "echo",
+		Commit:      "commit-a",
+		Actions: map[string]contract.Action{
+			"echo": {Action: "echo", Command: []string{"helper"}},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	server := httptest.NewServer(New(Config{Store: store, Catalog: fileCatalog, EnableAPI: true}))
+	defer server.Close()
+
+	resp, err := http.Post(server.URL+"/api/w/ws-a/jobs/webhook/echo/echo", "text/plain", bytes.NewBufferString(`{"event":"push"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("webhook status = %d, want %d", resp.StatusCode, http.StatusCreated)
+	}
+	var webhookResponse struct {
+		JobID string `json:"job_id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&webhookResponse); err != nil {
+		t.Fatal(err)
+	}
+	if webhookResponse.JobID == "" {
+		t.Fatalf("missing job id")
+	}
+	job, _, found, err := store.GetJob(context.Background(), "ws-a", webhookResponse.JobID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found {
+		t.Fatalf("webhook job not found")
+	}
+	if job.Payload.TriggerKind != "webhook" {
+		t.Fatalf("trigger kind = %q, want webhook", job.Payload.TriggerKind)
+	}
+	var raw string
+	if err := json.Unmarshal(job.Payload.Input, &raw); err != nil {
+		t.Fatalf("webhook input is not a JSON string: %v input=%s", err, job.Payload.Input)
+	}
+	if raw != `{"event":"push"}` {
+		t.Fatalf("webhook raw = %q", raw)
+	}
+}
+
 func TestCanonicalJobCancelAPI(t *testing.T) {
 	tempDir := t.TempDir()
 	store := state.NewLocalStore(filepath.Join(tempDir, "state.json"))

@@ -199,6 +199,10 @@ func (h *Handler) handleAPI(w http.ResponseWriter, r *http.Request) bool {
 		h.handleJobRun(w, r, parts[2], parts[5], parts[6], true)
 		return true
 	}
+	if len(parts) == 7 && parts[0] == "api" && parts[1] == "w" && parts[3] == "jobs" && parts[4] == "webhook" && r.Method == http.MethodPost {
+		h.handleJobWebhook(w, r, parts[2], parts[5], parts[6])
+		return true
+	}
 	if len(parts) == 4 && parts[0] == "api" && parts[1] == "w" && parts[3] == "jobs" && r.Method == http.MethodGet {
 		h.handleJobList(w, r, parts[2])
 		return true
@@ -1496,13 +1500,29 @@ func (h *Handler) handleJobRun(w http.ResponseWriter, r *http.Request, workspace
 	h.waitForJobResult(w, r, workspaceID, job.ID, timeout)
 }
 
-func (h *Handler) enqueueJobRun(w http.ResponseWriter, r *http.Request, workspaceID string, app string, action string) (state.Job, bool) {
-	if h.store == nil || h.catalog == nil {
-		writeError(w, http.StatusServiceUnavailable, "job API is not configured")
-		return state.Job{}, false
+func (h *Handler) handleJobWebhook(w http.ResponseWriter, r *http.Request, workspaceID string, app string, action string) {
+	input, ok := readWebhookRaw(w, r)
+	if !ok {
+		return
 	}
+	job, ok := h.enqueueJob(w, r, workspaceID, app, action, "webhook", input)
+	if !ok {
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]string{"job_id": job.ID})
+}
+
+func (h *Handler) enqueueJobRun(w http.ResponseWriter, r *http.Request, workspaceID string, app string, action string) (state.Job, bool) {
 	input, ok := readRunInput(w, r)
 	if !ok {
+		return state.Job{}, false
+	}
+	return h.enqueueJob(w, r, workspaceID, app, action, "api", input)
+}
+
+func (h *Handler) enqueueJob(w http.ResponseWriter, r *http.Request, workspaceID string, app string, action string, triggerKind string, input json.RawMessage) (state.Job, bool) {
+	if h.store == nil || h.catalog == nil {
+		writeError(w, http.StatusServiceUnavailable, "job API is not configured")
 		return state.Job{}, false
 	}
 	workspaceID = contract.NormalizeWorkspace(workspaceID)
@@ -1520,7 +1540,7 @@ func (h *Handler) enqueueJobRun(w http.ResponseWriter, r *http.Request, workspac
 		run.CorrelationID = correlationID
 	}
 	job := state.NewActionJob(run, input)
-	job.Payload.TriggerKind = "api"
+	job.Payload.TriggerKind = triggerKind
 	if err := h.store.CreateRunAndEnqueue(r.Context(), run, job); err != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(err, state.ErrConflict) {
@@ -1845,6 +1865,27 @@ func readRunInput(w http.ResponseWriter, r *http.Request) (json.RawMessage, bool
 		return nil, false
 	}
 	return json.RawMessage(append([]byte(nil), body...)), true
+}
+
+func readWebhookRaw(w http.ResponseWriter, r *http.Request) (json.RawMessage, bool) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxRunBodyBytes)
+	defer r.Body.Close()
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			writeError(w, http.StatusRequestEntityTooLarge, "request body too large")
+		} else {
+			writeError(w, http.StatusBadRequest, "could not read request body")
+		}
+		return nil, false
+	}
+	raw, err := json.Marshal(string(body))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return nil, false
+	}
+	return json.RawMessage(raw), true
 }
 
 func readResumeInput(r *http.Request) (json.RawMessage, error) {

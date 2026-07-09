@@ -231,6 +231,7 @@ Implemented control-plane endpoints:
 - `GET /api/w/{workspace}/worker-tags`
 - `POST /api/w/{workspace}/jobs/run/{app}/{action}`
 - `POST /api/w/{workspace}/jobs/run/{app}/{action}/wait?timeout_ms={ms}`
+- `POST /api/w/{workspace}/jobs/webhook/{app}/{action}`
 - `GET /api/w/{workspace}/jobs?status={status}&limit={limit}`
 - `GET /api/w/{workspace}/jobs/summary`
 - `GET /api/w/{workspace}/jobs/{jobID}`
