@@ -933,7 +933,7 @@ func (h *Handler) handleCanonicalAction(w http.ResponseWriter, r *http.Request, 
 	}
 	schemaReader := h.newCanonicalSchemaReader(r.Context(), deployment)
 	defer schemaReader.Close()
-	view, err := h.newCanonicalActionView(schemaReader, deployment, actionKey, action)
+	view, err := h.newCanonicalActionModel(schemaReader, deployment, actionKey, action)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -966,7 +966,7 @@ func (h *Handler) handleCanonicalPatchApp(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, newCanonicalAppView(deployment))
+	writeJSON(w, http.StatusOK, newCanonicalAppModel(deployment))
 }
 
 func (h *Handler) handleCanonicalPatchAction(w http.ResponseWriter, r *http.Request, workspaceID string, app string, actionKey string) {
@@ -1004,7 +1004,7 @@ func (h *Handler) handleCanonicalPatchAction(w http.ResponseWriter, r *http.Requ
 	}
 	schemaReader := h.newCanonicalSchemaReader(r.Context(), deployment)
 	defer schemaReader.Close()
-	view, err := h.newCanonicalActionView(schemaReader, deployment, actionKey, action)
+	view, err := h.newCanonicalActionModel(schemaReader, deployment, actionKey, action)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -1249,11 +1249,11 @@ func newCanonicalSyncResult(deployment contract.Deployment) canonicalSyncResult 
 	}
 }
 
-type canonicalAppView struct {
+type canonicalAppModel struct {
 	ID                   string   `json:"id"`
 	WorkspaceID          string   `json:"workspace_id"`
 	AppKey               string   `json:"app_key"`
-	GitSourceID          *int64   `json:"git_source_id"`
+	GitSourceID          *string  `json:"git_source_id"`
 	CommitSha            string   `json:"commit_sha"`
 	Entrypoint           string   `json:"entrypoint"`
 	Tag                  string   `json:"tag"`
@@ -1261,7 +1261,11 @@ type canonicalAppView struct {
 	TimeoutS             int32    `json:"timeout_s"`
 	ScriptLang           string   `json:"script_lang"`
 	RequiredCapabilities []string `json:"required_capabilities"`
-	EffectiveRouteTag    string   `json:"effective_route_tag"`
+}
+
+type canonicalAppView struct {
+	canonicalAppModel
+	EffectiveRouteTag string `json:"effective_route_tag"`
 }
 
 type canonicalAppSummaryView struct {
@@ -1281,19 +1285,23 @@ type canonicalAppHistoryItem struct {
 	CreatedAt    time.Time `json:"created_at"`
 }
 
+type canonicalActionModel struct {
+	ID                   string          `json:"id"`
+	WorkspaceID          string          `json:"workspace_id"`
+	AppKey               string          `json:"app_key"`
+	ActionKey            string          `json:"action_key"`
+	InputSchema          json.RawMessage `json:"input_schema"`
+	OutputSchema         json.RawMessage `json:"output_schema"`
+	Tag                  *string         `json:"tag,omitempty"`
+	TagOverride          *string         `json:"tag_override,omitempty"`
+	TimeoutS             *int32          `json:"timeout_s,omitempty"`
+	RequiredCapabilities []string        `json:"required_capabilities,omitempty"`
+}
+
 type canonicalActionView struct {
-	ID                    string          `json:"id"`
-	WorkspaceID           string          `json:"workspace_id"`
-	AppKey                string          `json:"app_key"`
-	ActionKey             string          `json:"action_key"`
-	InputSchema           json.RawMessage `json:"input_schema"`
-	OutputSchema          json.RawMessage `json:"output_schema"`
-	Tag                   *string         `json:"tag,omitempty"`
-	TagOverride           *string         `json:"tag_override,omitempty"`
-	TimeoutS              *int32          `json:"timeout_s,omitempty"`
-	RequiredCapabilities  []string        `json:"required_capabilities,omitempty"`
-	EffectiveCapabilities []string        `json:"effective_capabilities"`
-	EffectiveRouteTag     string          `json:"effective_route_tag"`
+	canonicalActionModel
+	EffectiveCapabilities []string `json:"effective_capabilities"`
+	EffectiveRouteTag     string   `json:"effective_route_tag"`
 }
 
 type canonicalWorkerTagsView struct {
@@ -1340,19 +1348,25 @@ func newCanonicalAppHistoryItem(item catalogpkg.DeploymentHistory) canonicalAppH
 	}
 }
 
-func newCanonicalAppView(deployment contract.Deployment) canonicalAppView {
-	return canonicalAppView{
+func newCanonicalAppModel(deployment contract.Deployment) canonicalAppModel {
+	return canonicalAppModel{
 		ID:                   canonicalAppID(deployment),
 		WorkspaceID:          contract.NormalizeWorkspace(deployment.SourceWorkspace()),
 		AppKey:               deployment.App,
-		GitSourceID:          nil,
+		GitSourceID:          stringPtr(deployment.SourceGitSourceID()),
 		CommitSha:            deployment.Commit,
 		Entrypoint:           canonicalDeploymentEntrypoint(deployment),
 		Tag:                  effectiveRouteTag(deployment.Tag, nil, nil, nil),
 		TagOverride:          cloneStringPtr(deployment.TagOverride),
 		ScriptLang:           canonicalDeploymentScriptLang(deployment),
 		RequiredCapabilities: []string{},
-		EffectiveRouteTag:    effectiveRouteTag(deployment.Tag, deployment.TagOverride, nil, nil),
+	}
+}
+
+func newCanonicalAppView(deployment contract.Deployment) canonicalAppView {
+	return canonicalAppView{
+		canonicalAppModel: newCanonicalAppModel(deployment),
+		EffectiveRouteTag: effectiveRouteTag(deployment.Tag, deployment.TagOverride, nil, nil),
 	}
 }
 
@@ -1373,26 +1387,36 @@ func (h *Handler) newCanonicalActionViews(schemaReader *canonicalSchemaReader, d
 	return actions, nil
 }
 
-func (h *Handler) newCanonicalActionView(schemaReader *canonicalSchemaReader, deployment contract.Deployment, actionKey string, action contract.Action) (canonicalActionView, error) {
+func (h *Handler) newCanonicalActionModel(schemaReader *canonicalSchemaReader, deployment contract.Deployment, actionKey string, action contract.Action) (canonicalActionModel, error) {
 	inputSchema, err := schemaReader.Read(action.InputSchema)
 	if err != nil {
-		return canonicalActionView{}, fmt.Errorf("action %s.%s input schema: %w", deployment.App, actionKey, err)
+		return canonicalActionModel{}, fmt.Errorf("action %s.%s input schema: %w", deployment.App, actionKey, err)
 	}
 	outputSchema, err := schemaReader.Read(action.OutputSchema)
 	if err != nil {
-		return canonicalActionView{}, fmt.Errorf("action %s.%s output schema: %w", deployment.App, actionKey, err)
+		return canonicalActionModel{}, fmt.Errorf("action %s.%s output schema: %w", deployment.App, actionKey, err)
+	}
+	return canonicalActionModel{
+		ID:                   canonicalAppID(deployment) + "/" + actionKey,
+		WorkspaceID:          contract.NormalizeWorkspace(deployment.SourceWorkspace()),
+		AppKey:               deployment.App,
+		ActionKey:            actionKey,
+		InputSchema:          inputSchema,
+		OutputSchema:         outputSchema,
+		Tag:                  cloneStringPtr(action.Tag),
+		TagOverride:          cloneStringPtr(action.TagOverride),
+		TimeoutS:             canonicalTimeoutSeconds(action.TimeoutMs),
+		RequiredCapabilities: []string{},
+	}, nil
+}
+
+func (h *Handler) newCanonicalActionView(schemaReader *canonicalSchemaReader, deployment contract.Deployment, actionKey string, action contract.Action) (canonicalActionView, error) {
+	model, err := h.newCanonicalActionModel(schemaReader, deployment, actionKey, action)
+	if err != nil {
+		return canonicalActionView{}, err
 	}
 	return canonicalActionView{
-		ID:                    canonicalAppID(deployment) + "/" + actionKey,
-		WorkspaceID:           contract.NormalizeWorkspace(deployment.SourceWorkspace()),
-		AppKey:                deployment.App,
-		ActionKey:             actionKey,
-		InputSchema:           inputSchema,
-		OutputSchema:          outputSchema,
-		Tag:                   cloneStringPtr(action.Tag),
-		TagOverride:           cloneStringPtr(action.TagOverride),
-		TimeoutS:              canonicalTimeoutSeconds(action.TimeoutMs),
-		RequiredCapabilities:  []string{},
+		canonicalActionModel:  model,
 		EffectiveCapabilities: []string{},
 		EffectiveRouteTag:     effectiveRouteTag(deployment.Tag, deployment.TagOverride, action.Tag, action.TagOverride),
 	}, nil
@@ -1951,7 +1975,7 @@ func (h *Handler) handleSchema(w http.ResponseWriter, r *http.Request, route tri
 	}
 	schemaReader := h.newCanonicalSchemaReader(r.Context(), deployment)
 	defer schemaReader.Close()
-	view, err := h.newCanonicalActionView(schemaReader, deployment, route.action, action)
+	view, err := h.newCanonicalActionModel(schemaReader, deployment, route.action, action)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

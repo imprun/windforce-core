@@ -807,13 +807,15 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 	var summary struct {
 		Apps []struct {
 			AppKey       string `json:"app_key"`
+			GitSourceID  string `json:"git_source_id"`
 			ActionsCount int64  `json:"actions_count"`
 		} `json:"apps"`
 	}
 	if err := json.NewDecoder(summaryResp.Body).Decode(&summary); err != nil {
 		t.Fatal(err)
 	}
-	if len(summary.Apps) != 1 || summary.Apps[0].AppKey != "echo" || summary.Apps[0].ActionsCount != 1 {
+	if len(summary.Apps) != 1 || summary.Apps[0].AppKey != "echo" ||
+		summary.Apps[0].GitSourceID != "source-a" || summary.Apps[0].ActionsCount != 1 {
 		t.Fatalf("summary = %#v", summary)
 	}
 
@@ -858,7 +860,8 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 	}
 	var appBody struct {
 		App struct {
-			AppKey string `json:"app_key"`
+			AppKey      string `json:"app_key"`
+			GitSourceID string `json:"git_source_id"`
 		} `json:"app"`
 		Actions []struct {
 			ActionKey   string          `json:"action_key"`
@@ -868,7 +871,8 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 	if err := json.NewDecoder(appResp.Body).Decode(&appBody); err != nil {
 		t.Fatal(err)
 	}
-	if appBody.App.AppKey != "echo" || len(appBody.Actions) != 1 || appBody.Actions[0].ActionKey != "echo" ||
+	if appBody.App.AppKey != "echo" || appBody.App.GitSourceID != "source-a" ||
+		len(appBody.Actions) != 1 || appBody.Actions[0].ActionKey != "echo" ||
 		!bytes.Contains(appBody.Actions[0].InputSchema, []byte(`"message"`)) {
 		t.Fatalf("app body = %#v", appBody)
 	}
@@ -1236,6 +1240,31 @@ func TestCanonicalAppAndActionTagOverrideAPI(t *testing.T) {
 	server := httptest.NewServer(New(Config{Catalog: fileCatalog, EnableAPI: true}))
 	defer server.Close()
 
+	getNestedActionRouteTag := func() string {
+		t.Helper()
+		resp, err := http.Get(server.URL + "/api/w/ws-a/apps/echo")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var body struct {
+			Actions []struct {
+				ActionKey         string `json:"action_key"`
+				EffectiveRouteTag string `json:"effective_route_tag"`
+			} `json:"actions"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		for _, action := range body.Actions {
+			if action.ActionKey == "echo" {
+				return action.EffectiveRouteTag
+			}
+		}
+		t.Fatalf("echo action missing from app body: %#v", body.Actions)
+		return ""
+	}
+
 	patchAppReq, err := http.NewRequest(http.MethodPatch, server.URL+"/api/w/ws-a/apps/echo", bytes.NewBufferString(`{"tag_override":"app-blue"}`))
 	if err != nil {
 		t.Fatal(err)
@@ -1249,14 +1278,15 @@ func TestCanonicalAppAndActionTagOverrideAPI(t *testing.T) {
 	if patchAppResp.StatusCode != http.StatusOK {
 		t.Fatalf("patch app status = %d, want %d", patchAppResp.StatusCode, http.StatusOK)
 	}
-	var patchedApp struct {
-		TagOverride       string `json:"tag_override"`
-		EffectiveRouteTag string `json:"effective_route_tag"`
-	}
+	var patchedApp map[string]json.RawMessage
 	if err := json.NewDecoder(patchAppResp.Body).Decode(&patchedApp); err != nil {
 		t.Fatal(err)
 	}
-	if patchedApp.TagOverride != "app-blue" || patchedApp.EffectiveRouteTag != "app-blue" {
+	var patchedAppTag string
+	if err := json.Unmarshal(patchedApp["tag_override"], &patchedAppTag); err != nil {
+		t.Fatal(err)
+	}
+	if patchedAppTag != "app-blue" || patchedApp["effective_route_tag"] != nil {
 		t.Fatalf("patched app = %#v", patchedApp)
 	}
 
@@ -1265,13 +1295,11 @@ func TestCanonicalAppAndActionTagOverrideAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer actionResp.Body.Close()
-	var inheritedAction struct {
-		EffectiveRouteTag string `json:"effective_route_tag"`
-	}
+	var inheritedAction map[string]json.RawMessage
 	if err := json.NewDecoder(actionResp.Body).Decode(&inheritedAction); err != nil {
 		t.Fatal(err)
 	}
-	if inheritedAction.EffectiveRouteTag != "app-blue" {
+	if inheritedAction["effective_route_tag"] != nil || getNestedActionRouteTag() != "app-blue" {
 		t.Fatalf("inherited action = %#v", inheritedAction)
 	}
 
@@ -1288,14 +1316,15 @@ func TestCanonicalAppAndActionTagOverrideAPI(t *testing.T) {
 	if patchActionResp.StatusCode != http.StatusOK {
 		t.Fatalf("patch action status = %d, want %d", patchActionResp.StatusCode, http.StatusOK)
 	}
-	var patchedAction struct {
-		TagOverride       string `json:"tag_override"`
-		EffectiveRouteTag string `json:"effective_route_tag"`
-	}
+	var patchedAction map[string]json.RawMessage
 	if err := json.NewDecoder(patchActionResp.Body).Decode(&patchedAction); err != nil {
 		t.Fatal(err)
 	}
-	if patchedAction.TagOverride != "action-fast" || patchedAction.EffectiveRouteTag != "action-fast" {
+	var patchedActionTag string
+	if err := json.Unmarshal(patchedAction["tag_override"], &patchedActionTag); err != nil {
+		t.Fatal(err)
+	}
+	if patchedActionTag != "action-fast" || patchedAction["effective_route_tag"] != nil || getNestedActionRouteTag() != "action-fast" {
 		t.Fatalf("patched action = %#v", patchedAction)
 	}
 
@@ -1332,14 +1361,11 @@ func TestCanonicalAppAndActionTagOverrideAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer clearActionResp.Body.Close()
-	var clearedAction struct {
-		TagOverride       *string `json:"tag_override"`
-		EffectiveRouteTag string  `json:"effective_route_tag"`
-	}
+	var clearedAction map[string]json.RawMessage
 	if err := json.NewDecoder(clearActionResp.Body).Decode(&clearedAction); err != nil {
 		t.Fatal(err)
 	}
-	if clearedAction.TagOverride != nil || clearedAction.EffectiveRouteTag != "app-blue" {
+	if clearedAction["tag_override"] != nil || clearedAction["effective_route_tag"] != nil || getNestedActionRouteTag() != "app-blue" {
 		t.Fatalf("cleared action = %#v", clearedAction)
 	}
 }
