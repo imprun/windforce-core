@@ -1996,11 +1996,8 @@ func (h *Handler) handleSetState(w http.ResponseWriter, r *http.Request, workspa
 		writeError(w, http.StatusBadRequest, "path query required")
 		return
 	}
-	body, err := readJSONBody(r)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
+	defer r.Body.Close()
+	body, _ := io.ReadAll(r.Body)
 	if err := h.store.SetState(r.Context(), workspaceID, statePath, body); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

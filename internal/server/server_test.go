@@ -241,6 +241,15 @@ func TestCanonicalStateAPI(t *testing.T) {
 		t.Fatalf("state body = %q", body)
 	}
 
+	rawSetResp, err := http.Post(server.URL+"/api/w/ws-a/state?path=flow/raw", "text/plain", bytes.NewBufferString(`not-json`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rawSetResp.Body.Close()
+	if rawSetResp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("set raw state status = %d, want %d", rawSetResp.StatusCode, http.StatusInternalServerError)
+	}
+
 	getResp, err = http.Get(server.URL + "/api/w/ws-b/state?path=flow/count")
 	if err != nil {
 		t.Fatal(err)
