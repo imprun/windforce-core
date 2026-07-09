@@ -211,12 +211,17 @@ def cmd_action(args: argparse.Namespace) -> Any:
 
 
 def cmd_schema(args: argparse.Namespace) -> Any:
-    schema = get_schema(args)
+    action = get_action(args)
     if args.field == "input":
-        return schema.get("input_schema") or {}
+        return action.get("input_schema") or {}
     if args.field == "output":
-        return schema.get("output_schema") or {}
-    return schema
+        return action.get("output_schema") or {}
+    return {
+        "app_key": action.get("app_key"),
+        "action_key": action.get("action_key"),
+        "input_schema": action.get("input_schema") or {},
+        "output_schema": action.get("output_schema") or {},
+    }
 
 
 def cmd_openapi(args: argparse.Namespace) -> Any:
@@ -243,17 +248,6 @@ def get_action(args: argparse.Namespace) -> dict[str, Any]:
     )
     if not isinstance(payload, dict):
         raise APIError({"error": "action response was not a JSON object"})
-    return payload
-
-
-def get_schema(args: argparse.Namespace) -> dict[str, Any]:
-    payload = request(
-        args,
-        "GET",
-        f"/api/w/{quote_path(args.workspace)}/apps/{quote_path(args.app)}/actions/{quote_path(args.action)}/schema",
-    )
-    if not isinstance(payload, dict):
-        raise APIError({"error": "schema response was not a JSON object"})
     return payload
 
 
