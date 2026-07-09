@@ -226,7 +226,7 @@ func TestCanonicalJobRunStatusAndResultAPI(t *testing.T) {
 	}
 	if statusBody["id"] != runResponse.JobID || statusBody["state"] != "queued" || statusBody["app_key"] != "echo" ||
 		statusBody["action_key"] != "echo" || statusBody["trigger_kind"] != "api" || statusBody["entrypoint"] != "main.ts" ||
-		statusBody["timeout_s"] != float64(45) {
+		statusBody["git_source_id"] != "source-a" || statusBody["timeout_s"] != float64(45) {
 		t.Fatalf("job status = %#v", statusBody)
 	}
 

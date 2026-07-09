@@ -2278,6 +2278,7 @@ type jobStatusResponse struct {
 	ActionKey    *string         `json:"action_key,omitempty"`
 	TriggerKind  *string         `json:"trigger_kind,omitempty"`
 	Kind         *string         `json:"kind,omitempty"`
+	GitSourceID  *string         `json:"git_source_id,omitempty"`
 	CommitSha    *string         `json:"commit_sha,omitempty"`
 	Entrypoint   *string         `json:"entrypoint,omitempty"`
 	InputSchema  json.RawMessage `json:"input_schema,omitempty"`
@@ -2326,6 +2327,7 @@ func newJobStatus(workspaceID string, job state.Job, run state.Run) jobStatusRes
 		ActionKey:    stringPtr(action),
 		TriggerKind:  stringPtr(jobStatusTriggerKind(job, run)),
 		Kind:         stringPtr(kind),
+		GitSourceID:  stringPtr(job.Payload.GitSourceID),
 		CommitSha:    stringPtr(commit),
 		Entrypoint:   stringPtr(job.Payload.ActionSpec.Entrypoint),
 		InputSchema:  cloneRaw(job.Payload.InputSchema),
