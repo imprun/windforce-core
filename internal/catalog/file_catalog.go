@@ -14,6 +14,7 @@ import (
 )
 
 var ErrDeploymentNotFound = errors.New("deployment not found")
+var ErrActionNotFound = errors.New("action not found")
 
 type FileCatalog struct {
 	Path string
@@ -68,6 +69,51 @@ func (c *FileCatalog) GetDeployment(ctx context.Context, app string) (contract.D
 		return contract.Deployment{}, ErrDeploymentNotFound
 	}
 	return deployment, nil
+}
+
+func (c *FileCatalog) SetAppTagOverride(ctx context.Context, workspace string, app string, tagOverride *string) (contract.Deployment, error) {
+	if err := ctx.Err(); err != nil {
+		return contract.Deployment{}, err
+	}
+	snapshot, err := c.Load(ctx)
+	if err != nil {
+		return contract.Deployment{}, err
+	}
+	deployment, ok := snapshot.Deployments[app]
+	if !ok || deployment.SourceWorkspace() != contract.NormalizeWorkspace(workspace) {
+		return contract.Deployment{}, ErrDeploymentNotFound
+	}
+	deployment.TagOverride = cloneStringPtr(tagOverride)
+	snapshot.Deployments[app] = deployment
+	if err := c.write(snapshot); err != nil {
+		return contract.Deployment{}, err
+	}
+	return deployment, nil
+}
+
+func (c *FileCatalog) SetActionTagOverride(ctx context.Context, workspace string, app string, actionKey string, tagOverride *string) (contract.Action, error) {
+	if err := ctx.Err(); err != nil {
+		return contract.Action{}, err
+	}
+	snapshot, err := c.Load(ctx)
+	if err != nil {
+		return contract.Action{}, err
+	}
+	deployment, ok := snapshot.Deployments[app]
+	if !ok || deployment.SourceWorkspace() != contract.NormalizeWorkspace(workspace) {
+		return contract.Action{}, ErrDeploymentNotFound
+	}
+	action, ok := deployment.Actions[actionKey]
+	if !ok {
+		return contract.Action{}, ErrActionNotFound
+	}
+	action.TagOverride = cloneStringPtr(tagOverride)
+	deployment.Actions[actionKey] = action
+	snapshot.Deployments[app] = deployment
+	if err := c.write(snapshot); err != nil {
+		return contract.Action{}, err
+	}
+	return action, nil
 }
 
 func (c *FileCatalog) Load(ctx context.Context) (Snapshot, error) {
@@ -142,4 +188,12 @@ func firstEntrypoint(deployment contract.Deployment) string {
 		}
 	}
 	return ""
+}
+
+func cloneStringPtr(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	clone := *value
+	return &clone
 }

@@ -926,6 +926,131 @@ func TestCanonicalWorkerTagsAPI(t *testing.T) {
 	}
 }
 
+func TestCanonicalAppAndActionTagOverrideAPI(t *testing.T) {
+	tempDir := t.TempDir()
+	fileCatalog := catalog.NewFileCatalog(filepath.Join(tempDir, "catalog.json"))
+	if err := fileCatalog.UpsertDeployment(context.Background(), contract.Deployment{
+		Workspace:   "ws-a",
+		GitSourceID: "source-a",
+		App:         "echo",
+		Commit:      "commit-a",
+		Actions: map[string]contract.Action{
+			"echo": {Action: "echo", Command: []string{"helper"}},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(New(Config{Catalog: fileCatalog, EnableAPI: true}))
+	defer server.Close()
+
+	patchAppReq, err := http.NewRequest(http.MethodPatch, server.URL+"/api/w/ws-a/apps/echo", bytes.NewBufferString(`{"tag_override":"app-blue"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	patchAppReq.Header.Set("Content-Type", "application/json")
+	patchAppResp, err := http.DefaultClient.Do(patchAppReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer patchAppResp.Body.Close()
+	if patchAppResp.StatusCode != http.StatusOK {
+		t.Fatalf("patch app status = %d, want %d", patchAppResp.StatusCode, http.StatusOK)
+	}
+	var patchedApp struct {
+		TagOverride       string `json:"tag_override"`
+		EffectiveRouteTag string `json:"effective_route_tag"`
+	}
+	if err := json.NewDecoder(patchAppResp.Body).Decode(&patchedApp); err != nil {
+		t.Fatal(err)
+	}
+	if patchedApp.TagOverride != "app-blue" || patchedApp.EffectiveRouteTag != "app-blue" {
+		t.Fatalf("patched app = %#v", patchedApp)
+	}
+
+	actionResp, err := http.Get(server.URL + "/api/w/ws-a/apps/echo/actions/echo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer actionResp.Body.Close()
+	var inheritedAction struct {
+		EffectiveRouteTag string `json:"effective_route_tag"`
+	}
+	if err := json.NewDecoder(actionResp.Body).Decode(&inheritedAction); err != nil {
+		t.Fatal(err)
+	}
+	if inheritedAction.EffectiveRouteTag != "app-blue" {
+		t.Fatalf("inherited action = %#v", inheritedAction)
+	}
+
+	patchActionReq, err := http.NewRequest(http.MethodPatch, server.URL+"/api/w/ws-a/apps/echo/actions/echo", bytes.NewBufferString(`{"tag_override":"action-fast"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	patchActionReq.Header.Set("Content-Type", "application/json")
+	patchActionResp, err := http.DefaultClient.Do(patchActionReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer patchActionResp.Body.Close()
+	if patchActionResp.StatusCode != http.StatusOK {
+		t.Fatalf("patch action status = %d, want %d", patchActionResp.StatusCode, http.StatusOK)
+	}
+	var patchedAction struct {
+		TagOverride       string `json:"tag_override"`
+		EffectiveRouteTag string `json:"effective_route_tag"`
+	}
+	if err := json.NewDecoder(patchActionResp.Body).Decode(&patchedAction); err != nil {
+		t.Fatal(err)
+	}
+	if patchedAction.TagOverride != "action-fast" || patchedAction.EffectiveRouteTag != "action-fast" {
+		t.Fatalf("patched action = %#v", patchedAction)
+	}
+
+	tagsResp, err := http.Get(server.URL + "/api/w/ws-a/worker-tags")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tagsResp.Body.Close()
+	var tagsBody struct {
+		Tags []struct {
+			Tag string `json:"tag"`
+		} `json:"tags"`
+	}
+	if err := json.NewDecoder(tagsResp.Body).Decode(&tagsBody); err != nil {
+		t.Fatal(err)
+	}
+	seenTags := map[string]bool{}
+	for _, item := range tagsBody.Tags {
+		seenTags[item.Tag] = true
+	}
+	for _, tag := range []string{"default", "app-blue", "action-fast"} {
+		if !seenTags[tag] {
+			t.Fatalf("worker tags missing %q: %#v", tag, tagsBody.Tags)
+		}
+	}
+
+	clearActionReq, err := http.NewRequest(http.MethodPatch, server.URL+"/api/w/ws-a/apps/echo/actions/echo", bytes.NewBufferString(`{"tag_override":null}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	clearActionReq.Header.Set("Content-Type", "application/json")
+	clearActionResp, err := http.DefaultClient.Do(clearActionReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clearActionResp.Body.Close()
+	var clearedAction struct {
+		TagOverride       *string `json:"tag_override"`
+		EffectiveRouteTag string  `json:"effective_route_tag"`
+	}
+	if err := json.NewDecoder(clearActionResp.Body).Decode(&clearedAction); err != nil {
+		t.Fatal(err)
+	}
+	if clearedAction.TagOverride != nil || clearedAction.EffectiveRouteTag != "app-blue" {
+		t.Fatalf("cleared action = %#v", clearedAction)
+	}
+}
+
 type fakeTriggerAdapter struct{}
 
 func (fakeTriggerAdapter) Name() string {

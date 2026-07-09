@@ -25,6 +25,7 @@ type App struct {
 // Action is one executable unit inside an app.
 type Action struct {
 	Action       string         `json:"action"`
+	TagOverride  *string        `json:"tagOverride,omitempty"`
 	Runtime      string         `json:"runtime,omitempty"`
 	Entrypoint   string         `json:"entrypoint,omitempty"`
 	Command      []string       `json:"command,omitempty"`
@@ -52,6 +53,7 @@ type Deployment struct {
 	GitSourceID  string            `json:"gitSourceId,omitempty"`
 	App          string            `json:"app"`
 	Version      string            `json:"version,omitempty"`
+	TagOverride  *string           `json:"tagOverride,omitempty"`
 	Commit       string            `json:"commit"`
 	BundleDigest string            `json:"bundleDigest,omitempty"`
 	ObjectURI    string            `json:"objectUri"`

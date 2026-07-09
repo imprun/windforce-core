@@ -255,8 +255,16 @@ func (h *Handler) handleAPI(w http.ResponseWriter, r *http.Request) bool {
 		h.handleCanonicalApp(w, r, parts[2], parts[4])
 		return true
 	}
+	if len(parts) == 5 && parts[0] == "api" && parts[1] == "w" && parts[3] == "apps" && r.Method == http.MethodPatch {
+		h.handleCanonicalPatchApp(w, r, parts[2], parts[4])
+		return true
+	}
 	if len(parts) == 7 && parts[0] == "api" && parts[1] == "w" && parts[3] == "apps" && parts[5] == "actions" && r.Method == http.MethodGet {
 		h.handleCanonicalAction(w, r, parts[2], parts[4], parts[6])
+		return true
+	}
+	if len(parts) == 7 && parts[0] == "api" && parts[1] == "w" && parts[3] == "apps" && parts[5] == "actions" && r.Method == http.MethodPatch {
+		h.handleCanonicalPatchAction(w, r, parts[2], parts[4], parts[6])
 		return true
 	}
 	if len(parts) == 5 && parts[0] == "api" && parts[1] == "w" && parts[3] == "deployments" && r.Method == http.MethodGet {
@@ -904,6 +912,69 @@ func (h *Handler) handleCanonicalAction(w http.ResponseWriter, r *http.Request, 
 	writeJSON(w, http.StatusOK, view)
 }
 
+func (h *Handler) handleCanonicalPatchApp(w http.ResponseWriter, r *http.Request, workspaceID string, app string) {
+	patcher, ok := h.catalog.(interface {
+		SetAppTagOverride(context.Context, string, string, *string) (contract.Deployment, error)
+	})
+	if !ok {
+		writeError(w, http.StatusNotImplemented, "app patch is not supported")
+		return
+	}
+	tagOverride, ok := decodeCanonicalTagOverride(w, r)
+	if !ok {
+		return
+	}
+	deployment, err := patcher.SetAppTagOverride(r.Context(), workspaceID, app, tagOverride)
+	if errors.Is(err, catalogpkg.ErrDeploymentNotFound) {
+		writeError(w, http.StatusNotFound, "app not found: "+app)
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, newCanonicalAppView(deployment))
+}
+
+func (h *Handler) handleCanonicalPatchAction(w http.ResponseWriter, r *http.Request, workspaceID string, app string, actionKey string) {
+	patcher, ok := h.catalog.(interface {
+		SetActionTagOverride(context.Context, string, string, string, *string) (contract.Action, error)
+	})
+	if !ok {
+		writeError(w, http.StatusNotImplemented, "action patch is not supported")
+		return
+	}
+	tagOverride, ok := decodeCanonicalTagOverride(w, r)
+	if !ok {
+		return
+	}
+	action, err := patcher.SetActionTagOverride(r.Context(), workspaceID, app, actionKey, tagOverride)
+	if errors.Is(err, catalogpkg.ErrDeploymentNotFound) {
+		writeError(w, http.StatusNotFound, "app not found: "+app)
+		return
+	}
+	if errors.Is(err, catalogpkg.ErrActionNotFound) {
+		writeError(w, http.StatusNotFound, "action not found: "+app+"/"+actionKey)
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	deployment, ok := h.getCanonicalDeployment(w, r, workspaceID, app, "app not found: "+app)
+	if !ok {
+		return
+	}
+	schemaReader := h.newCanonicalSchemaReader(r.Context(), deployment)
+	defer schemaReader.Close()
+	view, err := h.newCanonicalActionView(schemaReader, deployment, actionKey, action)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, view)
+}
+
 func (h *Handler) handleCanonicalDeployment(w http.ResponseWriter, r *http.Request, workspaceID string, id string) {
 	deployment, ok := h.getCanonicalDeployment(w, r, workspaceID, id, "deployment not found")
 	if !ok {
@@ -918,8 +989,12 @@ func (h *Handler) handleCanonicalWorkerTags(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	tags := map[string]struct{}{}
-	for range canonicalDeployments(snapshot, workspaceID) {
+	for _, deployment := range canonicalDeployments(snapshot, workspaceID) {
 		tags[defaultRouteTag()] = struct{}{}
+		tags[effectiveRouteTag(deployment.TagOverride, nil)] = struct{}{}
+		for _, action := range deployment.Actions {
+			tags[effectiveRouteTag(deployment.TagOverride, action.TagOverride)] = struct{}{}
+		}
 	}
 	writeJSON(w, http.StatusOK, newCanonicalWorkerTagsView(tags))
 }
@@ -1096,6 +1171,7 @@ type canonicalAppView struct {
 	CommitSha            string   `json:"commit_sha"`
 	Entrypoint           string   `json:"entrypoint"`
 	Tag                  string   `json:"tag"`
+	TagOverride          *string  `json:"tag_override,omitempty"`
 	TimeoutS             int32    `json:"timeout_s"`
 	ScriptLang           string   `json:"script_lang"`
 	RequiredCapabilities []string `json:"required_capabilities"`
@@ -1129,6 +1205,7 @@ type canonicalActionView struct {
 	InputSchema           json.RawMessage `json:"input_schema,omitempty"`
 	OutputSchema          json.RawMessage `json:"output_schema,omitempty"`
 	Tag                   *string         `json:"tag,omitempty"`
+	TagOverride           *string         `json:"tag_override,omitempty"`
 	TimeoutS              *int32          `json:"timeout_s,omitempty"`
 	RequiredCapabilities  []string        `json:"required_capabilities,omitempty"`
 	EffectiveCapabilities []string        `json:"effective_capabilities"`
@@ -1190,9 +1267,10 @@ func newCanonicalAppView(deployment contract.Deployment) canonicalAppView {
 		CommitSha:            deployment.Commit,
 		Entrypoint:           canonicalDeploymentEntrypoint(deployment),
 		Tag:                  defaultRouteTag(),
+		TagOverride:          cloneStringPtr(deployment.TagOverride),
 		ScriptLang:           canonicalDeploymentScriptLang(deployment),
 		RequiredCapabilities: []string{},
-		EffectiveRouteTag:    defaultRouteTag(),
+		EffectiveRouteTag:    effectiveRouteTag(deployment.TagOverride, nil),
 	}
 }
 
@@ -1229,10 +1307,11 @@ func (h *Handler) newCanonicalActionView(schemaReader *canonicalSchemaReader, de
 		ActionKey:             actionKey,
 		InputSchema:           inputSchema,
 		OutputSchema:          outputSchema,
+		TagOverride:           cloneStringPtr(action.TagOverride),
 		TimeoutS:              canonicalTimeoutSeconds(action.TimeoutMs),
 		RequiredCapabilities:  []string{},
 		EffectiveCapabilities: []string{},
-		EffectiveRouteTag:     defaultRouteTag(),
+		EffectiveRouteTag:     effectiveRouteTag(deployment.TagOverride, action.TagOverride),
 	}, nil
 }
 
@@ -1355,6 +1434,64 @@ func canonicalTimeoutSeconds(timeoutMs int64) *int32 {
 
 func defaultRouteTag() string {
 	return "default"
+}
+
+func effectiveRouteTag(appTagOverride *string, actionTagOverride *string) string {
+	if actionTagOverride != nil && strings.TrimSpace(*actionTagOverride) != "" {
+		return strings.TrimSpace(*actionTagOverride)
+	}
+	if appTagOverride != nil && strings.TrimSpace(*appTagOverride) != "" {
+		return strings.TrimSpace(*appTagOverride)
+	}
+	return defaultRouteTag()
+}
+
+func decodeCanonicalTagOverride(w http.ResponseWriter, r *http.Request) (*string, bool) {
+	var request struct {
+		TagOverride json.RawMessage `json:"tag_override"`
+	}
+	if err := readOptionalJSON(r, &request); err != nil || request.TagOverride == nil {
+		writeError(w, http.StatusBadRequest, "tag_override required (string to set, null to clear)")
+		return nil, false
+	}
+	if string(bytes.TrimSpace(request.TagOverride)) == "null" {
+		return nil, true
+	}
+	var value string
+	if err := json.Unmarshal(request.TagOverride, &value); err != nil || !validRouteTag(value) {
+		writeError(w, http.StatusBadRequest, "tag_override must be a valid tag (lowercase alphanumeric, _ or -, max 64) or null")
+		return nil, false
+	}
+	value = strings.TrimSpace(value)
+	return &value, true
+}
+
+func validRouteTag(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" || len(value) > 64 {
+		return false
+	}
+	for _, item := range value {
+		if item >= 'a' && item <= 'z' {
+			continue
+		}
+		if item >= '0' && item <= '9' {
+			continue
+		}
+		if item == '_' || item == '-' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func cloneStringPtr(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	clone := *value
+	return &clone
 }
 
 func newCanonicalWorkerTagsView(tags map[string]struct{}) canonicalWorkerTagsView {
