@@ -49,8 +49,12 @@ func Parse(data []byte) (contract.App, error) {
 	if err := validateActionPath(app.App, "", "entrypoint", app.Entrypoint); err != nil {
 		return contract.App{}, err
 	}
-	if strings.TrimSpace(app.ScriptLang) == "" {
+	app.ScriptLang = strings.TrimSpace(app.ScriptLang)
+	if app.ScriptLang == "" {
 		app.ScriptLang = "typescript"
+	}
+	if !supportedScriptLang(app.ScriptLang) {
+		return contract.App{}, fmt.Errorf("app %s scriptLang %q is not supported by windforce-lite", app.App, app.ScriptLang)
 	}
 	if app.TimeoutS == 0 {
 		app.TimeoutS = contract.DefaultTimeoutS
@@ -118,6 +122,15 @@ func applyAppDefaults(app contract.App, action *contract.Action) {
 		} else if app.TimeoutS > 0 {
 			action.TimeoutMs = int64(app.TimeoutS) * 1000
 		}
+	}
+}
+
+func supportedScriptLang(scriptLang string) bool {
+	switch scriptLang {
+	case "typescript", "python":
+		return true
+	default:
+		return false
 	}
 }
 

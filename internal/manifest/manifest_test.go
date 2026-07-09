@@ -94,6 +94,20 @@ func TestParseAppliesCanonicalDefaultTimeout(t *testing.T) {
 	}
 }
 
+func TestParseRejectsUnsupportedLiteScriptLang(t *testing.T) {
+	_, err := Parse([]byte(`{
+		"app": "echo",
+		"entrypoint": "main.go",
+		"scriptLang": "go",
+		"actions": {
+			"run": {}
+		}
+	}`))
+	if err == nil || err.Error() != `app echo scriptLang "go" is not supported by windforce-lite` {
+		t.Fatalf("Parse error = %v, want unsupported scriptLang", err)
+	}
+}
+
 func TestParseDefaultTagDoesNotConflictWithActionCapabilities(t *testing.T) {
 	app, err := Parse([]byte(`{
 		"app": "echo",

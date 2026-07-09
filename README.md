@@ -89,6 +89,9 @@ manifest shape. `entrypoint` and `scriptLang` are app-level; actions branch
 inside that entrypoint. `timeout` is the app default and an action may override
 it with its own `timeout` in seconds. Source manifests do not declare action
 commands or adapters; integration adapters live outside the app source contract.
+The lite runtime subset currently accepts canonical `typescript` and `python`
+entrypoints; unsupported languages fail at sync time instead of deploying an app
+that cannot run.
 
 ## Runtime adapter compatibility
 
