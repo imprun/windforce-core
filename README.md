@@ -215,6 +215,10 @@ Implemented control-plane endpoints:
 - `GET /v1/deployments/{app}`
 - `GET /v1/apps/{app}/actions/{action}/schema`
 - `GET /v1/runs/{runID}`
+- `POST /api/w/{workspace}/jobs/run/{app}/{action}`
+- `POST /api/w/{workspace}/jobs/run/{app}/{action}/wait?timeout_ms={ms}`
+- `GET /api/w/{workspace}/jobs/{jobID}`
+- `GET /api/w/{workspace}/jobs/{jobID}/result`
 - `GET /api/w/{workspace}/jobs/{jobID}/logs?tail_bytes={bytes}`
 - `POST /v1/runs/{runID}/cancel`
 - `POST /v1/runs/{runID}/retry`

@@ -53,6 +53,13 @@ func exerciseStoreLifecycle(t *testing.T, store Store) {
 	if err := store.CreateRunAndEnqueue(context.Background(), run, job); err != nil {
 		t.Fatalf("CreateRunAndEnqueue returned error: %v", err)
 	}
+	storedJob, storedRun, found, err := store.GetJob(context.Background(), "default", job.ID)
+	if err != nil {
+		t.Fatalf("GetJob returned error: %v", err)
+	}
+	if !found || storedJob.ID != job.ID || storedRun.ID != run.ID {
+		t.Fatalf("GetJob found=%v job=%q run=%q", found, storedJob.ID, storedRun.ID)
+	}
 
 	claimed, lease, err := store.ClaimJob(context.Background(), "worker-a", time.Minute)
 	if err != nil {

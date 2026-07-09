@@ -155,6 +155,121 @@ func TestJobLogsAPI(t *testing.T) {
 	}
 }
 
+func TestCanonicalJobRunStatusAndResultAPI(t *testing.T) {
+	tempDir := t.TempDir()
+	store := state.NewLocalStore(filepath.Join(tempDir, "state.json"))
+	fileCatalog := catalog.NewFileCatalog(filepath.Join(tempDir, "catalog.json"))
+	if err := fileCatalog.UpsertDeployment(context.Background(), contract.Deployment{
+		Workspace:   "ws-a",
+		GitSourceID: "source-a",
+		App:         "echo",
+		Commit:      "commit-a",
+		Actions: map[string]contract.Action{
+			"echo": {Action: "echo", Command: []string{"helper"}},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	server := httptest.NewServer(New(Config{Store: store, Catalog: fileCatalog, EnableAPI: true}))
+	defer server.Close()
+
+	resp, err := http.Post(server.URL+"/api/w/ws-a/jobs/run/echo/echo", "application/json", bytes.NewBufferString(`{"message":"hello"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("run status = %d, want %d", resp.StatusCode, http.StatusCreated)
+	}
+	var runResponse struct {
+		JobID string `json:"job_id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&runResponse); err != nil {
+		t.Fatal(err)
+	}
+	if runResponse.JobID == "" {
+		t.Fatalf("missing job id")
+	}
+
+	statusResp, err := http.Get(server.URL + "/api/w/ws-a/jobs/" + runResponse.JobID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer statusResp.Body.Close()
+	if statusResp.StatusCode != http.StatusOK {
+		t.Fatalf("job status code = %d, want %d", statusResp.StatusCode, http.StatusOK)
+	}
+	var statusBody map[string]any
+	if err := json.NewDecoder(statusResp.Body).Decode(&statusBody); err != nil {
+		t.Fatal(err)
+	}
+	if statusBody["id"] != runResponse.JobID || statusBody["state"] != "queued" || statusBody["app_key"] != "echo" || statusBody["action_key"] != "echo" {
+		t.Fatalf("job status = %#v", statusBody)
+	}
+
+	resultResp, err := http.Get(server.URL + "/api/w/ws-a/jobs/" + runResponse.JobID + "/result")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resultResp.Body.Close()
+	if resultResp.StatusCode != http.StatusAccepted {
+		t.Fatalf("pending result status = %d, want %d", resultResp.StatusCode, http.StatusAccepted)
+	}
+
+	claimed, lease, err := store.ClaimJob(context.Background(), "worker-a", 0)
+	if err != nil {
+		t.Fatalf("ClaimJob returned error: %v", err)
+	}
+	if claimed.ID != runResponse.JobID {
+		t.Fatalf("claimed job = %q, want %q", claimed.ID, runResponse.JobID)
+	}
+	if err := store.CompleteJobSucceeded(context.Background(), lease, contract.JobResult{
+		JobID:      claimed.ID,
+		App:        "echo",
+		Action:     "echo",
+		ExitCode:   0,
+		Output:     json.RawMessage(`{"ok":true}`),
+		DurationMs: 12,
+	}); err != nil {
+		t.Fatalf("CompleteJobSucceeded returned error: %v", err)
+	}
+
+	doneResp, err := http.Get(server.URL + "/api/w/ws-a/jobs/" + runResponse.JobID + "/result")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer doneResp.Body.Close()
+	if doneResp.StatusCode != http.StatusOK {
+		t.Fatalf("done result status = %d, want %d", doneResp.StatusCode, http.StatusOK)
+	}
+	var doneBody struct {
+		Status string          `json:"status"`
+		Result json.RawMessage `json:"result"`
+	}
+	if err := json.NewDecoder(doneResp.Body).Decode(&doneBody); err != nil {
+		t.Fatal(err)
+	}
+	var doneResult struct {
+		OK bool `json:"ok"`
+	}
+	if err := json.Unmarshal(doneBody.Result, &doneResult); err != nil {
+		t.Fatal(err)
+	}
+	if doneBody.Status != "success" || !doneResult.OK {
+		t.Fatalf("done result = %#v result=%s", doneBody, doneBody.Result)
+	}
+
+	waitResp, err := http.Post(server.URL+"/api/w/ws-a/jobs/run/echo/echo/wait?timeout_ms=0", "application/json", bytes.NewBufferString(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer waitResp.Body.Close()
+	if waitResp.StatusCode != http.StatusAccepted {
+		t.Fatalf("wait status = %d, want %d", waitResp.StatusCode, http.StatusAccepted)
+	}
+}
+
 type fakeTriggerAdapter struct{}
 
 func (fakeTriggerAdapter) Name() string {

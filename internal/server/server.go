@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -185,6 +186,22 @@ func (h *Handler) handleTrigger(w http.ResponseWriter, r *http.Request, route tr
 
 func (h *Handler) handleAPI(w http.ResponseWriter, r *http.Request) bool {
 	parts := splitPath(r.URL.Path)
+	if len(parts) == 7 && parts[0] == "api" && parts[1] == "w" && parts[3] == "jobs" && parts[4] == "run" && r.Method == http.MethodPost {
+		h.handleJobRun(w, r, parts[2], parts[5], parts[6], false)
+		return true
+	}
+	if len(parts) == 8 && parts[0] == "api" && parts[1] == "w" && parts[3] == "jobs" && parts[4] == "run" && parts[7] == "wait" && r.Method == http.MethodPost {
+		h.handleJobRun(w, r, parts[2], parts[5], parts[6], true)
+		return true
+	}
+	if len(parts) == 5 && parts[0] == "api" && parts[1] == "w" && parts[3] == "jobs" && r.Method == http.MethodGet {
+		h.handleJobStatus(w, r, parts[2], parts[4])
+		return true
+	}
+	if len(parts) == 6 && parts[0] == "api" && parts[1] == "w" && parts[3] == "jobs" && parts[5] == "result" && r.Method == http.MethodGet {
+		h.handleJobResult(w, r, parts[2], parts[4])
+		return true
+	}
 	if len(parts) == 6 && parts[0] == "api" && parts[1] == "w" && parts[3] == "jobs" && parts[5] == "logs" && r.Method == http.MethodGet {
 		h.handleJobLogs(w, r, parts[2], parts[4])
 		return true
@@ -474,6 +491,133 @@ func (h *Handler) handleCatalog(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, snapshot)
 }
 
+func (h *Handler) handleJobRun(w http.ResponseWriter, r *http.Request, workspaceID string, app string, action string, wait bool) {
+	timeout := time.Duration(0)
+	if wait {
+		var ok bool
+		timeout, ok = parseRunWaitTimeout(w, r)
+		if !ok {
+			return
+		}
+	}
+	job, ok := h.enqueueJobRun(w, r, workspaceID, app, action)
+	if !ok {
+		return
+	}
+	if !wait {
+		writeJSON(w, http.StatusCreated, map[string]string{"job_id": job.ID})
+		return
+	}
+	h.waitForJobResult(w, r, workspaceID, job.ID, timeout)
+}
+
+func (h *Handler) enqueueJobRun(w http.ResponseWriter, r *http.Request, workspaceID string, app string, action string) (state.Job, bool) {
+	if h.store == nil || h.catalog == nil {
+		writeError(w, http.StatusServiceUnavailable, "job API is not configured")
+		return state.Job{}, false
+	}
+	input, ok := readRunInput(w, r)
+	if !ok {
+		return state.Job{}, false
+	}
+	workspaceID = contract.NormalizeWorkspace(workspaceID)
+	deployment, err := h.catalog.GetDeployment(r.Context(), app)
+	if err != nil || contract.NormalizeWorkspace(deployment.SourceWorkspace()) != workspaceID {
+		writeError(w, http.StatusNotFound, "app not found: "+app)
+		return state.Job{}, false
+	}
+	if _, ok := deployment.Actions[action]; !ok {
+		writeError(w, http.StatusNotFound, "action not found: "+app+"/"+action)
+		return state.Job{}, false
+	}
+	run := state.NewRun("windforce", "", app, action, deployment, input)
+	if correlationID := state.CleanID(r.Header.Get("X-Request-ID")); correlationID != "" {
+		run.CorrelationID = correlationID
+	}
+	job := state.NewActionJob(run, input)
+	if err := h.store.CreateRunAndEnqueue(r.Context(), run, job); err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, state.ErrConflict) {
+			status = http.StatusConflict
+		}
+		writeError(w, status, err.Error())
+		return state.Job{}, false
+	}
+	return job, true
+}
+
+func (h *Handler) handleJobStatus(w http.ResponseWriter, r *http.Request, workspaceID string, jobID string) {
+	if h.store == nil {
+		writeError(w, http.StatusServiceUnavailable, "state store is not configured")
+		return
+	}
+	job, run, found, err := h.store.GetJob(r.Context(), workspaceID, jobID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "job not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, newJobStatus(workspaceID, job, run))
+}
+
+func (h *Handler) handleJobResult(w http.ResponseWriter, r *http.Request, workspaceID string, jobID string) {
+	if h.store == nil {
+		writeError(w, http.StatusServiceUnavailable, "state store is not configured")
+		return
+	}
+	job, run, found, err := h.store.GetJob(r.Context(), workspaceID, jobID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "job not found")
+		return
+	}
+	status, result, done := jobResult(job, run)
+	if !done {
+		writeJSON(w, http.StatusAccepted, map[string]string{"status": "pending"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": status, "result": result})
+}
+
+func (h *Handler) waitForJobResult(w http.ResponseWriter, r *http.Request, workspaceID string, jobID string, timeout time.Duration) {
+	deadline := time.Now().Add(timeout)
+	for {
+		job, run, found, err := h.store.GetJob(r.Context(), workspaceID, jobID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if !found {
+			writeError(w, http.StatusNotFound, "job not found")
+			return
+		}
+		status, result, done := jobResult(job, run)
+		if done {
+			writeJSON(w, http.StatusOK, map[string]any{"job_id": jobID, "status": status, "result": result})
+			return
+		}
+		if !time.Now().Before(deadline) {
+			writeJSON(w, http.StatusAccepted, map[string]string{"job_id": jobID, "status": "pending"})
+			return
+		}
+		sleep := 50 * time.Millisecond
+		if remaining := time.Until(deadline); remaining < sleep {
+			sleep = remaining
+		}
+		select {
+		case <-r.Context().Done():
+			return
+		case <-time.After(sleep):
+		}
+	}
+}
+
 func (h *Handler) handleJobLogs(w http.ResponseWriter, r *http.Request, workspaceID string, jobID string) {
 	if h.store == nil {
 		writeError(w, http.StatusServiceUnavailable, "state store is not configured")
@@ -662,6 +806,37 @@ func readJSONBody(r *http.Request) (json.RawMessage, error) {
 	return json.RawMessage(append([]byte(nil), data...)), nil
 }
 
+const maxRunBodyBytes = 1 << 20
+
+func readRunInput(w http.ResponseWriter, r *http.Request) (json.RawMessage, bool) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxRunBodyBytes)
+	defer r.Body.Close()
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			writeError(w, http.StatusRequestEntityTooLarge, "request body too large")
+		} else {
+			writeError(w, http.StatusBadRequest, "could not read request body")
+		}
+		return nil, false
+	}
+	body = bytes.TrimSpace(body)
+	if len(body) == 0 {
+		return json.RawMessage("{}"), true
+	}
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(body, &object); err != nil || object == nil {
+		writeError(w, http.StatusBadRequest, "request body must be a JSON object")
+		return nil, false
+	}
+	if _, ok := object["__wf_enc"]; ok {
+		writeError(w, http.StatusBadRequest, `"__wf_enc" is a reserved top-level input key`)
+		return nil, false
+	}
+	return json.RawMessage(append([]byte(nil), body...)), true
+}
+
 func readResumeInput(r *http.Request) (json.RawMessage, error) {
 	body, err := readJSONBody(r)
 	if err != nil {
@@ -715,6 +890,143 @@ func runResponse(run state.Run) map[string]any {
 	return response
 }
 
+type jobStatusResponse struct {
+	ID          string          `json:"id"`
+	WorkspaceID string          `json:"workspace_id"`
+	State       string          `json:"state"`
+	Status      *string         `json:"status,omitempty"`
+	Worker      *string         `json:"worker,omitempty"`
+	AppKey      *string         `json:"app_key,omitempty"`
+	ActionKey   *string         `json:"action_key,omitempty"`
+	Kind        *string         `json:"kind,omitempty"`
+	CommitSha   *string         `json:"commit_sha,omitempty"`
+	Input       json.RawMessage `json:"input,omitempty"`
+	CreatedAt   *time.Time      `json:"created_at,omitempty"`
+	StartedAt   *time.Time      `json:"started_at,omitempty"`
+	CompletedAt *time.Time      `json:"completed_at,omitempty"`
+	DurationMs  int64           `json:"duration_ms,omitempty"`
+}
+
+func newJobStatus(workspaceID string, job state.Job, run state.Run) jobStatusResponse {
+	stateValue := "queued"
+	var statusValue *string
+	var worker *string
+	var startedAt *time.Time
+	var completedAt *time.Time
+	switch job.State {
+	case state.JobRunning:
+		stateValue = "running"
+		worker = stringPtr(job.LeaseOwner)
+		startedAt = &job.UpdatedAt
+	case state.JobSucceeded, state.JobFailed:
+		stateValue = "completed"
+		status := terminalJobStatus(job, run)
+		statusValue = &status
+		completedAt = &run.UpdatedAt
+	}
+	app := job.Payload.App
+	action := job.Payload.Action
+	kind := job.Kind
+	commit := job.Payload.Commit
+	response := jobStatusResponse{
+		ID:          job.ID,
+		WorkspaceID: contract.NormalizeWorkspace(workspaceID),
+		State:       stateValue,
+		Status:      statusValue,
+		Worker:      worker,
+		AppKey:      stringPtr(app),
+		ActionKey:   stringPtr(action),
+		Kind:        stringPtr(kind),
+		CommitSha:   stringPtr(commit),
+		Input:       cloneRaw(job.Payload.Input),
+		CreatedAt:   &job.CreatedAt,
+		StartedAt:   startedAt,
+		CompletedAt: completedAt,
+	}
+	if run.Result != nil {
+		response.DurationMs = run.Result.DurationMs
+	}
+	return response
+}
+
+func jobResult(job state.Job, run state.Run) (string, json.RawMessage, bool) {
+	if job.State == state.JobQueued || job.State == state.JobRunning {
+		return "", nil, false
+	}
+	status := terminalJobStatus(job, run)
+	switch status {
+	case "success":
+		return status, rawOrNull(run.Output), true
+	case "canceled":
+		message := runErrorMessage(run)
+		if message == "" {
+			message = "job canceled"
+		}
+		return status, mustRaw(map[string]string{"name": "Canceled", "message": message}), true
+	default:
+		message := runErrorMessage(run)
+		if message == "" {
+			message = "job failed"
+		}
+		return "failure", mustRaw(map[string]string{"name": "Error", "message": message}), true
+	}
+}
+
+func terminalJobStatus(job state.Job, run state.Run) string {
+	if run.State == state.RunCanceled {
+		return "canceled"
+	}
+	if job.State == state.JobSucceeded || run.State == state.RunSucceeded || run.State == state.RunWaitingHuman {
+		return "success"
+	}
+	return "failure"
+}
+
+func runErrorMessage(run state.Run) string {
+	if run.Result != nil && run.Result.Error != "" {
+		return run.Result.Error
+	}
+	if len(run.Error) == 0 {
+		return ""
+	}
+	var envelope struct {
+		Message string `json:"message"`
+	}
+	if json.Unmarshal(run.Error, &envelope) == nil {
+		return envelope.Message
+	}
+	return string(run.Error)
+}
+
+func rawOrNull(value json.RawMessage) json.RawMessage {
+	if len(value) == 0 {
+		return json.RawMessage("null")
+	}
+	return cloneRaw(value)
+}
+
+func mustRaw(value any) json.RawMessage {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return json.RawMessage("null")
+	}
+	return data
+}
+
+func cloneRaw(value json.RawMessage) json.RawMessage {
+	if len(value) == 0 {
+		return nil
+	}
+	return append(json.RawMessage(nil), value...)
+}
+
+func stringPtr(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
 func writeStateError(w http.ResponseWriter, err error) {
 	status := http.StatusInternalServerError
 	if errors.Is(err, state.ErrNotFound) {
@@ -738,6 +1050,10 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 }
 
 const maxTailBytes = 1048576
+const (
+	defaultRunWaitTimeout = 30 * time.Second
+	maxRunWaitTimeout     = 30 * time.Second
+)
 
 func parseTailBytes(raw string) (int, error) {
 	raw = strings.TrimSpace(raw)
@@ -752,6 +1068,23 @@ func parseTailBytes(raw string) (int, error) {
 		return 0, errors.New("tail_bytes exceeds server limit")
 	}
 	return int(value), nil
+}
+
+func parseRunWaitTimeout(w http.ResponseWriter, r *http.Request) (time.Duration, bool) {
+	raw := strings.TrimSpace(r.URL.Query().Get("timeout_ms"))
+	if raw == "" {
+		return defaultRunWaitTimeout, true
+	}
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || value < 0 {
+		writeError(w, http.StatusBadRequest, "timeout_ms must be a non-negative integer")
+		return 0, false
+	}
+	timeout := time.Duration(value) * time.Millisecond
+	if timeout > maxRunWaitTimeout {
+		timeout = maxRunWaitTimeout
+	}
+	return timeout, true
 }
 
 func firstNonEmpty(values ...string) string {

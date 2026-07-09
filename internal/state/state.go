@@ -150,6 +150,7 @@ type Snapshot struct {
 type Store interface {
 	CreateRunAndEnqueue(ctx context.Context, run Run, job Job) error
 	GetRun(ctx context.Context, runID string) (Run, error)
+	GetJob(ctx context.Context, workspaceID string, jobID string) (Job, Run, bool, error)
 	GetHumanTask(ctx context.Context, taskID string) (HumanTask, error)
 	AppendLogs(ctx context.Context, jobID string, workspaceID string, chunk string) error
 	GetLogs(ctx context.Context, workspaceID string, jobID string) (string, bool, error)
@@ -290,6 +291,22 @@ func (s *LocalStore) GetRun(ctx context.Context, runID string) (Run, error) {
 		return Run{}, fmt.Errorf("%w: run %q", ErrNotFound, runID)
 	}
 	return run, nil
+}
+
+func (s *LocalStore) GetJob(ctx context.Context, workspaceID string, jobID string) (Job, Run, bool, error) {
+	snapshot, err := s.Load(ctx)
+	if err != nil {
+		return Job{}, Run{}, false, err
+	}
+	job, ok := snapshot.Jobs[jobID]
+	if !ok || normalizedJobWorkspace("", job) != contract.NormalizeWorkspace(workspaceID) {
+		return Job{}, Run{}, false, nil
+	}
+	run, ok := snapshot.Runs[job.RunID]
+	if !ok {
+		return Job{}, Run{}, false, fmt.Errorf("%w: run %q", ErrNotFound, job.RunID)
+	}
+	return job, run, true, nil
 }
 
 func (s *LocalStore) GetHumanTask(ctx context.Context, taskID string) (HumanTask, error) {

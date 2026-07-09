@@ -182,6 +182,30 @@ SELECT EXISTS (
 	return "", exists, nil
 }
 
+func (s *PostgresStore) GetJob(ctx context.Context, workspaceID string, jobID string) (Job, Run, bool, error) {
+	workspaceID = contract.NormalizeWorkspace(workspaceID)
+	job, err := scanJob(s.pool.QueryRow(ctx, `
+SELECT `+jobColumns+`
+FROM jobs
+WHERE id=$1
+  AND COALESCE(NULLIF(payload->>'workspace', ''), NULLIF(payload->'deployment'->>'workspace', ''), 'default')=$2
+`, jobID, workspaceID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Job{}, Run{}, false, nil
+	}
+	if err != nil {
+		return Job{}, Run{}, false, err
+	}
+	run, err := scanRun(s.pool.QueryRow(ctx, `SELECT `+runColumns+` FROM runs WHERE id=$1`, job.RunID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Job{}, Run{}, false, fmt.Errorf("%w: run %q", ErrNotFound, job.RunID)
+	}
+	if err != nil {
+		return Job{}, Run{}, false, err
+	}
+	return job, run, true, nil
+}
+
 func (s *PostgresStore) CreateRunAndEnqueue(ctx context.Context, run Run, job Job) error {
 	return s.withTx(ctx, func(tx pgx.Tx) error {
 		now := time.Now().UTC()
