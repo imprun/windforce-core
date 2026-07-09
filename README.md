@@ -249,9 +249,8 @@ Implemented control-plane endpoints:
 
 `git_sources` responses follow the canonical control-plane shape: `id` is the
 numeric source identifier used by `{gitSourceId}` routes, and `name` is the
-human-readable source name. The lite CLI still accepts a source name for local
-compatibility, but control-plane integrations should store and call the returned
-numeric `id`.
+human-readable source name. Control-plane integrations, including the lite CLI,
+must store and call the returned numeric `id`.
 
 For local development without the full UI, `tools/windforce_control.py` calls
 the same control-plane API:

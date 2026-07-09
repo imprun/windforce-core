@@ -540,6 +540,11 @@ func (h *Handler) handleCanonicalSampleGitSource(w http.ResponseWriter, r *http.
 }
 
 func (h *Handler) handleCanonicalPatchGitSource(w http.ResponseWriter, r *http.Request, workspaceID string, sourceID string) {
+	var ok bool
+	sourceID, ok = requireCanonicalGitSourceRouteID(w, sourceID)
+	if !ok {
+		return
+	}
 	patcher, ok := h.gitSources.(interface {
 		Patch(context.Context, string, string, gitsourcepkg.Patch) (gitsourcepkg.Source, error)
 	})
@@ -573,6 +578,11 @@ func (h *Handler) handleCanonicalPatchGitSource(w http.ResponseWriter, r *http.R
 }
 
 func (h *Handler) handleCanonicalDeleteGitSource(w http.ResponseWriter, r *http.Request, workspaceID string, sourceID string) {
+	var ok bool
+	sourceID, ok = requireCanonicalGitSourceRouteID(w, sourceID)
+	if !ok {
+		return
+	}
 	deleter, ok := h.gitSources.(interface {
 		Delete(context.Context, string, string) (bool, error)
 	})
@@ -593,6 +603,11 @@ func (h *Handler) handleCanonicalDeleteGitSource(w http.ResponseWriter, r *http.
 }
 
 func (h *Handler) handleCanonicalGitSourceSync(w http.ResponseWriter, r *http.Request, workspaceID string, sourceID string) {
+	var ok bool
+	sourceID, ok = requireCanonicalGitSourceRouteID(w, sourceID)
+	if !ok {
+		return
+	}
 	if h.syncer == nil {
 		writeError(w, http.StatusServiceUnavailable, "sync API is not configured")
 		return
@@ -1020,6 +1035,15 @@ func parseCanonicalGitSourceID(id string) int64 {
 		return 0
 	}
 	return value
+}
+
+func requireCanonicalGitSourceRouteID(w http.ResponseWriter, id string) (string, bool) {
+	id = strings.TrimSpace(id)
+	if _, err := strconv.ParseInt(id, 10, 64); err != nil {
+		writeError(w, http.StatusBadRequest, "bad git source id")
+		return "", false
+	}
+	return id, true
 }
 
 func canonicalGitSourceIDPtr(id string) *int64 {

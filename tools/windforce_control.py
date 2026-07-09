@@ -44,7 +44,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
 
     register = sub.add_parser("register", help="register a git source")
-    register.add_argument("--name", "--git-source-id", dest="name", required=True)
+    register.add_argument("--name", required=True)
     register.add_argument("--repo-url", "--repo", dest="repo_url", required=True)
     register.add_argument("--branch", default="main")
     register.add_argument("--subpath", default="")
@@ -63,10 +63,9 @@ def main(argv: list[str] | None = None) -> int:
     sync = sub.add_parser("sync", help="sync a registered git source by returned numeric id")
     sync.add_argument(
         "--git-source-id",
-        "--name",
         dest="git_source_id",
         required=True,
-        help="numeric git source id; source name is accepted for local compatibility",
+        help="numeric git source id returned by register/list",
     )
     # Compatibility with earlier local scripts. These fields belong to the
     # registered git source and are not sent to the sync endpoint.

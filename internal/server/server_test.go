@@ -1348,6 +1348,35 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 	}
 	registeredID := fmt.Sprint(registered.ID)
 
+	for _, tc := range []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{http.MethodPost, "/api/w/ws-a/git_sources/source-a/sync", ""},
+		{http.MethodPatch, "/api/w/ws-a/git_sources/source-a", `{}`},
+		{http.MethodDelete, "/api/w/ws-a/git_sources/source-a", ""},
+	} {
+		req, err := http.NewRequest(tc.method, server.URL+tc.path, bytes.NewBufferString(tc.body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var body struct {
+			Error string `json:"error"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusBadRequest || body.Error != "bad git source id" {
+			t.Fatalf("%s %s = %d %#v, want 400 bad git source id", tc.method, tc.path, resp.StatusCode, body)
+		}
+	}
+
 	duplicateResp, err := http.Post(server.URL+"/api/w/ws-a/git_sources", "application/json", bytes.NewReader(registerBody))
 	if err != nil {
 		t.Fatal(err)
@@ -2475,8 +2504,14 @@ func TestControlPlaneRegistersGitSourcePathAndSyncsIt(t *testing.T) {
 	if registerResp.StatusCode != http.StatusCreated {
 		t.Fatalf("register status = %d, want %d", registerResp.StatusCode, http.StatusCreated)
 	}
+	var registered struct {
+		ID int64 `json:"id"`
+	}
+	if err := json.NewDecoder(registerResp.Body).Decode(&registered); err != nil {
+		t.Fatal(err)
+	}
 
-	syncResp, err := http.Post(server.URL+"/api/w/ws-a/git_sources/source-a/sync", "", nil)
+	syncResp, err := http.Post(server.URL+"/api/w/ws-a/git_sources/"+fmt.Sprint(registered.ID)+"/sync", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
