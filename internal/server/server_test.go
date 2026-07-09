@@ -155,6 +155,24 @@ func TestJobLogsAPI(t *testing.T) {
 	if string(body) != "world" {
 		t.Fatalf("logs body = %q", body)
 	}
+
+	missingResp, err := http.Get(server.URL + "/api/w/ws-a/jobs/missing/logs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer missingResp.Body.Close()
+	if missingResp.StatusCode != http.StatusNotFound {
+		t.Fatalf("missing logs status = %d, want %d", missingResp.StatusCode, http.StatusNotFound)
+	}
+	var missingBody struct {
+		Error string `json:"error"`
+	}
+	if err := json.NewDecoder(missingResp.Body).Decode(&missingBody); err != nil {
+		t.Fatal(err)
+	}
+	if missingBody.Error != "job not found" {
+		t.Fatalf("missing logs body = %#v", missingBody)
+	}
 }
 
 func TestCanonicalJobRunStatusAndResultAPI(t *testing.T) {
