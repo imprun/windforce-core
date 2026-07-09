@@ -266,8 +266,9 @@ func TestCanonicalStateAPI(t *testing.T) {
 
 func TestCanonicalVariablesAndResourcesAPI(t *testing.T) {
 	tempDir := t.TempDir()
+	store := state.NewLocalStore(filepath.Join(tempDir, "state.json"))
 	server := httptest.NewServer(New(Config{
-		Store:     state.NewLocalStore(filepath.Join(tempDir, "state.json")),
+		Store:     store,
 		EnableAPI: true,
 	}))
 	defer server.Close()
@@ -307,6 +308,71 @@ func TestCanonicalVariablesAndResourcesAPI(t *testing.T) {
 	}
 	if variableBody.Path != "config/token" || variableBody.Value != "scoped" || variableBody.IsSecret {
 		t.Fatalf("variable body = %#v", variableBody)
+	}
+
+	sharedVariableResp, err := http.Get(server.URL + "/api/w/ws-a/variables/get/p/config/token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sharedVariableResp.Body.Close()
+	if sharedVariableResp.StatusCode != http.StatusOK {
+		t.Fatalf("shared variable status = %d, want %d", sharedVariableResp.StatusCode, http.StatusOK)
+	}
+	var sharedVariableBody struct {
+		Path     string `json:"path"`
+		Value    string `json:"value"`
+		IsSecret bool   `json:"is_secret"`
+	}
+	if err := json.NewDecoder(sharedVariableResp.Body).Decode(&sharedVariableBody); err != nil {
+		t.Fatal(err)
+	}
+	if sharedVariableBody.Path != "config/token" || sharedVariableBody.Value != "shared" || !sharedVariableBody.IsSecret {
+		t.Fatalf("shared variable body = %#v", sharedVariableBody)
+	}
+
+	foreignVariableResp, err := http.Get(server.URL + "/api/w/ws-a/variables/get/p/config/token?app=other")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer foreignVariableResp.Body.Close()
+	if foreignVariableResp.StatusCode != http.StatusNotFound {
+		t.Fatalf("foreign exact variable status = %d, want %d", foreignVariableResp.StatusCode, http.StatusNotFound)
+	}
+
+	deployment := contract.Deployment{
+		Workspace: "ws-a",
+		App:       "echo",
+		Commit:    "commit-a",
+		Actions: map[string]contract.Action{
+			"echo": {Action: "echo"},
+		},
+	}
+	run := state.NewRun("windforce", "run-variable-scope", "echo", "echo", deployment, json.RawMessage(`{}`))
+	job := state.NewActionJob(run, nil)
+	if err := store.CreateRunAndEnqueue(context.Background(), run, job); err != nil {
+		t.Fatal(err)
+	}
+	jobVariableReq, err := http.NewRequest(http.MethodGet, server.URL+"/api/w/ws-a/variables/get/p/config/token", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jobVariableReq.Header.Set("X-Windforce-Job-ID", job.ID)
+	jobVariableResp, err := http.DefaultClient.Do(jobVariableReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer jobVariableResp.Body.Close()
+	if jobVariableResp.StatusCode != http.StatusOK {
+		t.Fatalf("job scoped variable status = %d, want %d", jobVariableResp.StatusCode, http.StatusOK)
+	}
+	var jobVariableBody struct {
+		Value string `json:"value"`
+	}
+	if err := json.NewDecoder(jobVariableResp.Body).Decode(&jobVariableBody); err != nil {
+		t.Fatal(err)
+	}
+	if jobVariableBody.Value != "scoped" {
+		t.Fatalf("job scoped variable body = %#v", jobVariableBody)
 	}
 
 	listResp, err := http.Get(server.URL + "/api/w/ws-a/variables")

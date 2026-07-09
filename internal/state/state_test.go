@@ -209,12 +209,32 @@ func exerciseStoreVariablesAndResources(t *testing.T, store Store) {
 	if !found || variable.Value != "scoped" || variable.AppKey != "echo" {
 		t.Fatalf("scoped variable found=%v variable=%#v", found, variable)
 	}
+	variable, found, err = store.GetVariableExact(ctx, "ws-a", "echo", "config/token")
+	if err != nil {
+		t.Fatalf("GetVariableExact scoped returned error: %v", err)
+	}
+	if !found || variable.Value != "scoped" || variable.AppKey != "echo" {
+		t.Fatalf("exact scoped variable found=%v variable=%#v", found, variable)
+	}
 	variable, found, err = store.GetVariable(ctx, "ws-a", "other", "config/token")
 	if err != nil {
 		t.Fatalf("GetVariable shared fallback returned error: %v", err)
 	}
 	if !found || variable.Value != "shared" || variable.AppKey != "" {
 		t.Fatalf("shared variable found=%v variable=%#v", found, variable)
+	}
+	if variable, found, err = store.GetVariableExact(ctx, "ws-a", "other", "config/token"); err != nil {
+		t.Fatalf("GetVariableExact foreign scope returned error: %v", err)
+	}
+	if found {
+		t.Fatalf("exact foreign scope found=%v variable=%#v, want miss", found, variable)
+	}
+	variable, found, err = store.GetVariableExact(ctx, "ws-a", "", "config/token")
+	if err != nil {
+		t.Fatalf("GetVariableExact shared returned error: %v", err)
+	}
+	if !found || variable.Value != "shared" || variable.AppKey != "" {
+		t.Fatalf("exact shared variable found=%v variable=%#v", found, variable)
 	}
 	variables, err := store.ListVariables(ctx, "ws-a")
 	if err != nil {

@@ -264,9 +264,12 @@ let headers = undefined
 try { const h = env("WF_TRIGGER_HEADERS"); if (h) headers = JSON.parse(h) } catch { headers = undefined }
 
 async function api(method, path, body) {
+  const reqHeaders = { Authorization: "Bearer " + TOKEN, "Content-Type": "application/json" }
+  const jobID = env("WF_JOB_ID")
+  if (jobID) reqHeaders["X-Windforce-Job-ID"] = jobID
   return fetch(BASE + "/api/w/" + WS + path, {
     method,
-    headers: { Authorization: "Bearer " + TOKEN, "Content-Type": "application/json" },
+    headers: reqHeaders,
     body: body === undefined ? undefined : JSON.stringify(body),
   })
 }
@@ -291,8 +294,7 @@ const ctx = {
   },
   variables: {
     async get(p) {
-      // Lite has no signed job principal; pass app scope explicitly to preserve shadowing.
-      const r = await api("GET", "/variables/get/p/" + p + "?app=" + encodeURIComponent(APP))
+      const r = await api("GET", "/variables/get/p/" + p)
       if (!r.ok) throw new Error("variables.get(" + p + ") failed: " + r.status)
       return (await r.json()).value
     },
@@ -414,14 +416,15 @@ def _call(method, url, headers, body):
 def _api(method, path, body=None):
     url = _BASE + "/api/w/" + _WS + path
     headers = {"Authorization": "Bearer " + _TOKEN, "Content-Type": "application/json"}
+    job_id = _env("WF_JOB_ID")
+    if job_id:
+        headers["X-Windforce-Job-ID"] = job_id
     return _call(method, url, headers, body)
 
 
 class _Variables:
     async def get(self, path):
-        # Lite has no signed job principal; pass app scope explicitly to preserve shadowing.
-        query = "?app=" + urllib.parse.quote(_APP, safe="")
-        status, raw = await asyncio.to_thread(_api, "GET", "/variables/get/p/" + path + query)
+        status, raw = await asyncio.to_thread(_api, "GET", "/variables/get/p/" + path)
         if status < 200 or status >= 300:
             raise RuntimeError("variables.get(" + path + ") failed: " + str(status))
         return json.loads(raw).get("value")

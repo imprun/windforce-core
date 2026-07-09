@@ -276,6 +276,7 @@ type Store interface {
 	ListVariables(ctx context.Context, workspaceID string) ([]Variable, error)
 	SetVariable(ctx context.Context, workspaceID string, appKey string, path string, value string, isSecret bool, description string) error
 	GetVariable(ctx context.Context, workspaceID string, appKey string, path string) (Variable, bool, error)
+	GetVariableExact(ctx context.Context, workspaceID string, appKey string, path string) (Variable, bool, error)
 	DeleteVariable(ctx context.Context, workspaceID string, appKey string, path string) error
 	SetResource(ctx context.Context, workspaceID string, path string, value json.RawMessage, resourceType string, description string) error
 	GetResource(ctx context.Context, workspaceID string, path string) (Resource, bool, error)
@@ -678,6 +679,16 @@ func (s *LocalStore) GetVariable(ctx context.Context, workspaceID string, appKey
 		}
 	}
 	variable, ok := variables[variableKey("", path)]
+	return variable, ok, nil
+}
+
+func (s *LocalStore) GetVariableExact(ctx context.Context, workspaceID string, appKey string, path string) (Variable, bool, error) {
+	snapshot, err := s.Load(ctx)
+	if err != nil {
+		return Variable{}, false, err
+	}
+	workspaceID = contract.NormalizeWorkspace(workspaceID)
+	variable, ok := snapshot.Variables[workspaceID][variableKey(appKey, path)]
 	return variable, ok, nil
 }
 

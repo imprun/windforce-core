@@ -311,7 +311,7 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 				"parameters": []any{
 					oapiWorkspaceParam(workspaceID),
 					oapiPathParam("path", "Variable path."),
-					oapiQueryParam("app", "Optional app key for app-scoped lookup.", oapiStringSchema(), false),
+					oapiQueryParam("app", "Optional exact app key scope for console lookup.", oapiStringSchema(), false),
 				},
 				"responses": withErrors(map[string]any{
 					"200": oapiResponse("Variable value.", oapiSchemaRef("VariableValueResponse")),

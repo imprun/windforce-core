@@ -304,6 +304,23 @@ LIMIT 1
 	return variable, true, nil
 }
 
+func (s *PostgresStore) GetVariableExact(ctx context.Context, workspaceID string, appKey string, path string) (Variable, bool, error) {
+	workspaceID = contract.NormalizeWorkspace(workspaceID)
+	var variable Variable
+	err := s.pool.QueryRow(ctx, `
+SELECT app_key, path, value, is_secret, description
+FROM variable
+WHERE workspace_id=$1 AND app_key=$2 AND path=$3
+`, workspaceID, appKey, path).Scan(&variable.AppKey, &variable.Path, &variable.Value, &variable.IsSecret, &variable.Description)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Variable{}, false, nil
+	}
+	if err != nil {
+		return Variable{}, false, err
+	}
+	return variable, true, nil
+}
+
 func (s *PostgresStore) DeleteVariable(ctx context.Context, workspaceID string, appKey string, path string) error {
 	workspaceID = contract.NormalizeWorkspace(workspaceID)
 	_, err := s.pool.Exec(ctx, `

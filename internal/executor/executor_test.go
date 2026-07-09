@@ -21,7 +21,10 @@ func TestRunPythonBuildsCanonicalCtxHelpers(t *testing.T) {
 			t.Errorf("authorization header = %q", r.Header.Get("Authorization"))
 		}
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/w/ws-a/variables/get/p/secret" && r.URL.Query().Get("app") == "demo":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/w/ws-a/variables/get/p/secret" && r.URL.RawQuery == "":
+			if r.Header.Get("X-Windforce-Job-ID") != "job-a" {
+				t.Errorf("job id header = %q", r.Header.Get("X-Windforce-Job-ID"))
+			}
 			writeJSON(w, map[string]string{"value": "var-ok"})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/w/ws-a/resources/get/p/browser":
 			writeJSON(w, map[string]string{"resource": "browser-ok"})
@@ -118,18 +121,24 @@ async def main(ctx):
 	}
 }
 
-func TestGeneratedWrappersScopeVariableReadsByApp(t *testing.T) {
+func TestGeneratedWrappersSendJobIdentityForVariableReads(t *testing.T) {
 	ts := wrapper("main.ts")
-	if !strings.Contains(ts, `"/variables/get/p/" + p + "?app=" + encodeURIComponent(APP)`) {
-		t.Fatalf("typescript wrapper does not pass app scope to variables.get:\n%s", ts)
+	if strings.Contains(ts, `?app=`) {
+		t.Fatalf("typescript wrapper still passes app scope to variables.get:\n%s", ts)
+	}
+	if !strings.Contains(ts, `reqHeaders["X-Windforce-Job-ID"] = jobID`) {
+		t.Fatalf("typescript wrapper does not pass job identity:\n%s", ts)
 	}
 	if !strings.Contains(ts, `app: APP`) {
 		t.Fatalf("typescript wrapper does not reuse APP in ctx.app:\n%s", ts)
 	}
 
 	py := wrapperPy("main.py")
-	if !strings.Contains(py, `"?app=" + urllib.parse.quote(_APP, safe="")`) {
-		t.Fatalf("python wrapper does not pass app scope to variables.get:\n%s", py)
+	if strings.Contains(py, `?app=`) {
+		t.Fatalf("python wrapper still passes app scope to variables.get:\n%s", py)
+	}
+	if !strings.Contains(py, `headers["X-Windforce-Job-ID"] = job_id`) {
+		t.Fatalf("python wrapper does not pass job identity:\n%s", py)
 	}
 	if !strings.Contains(py, `app=_APP`) {
 		t.Fatalf("python wrapper does not reuse _APP in ctx.app:\n%s", py)

@@ -2038,7 +2038,19 @@ func (h *Handler) handleGetVariable(w http.ResponseWriter, r *http.Request, work
 		writeError(w, http.StatusServiceUnavailable, "state store is not configured")
 		return
 	}
-	variable, found, err := h.store.GetVariable(r.Context(), workspaceID, r.URL.Query().Get("app"), variablePath)
+	var (
+		variable state.Variable
+		found    bool
+		err      error
+	)
+	if appKey, ok, lookupErr := h.jobVariableScope(r, workspaceID); lookupErr != nil {
+		writeError(w, http.StatusInternalServerError, lookupErr.Error())
+		return
+	} else if ok {
+		variable, found, err = h.store.GetVariable(r.Context(), workspaceID, appKey, variablePath)
+	} else {
+		variable, found, err = h.store.GetVariableExact(r.Context(), workspaceID, r.URL.Query().Get("app"), variablePath)
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -2048,6 +2060,21 @@ func (h *Handler) handleGetVariable(w http.ResponseWriter, r *http.Request, work
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"path": variable.Path, "value": variable.Value, "is_secret": variable.IsSecret})
+}
+
+func (h *Handler) jobVariableScope(r *http.Request, workspaceID string) (string, bool, error) {
+	jobID := strings.TrimSpace(r.Header.Get("X-Windforce-Job-ID"))
+	if jobID == "" {
+		return "", false, nil
+	}
+	job, _, found, err := h.store.GetJob(r.Context(), workspaceID, jobID)
+	if err != nil {
+		return "", true, err
+	}
+	if !found {
+		return "", true, nil
+	}
+	return job.Payload.App, true, nil
 }
 
 func (h *Handler) handleDeleteVariable(w http.ResponseWriter, r *http.Request, workspaceID string, variablePath string) {
