@@ -42,7 +42,7 @@ def main(argv: list[str] | None = None) -> int:
 
     sub = parser.add_subparsers(dest="command", required=True)
 
-    register = sub.add_parser("register", help="register or update a git source")
+    register = sub.add_parser("register", help="register a git source")
     register.add_argument("--name", "--git-source-id", dest="name", required=True)
     register.add_argument("--repo-url", "--repo", dest="repo_url", required=True)
     register.add_argument("--branch", default="main")
