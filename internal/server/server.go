@@ -616,20 +616,16 @@ func (h *Handler) handleCanonicalRegisterGitSource(w http.ResponseWriter, r *htt
 		BranchCamel   string `json:"Branch"`
 		SubpathCamel  string `json:"Subpath"`
 		CredsRefCamel string `json:"CredsRef"`
-
-		ID        string `json:"id"`
-		RepoURLV1 string `json:"repoUrl"`
-		TokenEnv  string `json:"tokenEnv"`
 	}
 	if err := readOptionalJSON(r, &request); err != nil {
 		writeError(w, http.StatusBadRequest, "name and repo_url required")
 		return
 	}
-	name := strings.TrimSpace(firstNonEmpty(request.Name, request.NameCamel, request.ID))
-	repoURL := strings.TrimSpace(firstNonEmpty(request.RepoURL, request.RepoURLCamel, request.RepoURLV1))
+	name := strings.TrimSpace(firstNonEmpty(request.Name, request.NameCamel))
+	repoURL := strings.TrimSpace(firstNonEmpty(request.RepoURL, request.RepoURLCamel))
 	branch := strings.TrimSpace(firstNonEmpty(request.Branch, request.BranchCamel))
 	subpath := strings.TrimSpace(firstNonEmpty(request.Subpath, request.SubpathCamel))
-	credsRef := strings.TrimSpace(firstNonEmpty(request.CredsRef, request.CredsRefCamel, request.TokenEnv))
+	credsRef := strings.TrimSpace(firstNonEmpty(request.CredsRef, request.CredsRefCamel))
 	if name == "" || repoURL == "" {
 		writeError(w, http.StatusBadRequest, "name and repo_url required")
 		return
@@ -687,25 +683,23 @@ func (h *Handler) createGitSource(w http.ResponseWriter, r *http.Request, source
 func (h *Handler) handleCanonicalProbeGitSource(w http.ResponseWriter, r *http.Request, workspaceID string) {
 	var request struct {
 		RepoURL     string `json:"repo_url"`
-		RepoURLV1   string `json:"repoUrl"`
 		Branch      string `json:"branch"`
 		AccessToken string `json:"access_token"`
 		CredsRef    string `json:"creds_ref"`
-		CredsRefV1  string `json:"tokenEnv"`
 	}
-	if err := readOptionalJSON(r, &request); err != nil || strings.TrimSpace(firstNonEmpty(request.RepoURL, request.RepoURLV1)) == "" {
+	if err := readOptionalJSON(r, &request); err != nil || strings.TrimSpace(request.RepoURL) == "" {
 		writeError(w, http.StatusBadRequest, "repo_url required")
 		return
 	}
 	token := strings.TrimSpace(request.AccessToken)
 	if token == "" {
-		if credsRef := strings.TrimSpace(firstNonEmpty(request.CredsRef, request.CredsRefV1)); credsRef != "" {
+		if credsRef := strings.TrimSpace(request.CredsRef); credsRef != "" {
 			token = os.Getenv(credsRef)
 		}
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), probeTimeout)
 	defer cancel()
-	branches, err := sourcepkg.ListRemoteBranches(ctx, strings.TrimSpace(firstNonEmpty(request.RepoURL, request.RepoURLV1)), token)
+	branches, err := sourcepkg.ListRemoteBranches(ctx, strings.TrimSpace(request.RepoURL), token)
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"reachable": false,
@@ -735,7 +729,7 @@ func (h *Handler) handleCanonicalPatchGitSource(w http.ResponseWriter, r *http.R
 		return
 	}
 	var request canonicalGitSourcePatchRequest
-	if err := readOptionalJSON(r, &request); err != nil {
+	if err := readRequiredJSON(r, &request); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
@@ -2287,6 +2281,18 @@ func readOptionalJSON(r *http.Request, value any) error {
 		return nil
 	}
 	return json.Unmarshal(body, value)
+}
+
+func readRequiredJSON(r *http.Request, value any) error {
+	defer r.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(r.Body, 10<<20))
+	if err != nil {
+		return err
+	}
+	if len(bytes.TrimSpace(data)) == 0 {
+		return io.EOF
+	}
+	return json.Unmarshal(data, value)
 }
 
 func runResponse(run state.Run) map[string]any {
