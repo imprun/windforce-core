@@ -326,12 +326,8 @@ func (r *Runner) jobEnv(req RunRequest, action contract.Action) []string {
 		add("HTTP_PROXY", proxyURL)
 		add("HTTPS_PROXY", proxyURL)
 	}
-	if r.BaseURL != "" {
-		add("WF_BASE_URL", r.BaseURL)
-	}
-	if r.APIToken != "" {
-		add("WF_TOKEN", r.APIToken)
-	}
+	add("WF_BASE_URL", r.BaseURL)
+	add("WF_TOKEN", r.APIToken)
 	return env
 }
 

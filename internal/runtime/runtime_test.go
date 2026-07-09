@@ -196,6 +196,25 @@ func TestRunnerJobEnvIncludesSDKCallbackEndpoint(t *testing.T) {
 			t.Fatalf("env missing %q in %#v", want, env)
 		}
 	}
+
+	emptyRunner := Runner{}
+	emptyCallbackEnv := emptyRunner.jobEnv(RunRequest{
+		JobID:       "job-b",
+		WorkspaceID: "ws-a",
+		Deployment: contract.Deployment{
+			App:        "echo",
+			Entrypoint: "main.py",
+		},
+		Action: "run",
+	}, contract.Action{Action: "run"})
+	for _, want := range []string{
+		"WF_BASE_URL=",
+		"WF_TOKEN=",
+	} {
+		if !containsEnv(emptyCallbackEnv, want) {
+			t.Fatalf("empty callback env missing %q in %#v", want, emptyCallbackEnv)
+		}
+	}
 }
 
 func TestRunnerRunsActionThroughCommandAdapter(t *testing.T) {
