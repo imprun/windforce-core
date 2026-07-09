@@ -89,19 +89,21 @@ manifest shape. `entrypoint` and `scriptLang` are app-level; actions branch
 inside that entrypoint. `timeout` is the app default and an action may override
 it with its own `timeout` in seconds. Source manifests do not declare action
 commands or adapters; integration adapters live outside the app source contract.
-The lite executor currently wires canonical `typescript` and `python`
+The lite executor currently wires canonical `typescript`, `python`, and `go`
 entrypoints. Other `scriptLang` values are still accepted and pinned during sync
 so the manifest contract stays canonical; an unwired language fails at runtime
 with the executor's unsupported-language error.
 
-For TypeScript and Python entrypoints, the lite worker prepares the fetched
+For TypeScript, Python, and Go entrypoints, the lite worker prepares the fetched
 source like the canonical worker subset. TypeScript apps run
 `bun install --frozen-lockfile --no-progress` when `package.json` is present and
 receive the vendored `windforce-client` package in `node_modules`. Python apps
 run `pip install --target .windforce/site-packages` when `requirements.txt` is
 present and receive the vendored `windforce_client` package in the same vendor
-dir. This keeps canonical bare imports working without baking app dependencies
-into the worker image.
+dir. Go apps receive the vendored `windforce-client` module through a `go.mod`
+`replace`, then the worker builds the generated wrapper plus author code into a
+cached binary. This keeps canonical bare imports working without baking app
+dependencies into the worker image.
 
 ## Runtime adapter compatibility
 

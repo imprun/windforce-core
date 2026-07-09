@@ -14,6 +14,24 @@ import (
 	"testing"
 )
 
+func TestRuntimeForGoUsesPreparedBinary(t *testing.T) {
+	rt, err := runtimeFor("go")
+	if err != nil {
+		t.Fatalf("runtimeFor(go): %v", err)
+	}
+	if rt.label != "go" || rt.wrapperName != "" {
+		t.Fatalf("runtimeFor(go) = {label:%q wrapper:%q}, want go/empty", rt.label, rt.wrapperName)
+	}
+	if rt.wrapperContent != nil {
+		t.Fatalf("runtimeFor(go).wrapperContent is not nil")
+	}
+	bin := filepath.Join(t.TempDir(), "app")
+	argv := rt.argv(RunParams{EntrypointAbsPath: bin})
+	if len(argv) != 1 || argv[0] != bin {
+		t.Fatalf("runtimeFor(go).argv = %#v, want [%s]", argv, bin)
+	}
+}
+
 func TestRunPythonBuildsCanonicalCtxHelpers(t *testing.T) {
 	requirePython(t)
 	var stateSetBody map[string]string

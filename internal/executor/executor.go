@@ -80,6 +80,13 @@ func runtimeFor(lang string) (langRuntime, error) {
 				return pythonArgv(p.PythonPath, "wrapper.py")
 			},
 		}, nil
+	case "go":
+		return langRuntime{
+			label:          "go",
+			wrapperName:    "",
+			wrapperContent: nil,
+			argv:           func(p RunParams) []string { return []string{p.EntrypointAbsPath} },
+		}, nil
 	default:
 		return langRuntime{}, fmt.Errorf("%w: %q", ErrScriptLang, lang)
 	}
@@ -150,8 +157,10 @@ func Run(ctx context.Context, p RunParams) (Result, error) {
 	if err := os.WriteFile(filepath.Join(jobDir, "input.json"), input, 0o644); err != nil {
 		return Result{}, err
 	}
-	if err := os.WriteFile(filepath.Join(jobDir, rt.wrapperName), []byte(rt.wrapperContent(entrypoint)), 0o644); err != nil {
-		return Result{}, err
+	if rt.wrapperContent != nil {
+		if err := os.WriteFile(filepath.Join(jobDir, rt.wrapperName), []byte(rt.wrapperContent(entrypoint)), 0o644); err != nil {
+			return Result{}, err
+		}
 	}
 
 	cctx := ctx

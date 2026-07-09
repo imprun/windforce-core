@@ -23,6 +23,7 @@ type Runner struct {
 	APIToken       string
 	BunPath        string
 	PythonPath     string
+	GoPath         string
 	PrepareTimeout time.Duration
 }
 
@@ -89,7 +90,7 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (contract.JobResult, e
 	}
 
 	scriptLang := firstNonEmpty(req.Deployment.ScriptLang, "typescript")
-	sourceDir, err := r.ensureSource(ctx, workspace, gitSourceID, req.Deployment.Commit, scriptLang)
+	sourceDir, err := r.ensureSource(ctx, workspace, gitSourceID, req.Deployment.Commit, scriptLang, req.Deployment.Entrypoint)
 	if err != nil {
 		return contract.JobResult{}, err
 	}
@@ -232,6 +233,10 @@ func (r *Runner) runEntrypoint(ctx context.Context, req RunRequest, sourceDir st
 	if err != nil {
 		return contract.JobResult{}, err
 	}
+	scriptLang := firstNonEmpty(req.Deployment.ScriptLang, "typescript")
+	if scriptLang == "go" {
+		normalized = goBinaryRel()
+	}
 	entrypointPath := filepath.Join(sourceDir, filepath.FromSlash(normalized))
 	if rel, relErr := filepath.Rel(sourceDir, entrypointPath); relErr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return contract.JobResult{}, fmt.Errorf("entrypoint %q escapes source root", entrypoint)
@@ -249,7 +254,6 @@ func (r *Runner) runEntrypoint(ctx context.Context, req RunRequest, sourceDir st
 	if err != nil {
 		return contract.JobResult{}, err
 	}
-	scriptLang := firstNonEmpty(req.Deployment.ScriptLang, "typescript")
 	env = appendPreparedSourceEnv(env, sourceDir, scriptLang)
 	result, err := executor.Run(ctx, executor.RunParams{
 		BunPath:           r.BunPath,

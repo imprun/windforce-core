@@ -318,6 +318,93 @@ export const main = createApp({
 	}
 }
 
+func TestRunnerBuildsAndRunsGoApp(t *testing.T) {
+	requireGoRuntime(t)
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "windforce.json"), []byte(`{"app":"echo","entrypoint":"main.go","scriptLang":"go","actions":{"echo":{}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "go.mod"), []byte("module example.com/echo\n\ngo 1.23\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	actionSource := `package main
+
+import wf "windforce-client"
+
+var Main = wf.CreateApp(wf.App{Actions: wf.Actions{
+	"echo": func(ctx *wf.Context) (any, error) {
+		return map[string]any{
+			"app": ctx.App,
+			"action": ctx.Action,
+			"input": ctx.Input,
+			"job": map[string]string{
+				"id": ctx.Job.ID,
+				"workspace": ctx.Job.Workspace,
+				"tag": ctx.Job.Tag,
+			},
+		}, nil
+	},
+}})
+`
+	if err := os.WriteFile(filepath.Join(sourceDir, "main.go"), []byte(actionSource), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	store := bundle.NewLocalStore(filepath.Join(tempDir, "store"))
+	if err := store.Materialize(context.Background(), "workspace-a", "source-a", "commit-go", sourceDir); err != nil {
+		t.Fatal(err)
+	}
+
+	cacheRoot := filepath.Join(tempDir, "cache")
+	runner := Runner{Store: store, CacheRoot: cacheRoot}
+	result, err := runner.Run(context.Background(), RunRequest{
+		Deployment: contract.Deployment{
+			Workspace:   "workspace-a",
+			GitSourceID: "source-a",
+			App:         "echo",
+			Commit:      "commit-go",
+			Entrypoint:  "main.go",
+			ScriptLang:  "go",
+			Actions: map[string]contract.Action{
+				"echo": {Action: "echo"},
+			},
+		},
+		JobID:       "job-go",
+		WorkspaceID: "workspace-a",
+		Action:      "echo",
+		Input:       json.RawMessage(`{"message":"hello"}`),
+		Tag:         "default",
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if result.ExitCode != 0 {
+		t.Fatalf("exit code = %d, stdout=%s, error=%s", result.ExitCode, result.Stdout, result.Error)
+	}
+	var output struct {
+		App    string            `json:"app"`
+		Action string            `json:"action"`
+		Input  map[string]any    `json:"input"`
+		Job    map[string]string `json:"job"`
+	}
+	if err := json.Unmarshal(result.Output, &output); err != nil {
+		t.Fatalf("output is not JSON: %v", err)
+	}
+	if output.App != "echo" || output.Action != "echo" || output.Input["message"] != "hello" ||
+		output.Job["id"] != "job-go" || output.Job["workspace"] != "workspace-a" ||
+		output.Job["tag"] != "default" {
+		t.Fatalf("output = %#v", output)
+	}
+	binaryPath := filepath.Join(cacheRoot, "src", "workspace-a", "source-a", "commit-go", filepath.FromSlash(goBinaryRel()))
+	if _, err := os.Stat(binaryPath); err != nil {
+		t.Fatalf("go binary missing: %v", err)
+	}
+}
+
 func TestRunnerReusesReadyPreparedSource(t *testing.T) {
 	tempDir := t.TempDir()
 	sourceDir := filepath.Join(tempDir, "source")
@@ -636,6 +723,13 @@ func requireBunRuntime(t *testing.T) {
 	t.Helper()
 	if _, err := exec.LookPath("bun"); err != nil {
 		t.Skipf("bun not found in PATH")
+	}
+}
+
+func requireGoRuntime(t *testing.T) {
+	t.Helper()
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skipf("go not found in PATH")
 	}
 }
 

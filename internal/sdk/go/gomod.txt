@@ -1,0 +1,3 @@
+module windforce-client
+
+go 1.25
