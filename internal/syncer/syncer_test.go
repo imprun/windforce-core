@@ -303,6 +303,17 @@ func TestReadSchemaFileRejectsAbsolutePath(t *testing.T) {
 	}
 }
 
+func TestReadSchemaFileUsesManifestPathVerbatim(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "input.schema.json"), []byte(`{"type":"object"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := readSchemaFile(root, " input.schema.json ")
+	if err == nil || !strings.Contains(err.Error(), `manifest references schema " input.schema.json " but the file is missing`) {
+		t.Fatalf("readSchemaFile error = %v, want verbatim path lookup", err)
+	}
+}
+
 func runSyncerTestGit(t *testing.T, dir string, args ...string) {
 	t.Helper()
 	cmd := exec.Command("git", args...)

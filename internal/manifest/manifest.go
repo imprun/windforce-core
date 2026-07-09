@@ -40,7 +40,7 @@ func Parse(data []byte) (contract.App, error) {
 		return contract.App{}, fmt.Errorf("app %s declares flows in %s, but windforce-lite does not support flows", app.App, FileName)
 	}
 	app.Runtime = ""
-	if strings.TrimSpace(app.Entrypoint) == "" {
+	if app.Entrypoint == "" {
 		return contract.App{}, fmt.Errorf("app %s has no entrypoint in %s", app.App, FileName)
 	}
 	if len(app.Actions) == 0 {
@@ -122,7 +122,6 @@ func applyAppDefaults(app contract.App, action *contract.Action) {
 }
 
 func validateActionPath(app string, action string, field string, value string) error {
-	value = strings.TrimSpace(strings.ReplaceAll(value, "\\", "/"))
 	if value == "" {
 		return nil
 	}
@@ -132,9 +131,6 @@ func validateActionPath(app string, action string, field string, value string) e
 	}
 	if filepath.IsAbs(value) || strings.HasPrefix(value, "/") || strings.Contains(value, "..") {
 		return fmt.Errorf("%s %s path %q must be a relative path inside the app", owner, field, value)
-	}
-	if _, err := contract.NormalizeSourcePath(value); err != nil {
-		return fmt.Errorf("%s %s path: %w", owner, field, err)
 	}
 	return nil
 }

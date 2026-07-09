@@ -203,18 +203,13 @@ func materializeActionSchemas(root string, app *contract.App) error {
 }
 
 func readSchemaFile(root string, rel string) (json.RawMessage, error) {
-	rel = strings.TrimSpace(strings.ReplaceAll(rel, "\\", "/"))
 	if rel == "" {
 		return json.RawMessage([]byte("{}")), nil
 	}
 	if filepath.IsAbs(rel) || strings.HasPrefix(rel, "/") || strings.Contains(rel, "..") {
 		return nil, fmt.Errorf("schema path %q must be a relative path inside the app", rel)
 	}
-	normalized, err := contract.NormalizeSourcePath(rel)
-	if err != nil {
-		return nil, fmt.Errorf("schema path %q must be a relative path inside the app", rel)
-	}
-	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(normalized)))
+	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, fmt.Errorf("manifest references schema %q but the file is missing", rel)
