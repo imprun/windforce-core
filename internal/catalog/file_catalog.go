@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -182,7 +183,7 @@ func newDeploymentHistory(deployment contract.Deployment) DeploymentHistory {
 	workspace := deployment.SourceWorkspace()
 	gitSourceID := deployment.SourceGitSourceID()
 	return DeploymentHistory{
-		ID:          fmt.Sprintf("%s/%s/%s/%d", workspace, deployment.App, deployment.Commit, createdAt.UnixNano()),
+		ID:          newAppVersionID(createdAt),
 		Workspace:   workspace,
 		GitSourceID: gitSourceID,
 		App:         deployment.App,
@@ -194,6 +195,16 @@ func newDeploymentHistory(deployment contract.Deployment) DeploymentHistory {
 		Deployment:  deployment,
 		CreatedAt:   createdAt,
 	}
+}
+
+func newAppVersionID(createdAt time.Time) string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err == nil {
+		b[6] = (b[6] & 0x0f) | 0x40
+		b[8] = (b[8] & 0x3f) | 0x80
+		return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+	}
+	return fmt.Sprintf("%d", createdAt.UnixNano())
 }
 
 func firstEntrypoint(deployment contract.Deployment) string {

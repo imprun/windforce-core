@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"path/filepath"
+	"regexp"
 	"testing"
 
 	"github.com/imprun/windforce-lite/internal/contract"
@@ -44,5 +45,8 @@ func TestFileCatalogUpsertAndGet(t *testing.T) {
 	}
 	if snapshot.History[0].Commit != "commit-a" || snapshot.History[0].Status != "deployed" {
 		t.Fatalf("history item = %#v", snapshot.History[0])
+	}
+	if !regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`).MatchString(snapshot.History[0].ID) {
+		t.Fatalf("history id = %q, want UUID app version id", snapshot.History[0].ID)
 	}
 }
