@@ -31,6 +31,67 @@ func (c *checkingCatalog) UpsertDeployment(ctx context.Context, deployment contr
 	return nil
 }
 
+func TestCheckLockfileAllowsSourcesWithoutDeclaredDependencies(t *testing.T) {
+	root := t.TempDir()
+	if err := checkLockfile(root); err != nil {
+		t.Fatalf("no package.json should not require lockfile: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(root, "package.json"), []byte(`{"name":"scripts"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkLockfile(root); err != nil {
+		t.Fatalf("package.json without dependencies should not require lockfile: %v", err)
+	}
+}
+
+func TestCheckLockfileRequiresCommittedLockfileWhenDependenciesAreDeclared(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "package.json"), []byte(`{"dependencies":{"left-pad":"1.3.0"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := checkLockfile(root)
+	if err == nil {
+		t.Fatal("dependencies without lockfile unexpectedly passed")
+	}
+	if !strings.Contains(err.Error(), "no bun.lock") {
+		t.Fatalf("error = %v, want lockfile guidance", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(root, "bun.lock"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkLockfile(root); err != nil {
+		t.Fatalf("dependencies with bun.lock should pass: %v", err)
+	}
+}
+
+func TestCheckLockfileAcceptsLegacyBunLockb(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "package.json"), []byte(`{"devDependencies":{"typescript":"6.0.3"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "bun.lockb"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := checkLockfile(root); err != nil {
+		t.Fatalf("dependencies with bun.lockb should pass: %v", err)
+	}
+}
+
+func TestCheckLockfileRejectsMalformedPackageJSON(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "package.json"), []byte(`{`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := checkLockfile(root); err == nil {
+		t.Fatal("malformed package.json unexpectedly passed")
+	}
+}
+
 func TestSyncMaterializesBeforeCatalogUpdate(t *testing.T) {
 	tempDir := t.TempDir()
 	sourceDir := filepath.Join(tempDir, "source")

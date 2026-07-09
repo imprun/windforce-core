@@ -70,6 +70,9 @@ func (s *Syncer) Sync(ctx context.Context, src Source) (contract.Deployment, err
 	if err != nil {
 		return contract.Deployment{}, err
 	}
+	if err := checkLockfile(sourceDir); err != nil {
+		return contract.Deployment{}, err
+	}
 	if src.App != "" && src.App != app.App {
 		return contract.Deployment{}, fmt.Errorf("source app %q does not match manifest app %q", src.App, app.App)
 	}
@@ -222,6 +225,34 @@ func readSchemaFile(root string, rel string) (json.RawMessage, error) {
 		return nil, fmt.Errorf("schema %q is not valid JSON", rel)
 	}
 	return json.RawMessage(append([]byte(nil), data...)), nil
+}
+
+func checkLockfile(root string) error {
+	data, err := os.ReadFile(filepath.Join(root, "package.json"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	var pkg struct {
+		Dependencies         map[string]json.RawMessage `json:"dependencies"`
+		DevDependencies      map[string]json.RawMessage `json:"devDependencies"`
+		PeerDependencies     map[string]json.RawMessage `json:"peerDependencies"`
+		OptionalDependencies map[string]json.RawMessage `json:"optionalDependencies"`
+	}
+	if err := json.Unmarshal(data, &pkg); err != nil {
+		return fmt.Errorf("parse package.json: %w", err)
+	}
+	if len(pkg.Dependencies)+len(pkg.DevDependencies)+len(pkg.PeerDependencies)+len(pkg.OptionalDependencies) == 0 {
+		return nil
+	}
+	for _, lock := range []string{"bun.lock", "bun.lockb"} {
+		if _, err := os.Stat(filepath.Join(root, lock)); err == nil {
+			return nil
+		}
+	}
+	return fmt.Errorf("package.json declares dependencies but no bun.lock (or bun.lockb) is committed at the source root - commit a lockfile so installs are reproducible (bun install --frozen-lockfile)")
 }
 
 func sourceDirForSubpath(root string, subpath string) (string, error) {
