@@ -961,6 +961,47 @@ func TestCanonicalControlPlaneOpenAPIExposesSchemaDiscovery(t *testing.T) {
 	if schemas["Deployment"] != nil {
 		t.Fatalf("unsupported deployment status schema should not be advertised: %#v", schemas["Deployment"])
 	}
+	assertSchemaFields := func(schemaName string, fields []string) {
+		t.Helper()
+		schema := schemas[schemaName].(map[string]any)
+		properties := schema["properties"].(map[string]any)
+		for _, field := range fields {
+			if properties[field] == nil {
+				t.Fatalf("%s schema missing canonical field %s: %#v", schemaName, field, properties)
+			}
+		}
+	}
+	assertSchemaFields("GitSource", []string{
+		"id", "workspace_id", "name", "repo_url", "branch", "subpath", "creds_ref", "kind",
+		"last_synced_commit", "last_synced_at", "created_at",
+	})
+	assertSchemaFields("App", []string{
+		"id", "workspace_id", "app_key", "git_source_id", "commit_sha", "entrypoint", "tag",
+		"tag_override", "timeout_s", "script_lang", "required_capabilities", "max_concurrent", "updated_at",
+	})
+	assertSchemaFields("Action", []string{
+		"id", "workspace_id", "app_key", "action_key", "input_schema", "output_schema", "tag",
+		"tag_override", "timeout_s", "required_capabilities", "updated_at",
+	})
+	assertSchemaFields("AppHistoryItem", []string{
+		"id", "commit_sha", "entrypoint", "source", "deployment_id", "message", "created_at",
+	})
+	assertSchemaFields("JobStatus", []string{
+		"id", "workspace_id", "state", "status", "worker", "app_key", "action_key", "trigger_kind", "kind",
+		"git_source_id", "commit_sha", "entrypoint", "input_schema", "output_schema", "input", "tag",
+		"timeout_s", "created_by", "permissioned_as", "created_at", "started_at", "completed_at",
+		"duration_ms", "canceled_by", "canceled_reason", "flow_run_id", "flow_key", "flow_step_key",
+	})
+	assertSchemaFields("JobListItem", []string{
+		"id", "workspace_id", "app_key", "action_key", "trigger_kind", "status", "queued", "running",
+		"completed", "created_at", "started_at", "completed_at", "duration_ms", "worker", "git_source_id",
+		"commit_sha", "entrypoint", "tag", "created_by", "permissioned_as", "canceled_by", "canceled_reason",
+		"flow_run_id", "flow_step_id", "error_snippet",
+	})
+	assertSchemaFields("CancelResult", []string{"found", "completed_now", "soft_canceled", "already_completed"})
+	assertSchemaFields("JobSummaryCounts", []string{
+		"queued_count", "running_count", "completed_count_recent", "failed_count_recent", "canceled_count_recent",
+	})
 	gitSource := schemas["GitSource"].(map[string]any)
 	gitSourceProperties := gitSource["properties"].(map[string]any)
 	for _, field := range []string{"kind", "last_synced_commit", "last_synced_at", "created_at"} {
