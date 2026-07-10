@@ -149,6 +149,12 @@ CREATE TABLE IF NOT EXISTS resource (
     PRIMARY KEY (workspace_id, path)
 );
 
+CREATE TABLE IF NOT EXISTS workspace_key (
+    workspace_id TEXT PRIMARY KEY,
+    key TEXT NOT NULL,
+    kek_version INTEGER NOT NULL DEFAULT 0
+);
+
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS result JSONB;
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS correlation_id TEXT;
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS env JSONB;
@@ -156,6 +162,7 @@ ALTER TABLE jobs ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ;
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS canceled_by TEXT;
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS canceled_reason TEXT;
 ALTER TABLE job_logs ADD COLUMN IF NOT EXISTS workspace_id TEXT NOT NULL DEFAULT 'default';
+ALTER TABLE workspace_key ADD COLUMN IF NOT EXISTS kek_version INTEGER NOT NULL DEFAULT 0;
 
 CREATE INDEX IF NOT EXISTS jobs_claim_idx
     ON jobs (priority, created_at)
@@ -321,6 +328,24 @@ WHERE workspace_id=$1 AND app_key=$2 AND path=$3
 		return Variable{}, false, err
 	}
 	return variable, true, nil
+}
+
+func (s *PostgresStore) GetWorkspaceKeyVersioned(ctx context.Context, workspaceID string) (string, int32, error) {
+	workspaceID = contract.NormalizeWorkspace(workspaceID)
+	var key string
+	var version int32
+	err := s.pool.QueryRow(ctx, `
+SELECT key, kek_version
+FROM workspace_key
+WHERE workspace_id=$1
+`, workspaceID).Scan(&key, &version)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", 0, nil
+	}
+	if err != nil {
+		return "", 0, err
+	}
+	return key, version, nil
 }
 
 func (s *PostgresStore) DeleteVariable(ctx context.Context, workspaceID string, appKey string, path string) error {

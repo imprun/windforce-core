@@ -20,6 +20,7 @@ import (
 	"github.com/imprun/windforce-lite/internal/bundle"
 	"github.com/imprun/windforce-lite/internal/catalog"
 	"github.com/imprun/windforce-lite/internal/contract"
+	litecrypto "github.com/imprun/windforce-lite/internal/crypto"
 	"github.com/imprun/windforce-lite/internal/gitsource"
 	"github.com/imprun/windforce-lite/internal/state"
 	"github.com/imprun/windforce-lite/internal/syncer"
@@ -243,10 +244,12 @@ func TestCanonicalStateAPI(t *testing.T) {
 func TestCanonicalVariablesAndResourcesAPI(t *testing.T) {
 	tempDir := t.TempDir()
 	store := state.NewLocalStore(filepath.Join(tempDir, "state.json"))
+	secretKey := "test-secret"
 	server := httptest.NewServer(New(Config{
 		Store:          store,
 		EnableAPI:      true,
 		JobTokenSecret: "job-secret",
+		SecretKey:      secretKey,
 	}))
 	defer server.Close()
 
@@ -320,6 +323,23 @@ func TestCanonicalVariablesAndResourcesAPI(t *testing.T) {
 	}
 	if sharedVariableBody.Path != "config/token" || sharedVariableBody.Value != "shared" || !sharedVariableBody.IsSecret {
 		t.Fatalf("shared variable body = %#v", sharedVariableBody)
+	}
+	storedShared, found, err := store.GetVariableExact(context.Background(), "ws-a", "", "config/token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found || !storedShared.IsSecret {
+		t.Fatalf("stored shared secret found=%v variable=%#v", found, storedShared)
+	}
+	if storedShared.Value == "shared" {
+		t.Fatalf("secret variable was stored in plaintext")
+	}
+	decryptedShared, err := litecrypto.Decrypt(litecrypto.DeriveWorkspaceKey(secretKey, "ws-a"), storedShared.Value)
+	if err != nil {
+		t.Fatalf("decrypt stored secret: %v", err)
+	}
+	if decryptedShared != "shared" {
+		t.Fatalf("stored secret decrypts to %q, want shared", decryptedShared)
 	}
 
 	foreignVariableResp, err := http.Get(server.URL + "/api/w/ws-a/variables/get/p/config/token?app=other")
@@ -616,10 +636,20 @@ func TestCanonicalVariableAppScopeShadowing(t *testing.T) {
 func TestJobTokenAuthorizesOnlySDKCallbacks(t *testing.T) {
 	tempDir := t.TempDir()
 	store := state.NewLocalStore(filepath.Join(tempDir, "state.json"))
-	if err := store.SetVariable(context.Background(), "ws-a", "", "config/token", "shared", true, ""); err != nil {
+	secretKey := "job-token-test-secret"
+	dek := litecrypto.DeriveWorkspaceKey(secretKey, "ws-a")
+	sharedSecret, err := litecrypto.Encrypt(dek, "shared")
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SetVariable(context.Background(), "ws-a", "echo", "config/token", "scoped", true, ""); err != nil {
+	scopedSecret, err := litecrypto.Encrypt(dek, "scoped")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetVariable(context.Background(), "ws-a", "", "config/token", sharedSecret, true, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetVariable(context.Background(), "ws-a", "echo", "config/token", scopedSecret, true, ""); err != nil {
 		t.Fatal(err)
 	}
 	deployment := contract.Deployment{
@@ -640,6 +670,7 @@ func TestJobTokenAuthorizesOnlySDKCallbacks(t *testing.T) {
 		EnableAPI:      true,
 		AdminToken:     "admin-token",
 		JobTokenSecret: "job-secret",
+		SecretKey:      secretKey,
 	}))
 	defer server.Close()
 
@@ -763,14 +794,24 @@ func TestAdminTokenRequiresAuthorizationBearer(t *testing.T) {
 func TestGitSourceCredsRefResolvesWorkspaceVariableOnly(t *testing.T) {
 	tempDir := t.TempDir()
 	store := state.NewLocalStore(filepath.Join(tempDir, "state.json"))
-	if err := store.SetVariable(context.Background(), "ws-a", "echo", "secrets/git/token", "scoped-token", true, ""); err != nil {
+	secretKey := "git-source-test-secret"
+	dek := litecrypto.DeriveWorkspaceKey(secretKey, "ws-a")
+	scopedToken, err := litecrypto.Encrypt(dek, "scoped-token")
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SetVariable(context.Background(), "ws-a", "", "secrets/git/token", "shared-token", true, ""); err != nil {
+	sharedToken, err := litecrypto.Encrypt(dek, "shared-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetVariable(context.Background(), "ws-a", "echo", "secrets/git/token", scopedToken, true, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetVariable(context.Background(), "ws-a", "", "secrets/git/token", sharedToken, true, ""); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("secrets/git/missing", "env-token")
-	handler := New(Config{Store: store}).(*Handler)
+	handler := New(Config{Store: store, SecretKey: secretKey}).(*Handler)
 
 	token, err := handler.resolveGitSourceCreds(context.Background(), "ws-a", "secrets/git/token")
 	if err != nil {

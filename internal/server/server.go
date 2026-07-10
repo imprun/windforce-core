@@ -21,6 +21,7 @@ import (
 
 	catalogpkg "github.com/imprun/windforce-lite/internal/catalog"
 	"github.com/imprun/windforce-lite/internal/contract"
+	"github.com/imprun/windforce-lite/internal/crypto"
 	gitsourcepkg "github.com/imprun/windforce-lite/internal/gitsource"
 	"github.com/imprun/windforce-lite/internal/sampleapp"
 	sourcepkg "github.com/imprun/windforce-lite/internal/source"
@@ -38,29 +39,35 @@ type GitSourceRegistry interface {
 	Get(ctx context.Context, workspace string, id string) (gitsourcepkg.Source, error)
 }
 
+const defaultSecretKey = "dev-insecure-change-me-0000000000000000000000000000"
+
 type Config struct {
-	Store          state.Store
-	Catalog        Catalog
-	Syncer         *syncer.Syncer
-	GitSources     GitSourceRegistry
-	EnableAPI      bool
-	AdminToken     string
-	JobTokenSecret string
-	SampleRoot     string
-	Wait           time.Duration
+	Store             state.Store
+	Catalog           Catalog
+	Syncer            *syncer.Syncer
+	GitSources        GitSourceRegistry
+	EnableAPI         bool
+	AdminToken        string
+	JobTokenSecret    string
+	SecretKey         string
+	SecretKeyPrevious string
+	SampleRoot        string
+	Wait              time.Duration
 }
 
 type Handler struct {
-	store          state.Store
-	catalog        Catalog
-	syncer         *syncer.Syncer
-	gitSources     GitSourceRegistry
-	enableAPI      bool
-	adminToken     string
-	jobTokenSecret string
-	sampleRoot     string
-	wait           time.Duration
-	syncLocks      sync.Map
+	store             state.Store
+	catalog           Catalog
+	syncer            *syncer.Syncer
+	gitSources        GitSourceRegistry
+	enableAPI         bool
+	adminToken        string
+	jobTokenSecret    string
+	secretKey         string
+	secretKeyPrevious string
+	sampleRoot        string
+	wait              time.Duration
+	syncLocks         sync.Map
 }
 
 type jobPrincipal struct {
@@ -77,16 +84,22 @@ func jobPrincipalFrom(ctx context.Context) *jobPrincipal {
 }
 
 func New(config Config) http.Handler {
+	secretKey := config.SecretKey
+	if secretKey == "" {
+		secretKey = defaultSecretKey
+	}
 	return &Handler{
-		store:          config.Store,
-		catalog:        config.Catalog,
-		syncer:         config.Syncer,
-		gitSources:     config.GitSources,
-		enableAPI:      config.EnableAPI,
-		adminToken:     config.AdminToken,
-		jobTokenSecret: config.JobTokenSecret,
-		sampleRoot:     config.SampleRoot,
-		wait:           config.Wait,
+		store:             config.Store,
+		catalog:           config.Catalog,
+		syncer:            config.Syncer,
+		gitSources:        config.GitSources,
+		enableAPI:         config.EnableAPI,
+		adminToken:        config.AdminToken,
+		jobTokenSecret:    config.JobTokenSecret,
+		secretKey:         secretKey,
+		secretKeyPrevious: config.SecretKeyPrevious,
+		sampleRoot:        config.SampleRoot,
+		wait:              config.Wait,
 	}
 }
 
@@ -624,6 +637,9 @@ func (h *Handler) resolveGitSourceCreds(ctx context.Context, workspaceID string,
 	variable, found, err := h.store.GetVariable(ctx, workspaceID, "", credsRef)
 	if err != nil || !found {
 		return "", err
+	}
+	if variable.IsSecret {
+		return h.decryptSecretVariable(ctx, workspaceID, variable.Value)
 	}
 	return variable.Value, nil
 }
@@ -1993,7 +2009,16 @@ func (h *Handler) handleSetVariable(w http.ResponseWriter, r *http.Request, work
 		writeError(w, http.StatusBadRequest, "invalid app key")
 		return
 	}
-	if err := h.store.SetVariable(r.Context(), workspaceID, request.AppKey, request.Path, request.Value, request.IsSecret, request.Description); err != nil {
+	value := request.Value
+	if request.IsSecret {
+		encrypted, err := h.encryptSecretVariable(r.Context(), workspaceID, request.Value)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		value = encrypted
+	}
+	if err := h.store.SetVariable(r.Context(), workspaceID, request.AppKey, request.Path, value, request.IsSecret, request.Description); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -2026,7 +2051,60 @@ func (h *Handler) handleGetVariable(w http.ResponseWriter, r *http.Request, work
 		writeError(w, http.StatusNotFound, "variable not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"path": variable.Path, "value": variable.Value, "is_secret": variable.IsSecret})
+	value := variable.Value
+	if variable.IsSecret {
+		decrypted, err := h.decryptSecretVariable(r.Context(), workspaceID, variable.Value)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "decrypt: "+err.Error())
+			return
+		}
+		value = decrypted
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"path": variable.Path, "value": value, "is_secret": variable.IsSecret})
+}
+
+type workspaceKeyProvider interface {
+	GetWorkspaceKeyVersioned(ctx context.Context, workspaceID string) (string, int32, error)
+}
+
+func (h *Handler) encryptSecretVariable(ctx context.Context, workspaceID string, value string) (string, error) {
+	key, err := h.workspaceDEK(ctx, workspaceID)
+	if err != nil {
+		return "", err
+	}
+	return crypto.Encrypt(key, value)
+}
+
+func (h *Handler) decryptSecretVariable(ctx context.Context, workspaceID string, value string) (string, error) {
+	key, err := h.workspaceDEK(ctx, workspaceID)
+	if err != nil {
+		return "", err
+	}
+	return crypto.Decrypt(key, value)
+}
+
+// workspaceDEK mirrors canonical Windforce secret resolution: use a stored
+// workspace DEK when the store exposes one, otherwise fall back to the legacy
+// SECRET_KEY-derived per-workspace key.
+func (h *Handler) workspaceDEK(ctx context.Context, workspaceID string) (string, error) {
+	if keyStore, ok := h.store.(workspaceKeyProvider); ok {
+		key, version, err := keyStore.GetWorkspaceKeyVersioned(ctx, workspaceID)
+		if err != nil {
+			return "", err
+		}
+		if key != "" {
+			return crypto.ResolveDEK(key, version, h.keks())
+		}
+	}
+	return crypto.DeriveWorkspaceKey(h.secretKey, workspaceID), nil
+}
+
+func (h *Handler) keks() []string {
+	keks := []string{crypto.DeriveKEK(h.secretKey)}
+	if h.secretKeyPrevious != "" {
+		keks = append(keks, crypto.DeriveKEK(h.secretKeyPrevious))
+	}
+	return keks
 }
 
 func (h *Handler) jobVariableScope(r *http.Request, workspaceID string) (string, bool, error) {

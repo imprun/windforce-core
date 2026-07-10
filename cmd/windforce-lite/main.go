@@ -64,6 +64,8 @@ func runServer(args []string, mode string) int {
 	migrate := flags.Bool("migrate", false, "run state backend schema migration before starting")
 	adminTokenEnv := flags.String("admin-token-env", "", "environment variable that contains the admin/API bearer token")
 	jobTokenSecretEnv := flags.String("job-token-secret-env", "", "environment variable that contains the WF_TOKEN signing secret; defaults to admin token")
+	secretKeyEnv := flags.String("secret-key-env", "SECRET_KEY", "environment variable that contains the instance secret used for secret variables")
+	secretKeyPreviousEnv := flags.String("secret-key-previous-env", "SECRET_KEY_PREVIOUS", "environment variable that contains the previous instance secret during rotation")
 	baseURL := flags.String("base-url", "", "public API base URL injected into job ctx helpers")
 	storeDir := flags.String("store", defaultStoreDir(), "bundle store directory")
 	catalogPath := flags.String("catalog", defaultCatalogPath(), "catalog JSON path")
@@ -93,18 +95,22 @@ func runServer(args []string, mode string) int {
 	gitSources := gitsource.NewFileRegistry(*gitSourcesPath)
 	adminToken := tokenFromEnv(*adminTokenEnv)
 	jobTokenSecret := firstNonEmpty(tokenFromEnv(*jobTokenSecretEnv), adminToken)
+	secretKey := tokenFromEnv(*secretKeyEnv)
+	secretKeyPrevious := tokenFromEnv(*secretKeyPreviousEnv)
 	runtimeBaseURL := strings.TrimSpace(*baseURL)
 	if runtimeBaseURL == "" && mode == "standalone" {
 		runtimeBaseURL = localBaseURL(*addr)
 	}
 	handler := server.New(server.Config{
-		Store:          stateStore,
-		Catalog:        fileCatalog,
-		Syncer:         &syncer.Syncer{Store: bundle.NewLocalStore(*storeDir), Catalog: fileCatalog},
-		GitSources:     gitSources,
-		EnableAPI:      mode == "api" || mode == "standalone",
-		AdminToken:     adminToken,
-		JobTokenSecret: jobTokenSecret,
+		Store:             stateStore,
+		Catalog:           fileCatalog,
+		Syncer:            &syncer.Syncer{Store: bundle.NewLocalStore(*storeDir), Catalog: fileCatalog},
+		GitSources:        gitSources,
+		EnableAPI:         mode == "api" || mode == "standalone",
+		AdminToken:        adminToken,
+		JobTokenSecret:    jobTokenSecret,
+		SecretKey:         secretKey,
+		SecretKeyPrevious: secretKeyPrevious,
 	})
 
 	if mode == "standalone" {
