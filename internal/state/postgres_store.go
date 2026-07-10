@@ -80,6 +80,49 @@ func (s *PostgresStore) DecryptInput(ctx context.Context, workspaceID string, in
 	return s.decryptInput(ctx, workspaceID, input)
 }
 
+func (s *PostgresStore) encryptResult(ctx context.Context, workspaceID string, result json.RawMessage) (json.RawMessage, error) {
+	return encryptResultAtRest(ctx, s, inputCryptoConfig{
+		SecretKey:         s.SecretKey,
+		SecretKeyPrevious: s.SecretKeyPrevious,
+	}, workspaceID, result)
+}
+
+func (s *PostgresStore) decryptResult(ctx context.Context, workspaceID string, result json.RawMessage) (json.RawMessage, error) {
+	return decryptResultAtRest(ctx, s, inputCryptoConfig{
+		SecretKey:         s.SecretKey,
+		SecretKeyPrevious: s.SecretKeyPrevious,
+	}, workspaceID, result)
+}
+
+func (s *PostgresStore) encryptJobResult(ctx context.Context, workspaceID string, result contract.JobResult) (contract.JobResult, error) {
+	output, err := s.encryptResult(ctx, workspaceID, result.Output)
+	if err != nil {
+		return contract.JobResult{}, err
+	}
+	result.Output = output
+	return result, nil
+}
+
+func (s *PostgresStore) decryptRunResult(ctx context.Context, workspaceID string, run *Run) error {
+	if len(run.Output) > 0 {
+		output, err := s.decryptResult(ctx, workspaceID, run.Output)
+		if err != nil {
+			return err
+		}
+		run.Output = output
+	}
+	if run.Result != nil && len(run.Result.Output) > 0 {
+		output, err := s.decryptResult(ctx, workspaceID, run.Result.Output)
+		if err != nil {
+			return err
+		}
+		result := *run.Result
+		result.Output = output
+		run.Result = &result
+	}
+	return nil
+}
+
 func (s *PostgresStore) Migrate(ctx context.Context) error {
 	_, err := s.pool.Exec(ctx, `
 CREATE TABLE IF NOT EXISTS runs (
@@ -448,6 +491,9 @@ WHERE id=$1
 	} else {
 		run.Input = input
 	}
+	if err := s.decryptRunResult(ctx, normalizedJobWorkspace("", job), &run); err != nil {
+		return Job{}, Run{}, false, err
+	}
 	return job, run, true, nil
 }
 
@@ -627,6 +673,9 @@ func (s *PostgresStore) GetRun(ctx context.Context, runID string) (Run, error) {
 	} else {
 		run.Input = input
 	}
+	if err := s.decryptRunResult(ctx, run.Deployment.SourceWorkspace(), &run); err != nil {
+		return Run{}, err
+	}
 	return run, nil
 }
 
@@ -676,7 +725,7 @@ func (s *PostgresStore) ClaimJobForTags(ctx context.Context, workerID string, ta
 			if err != nil {
 				return err
 			}
-			if err := completeCanceledJobPostgres(ctx, tx, job, run, *job.CanceledBy, canceledReasonValue(job), cancelWorkerLostMessage, now); err != nil {
+			if err := s.completeCanceledJob(ctx, tx, job, run, *job.CanceledBy, canceledReasonValue(job), cancelWorkerLostMessage, now); err != nil {
 				return err
 			}
 		}
@@ -840,7 +889,11 @@ func (s *PostgresStore) CompleteJobSucceeded(ctx context.Context, lease Lease, r
 		}
 		now := time.Now().UTC()
 		if job.CanceledBy != nil {
-			return completeCanceledJobPostgres(ctx, tx, job, run, *job.CanceledBy, canceledReasonValue(job), cancelDuringExecutionMessage, now)
+			return s.completeCanceledJob(ctx, tx, job, run, *job.CanceledBy, canceledReasonValue(job), cancelDuringExecutionMessage, now)
+		}
+		storedResult, err := s.encryptJobResult(ctx, normalizedJobWorkspace("", job), result)
+		if err != nil {
+			return err
 		}
 		if err := updateJobComplete(ctx, tx, job.ID, JobSucceeded, now); err != nil {
 			return err
@@ -849,7 +902,7 @@ func (s *PostgresStore) CompleteJobSucceeded(ctx context.Context, lease Lease, r
 UPDATE runs
 SET state=$1, output=$2, result=$3, error=NULL, task_id=NULL, updated_at=$4
 WHERE id=$5
-`, string(RunSucceeded), nullableRaw(result.Output), mustRaw(result), now, run.ID); err != nil {
+`, string(RunSucceeded), nullableRaw(storedResult.Output), mustRaw(storedResult), now, run.ID); err != nil {
 			return err
 		}
 		return insertEvent(ctx, tx, run.ID, "run_succeeded", eventPayload(run.CorrelationID, map[string]any{"jobId": job.ID}))
@@ -867,7 +920,11 @@ func (s *PostgresStore) CompleteJobFailed(ctx context.Context, lease Lease, resu
 		}
 		now := time.Now().UTC()
 		if job.CanceledBy != nil {
-			return completeCanceledJobPostgres(ctx, tx, job, run, *job.CanceledBy, canceledReasonValue(job), cancelDuringExecutionMessage, now)
+			return s.completeCanceledJob(ctx, tx, job, run, *job.CanceledBy, canceledReasonValue(job), cancelDuringExecutionMessage, now)
+		}
+		storedResult, err := s.encryptJobResult(ctx, normalizedJobWorkspace("", job), result)
+		if err != nil {
+			return err
 		}
 		if err := updateJobComplete(ctx, tx, job.ID, JobFailed, now); err != nil {
 			return err
@@ -876,7 +933,7 @@ func (s *PostgresStore) CompleteJobFailed(ctx context.Context, lease Lease, resu
 UPDATE runs
 SET state=$1, result=$2, error=$3, updated_at=$4
 WHERE id=$5
-`, string(RunFailed), mustRaw(result), mustRaw(map[string]any{"message": result.Error, "exitCode": result.ExitCode}), now, run.ID); err != nil {
+`, string(RunFailed), mustRaw(storedResult), mustRaw(map[string]any{"message": result.Error, "exitCode": result.ExitCode}), now, run.ID); err != nil {
 			return err
 		}
 		return insertEvent(ctx, tx, run.ID, "run_failed", eventPayload(run.CorrelationID, map[string]any{"jobId": job.ID, "error": result.Error, "exitCode": result.ExitCode}))
@@ -901,7 +958,11 @@ func (s *PostgresStore) CompleteJobWaitingHuman(ctx context.Context, lease Lease
 		}
 		task.CreatedAt = nonZeroTime(task.CreatedAt, now)
 		if job.CanceledBy != nil {
-			return completeCanceledJobPostgres(ctx, tx, job, run, *job.CanceledBy, canceledReasonValue(job), cancelDuringExecutionMessage, now)
+			return s.completeCanceledJob(ctx, tx, job, run, *job.CanceledBy, canceledReasonValue(job), cancelDuringExecutionMessage, now)
+		}
+		storedResult, err := s.encryptJobResult(ctx, normalizedJobWorkspace("", job), result)
+		if err != nil {
+			return err
 		}
 		if err := updateJobComplete(ctx, tx, job.ID, JobSucceeded, now); err != nil {
 			return err
@@ -919,7 +980,7 @@ INSERT INTO human_tasks (
 UPDATE runs
 SET state=$1, result=$2, error=NULL, task_id=$3, updated_at=$4
 WHERE id=$5
-`, string(RunWaitingHuman), mustRaw(result), task.ID, now, run.ID); err != nil {
+`, string(RunWaitingHuman), mustRaw(storedResult), task.ID, now, run.ID); err != nil {
 			return err
 		}
 		return insertEvent(ctx, tx, run.ID, "human_task_created", eventPayload(run.CorrelationID, map[string]any{"jobId": job.ID, "taskId": task.ID}))
@@ -1059,7 +1120,7 @@ WHERE id=$4
 		}
 		result.CompletedNow = true
 		now := time.Now().UTC()
-		return completeCanceledJobPostgres(ctx, tx, job, run, canceledBy, reason, cancelBeforeExecutionMessage, now)
+		return s.completeCanceledJob(ctx, tx, job, run, canceledBy, reason, cancelBeforeExecutionMessage, now)
 	})
 	return result, err
 }
@@ -1314,13 +1375,18 @@ func leasedJobAndRunPostgres(ctx context.Context, tx pgx.Tx, lease Lease) (Job, 
 	return job, run, nil
 }
 
-func completeCanceledJobPostgres(ctx context.Context, tx pgx.Tx, job Job, run Run, by string, reason string, message string, now time.Time) error {
+func (s *PostgresStore) completeCanceledJob(ctx context.Context, tx pgx.Tx, job Job, run Run, by string, reason string, message string, now time.Time) error {
 	message = strings.TrimSpace(message)
 	if message == "" {
 		message = "job canceled"
 	}
 	run.State = RunCanceled
 	run.Result = canceledJobResult(job, run, message)
+	storedResult, err := s.encryptJobResult(ctx, normalizedJobWorkspace("", job), *run.Result)
+	if err != nil {
+		return err
+	}
+	run.Result = cloneResult(storedResult)
 	run.Error = mustRaw(map[string]string{
 		"message":        message,
 		"canceledBy":     by,

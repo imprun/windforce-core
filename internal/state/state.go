@@ -335,6 +335,82 @@ func (s *LocalStore) DecryptInput(ctx context.Context, workspaceID string, input
 	return s.decryptInput(ctx, workspaceID, input)
 }
 
+func (s *LocalStore) encryptResult(ctx context.Context, workspaceID string, result json.RawMessage) (json.RawMessage, error) {
+	return encryptResultAtRest(ctx, nil, inputCryptoConfig{
+		SecretKey:         s.SecretKey,
+		SecretKeyPrevious: s.SecretKeyPrevious,
+	}, workspaceID, result)
+}
+
+func (s *LocalStore) decryptResult(ctx context.Context, workspaceID string, result json.RawMessage) (json.RawMessage, error) {
+	return decryptResultAtRest(ctx, nil, inputCryptoConfig{
+		SecretKey:         s.SecretKey,
+		SecretKeyPrevious: s.SecretKeyPrevious,
+	}, workspaceID, result)
+}
+
+func (s *LocalStore) encryptJobResult(ctx context.Context, workspaceID string, result contract.JobResult) (contract.JobResult, error) {
+	output, err := s.encryptResult(ctx, workspaceID, result.Output)
+	if err != nil {
+		return contract.JobResult{}, err
+	}
+	result.Output = output
+	return result, nil
+}
+
+func (s *LocalStore) encryptStoredRunResult(ctx context.Context, workspaceID string, snapshot *Snapshot, runID string) error {
+	run, ok := snapshot.Runs[runID]
+	if !ok {
+		return nil
+	}
+	if len(run.Output) > 0 {
+		output, err := s.encryptResult(ctx, workspaceID, run.Output)
+		if err != nil {
+			return err
+		}
+		run.Output = output
+	}
+	if run.Result != nil {
+		result, err := s.encryptJobResult(ctx, workspaceID, *run.Result)
+		if err != nil {
+			return err
+		}
+		run.Result = cloneResult(result)
+	}
+	snapshot.Runs[runID] = run
+	return nil
+}
+
+func (s *LocalStore) decryptRunResult(ctx context.Context, workspaceID string, run *Run) error {
+	if len(run.Output) > 0 {
+		output, err := s.decryptResult(ctx, workspaceID, run.Output)
+		if err != nil {
+			return err
+		}
+		run.Output = output
+	}
+	if run.Result != nil && len(run.Result.Output) > 0 {
+		output, err := s.decryptResult(ctx, workspaceID, run.Result.Output)
+		if err != nil {
+			return err
+		}
+		result := *run.Result
+		result.Output = output
+		run.Result = &result
+	}
+	return nil
+}
+
+func clearRunResultOutput(run *Run) {
+	run.Output = nil
+	if run.Result == nil {
+		return
+	}
+	result := *run.Result
+	result.Output = nil
+	run.Result = &result
+}
+
 func NewID(prefix string) string {
 	var data [12]byte
 	if _, err := rand.Read(data[:]); err != nil {
@@ -517,6 +593,9 @@ func (s *LocalStore) GetRun(ctx context.Context, runID string) (Run, error) {
 	} else {
 		run.Input = input
 	}
+	if err := s.decryptRunResult(ctx, run.Deployment.SourceWorkspace(), &run); err != nil {
+		return Run{}, err
+	}
 	return run, nil
 }
 
@@ -543,6 +622,9 @@ func (s *LocalStore) GetJob(ctx context.Context, workspaceID string, jobID strin
 	} else {
 		run.Input = input
 	}
+	if err := s.decryptRunResult(ctx, normalizedJobWorkspace("", job), &run); err != nil {
+		return Job{}, Run{}, false, err
+	}
 	return job, run, true, nil
 }
 
@@ -556,6 +638,9 @@ func (s *LocalStore) ListJobs(ctx context.Context, query JobListQuery) ([]JobLis
 		run, ok := snapshot.Runs[job.RunID]
 		if !ok {
 			continue
+		}
+		if err := s.decryptRunResult(ctx, normalizedJobWorkspace("", job), &run); err != nil {
+			clearRunResultOutput(&run)
 		}
 		records = append(records, jobRunRecord{Job: job, Run: run})
 	}
@@ -572,6 +657,9 @@ func (s *LocalStore) JobSummary(ctx context.Context, workspaceID string, recent 
 		run, ok := snapshot.Runs[job.RunID]
 		if !ok {
 			continue
+		}
+		if err := s.decryptRunResult(ctx, normalizedJobWorkspace("", job), &run); err != nil {
+			clearRunResultOutput(&run)
 		}
 		records = append(records, jobRunRecord{Job: job, Run: run})
 	}
@@ -809,7 +897,9 @@ func (s *LocalStore) ClaimJobForTags(ctx context.Context, workerID string, tags 
 	var claimed Job
 	var lease Lease
 	err := s.update(ctx, func(snapshot *Snapshot, now time.Time) error {
-		requeueExpiredJobs(snapshot, now)
+		if err := s.requeueExpiredJobs(ctx, snapshot, now); err != nil {
+			return err
+		}
 
 		ids := make([]string, 0, len(snapshot.Jobs))
 		for id, job := range snapshot.Jobs {
@@ -902,15 +992,19 @@ func (s *LocalStore) CompleteJobSucceeded(ctx context.Context, lease Lease, resu
 		}
 		if job.CanceledBy != nil {
 			applyCanceledJob(snapshot, job, run, *job.CanceledBy, canceledReasonValue(job), cancelDuringExecutionMessage, now)
-			return nil
+			return s.encryptStoredRunResult(ctx, normalizedJobWorkspace("", job), snapshot, run.ID)
+		}
+		storedResult, err := s.encryptJobResult(ctx, normalizedJobWorkspace("", job), result)
+		if err != nil {
+			return err
 		}
 		job.State = JobSucceeded
 		job.LeaseOwner = ""
 		job.LeaseExpiresAt = nil
 		job.UpdatedAt = now
 		run.State = RunSucceeded
-		run.Output = cloneRaw(result.Output)
-		run.Result = cloneResult(result)
+		run.Output = cloneRaw(storedResult.Output)
+		run.Result = cloneResult(storedResult)
 		run.Error = nil
 		run.TaskID = ""
 		run.UpdatedAt = now
@@ -929,17 +1023,21 @@ func (s *LocalStore) CompleteJobFailed(ctx context.Context, lease Lease, result 
 		}
 		if job.CanceledBy != nil {
 			applyCanceledJob(snapshot, job, run, *job.CanceledBy, canceledReasonValue(job), cancelDuringExecutionMessage, now)
-			return nil
+			return s.encryptStoredRunResult(ctx, normalizedJobWorkspace("", job), snapshot, run.ID)
 		}
 		if result.Error == "" && result.ExitCode != 0 {
 			result.Error = fmt.Sprintf("action exited with code %d", result.ExitCode)
+		}
+		storedResult, err := s.encryptJobResult(ctx, normalizedJobWorkspace("", job), result)
+		if err != nil {
+			return err
 		}
 		job.State = JobFailed
 		job.LeaseOwner = ""
 		job.LeaseExpiresAt = nil
 		job.UpdatedAt = now
 		run.State = RunFailed
-		run.Result = cloneResult(result)
+		run.Result = cloneResult(storedResult)
 		run.Error = mustRaw(map[string]any{"message": result.Error, "exitCode": result.ExitCode})
 		run.UpdatedAt = now
 		snapshot.Jobs[job.ID] = job
@@ -957,7 +1055,11 @@ func (s *LocalStore) CompleteJobWaitingHuman(ctx context.Context, lease Lease, r
 		}
 		if job.CanceledBy != nil {
 			applyCanceledJob(snapshot, job, run, *job.CanceledBy, canceledReasonValue(job), cancelDuringExecutionMessage, now)
-			return nil
+			return s.encryptStoredRunResult(ctx, normalizedJobWorkspace("", job), snapshot, run.ID)
+		}
+		storedResult, err := s.encryptJobResult(ctx, normalizedJobWorkspace("", job), result)
+		if err != nil {
+			return err
 		}
 		if task.ID == "" {
 			task.ID = NewID("human")
@@ -977,7 +1079,7 @@ func (s *LocalStore) CompleteJobWaitingHuman(ctx context.Context, lease Lease, r
 		job.LeaseExpiresAt = nil
 		job.UpdatedAt = now
 		run.State = RunWaitingHuman
-		run.Result = cloneResult(result)
+		run.Result = cloneResult(storedResult)
 		run.Error = nil
 		run.TaskID = task.ID
 		run.UpdatedAt = now
@@ -1083,6 +1185,7 @@ func (s *LocalStore) CancelJob(ctx context.Context, workspaceID string, jobID st
 		} else {
 			result.CompletedNow = true
 			applyCanceledJob(snapshot, job, run, canceledBy, reason, cancelBeforeExecutionMessage, now)
+			return s.encryptStoredRunResult(ctx, normalizedJobWorkspace("", job), snapshot, run.ID)
 		}
 		return nil
 	})
@@ -1294,7 +1397,7 @@ func variableKey(appKey string, path string) string {
 	return appKey + "\x00" + path
 }
 
-func requeueExpiredJobs(snapshot *Snapshot, now time.Time) {
+func (s *LocalStore) requeueExpiredJobs(ctx context.Context, snapshot *Snapshot, now time.Time) error {
 	for id, job := range snapshot.Jobs {
 		if job.State != JobRunning || job.LeaseExpiresAt == nil || job.LeaseExpiresAt.After(now) {
 			continue
@@ -1302,6 +1405,9 @@ func requeueExpiredJobs(snapshot *Snapshot, now time.Time) {
 		if job.CanceledBy != nil {
 			if run, ok := snapshot.Runs[job.RunID]; ok {
 				applyCanceledJob(snapshot, job, run, *job.CanceledBy, canceledReasonValue(job), cancelWorkerLostMessage, now)
+				if err := s.encryptStoredRunResult(ctx, normalizedJobWorkspace("", job), snapshot, run.ID); err != nil {
+					return err
+				}
 			}
 			continue
 		}
@@ -1313,6 +1419,7 @@ func requeueExpiredJobs(snapshot *Snapshot, now time.Time) {
 		snapshot.Jobs[id] = job
 		appendEvent(snapshot, job.RunID, "job_lease_expired", eventPayload(job.Payload.CorrelationID, map[string]any{"jobId": job.ID}), now)
 	}
+	return nil
 }
 
 func leasedJobAndRun(snapshot *Snapshot, lease Lease, now time.Time) (Job, Run, error) {
@@ -1876,42 +1983,58 @@ type inputWorkspaceKeyProvider interface {
 }
 
 func encryptInputAtRest(ctx context.Context, provider inputWorkspaceKeyProvider, config inputCryptoConfig, workspaceID string, input json.RawMessage) (json.RawMessage, error) {
-	input = canonicalJSONInput(input)
-	if !json.Valid(input) {
-		return nil, errors.New("input is not valid JSON")
+	return encryptJSONAtRest(ctx, provider, config, workspaceID, input, "{}", "input")
+}
+
+func decryptInputAtRest(ctx context.Context, provider inputWorkspaceKeyProvider, config inputCryptoConfig, workspaceID string, input json.RawMessage) (json.RawMessage, error) {
+	return decryptJSONAtRest(ctx, provider, config, workspaceID, input, "{}", "input")
+}
+
+func encryptResultAtRest(ctx context.Context, provider inputWorkspaceKeyProvider, config inputCryptoConfig, workspaceID string, result json.RawMessage) (json.RawMessage, error) {
+	return encryptJSONAtRest(ctx, provider, config, workspaceID, result, "null", "result")
+}
+
+func decryptResultAtRest(ctx context.Context, provider inputWorkspaceKeyProvider, config inputCryptoConfig, workspaceID string, result json.RawMessage) (json.RawMessage, error) {
+	return decryptJSONAtRest(ctx, provider, config, workspaceID, result, "null", "result")
+}
+
+func encryptJSONAtRest(ctx context.Context, provider inputWorkspaceKeyProvider, config inputCryptoConfig, workspaceID string, value json.RawMessage, defaultJSON string, label string) (json.RawMessage, error) {
+	value = canonicalJSONValue(value, defaultJSON)
+	if !json.Valid(value) {
+		return nil, fmt.Errorf("%s is not valid JSON", label)
 	}
-	if strings.TrimSpace(config.SecretKey) == "" || wfcrypto.IsEnc(input) {
-		return cloneRaw(input), nil
+	if strings.TrimSpace(config.SecretKey) == "" || wfcrypto.IsEnc(value) {
+		return cloneRaw(value), nil
 	}
 	dek, err := resolveInputDEK(ctx, provider, config, workspaceID)
 	if err != nil {
 		return nil, err
 	}
-	encrypted, err := wfcrypto.WrapEnc(dek, input)
+	encrypted, err := wfcrypto.WrapEnc(dek, value)
 	if err != nil {
 		return nil, err
 	}
 	return json.RawMessage(encrypted), nil
 }
 
-func decryptInputAtRest(ctx context.Context, provider inputWorkspaceKeyProvider, config inputCryptoConfig, workspaceID string, input json.RawMessage) (json.RawMessage, error) {
-	input = canonicalJSONInput(input)
-	if !wfcrypto.IsEnc(input) {
-		return cloneRaw(input), nil
+func decryptJSONAtRest(ctx context.Context, provider inputWorkspaceKeyProvider, config inputCryptoConfig, workspaceID string, value json.RawMessage, defaultJSON string, label string) (json.RawMessage, error) {
+	value = canonicalJSONValue(value, defaultJSON)
+	if !wfcrypto.IsEnc(value) {
+		return cloneRaw(value), nil
 	}
 	if strings.TrimSpace(config.SecretKey) == "" {
-		return nil, errors.New("input is encrypted but SECRET_KEY is not configured")
+		return nil, fmt.Errorf("%s is encrypted but SECRET_KEY is not configured", label)
 	}
 	dek, err := resolveInputDEK(ctx, provider, config, workspaceID)
 	if err != nil {
 		return nil, err
 	}
-	plain, err := wfcrypto.UnwrapEnc(dek, input)
+	plain, err := wfcrypto.UnwrapEnc(dek, value)
 	if err != nil {
 		return nil, err
 	}
 	if !json.Valid(plain) {
-		return nil, errors.New("decrypted input is not valid JSON")
+		return nil, fmt.Errorf("decrypted %s is not valid JSON", label)
 	}
 	return json.RawMessage(append([]byte(nil), plain...)), nil
 }
@@ -1939,8 +2062,12 @@ func inputKEKs(config inputCryptoConfig) []string {
 }
 
 func canonicalJSONInput(input json.RawMessage) json.RawMessage {
+	return canonicalJSONValue(input, "{}")
+}
+
+func canonicalJSONValue(input json.RawMessage, defaultJSON string) json.RawMessage {
 	if len(input) == 0 {
-		return json.RawMessage("{}")
+		return json.RawMessage(defaultJSON)
 	}
 	return cloneRaw(input)
 }

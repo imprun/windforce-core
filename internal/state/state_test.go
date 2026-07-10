@@ -68,6 +68,94 @@ func TestLocalStoreEncryptsInputAtRest(t *testing.T) {
 	}
 }
 
+func TestLocalStoreEncryptsResultAtRest(t *testing.T) {
+	ctx := context.Background()
+	store := NewLocalStore(t.TempDir() + "/state.json")
+	store.ConfigureInputCrypto("test-secret-key", "")
+	deployment := contract.Deployment{
+		Workspace: "default",
+		App:       "echo",
+		Commit:    "commit-a",
+		Actions: map[string]contract.Action{
+			"echo": {Action: "echo", Command: []string{"helper"}},
+		},
+	}
+	run := NewRun("windforce", "run-result-encrypted", "echo", "echo", deployment, json.RawMessage(`{"message":"secret"}`))
+	job := NewActionJob(run, nil)
+	if err := store.CreateRunAndEnqueue(ctx, run, job); err != nil {
+		t.Fatalf("CreateRunAndEnqueue returned error: %v", err)
+	}
+	if _, _, err := store.ClaimJob(ctx, "worker-skip", time.Minute); err != nil {
+		t.Fatalf("ClaimJob returned error: %v", err)
+	}
+	lease := Lease{JobID: job.ID, WorkerID: "worker-skip", Attempt: 1}
+	if err := store.CompleteJobSucceeded(ctx, lease, contract.JobResult{
+		JobID:      job.ID,
+		App:        "echo",
+		Action:     "echo",
+		Output:     json.RawMessage(`{"ok":true}`),
+		ExitCode:   0,
+		DurationMs: 12,
+	}); err != nil {
+		t.Fatalf("CompleteJobSucceeded returned error: %v", err)
+	}
+
+	snapshot, err := store.Load(ctx)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	storedRun := snapshot.Runs[run.ID]
+	if !wfcrypto.IsEnc(storedRun.Output) {
+		t.Fatalf("stored run output is not encrypted: %s", storedRun.Output)
+	}
+	if storedRun.Result == nil || !wfcrypto.IsEnc(storedRun.Result.Output) {
+		t.Fatalf("stored result output is not encrypted: %#v", storedRun.Result)
+	}
+
+	publicRun, err := store.GetRun(ctx, run.ID)
+	if err != nil {
+		t.Fatalf("GetRun returned error: %v", err)
+	}
+	if string(publicRun.Output) != `{"ok":true}` {
+		t.Fatalf("public run output = %s", publicRun.Output)
+	}
+	if publicRun.Result == nil || string(publicRun.Result.Output) != `{"ok":true}` {
+		t.Fatalf("public result output = %#v", publicRun.Result)
+	}
+	_, publicJobRun, found, err := store.GetJob(ctx, "default", job.ID)
+	if err != nil {
+		t.Fatalf("GetJob returned error: %v", err)
+	}
+	if !found || publicJobRun.Result == nil || string(publicJobRun.Result.Output) != `{"ok":true}` {
+		t.Fatalf("public job run result = found:%v run:%#v", found, publicJobRun)
+	}
+
+	cancelRun := NewRun("windforce", "run-cancel-result-encrypted", "echo", "echo", deployment, json.RawMessage(`{"message":"cancel"}`))
+	cancelJob := NewActionJob(cancelRun, nil)
+	if err := store.CreateRunAndEnqueue(ctx, cancelRun, cancelJob); err != nil {
+		t.Fatalf("CreateRunAndEnqueue cancel returned error: %v", err)
+	}
+	if _, err := store.CancelJob(ctx, "default", cancelJob.ID, "operator@example.test", "operator canceled"); err != nil {
+		t.Fatalf("CancelJob returned error: %v", err)
+	}
+	snapshot, err = store.Load(ctx)
+	if err != nil {
+		t.Fatalf("Load after cancel returned error: %v", err)
+	}
+	storedCancelRun := snapshot.Runs[cancelRun.ID]
+	if storedCancelRun.Result == nil || !wfcrypto.IsEnc(storedCancelRun.Result.Output) {
+		t.Fatalf("stored canceled result output is not encrypted: %#v", storedCancelRun.Result)
+	}
+	_, publicCancelRun, found, err := store.GetJob(ctx, "default", cancelJob.ID)
+	if err != nil {
+		t.Fatalf("GetJob canceled returned error: %v", err)
+	}
+	if !found || publicCancelRun.Result == nil {
+		t.Fatalf("public canceled result missing: found:%v run:%#v", found, publicCancelRun)
+	}
+	assertCanceledOutput(t, publicCancelRun.Result.Output, cancelBeforeExecutionMessage)
+}
+
 func TestPostgresStoreClaimCompleteAndResumeLifecycle(t *testing.T) {
 	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
 	if dsn == "" {
