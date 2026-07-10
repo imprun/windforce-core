@@ -79,6 +79,7 @@ async def main(ctx):
         "custom": custom,
         "has_approval": hasattr(ctx, "approval"),
         "has_flow": hasattr(ctx, "flow"),
+        "flow_resume_value": ctx.flow.resume_value,
         "headers": ctx.trigger.headers,
         "job": {"id": ctx.job.id, "workspace": ctx.job.workspace, "tag": ctx.job.tag},
     }
@@ -100,7 +101,7 @@ async def main(ctx):
 			"WF_ACTION=echo",
 			"WF_TAG=default",
 			"WF_STATE_PATH=demo/echo",
-			"WF_TRIGGER_KIND=api",
+			"WF_TRIGGER_KIND=flow_resume",
 			`WF_TRIGGER_HEADERS={"X-Test":"ok"}`,
 		},
 	})
@@ -123,6 +124,7 @@ async def main(ctx):
 		Custom      map[string]string `json:"custom"`
 		HasApproval bool              `json:"has_approval"`
 		HasFlow     bool              `json:"has_flow"`
+		FlowResume  map[string]string `json:"flow_resume_value"`
 		Headers     map[string]string `json:"headers"`
 		Job         map[string]string `json:"job"`
 	}
@@ -131,7 +133,8 @@ async def main(ctx):
 	}
 	if output.Variable != "var-ok" || output.Resource["resource"] != "browser-ok" ||
 		output.Before["state"] != "before" || output.Custom["custom"] != "Bearer job-token" ||
-		output.HasApproval || output.HasFlow || output.Headers["X-Test"] != "ok" || output.Job["id"] != "job-a" ||
+		!output.HasApproval || !output.HasFlow || output.FlowResume["message"] != "hello" ||
+		output.Headers["X-Test"] != "ok" || output.Job["id"] != "job-a" ||
 		output.Job["workspace"] != "ws-a" || output.Job["tag"] != "default" {
 		t.Fatalf("output = %#v", output)
 	}
@@ -243,6 +246,10 @@ func TestGeneratedWrappersUseJobTokenForVariableReads(t *testing.T) {
 	if !strings.Contains(ts, `app: APP`) {
 		t.Fatalf("typescript wrapper does not reuse APP in ctx.app:\n%s", ts)
 	}
+	if !strings.Contains(ts, `approval: {`) || !strings.Contains(ts, `async getResumeUrls(approver)`) ||
+		!strings.Contains(ts, `flow: {`) || !strings.Contains(ts, `resumeValue: KIND === "flow_resume" ? input : undefined`) {
+		t.Fatalf("typescript wrapper does not expose canonical approval/flow ctx shape:\n%s", ts)
+	}
 
 	py := wrapperPy("main.py")
 	if strings.Contains(py, `?app=`) {
@@ -253,6 +260,10 @@ func TestGeneratedWrappersUseJobTokenForVariableReads(t *testing.T) {
 	}
 	if !strings.Contains(py, `app=_APP`) {
 		t.Fatalf("python wrapper does not reuse _APP in ctx.app:\n%s", py)
+	}
+	if !strings.Contains(py, `class _Approval:`) || !strings.Contains(py, `async def get_resume_urls(self, approver=None):`) ||
+		!strings.Contains(py, `approval=_Approval(),`) || !strings.Contains(py, `flow=SimpleNamespace(resume_value=(_input if _KIND == "flow_resume" else None))`) {
+		t.Fatalf("python wrapper does not expose canonical approval/flow ctx shape:\n%s", py)
 	}
 }
 
