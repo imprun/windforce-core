@@ -83,6 +83,15 @@ func jobPrincipalFrom(ctx context.Context) *jobPrincipal {
 	return principal
 }
 
+func requestActorSubject(r *http.Request) string {
+	if principal := jobPrincipalFrom(r.Context()); principal != nil {
+		if subject := strings.TrimSpace(principal.Subject); subject != "" {
+			return subject
+		}
+	}
+	return strings.TrimSpace(r.Header.Get("X-Windforce-Actor"))
+}
+
 func New(config Config) http.Handler {
 	secretKey := config.SecretKey
 	if secretKey == "" {
@@ -1880,7 +1889,7 @@ func (h *Handler) handleJobCancel(w http.ResponseWriter, r *http.Request, worksp
 		Reason string `json:"reason"`
 	}
 	_ = readOptionalJSON(r, &request)
-	result, err := h.store.CancelJob(r.Context(), workspaceID, jobID, "", request.Reason)
+	result, err := h.store.CancelJob(r.Context(), workspaceID, jobID, requestActorSubject(r), request.Reason)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

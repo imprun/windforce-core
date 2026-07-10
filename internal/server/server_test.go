@@ -1470,8 +1470,8 @@ func TestCanonicalJobCancelAPI(t *testing.T) {
 	if statusBody.State != "completed" || statusBody.Status != "canceled" {
 		t.Fatalf("job status = %#v", statusBody)
 	}
-	if statusBody.CanceledBy == nil || *statusBody.CanceledBy != "system" {
-		t.Fatalf("canceled_by = %v, want system", statusBody.CanceledBy)
+	if statusBody.CanceledBy == nil || *statusBody.CanceledBy != "operator@example.test" {
+		t.Fatalf("canceled_by = %v, want operator@example.test", statusBody.CanceledBy)
 	}
 	if statusBody.CanceledReason == nil || *statusBody.CanceledReason != "operator canceled" {
 		t.Fatalf("canceled_reason = %v, want operator canceled", statusBody.CanceledReason)
