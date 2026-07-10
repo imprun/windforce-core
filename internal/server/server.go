@@ -1438,7 +1438,7 @@ func canonicalDeploymentTimeoutSeconds(deployment contract.Deployment) int32 {
 	if deployment.TimeoutS > 0 {
 		return deployment.TimeoutS
 	}
-	return 0
+	return contract.DefaultTimeoutS
 }
 
 func canonicalDeploymentUpdatedAt(deployment contract.Deployment) time.Time {

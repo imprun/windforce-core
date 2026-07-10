@@ -111,6 +111,9 @@ func TestFileCatalogMigratesLegacyAppKey(t *testing.T) {
 	if got.Commit != "commit-a" {
 		t.Fatalf("commit = %q, want commit-a", got.Commit)
 	}
+	if got.Tag != "default" || got.TimeoutS != 300 || got.ScriptLang != "typescript" {
+		t.Fatalf("legacy defaults = tag:%q timeout:%d scriptLang:%q", got.Tag, got.TimeoutS, got.ScriptLang)
+	}
 	snapshot, err := catalog.Load(context.Background())
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)

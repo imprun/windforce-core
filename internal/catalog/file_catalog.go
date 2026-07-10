@@ -198,6 +198,7 @@ func normalizeDeploymentDefaults(deployment contract.Deployment) contract.Deploy
 func normalizeDeploymentMap(deployments map[string]contract.Deployment) map[string]contract.Deployment {
 	normalized := make(map[string]contract.Deployment, len(deployments))
 	for key, deployment := range deployments {
+		deployment = normalizeDeploymentDefaults(deployment)
 		normalizedKey := deploymentKey(deployment.SourceWorkspace(), deployment.App)
 		if deployment.App == "" {
 			normalizedKey = key
