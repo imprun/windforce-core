@@ -1577,8 +1577,10 @@ func TestCanonicalControlPlaneOpenAPIExposesSchemaDiscovery(t *testing.T) {
 	if schemaGet["operationId"] != "getActionSchema" {
 		t.Fatalf("action schema operation = %#v", schemaGet)
 	}
-	if paths["/api/w/{workspace}/deployments/{deploymentId}"] != nil {
-		t.Fatalf("unsupported deployment status route should not be advertised: %#v", paths["/api/w/{workspace}/deployments/{deploymentId}"])
+	deploymentPath := paths["/api/w/{workspace}/deployments/{id}"].(map[string]any)
+	deploymentGet := deploymentPath["get"].(map[string]any)
+	if deploymentGet["operationId"] != "getDeployment" {
+		t.Fatalf("deployment operation = %#v", deploymentGet)
 	}
 	for _, path := range []string{
 		"/api/w/{workspace}/state",
@@ -1671,6 +1673,10 @@ func TestCanonicalControlPlaneOpenAPIExposesSchemaDiscovery(t *testing.T) {
 	assertSchemaRef("ActionSchema", schemas["ActionSchema"].(map[string]any), "output_schema", "#/components/schemas/JSONSchema")
 	assertSchemaFields("AppHistoryItem", []string{
 		"id", "commit_sha", "entrypoint", "source", "deployment_id", "message", "created_at",
+	})
+	assertSchemaFields("AppDeployment", []string{
+		"id", "workspace_id", "app_key", "git_source_id", "base_commit_sha", "target_commit_sha",
+		"status", "message", "error", "created_by", "permissioned_as", "created_at", "updated_at",
 	})
 	assertSchemaFields("JobStatus", []string{
 		"id", "workspace_id", "state", "status", "worker", "app_key", "action_key", "trigger_kind", "kind",
@@ -2525,6 +2531,7 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 		t.Fatalf("registered source = %#v", registered)
 	}
 	registeredID := fmt.Sprint(registered.ID)
+	registeredIDInt := registered.ID
 
 	for _, tc := range []struct {
 		method string
@@ -2925,7 +2932,7 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(history) != 1 || history[0]["id"] == "" || history[0]["commit_sha"] != syncBody.Commit ||
-		history[0]["source"] != "external_sync" {
+		history[0]["source"] != "external_sync" || history[0]["deployment_id"] != history[0]["id"] {
 		t.Fatalf("history = %#v", history)
 	}
 	if _, ok := history[0]["git_source_key"]; ok {
@@ -2935,20 +2942,35 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 		t.Fatalf("history = %#v", history)
 	}
 
-	deploymentResp, err := http.Get(server.URL + "/api/w/ws-a/deployments/echo")
+	deploymentID, ok := history[0]["deployment_id"].(string)
+	if !ok || deploymentID == "" {
+		t.Fatalf("history deployment_id = %#v", history[0]["deployment_id"])
+	}
+	deploymentResp, err := http.Get(server.URL + "/api/w/ws-a/deployments/" + deploymentID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer deploymentResp.Body.Close()
-	if deploymentResp.StatusCode != http.StatusNotFound {
-		t.Fatalf("deployment status = %d, want %d", deploymentResp.StatusCode, http.StatusNotFound)
+	if deploymentResp.StatusCode != http.StatusOK {
+		t.Fatalf("deployment status = %d, want %d", deploymentResp.StatusCode, http.StatusOK)
 	}
-	var deploymentError map[string]string
-	if err := json.NewDecoder(deploymentResp.Body).Decode(&deploymentError); err != nil {
+	var deploymentBody struct {
+		ID              string  `json:"id"`
+		WorkspaceID     string  `json:"workspace_id"`
+		AppKey          string  `json:"app_key"`
+		GitSourceID     int64   `json:"git_source_id"`
+		BaseCommitSha   string  `json:"base_commit_sha"`
+		TargetCommitSha *string `json:"target_commit_sha"`
+		Status          string  `json:"status"`
+	}
+	if err := json.NewDecoder(deploymentResp.Body).Decode(&deploymentBody); err != nil {
 		t.Fatal(err)
 	}
-	if deploymentError["error"] != "deployment not found" {
-		t.Fatalf("deployment error = %#v", deploymentError)
+	if deploymentBody.ID != deploymentID || deploymentBody.WorkspaceID != "ws-a" ||
+		deploymentBody.AppKey != "echo" || deploymentBody.GitSourceID != registeredIDInt ||
+		deploymentBody.BaseCommitSha != syncBody.Commit || deploymentBody.TargetCommitSha == nil ||
+		*deploymentBody.TargetCommitSha != syncBody.Commit || deploymentBody.Status != "deployed" {
+		t.Fatalf("deployment body = %#v", deploymentBody)
 	}
 
 	if err := os.WriteFile(filepath.Join(repoDir, "windforce.json"), []byte(`{
