@@ -247,6 +247,36 @@ func TestPostgresStoreClaimJobEnforcesMaxConcurrent(t *testing.T) {
 	exerciseStoreMaxConcurrent(t, store)
 }
 
+func TestJobSummarySkipsBreakdownsWithOnlyOldCompletedJobs(t *testing.T) {
+	deployment := contract.Deployment{
+		Workspace: "default",
+		App:       "echo",
+		Commit:    "commit-a",
+		Tag:       "workers",
+		Actions: map[string]contract.Action{
+			"echo": {Action: "echo", Command: []string{"helper"}},
+		},
+	}
+	oldCompletedAt := time.Now().UTC().Add(-2 * time.Hour)
+	run := NewRun("windforce", "old-run", "echo", "echo", deployment, json.RawMessage(`{}`))
+	run.State = RunSucceeded
+	run.CreatedAt = oldCompletedAt
+	run.UpdatedAt = oldCompletedAt
+	job := NewActionJob(run, nil)
+	job.ID = "old-job"
+	job.State = JobSucceeded
+	job.CreatedAt = oldCompletedAt
+	job.UpdatedAt = oldCompletedAt
+
+	summary := summarizeJobs([]jobRunRecord{{Job: job, Run: run}}, "default", time.Hour)
+	if summary.JobSummaryCounts != (JobSummaryCounts{}) {
+		t.Fatalf("summary counts = %#v, want zero", summary.JobSummaryCounts)
+	}
+	if len(summary.ByTag) != 0 || len(summary.ByApp) != 0 {
+		t.Fatalf("summary breakdowns = tags:%#v apps:%#v, want empty", summary.ByTag, summary.ByApp)
+	}
+}
+
 func TestLocalStoreHeartbeatExtendsLease(t *testing.T) {
 	store := NewLocalStore(t.TempDir() + "/state.json")
 	exerciseStoreHeartbeatExtendsLease(t, store)

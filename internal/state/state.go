@@ -1586,7 +1586,10 @@ func summarizeJobs(records []jobRunRecord, workspaceID string, recent time.Durat
 	}
 	sort.Strings(tags)
 	for _, tag := range tags {
-		summary.ByTag = append(summary.ByTag, JobSummaryTagBreakdown{Tag: tag, JobSummaryCounts: *byTag[tag]})
+		counts := *byTag[tag]
+		if includeJobSummaryBreakdown(counts) {
+			summary.ByTag = append(summary.ByTag, JobSummaryTagBreakdown{Tag: tag, JobSummaryCounts: counts})
+		}
 	}
 	apps := make([]string, 0, len(byApp))
 	for app := range byApp {
@@ -1594,9 +1597,16 @@ func summarizeJobs(records []jobRunRecord, workspaceID string, recent time.Durat
 	}
 	sort.Strings(apps)
 	for _, app := range apps {
-		summary.ByApp = append(summary.ByApp, JobSummaryAppBreakdown{AppKey: app, JobSummaryCounts: *byApp[app]})
+		counts := *byApp[app]
+		if includeJobSummaryBreakdown(counts) {
+			summary.ByApp = append(summary.ByApp, JobSummaryAppBreakdown{AppKey: app, JobSummaryCounts: counts})
+		}
 	}
 	return summary
+}
+
+func includeJobSummaryBreakdown(counts JobSummaryCounts) bool {
+	return counts.QueuedCount > 0 || counts.RunningCount > 0 || counts.CompletedCountRecent > 0
 }
 
 func countJobSummary(counts *JobSummaryCounts, job Job, run Run, status string, cutoff time.Time) {
