@@ -2414,31 +2414,6 @@ func readRequiredJSON(r *http.Request, value any) error {
 	return json.Unmarshal(data, value)
 }
 
-func runResponse(run state.Run) map[string]any {
-	response := map[string]any{
-		"runId":  run.ID,
-		"state":  run.State,
-		"app":    run.App,
-		"action": run.Action,
-	}
-	if run.TaskID != "" {
-		response["humanTaskId"] = run.TaskID
-	}
-	if run.CorrelationID != "" {
-		response["correlationId"] = run.CorrelationID
-	}
-	if len(run.Output) > 0 {
-		response["output"] = json.RawMessage(run.Output)
-	}
-	if run.Result != nil {
-		response["result"] = run.Result
-	}
-	if len(run.Error) > 0 {
-		response["error"] = json.RawMessage(run.Error)
-	}
-	return response
-}
-
 type jobStatusResponse struct {
 	ID             string          `json:"id"`
 	WorkspaceID    string          `json:"workspace_id"`
