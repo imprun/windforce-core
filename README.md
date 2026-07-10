@@ -27,13 +27,11 @@ in scope.
 
 ## Sync
 
-`sync` turns a registered or directly supplied source tree into an active
-deployment:
+`sync` turns a registered git source into an active deployment through the
+control-plane API:
 
-1. Register a git source through the control-plane API, or pass a source
-   explicitly for local smoke tests.
+1. Register a git source through the control-plane API.
 2. Resolve the source version.
-   - local source: compute a source tree digest
    - git source: resolve the branch or commit
 3. If the git source has a `subpath`, use that repo directory as the app root
    and try sparse checkout before falling back to a full clone.
@@ -46,8 +44,9 @@ The ordering is intentional: a catalog entry must not point at a bundle that a
 worker cannot fetch.
 
 The Docker Compose control-plane runs inside a container, so the default
-`make windforce-register` path registers a remote git URL. Use the direct
-`sync` CLI for host-local source smoke tests.
+`make windforce-register` path registers a remote git URL. Local development
+uses `tools/windforce_control.py` against the same API instead of a separate
+source-sync command.
 
 ## Run
 
@@ -59,11 +58,8 @@ A queued run executes an action from the active catalog:
    workspace/git-source/commit into a local runtime cache.
 4. Execute the app-level entrypoint from the fetched source directory.
 5. Build the Windforce `ctx` object from `input.json` and `WF_*` environment.
-6. Store stdout/stderr as job logs and return exit code, duration, and output
-   JSON.
-
-The direct `run` CLI is a local smoke-test path and still prints the observed
-subprocess fields in its JSON result.
+6. Store stdout/stderr as job logs and expose the action output through the
+   job result API.
 
 ## Manifest
 
@@ -162,38 +158,32 @@ not as a runner infrastructure error.
 
 ## Try it locally
 
+Run the combined local control-plane and worker:
+
 ```powershell
-go run ./cmd/windforce-lite sync `
-  --source examples/echo `
+go run ./cmd/windforce-lite standalone `
+  --addr 127.0.0.1:8080 `
   --store .tmp/store `
-  --catalog .tmp/catalog.json
-
-'{"message":"hello"}' | Set-Content -Encoding utf8 .tmp/input.json
-
-go run ./cmd/windforce-lite run `
-  --app echo `
-  --action echo `
-  --input .tmp/input.json `
-  --output .tmp/output.json `
-  --store .tmp/store `
-  --catalog .tmp/catalog.json
+  --catalog .tmp/catalog.json `
+  --state .tmp/state.json
 ```
 
-The same flow works with a git source:
+In another terminal, use the control-plane API to create a managed sample git
+source, sync it, enqueue a job, and read the result:
 
 ```powershell
-go run ./cmd/windforce-lite sync `
-  --repo https://github.com/imprun/example-windforce-app.git `
-  --branch main `
-  --subpath apps/echo `
-  --store .tmp/store `
-  --catalog .tmp/catalog.json
+python tools/windforce_control.py --api-url http://127.0.0.1:8080 --pretty sample --app-key sample_hello
+
+Invoke-RestMethod `
+  -Method Post `
+  -Uri http://127.0.0.1:8080/api/w/default/jobs/run/sample_hello/echo/wait?timeout_ms=5000 `
+  -ContentType application/json `
+  -Body '{"message":"hello"}'
 ```
 
 ## Local runtime mode
 
-The direct `run` command is useful for smoke tests. The runtime process model is
-available through local file-backed state:
+The runtime process model is available through local file-backed state:
 
 ```powershell
 go run ./cmd/windforce-lite standalone `
@@ -331,7 +321,7 @@ lite basic control plane.
 
 The full Windforce control plane derives job actor provenance from the
 authenticated principal. Lite deployments that use only the admin token can pass
-`X-Windforce-Actor` or `X-Windforce-User` on run, webhook, trigger, and cancel
+`X-Windforce-Actor` or `X-Windforce-User` on run, webhook, and cancel
 requests so `created_by`, `permissioned_as`, and `canceled_by` match the caller
 identity; without either header it falls back to `system` for new jobs and the
 recorded actor for cancel.

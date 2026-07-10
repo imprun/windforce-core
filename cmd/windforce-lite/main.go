@@ -39,10 +39,6 @@ func run(args []string) int {
 	case "version":
 		fmt.Println(version)
 		return 0
-	case "sync":
-		return runSync(args[1:])
-	case "run":
-		return runAction(args[1:])
 	case "run-json":
 		return runJSON(args[1:])
 	case "api":
@@ -56,117 +52,6 @@ func run(args []string) int {
 		printUsage(os.Stderr)
 		return 2
 	}
-}
-
-func runSync(args []string) int {
-	flags := flag.NewFlagSet("sync", flag.ContinueOnError)
-	flags.SetOutput(os.Stderr)
-	sourceDir := flags.String("source", "", "local app source directory")
-	repoURL := flags.String("repo", "", "git repository URL")
-	branch := flags.String("branch", "main", "git branch")
-	commit := flags.String("commit", "", "commit or local bundle id")
-	var sourceSubpath string
-	flags.StringVar(&sourceSubpath, "subpath", "", "source subpath inside the git repository or local source")
-	flags.StringVar(&sourceSubpath, "path", "", "alias for --subpath")
-	app := flags.String("app", "", "optional app name assertion")
-	workspace := flags.String("workspace", "default", "source workspace")
-	gitSourceID := flags.String("git-source-id", "", "registered git source id")
-	storeDir := flags.String("store", defaultStoreDir(), "bundle store directory")
-	catalogPath := flags.String("catalog", defaultCatalogPath(), "catalog JSON path")
-	cloneRoot := flags.String("clone-root", "", "temporary clone root")
-	tokenEnv := flags.String("token-env", "", "environment variable that contains a git token")
-	if err := flags.Parse(args); err != nil {
-		return 2
-	}
-
-	token := ""
-	if *tokenEnv != "" {
-		token = os.Getenv(*tokenEnv)
-	}
-
-	store := bundle.NewLocalStore(*storeDir)
-	fileCatalog := catalog.NewFileCatalog(*catalogPath)
-	s := syncer.Syncer{Store: store, Catalog: fileCatalog, CloneRoot: *cloneRoot}
-	deployment, err := s.Sync(context.Background(), syncer.Source{
-		Workspace:   *workspace,
-		GitSourceID: *gitSourceID,
-		App:         *app,
-		RepoURL:     *repoURL,
-		Branch:      *branch,
-		Commit:      *commit,
-		Subpath:     sourceSubpath,
-		Token:       token,
-		LocalDir:    *sourceDir,
-	})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "sync: %v\n", err)
-		return 1
-	}
-	if err := writeJSON(os.Stdout, deployment); err != nil {
-		fmt.Fprintf(os.Stderr, "write deployment: %v\n", err)
-		return 2
-	}
-	return 0
-}
-
-func runAction(args []string) int {
-	flags := flag.NewFlagSet("run", flag.ContinueOnError)
-	flags.SetOutput(os.Stderr)
-	app := flags.String("app", "", "app name")
-	action := flags.String("action", "", "action name")
-	inputPath := flags.String("input", "", "input JSON file path")
-	outputPath := flags.String("output", "", "output JSON file path")
-	storeDir := flags.String("store", defaultStoreDir(), "bundle store directory")
-	catalogPath := flags.String("catalog", defaultCatalogPath(), "catalog JSON path")
-	cacheRoot := flags.String("cache", defaultCacheDir(), "runtime cache directory")
-	bunPath := flags.String("bun-path", "", "bun executable path")
-	pythonPath := flags.String("python-path", "", "python executable path")
-	goPath := flags.String("go-path", "", "go executable path")
-	prepareTimeout := flags.Duration("prepare-timeout", 0, "source prepare timeout; defaults to 5m")
-	timeout := flags.Duration("timeout", 0, "action timeout override")
-	if err := flags.Parse(args); err != nil {
-		return 2
-	}
-	if *app == "" || *action == "" {
-		fmt.Fprintln(os.Stderr, "run: --app and --action are required")
-		return 2
-	}
-
-	fileCatalog := catalog.NewFileCatalog(*catalogPath)
-	deployment, err := fileCatalog.GetDeployment(context.Background(), *app)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "run: %v\n", err)
-		return 1
-	}
-
-	r := runtime.Runner{
-		Store:          bundle.NewLocalStore(*storeDir),
-		CacheRoot:      *cacheRoot,
-		BunPath:        *bunPath,
-		PythonPath:     *pythonPath,
-		GoPath:         *goPath,
-		PrepareTimeout: *prepareTimeout,
-	}
-	result, err := r.Run(context.Background(), runtime.RunRequest{
-		Deployment: deployment,
-		Action:     *action,
-		InputPath:  *inputPath,
-		OutputPath: *outputPath,
-		Timeout:    *timeout,
-	})
-	if err != nil {
-		_ = writeJSON(os.Stdout, result)
-		fmt.Fprintf(os.Stderr, "run: %v\n", err)
-		return 1
-	}
-	if err := writeJSON(os.Stdout, result); err != nil {
-		fmt.Fprintf(os.Stderr, "write result: %v\n", err)
-		return 2
-	}
-	if result.ExitCode != 0 {
-		return result.ExitCode
-	}
-	return 0
 }
 
 func runServer(args []string, mode string) int {
@@ -472,9 +357,6 @@ func defaultStatePath() string {
 func printUsage(file *os.File) {
 	fmt.Fprintln(file, "usage:")
 	fmt.Fprintln(file, "  windforce-lite version")
-	fmt.Fprintln(file, "  windforce-lite sync --source <dir> [--subpath <subdir>] [--store <dir>] [--catalog <path>]")
-	fmt.Fprintln(file, "  windforce-lite sync --repo <url> [--branch main] [--subpath <subdir>] [--store <dir>] [--catalog <path>]")
-	fmt.Fprintln(file, "  windforce-lite run --app <app> --action <action> [--input <path>] [--output <path>] [--bun-path <path>] [--python-path <path>] [--go-path <path>] [--prepare-timeout 5m]")
 	fmt.Fprintln(file, "  windforce-lite api [--addr :8080] [--state-backend local|postgres] [--git-sources <path>]")
 	fmt.Fprintln(file, "  windforce-lite worker [--state-backend local|postgres] [--worker-group default] [--egress-proxy host:port] [--bun-path <path>] [--python-path <path>] [--go-path <path>] [--prepare-timeout 5m] [--once]")
 	fmt.Fprintln(file, "  windforce-lite standalone [--addr :8080] [--state-backend local|postgres] [--worker-group default] [--egress-proxy host:port] [--git-sources <path>] [--bun-path <path>] [--python-path <path>] [--go-path <path>] [--prepare-timeout 5m]")
