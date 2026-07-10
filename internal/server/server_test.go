@@ -727,8 +727,8 @@ func TestJobTokenAuthorizesOnlySDKCallbacks(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = resumeResp.Body.Close()
-	if resumeResp.StatusCode != http.StatusForbidden {
-		t.Fatalf("job token flow resume URL status = %d, want %d", resumeResp.StatusCode, http.StatusForbidden)
+	if resumeResp.StatusCode != http.StatusNotFound {
+		t.Fatalf("job token flow resume URL status = %d, want %d", resumeResp.StatusCode, http.StatusNotFound)
 	}
 
 	crossWorkspaceReq, err := http.NewRequest(http.MethodGet, server.URL+"/api/w/ws-b/variables/get/p/config/token", nil)
