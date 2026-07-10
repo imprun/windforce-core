@@ -1770,7 +1770,6 @@ func (h *Handler) enqueueJob(w http.ResponseWriter, r *http.Request, workspaceID
 		return state.Job{}, false
 	}
 	run := state.NewRun("windforce", "", app, action, deployment, input)
-	applyRequestActor(&run, r)
 	if correlationID := state.CleanID(r.Header.Get("X-Request-ID")); correlationID != "" {
 		run.CorrelationID = correlationID
 	}
@@ -1850,7 +1849,7 @@ func (h *Handler) handleJobCancel(w http.ResponseWriter, r *http.Request, worksp
 		Reason string `json:"reason"`
 	}
 	_ = readOptionalJSON(r, &request)
-	result, err := h.store.CancelJob(r.Context(), workspaceID, jobID, requestActorSubject(r), request.Reason)
+	result, err := h.store.CancelJob(r.Context(), workspaceID, jobID, "", request.Reason)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -2750,24 +2749,6 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
-}
-
-func requestActorSubject(r *http.Request) string {
-	for _, name := range []string{"X-Windforce-Actor", "X-Windforce-User"} {
-		if value := strings.TrimSpace(r.Header.Get(name)); value != "" {
-			return value
-		}
-	}
-	return ""
-}
-
-func applyRequestActor(run *state.Run, r *http.Request) {
-	actor := requestActorSubject(r)
-	if actor == "" {
-		return
-	}
-	run.CreatedBy = actor
-	run.PermissionedAs = actor
 }
 
 func firstPresentStringPtr(values ...*string) *string {

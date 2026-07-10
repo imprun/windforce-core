@@ -1262,8 +1262,8 @@ func TestCanonicalJobCancelAPI(t *testing.T) {
 	if statusBody.State != "completed" || statusBody.Status != "canceled" {
 		t.Fatalf("job status = %#v", statusBody)
 	}
-	if statusBody.CanceledBy == nil || *statusBody.CanceledBy != "operator@example.test" {
-		t.Fatalf("canceled_by = %v, want operator@example.test", statusBody.CanceledBy)
+	if statusBody.CanceledBy == nil || *statusBody.CanceledBy != "system" {
+		t.Fatalf("canceled_by = %v, want system", statusBody.CanceledBy)
 	}
 	if statusBody.CanceledReason == nil || *statusBody.CanceledReason != "operator canceled" {
 		t.Fatalf("canceled_reason = %v, want operator canceled", statusBody.CanceledReason)
@@ -2563,8 +2563,8 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 		statusBody.CommitSha != syncBody.Commit ||
 		statusBody.Entrypoint != "main.ts" ||
 		statusBody.Tag != "browser" ||
-		statusBody.CreatedBy != "runner@example.test" ||
-		statusBody.PermissionedAs != "runner@example.test" {
+		statusBody.CreatedBy != "system" ||
+		statusBody.PermissionedAs != "system" {
 		t.Fatalf("status body schemas/input = input_schema:%s output_schema:%s input:%s", statusBody.InputSchema, statusBody.OutputSchema, statusBody.Input)
 	}
 

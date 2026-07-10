@@ -320,11 +320,10 @@ depends on the full deploy control-plane state table and is not part of the
 lite basic control plane.
 
 The full Windforce control plane derives job actor provenance from the
-authenticated principal. Lite deployments that use only the admin token can pass
-`X-Windforce-Actor` or `X-Windforce-User` on run, webhook, and cancel
-requests so `created_by`, `permissioned_as`, and `canceled_by` match the caller
-identity; without either header it falls back to `system` for new jobs and the
-recorded actor for cancel.
+authenticated principal. Lite does not implement the full user/session principal
+model, so run, webhook, and cancel requests do not accept caller-supplied actor
+headers. `created_by`, `permissioned_as`, and `canceled_by` use the store's
+`system` fallback until a canonical lite principal model is added.
 
 PostgreSQL is the production state backend. All runtime modes accept
 `--state-backend postgres`, `--database-url`, and `--migrate`:
