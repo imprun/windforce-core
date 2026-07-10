@@ -251,10 +251,6 @@ func (h *Handler) handleAPI(w http.ResponseWriter, r *http.Request) bool {
 		h.handleCanonicalRequeueApp(w, r, parts[2], parts[4])
 		return true
 	}
-	if len(parts) == 5 && parts[0] == "api" && parts[1] == "w" && parts[3] == "deployments" && r.Method == http.MethodGet {
-		h.handleCanonicalDeployment(w, r, parts[2], parts[4])
-		return true
-	}
 	if len(parts) == 4 && parts[0] == "api" && parts[1] == "w" && parts[3] == "worker-tags" && r.Method == http.MethodGet {
 		h.handleCanonicalWorkerTags(w, r, parts[2])
 		return true
@@ -926,13 +922,6 @@ func (h *Handler) handleCanonicalRequeueApp(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"requeued": requeued})
-}
-
-func (h *Handler) handleCanonicalDeployment(w http.ResponseWriter, r *http.Request, workspaceID string, id string) {
-	// Full windforce returns an AppDeployment status row from the deploy control
-	// plane. windforce-lite does not yet have that deploy state table; do not
-	// expose the internal app Deployment contract through the canonical route.
-	writeError(w, http.StatusNotFound, "deployment not found")
 }
 
 func (h *Handler) handleCanonicalWorkerTags(w http.ResponseWriter, r *http.Request, workspaceID string) {

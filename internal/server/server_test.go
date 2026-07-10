@@ -2947,7 +2947,7 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 	if err := json.NewDecoder(deploymentResp.Body).Decode(&deploymentError); err != nil {
 		t.Fatal(err)
 	}
-	if deploymentError["error"] != "deployment not found" {
+	if deploymentError["error"] != "not found" {
 		t.Fatalf("deployment error = %#v", deploymentError)
 	}
 
