@@ -1369,8 +1369,8 @@ func TestCanonicalControlPlaneOpenAPIExposesSchemaDiscovery(t *testing.T) {
 	if paths["/api/w/{workspace}/apps/{app}/openapi.json"] == nil {
 		t.Fatalf("app invocation openapi path missing: %#v", paths)
 	}
-	if paths["/api/w/{workspace}/apps/{app}/actions/{action}/schema"] == nil {
-		t.Fatalf("action schema discovery path missing: %#v", paths)
+	if paths["/api/w/{workspace}/apps/{app}/actions/{action}/schema"] != nil {
+		t.Fatalf("lite-only action schema route should not be advertised: %#v", paths["/api/w/{workspace}/apps/{app}/actions/{action}/schema"])
 	}
 	if paths["/api/w/{workspace}/deployments/{deploymentId}"] != nil {
 		t.Fatalf("unsupported deployment status route should not be advertised: %#v", paths["/api/w/{workspace}/deployments/{deploymentId}"])
@@ -1428,9 +1428,6 @@ func TestCanonicalControlPlaneOpenAPIExposesSchemaDiscovery(t *testing.T) {
 	assertSchemaFields("Action", []string{
 		"id", "workspace_id", "app_key", "action_key", "input_schema", "output_schema", "tag",
 		"tag_override", "timeout_s", "required_capabilities", "updated_at",
-	})
-	assertSchemaFields("ActionSchema", []string{
-		"app_key", "action_key", "input_schema", "output_schema",
 	})
 	assertSchemaFields("AppAction", []string{
 		"id", "workspace_id", "app_key", "action_key", "input_schema", "output_schema", "tag",
@@ -1518,19 +1515,8 @@ func TestCanonicalControlPlaneOpenAPIExposesSchemaDiscovery(t *testing.T) {
 	if appDetailActions["items"].(map[string]any)["$ref"] != "#/components/schemas/AppAction" {
 		t.Fatalf("app detail actions schema = %#v", appDetailActions)
 	}
-	actionSchemaPath := paths["/api/w/{workspace}/apps/{app}/actions/{action}/schema"].(map[string]any)["get"].(map[string]any)
-	if actionSchemaPath["operationId"] != "getActionSchema" {
-		t.Fatalf("action schema path = %#v", actionSchemaPath)
-	}
-	actionSchemaResponse := actionSchemaPath["responses"].(map[string]any)["200"].(map[string]any)
-	actionSchemaRef := actionSchemaResponse["content"].(map[string]any)["application/json"].(map[string]any)["schema"].(map[string]any)
-	if actionSchemaRef["$ref"] != "#/components/schemas/ActionSchema" {
-		t.Fatalf("action schema response = %#v", actionSchemaResponse)
-	}
-	materializedActionSchema := schemas["ActionSchema"].(map[string]any)
-	materializedActionSchemaProps := materializedActionSchema["properties"].(map[string]any)
-	if materializedActionSchemaProps["input_schema"] == nil || materializedActionSchemaProps["output_schema"] == nil {
-		t.Fatalf("ActionSchema component missing schema fields: %#v", materializedActionSchemaProps)
+	if schemas["ActionSchema"] != nil {
+		t.Fatalf("lite-only ActionSchema component should not be advertised: %#v", schemas["ActionSchema"])
 	}
 	for _, schemaName := range []string{
 		"JSONValue",
@@ -1883,29 +1869,6 @@ func TestCanonicalControlPlaneUsesMaterializedActionSchemas(t *testing.T) {
 	if !bytes.Contains(actionBody.InputSchema, []byte(`"message"`)) ||
 		!bytes.Contains(actionBody.OutputSchema, []byte(`"ok"`)) {
 		t.Fatalf("action schemas = input:%s output:%s", actionBody.InputSchema, actionBody.OutputSchema)
-	}
-
-	schemaResp, err := http.Get(server.URL + "/api/w/ws-a/apps/echo/actions/echo/schema")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer schemaResp.Body.Close()
-	if schemaResp.StatusCode != http.StatusOK {
-		t.Fatalf("schema route status = %d, want %d", schemaResp.StatusCode, http.StatusOK)
-	}
-	var schemaBody struct {
-		AppKey       string          `json:"app_key"`
-		ActionKey    string          `json:"action_key"`
-		InputSchema  json.RawMessage `json:"input_schema"`
-		OutputSchema json.RawMessage `json:"output_schema"`
-	}
-	if err := json.NewDecoder(schemaResp.Body).Decode(&schemaBody); err != nil {
-		t.Fatal(err)
-	}
-	if schemaBody.AppKey != "echo" || schemaBody.ActionKey != "echo" ||
-		!bytes.Contains(schemaBody.InputSchema, []byte(`"message"`)) ||
-		!bytes.Contains(schemaBody.OutputSchema, []byte(`"ok"`)) {
-		t.Fatalf("schema body = %#v input:%s output:%s", schemaBody, schemaBody.InputSchema, schemaBody.OutputSchema)
 	}
 
 	openAPIResp, err := http.Get(server.URL + "/api/w/ws-a/apps/echo/openapi.json")
@@ -2417,29 +2380,6 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 		actionBody.TimeoutS != nil || actionBody.UpdatedAt.IsZero() ||
 		!bytes.Contains(actionBody.InputSchema, []byte(`"message"`)) || !bytes.Contains(actionBody.OutputSchema, []byte(`"ok"`)) {
 		t.Fatalf("action body = %#v input=%s output=%s", actionBody, actionBody.InputSchema, actionBody.OutputSchema)
-	}
-
-	schemaResp, err := http.Get(server.URL + "/api/w/ws-a/apps/echo/actions/echo/schema")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer schemaResp.Body.Close()
-	if schemaResp.StatusCode != http.StatusOK {
-		t.Fatalf("schema status = %d, want %d", schemaResp.StatusCode, http.StatusOK)
-	}
-	var schemaBody struct {
-		AppKey       string          `json:"app_key"`
-		ActionKey    string          `json:"action_key"`
-		InputSchema  json.RawMessage `json:"input_schema"`
-		OutputSchema json.RawMessage `json:"output_schema"`
-	}
-	if err := json.NewDecoder(schemaResp.Body).Decode(&schemaBody); err != nil {
-		t.Fatal(err)
-	}
-	if schemaBody.AppKey != "echo" || schemaBody.ActionKey != "echo" ||
-		!bytes.Contains(schemaBody.InputSchema, []byte(`"message"`)) ||
-		!bytes.Contains(schemaBody.OutputSchema, []byte(`"ok"`)) {
-		t.Fatalf("schema body = %#v input=%s output=%s", schemaBody, schemaBody.InputSchema, schemaBody.OutputSchema)
 	}
 
 	invalidActionResp, err := http.Get(server.URL + "/api/w/ws-a/apps/echo/actions/bad-action")

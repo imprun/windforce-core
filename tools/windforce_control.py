@@ -316,14 +316,13 @@ def get_action(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def get_schema(args: argparse.Namespace) -> dict[str, Any]:
-    payload = request(
-        args,
-        "GET",
-        f"/api/w/{quote_path(args.workspace)}/apps/{quote_path(args.app)}/actions/{quote_path(args.action)}/schema",
-    )
-    if not isinstance(payload, dict):
-        raise APIError({"error": "schema response was not a JSON object"})
-    return payload
+    action = get_action(args)
+    return {
+        "app_key": action.get("app_key", args.app),
+        "action_key": action.get("action_key", args.action),
+        "input_schema": action.get("input_schema") or {},
+        "output_schema": action.get("output_schema") or {},
+    }
 
 
 def request(args: argparse.Namespace, method: str, path: str, body: dict[str, Any] | None = None) -> Any:
