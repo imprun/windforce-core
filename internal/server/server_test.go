@@ -2194,8 +2194,10 @@ func TestCanonicalControlPlaneUsesMaterializedActionSchemas(t *testing.T) {
 		t.Fatalf("status status = %d, want %d", statusResp.StatusCode, http.StatusOK)
 	}
 	var statusBody struct {
-		InputSchema  json.RawMessage `json:"input_schema"`
-		OutputSchema json.RawMessage `json:"output_schema"`
+		InputSchema    json.RawMessage `json:"input_schema"`
+		OutputSchema   json.RawMessage `json:"output_schema"`
+		CreatedBy      string          `json:"created_by"`
+		PermissionedAs string          `json:"permissioned_as"`
 	}
 	if err := json.NewDecoder(statusResp.Body).Decode(&statusBody); err != nil {
 		t.Fatal(err)
@@ -2203,6 +2205,9 @@ func TestCanonicalControlPlaneUsesMaterializedActionSchemas(t *testing.T) {
 	if !bytes.Contains(statusBody.InputSchema, []byte(`"message"`)) ||
 		!bytes.Contains(statusBody.OutputSchema, []byte(`"ok"`)) {
 		t.Fatalf("job schemas = input:%s output:%s", statusBody.InputSchema, statusBody.OutputSchema)
+	}
+	if statusBody.CreatedBy != "runner@example.test" || statusBody.PermissionedAs != "runner@example.test" {
+		t.Fatalf("job actor = %q/%q, want runner@example.test", statusBody.CreatedBy, statusBody.PermissionedAs)
 	}
 }
 
@@ -2831,9 +2836,9 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 		statusBody.CommitSha != syncBody.Commit ||
 		statusBody.Entrypoint != "main.ts" ||
 		statusBody.Tag != "browser" ||
-		statusBody.CreatedBy != "system" ||
-		statusBody.PermissionedAs != "system" {
-		t.Fatalf("status body schemas/input = input_schema:%s output_schema:%s input:%s", statusBody.InputSchema, statusBody.OutputSchema, statusBody.Input)
+		statusBody.CreatedBy != "runner@example.test" ||
+		statusBody.PermissionedAs != "runner@example.test" {
+		t.Fatalf("status body = %#v input_schema:%s output_schema:%s input:%s", statusBody, statusBody.InputSchema, statusBody.OutputSchema, statusBody.Input)
 	}
 
 	openAPIReq, err := http.NewRequest(http.MethodGet, server.URL+"/api/w/ws-a/apps/echo/openapi.json", nil)

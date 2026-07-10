@@ -1806,6 +1806,10 @@ func (h *Handler) enqueueJob(w http.ResponseWriter, r *http.Request, workspaceID
 		return state.Job{}, false
 	}
 	run := state.NewRun("windforce", "", app, action, deployment, input)
+	if actor := requestActorSubject(r); actor != "" {
+		run.CreatedBy = actor
+		run.PermissionedAs = actor
+	}
 	if correlationID := state.CleanID(r.Header.Get("X-Request-ID")); correlationID != "" {
 		run.CorrelationID = correlationID
 	}
