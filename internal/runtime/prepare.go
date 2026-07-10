@@ -92,15 +92,6 @@ func (r *Runner) prepareTimeout() time.Duration {
 
 func (r *Runner) prepareSource(ctx context.Context, sourceDir string, scriptLang string, entrypoint string) error {
 	switch scriptLang {
-	case "", "typescript":
-		if fileExists(filepath.Join(sourceDir, "package.json")) {
-			if err := bunInstall(ctx, firstNonEmpty(r.BunPath, "bun"), sourceDir); err != nil {
-				return fmt.Errorf("bun install: %w", err)
-			}
-		}
-		if err := injectTypeScriptSDK(sourceDir); err != nil {
-			return fmt.Errorf("inject sdk: %w", err)
-		}
 	case "python":
 		if fileExists(filepath.Join(sourceDir, "requirements.txt")) {
 			if err := pythonInstall(ctx, firstNonEmpty(r.PythonPath, defaultPythonPath()), sourceDir); err != nil {
@@ -117,6 +108,15 @@ func (r *Runner) prepareSource(ctx context.Context, sourceDir string, scriptLang
 		}
 		if err := goBuild(ctx, goPath, sourceDir, entrypoint); err != nil {
 			return fmt.Errorf("go build: %w", err)
+		}
+	default:
+		if fileExists(filepath.Join(sourceDir, "package.json")) {
+			if err := bunInstall(ctx, firstNonEmpty(r.BunPath, "bun"), sourceDir); err != nil {
+				return fmt.Errorf("bun install: %w", err)
+			}
+		}
+		if err := injectTypeScriptSDK(sourceDir); err != nil {
+			return fmt.Errorf("inject sdk: %w", err)
 		}
 	}
 	return nil

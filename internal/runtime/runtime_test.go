@@ -320,6 +320,18 @@ export const main = createApp({
 	}
 }
 
+func TestPrepareSourceDefaultsUnknownScriptLangToTypeScriptSDK(t *testing.T) {
+	sourceDir := t.TempDir()
+	runner := Runner{}
+	if err := runner.prepareSource(context.Background(), sourceDir, "ruby", "main.rb"); err != nil {
+		t.Fatalf("prepareSource returned error: %v", err)
+	}
+	injected := filepath.Join(sourceDir, "node_modules", "windforce-client", "package.json")
+	if _, err := os.Stat(injected); err != nil {
+		t.Fatalf("injected SDK missing: %v", err)
+	}
+}
+
 func TestRunnerBuildsAndRunsGoApp(t *testing.T) {
 	requireGoRuntime(t)
 	tempDir := t.TempDir()
