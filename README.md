@@ -313,9 +313,13 @@ and `output_schema` JSON Schema documents.
 
 Action schemas are exposed through the Windforce control-plane API. Protocol
 adapters may translate trigger ingress and response envelopes, but they do not
-own schema discovery outside the control plane. The workspace `control-openapi`
-command documents that control-plane contract, while the app `openapi` command
-returns invocation OpenAPI generated from the decoded action schemas.
+own schema discovery outside the control plane. The canonical app invocation
+schema endpoint is `GET /api/w/{workspace}/apps/{app}/openapi.json`.
+`windforce-lite` additionally exposes `GET /api/w/{workspace}/openapi.json`
+only as generated documentation for the supported lite control-plane subset.
+The workspace `control-openapi` command reads that documentation endpoint,
+while the app `openapi` command returns invocation OpenAPI generated from the
+decoded action schemas.
 Lite deployment/source sync history is exposed through
 `GET /api/w/{workspace}/apps/{app}/history`. The full Windforce draft
 deployment status route, `GET /api/w/{workspace}/deployments/{deploymentID}`,
