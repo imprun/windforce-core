@@ -88,7 +88,7 @@ def main(argv: list[str] | None = None) -> int:
 
     schema = sub.add_parser(
         "schema",
-        help="get action input/output schemas via the control-plane action API",
+        help="get action input/output schemas via the control-plane schema endpoint",
     )
     schema.add_argument("--app", required=True)
     schema.add_argument("--action", required=True)

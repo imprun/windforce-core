@@ -237,6 +237,7 @@ Implemented control-plane endpoints:
 - `GET /api/w/{workspace}/apps/{app}/history`
 - `GET /api/w/{workspace}/apps/{app}/openapi.json` (app invocation OpenAPI generated from materialized action schemas)
 - `GET /api/w/{workspace}/apps/{app}/actions/{action}` (canonical action detail including base64-encoded materialized `input_schema` and `output_schema`, matching Windforce catalog action JSON encoding)
+- `GET /api/w/{workspace}/apps/{app}/actions/{action}/schema` (materialized action schemas as raw JSON Schema documents)
 - `PATCH /api/w/{workspace}/apps/{app}/actions/{action}`
 - `GET /api/w/{workspace}/worker-tags`
 - `POST /api/w/{workspace}/jobs/run/{app}/{action}`
