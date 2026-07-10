@@ -38,48 +38,29 @@ type GitSourceRegistry interface {
 	Get(ctx context.Context, workspace string, id string) (gitsourcepkg.Source, error)
 }
 
-type AdapterRoute struct {
-	App    string
-	Action string
-	Env    []string
-	Values map[string]string
-}
-
-type TriggerAdapter interface {
-	Name() string
-	MatchTrigger(path string) (AdapterRoute, bool)
-	TriggerResponse(run state.Run, route AdapterRoute) (int, any)
-}
-
 type Config struct {
-	Store           state.Store
-	Catalog         Catalog
-	Syncer          *syncer.Syncer
-	GitSources      GitSourceRegistry
-	EnableTrigger   bool
-	EnableAPI       bool
-	TriggerAdapters []TriggerAdapter
-	TriggerToken    string
-	AdminToken      string
-	JobTokenSecret  string
-	SampleRoot      string
-	Wait            time.Duration
+	Store          state.Store
+	Catalog        Catalog
+	Syncer         *syncer.Syncer
+	GitSources     GitSourceRegistry
+	EnableAPI      bool
+	AdminToken     string
+	JobTokenSecret string
+	SampleRoot     string
+	Wait           time.Duration
 }
 
 type Handler struct {
-	store           state.Store
-	catalog         Catalog
-	syncer          *syncer.Syncer
-	gitSources      GitSourceRegistry
-	enableTrigger   bool
-	enableAPI       bool
-	triggerAdapters []TriggerAdapter
-	triggerToken    string
-	adminToken      string
-	jobTokenSecret  string
-	sampleRoot      string
-	wait            time.Duration
-	syncLocks       sync.Map
+	store          state.Store
+	catalog        Catalog
+	syncer         *syncer.Syncer
+	gitSources     GitSourceRegistry
+	enableAPI      bool
+	adminToken     string
+	jobTokenSecret string
+	sampleRoot     string
+	wait           time.Duration
+	syncLocks      sync.Map
 }
 
 type jobPrincipal struct {
@@ -97,18 +78,15 @@ func jobPrincipalFrom(ctx context.Context) *jobPrincipal {
 
 func New(config Config) http.Handler {
 	return &Handler{
-		store:           config.Store,
-		catalog:         config.Catalog,
-		syncer:          config.Syncer,
-		gitSources:      config.GitSources,
-		enableTrigger:   config.EnableTrigger,
-		enableAPI:       config.EnableAPI,
-		triggerAdapters: append([]TriggerAdapter(nil), config.TriggerAdapters...),
-		triggerToken:    config.TriggerToken,
-		adminToken:      config.AdminToken,
-		jobTokenSecret:  config.JobTokenSecret,
-		sampleRoot:      config.SampleRoot,
-		wait:            config.Wait,
+		store:          config.Store,
+		catalog:        config.Catalog,
+		syncer:         config.Syncer,
+		gitSources:     config.GitSources,
+		enableAPI:      config.EnableAPI,
+		adminToken:     config.AdminToken,
+		jobTokenSecret: config.JobTokenSecret,
+		sampleRoot:     config.SampleRoot,
+		wait:           config.Wait,
 	}
 }
 
@@ -121,16 +99,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]bool{"ready": h.store != nil})
 		return
 	}
-	if h.enableTrigger && r.Method == http.MethodPost {
-		if route, ok := h.matchTriggerRoute(r.URL.Path); ok {
-			if !authorized(r, h.triggerToken) {
-				writeError(w, http.StatusUnauthorized, "unauthorized")
-				return
-			}
-			h.handleTrigger(w, r, route)
-			return
-		}
-	}
 	if h.enableAPI {
 		authorizedRequest, status, message := h.authorizeAPIRequest(r)
 		if status != 0 {
@@ -142,62 +110,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeError(w, http.StatusNotFound, "not found")
-}
-
-func (h *Handler) handleTrigger(w http.ResponseWriter, r *http.Request, route triggerRoute) {
-	if h.store == nil || h.catalog == nil {
-		writeError(w, http.StatusServiceUnavailable, "trigger is not configured")
-		return
-	}
-	input, err := readJSONBody(r)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	deployment, err := h.catalog.GetDeployment(r.Context(), route.app)
-	if err != nil {
-		writeError(w, http.StatusNotFound, err.Error())
-		return
-	}
-	if _, ok := deployment.Actions[route.action]; !ok {
-		writeError(w, http.StatusNotFound, fmt.Sprintf("action %q not found in app %q", route.action, route.app))
-		return
-	}
-
-	runID := state.CleanID(r.Header.Get("TASKID"))
-	if runID == "" {
-		runID = state.CleanID(r.Header.Get("X-Request-ID"))
-	}
-	if runID == "" {
-		runID = state.NewID("run")
-	}
-	run := state.NewRun(route.adapterName, runID, route.app, route.action, deployment, input)
-	applyRequestActor(&run, r)
-	run.CorrelationID = runID
-	run.Env = append([]string(nil), route.env...)
-	job := state.NewActionJob(run, input)
-	if err := h.store.CreateRunAndEnqueue(r.Context(), run, job); err != nil {
-		status := http.StatusInternalServerError
-		if errors.Is(err, state.ErrConflict) {
-			status = http.StatusConflict
-		}
-		writeError(w, status, err.Error())
-		return
-	}
-
-	run = h.waitForRun(r.Context(), run.ID)
-	status := http.StatusAccepted
-	if run.State == state.RunSucceeded {
-		status = http.StatusOK
-	} else if run.State == state.RunFailed {
-		status = http.StatusInternalServerError
-	}
-	if route.adapter != nil {
-		status, response := route.adapter.TriggerResponse(run, route.adapterRoute)
-		writeJSON(w, status, response)
-		return
-	}
-	writeJSON(w, status, runResponse(run))
 }
 
 func (h *Handler) handleAPI(w http.ResponseWriter, r *http.Request) bool {
@@ -2219,36 +2131,6 @@ func (h *Handler) waitForRun(ctx context.Context, runID string) state.Run {
 			}
 		}
 	}
-}
-
-type triggerRoute struct {
-	adapter      TriggerAdapter
-	adapterName  string
-	adapterRoute AdapterRoute
-	app          string
-	action       string
-	env          []string
-}
-
-func (h *Handler) matchTriggerRoute(path string) (triggerRoute, bool) {
-	for _, adapter := range h.triggerAdapters {
-		if adapter == nil {
-			continue
-		}
-		adapterRoute, ok := adapter.MatchTrigger(path)
-		if !ok {
-			continue
-		}
-		return triggerRoute{
-			adapter:      adapter,
-			adapterName:  adapter.Name(),
-			adapterRoute: adapterRoute,
-			app:          adapterRoute.App,
-			action:       adapterRoute.Action,
-			env:          append([]string(nil), adapterRoute.Env...),
-		}, true
-	}
-	return triggerRoute{}, false
 }
 
 func SplitPath(path string) []string {
