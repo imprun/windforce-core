@@ -172,6 +172,7 @@ func (h *Handler) handleTrigger(w http.ResponseWriter, r *http.Request, route tr
 		runID = state.NewID("run")
 	}
 	run := state.NewRun(route.adapterName, runID, route.app, route.action, deployment, input)
+	applyRequestActor(&run, r)
 	run.CorrelationID = runID
 	run.Env = append([]string(nil), route.env...)
 	job := state.NewActionJob(run, input)
@@ -1847,6 +1848,7 @@ func (h *Handler) enqueueJob(w http.ResponseWriter, r *http.Request, workspaceID
 		return state.Job{}, false
 	}
 	run := state.NewRun("windforce", "", app, action, deployment, input)
+	applyRequestActor(&run, r)
 	if correlationID := state.CleanID(r.Header.Get("X-Request-ID")); correlationID != "" {
 		run.CorrelationID = correlationID
 	}
@@ -2864,6 +2866,15 @@ func requestActorSubject(r *http.Request) string {
 		}
 	}
 	return ""
+}
+
+func applyRequestActor(run *state.Run, r *http.Request) {
+	actor := requestActorSubject(r)
+	if actor == "" {
+		return
+	}
+	run.CreatedBy = actor
+	run.PermissionedAs = actor
 }
 
 func firstPresentStringPtr(values ...*string) *string {

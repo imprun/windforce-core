@@ -324,9 +324,10 @@ lite basic control plane.
 
 The full Windforce control plane derives job actor provenance from the
 authenticated principal. Lite deployments that use only the admin token can pass
-`X-Windforce-Actor` or `X-Windforce-User` on cancel requests so `canceled_by`
-matches the operator identity; without either header it falls back to the job's
-recorded actor.
+`X-Windforce-Actor` or `X-Windforce-User` on run, webhook, trigger, and cancel
+requests so `created_by`, `permissioned_as`, and `canceled_by` match the caller
+identity; without either header it falls back to `system` for new jobs and the
+recorded actor for cancel.
 
 PostgreSQL is the production state backend. All runtime modes accept
 `--state-backend postgres`, `--database-url`, and `--migrate`:

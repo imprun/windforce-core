@@ -54,6 +54,7 @@ func TestAdapterTriggerCreatesRunAndAPIReadsIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	req.Header.Set("TASKID", "task-a")
+	req.Header.Set("X-Windforce-User", "trigger@example.test")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -83,11 +84,13 @@ func TestAdapterTriggerCreatesRunAndAPIReadsIt(t *testing.T) {
 	}
 	var listResponse struct {
 		Items []struct {
-			ID          string `json:"id"`
-			Status      string `json:"status"`
-			AppKey      string `json:"app_key"`
-			ActionKey   string `json:"action_key"`
-			TriggerKind string `json:"trigger_kind"`
+			ID             string `json:"id"`
+			Status         string `json:"status"`
+			AppKey         string `json:"app_key"`
+			ActionKey      string `json:"action_key"`
+			TriggerKind    string `json:"trigger_kind"`
+			CreatedBy      string `json:"created_by"`
+			PermissionedAs string `json:"permissioned_as"`
 		} `json:"items"`
 	}
 	if err := json.NewDecoder(listResp.Body).Decode(&listResponse); err != nil {
@@ -97,7 +100,9 @@ func TestAdapterTriggerCreatesRunAndAPIReadsIt(t *testing.T) {
 		listResponse.Items[0].Status != "queued" ||
 		listResponse.Items[0].AppKey != "echo" ||
 		listResponse.Items[0].ActionKey != "echo" ||
-		listResponse.Items[0].TriggerKind != "external" {
+		listResponse.Items[0].TriggerKind != "external" ||
+		listResponse.Items[0].CreatedBy != "trigger@example.test" ||
+		listResponse.Items[0].PermissionedAs != "trigger@example.test" {
 		t.Fatalf("job list response = %#v", listResponse)
 	}
 
@@ -1983,7 +1988,13 @@ func TestCanonicalControlPlaneUsesMaterializedActionSchemas(t *testing.T) {
 		t.Fatalf("openapi request schema = %#v", requestSchema)
 	}
 
-	runResp, err := http.Post(server.URL+"/api/w/ws-a/jobs/run/echo/echo", "application/json", bytes.NewBufferString(`{"message":"hello"}`))
+	runReq, err := http.NewRequest(http.MethodPost, server.URL+"/api/w/ws-a/jobs/run/echo/echo", bytes.NewBufferString(`{"message":"hello"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runReq.Header.Set("Content-Type", "application/json")
+	runReq.Header.Set("X-Windforce-Actor", "runner@example.test")
+	runResp, err := http.DefaultClient.Do(runReq)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2566,7 +2577,13 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 		t.Fatalf("worker tags = %#v, want default and browser", workerTags.Tags)
 	}
 
-	runResp, err := http.Post(server.URL+"/api/w/ws-a/jobs/run/echo/echo", "application/json", bytes.NewBufferString(`{"message":"hello"}`))
+	runReq, err := http.NewRequest(http.MethodPost, server.URL+"/api/w/ws-a/jobs/run/echo/echo", bytes.NewBufferString(`{"message":"hello"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runReq.Header.Set("Content-Type", "application/json")
+	runReq.Header.Set("X-Windforce-Actor", "runner@example.test")
+	runResp, err := http.DefaultClient.Do(runReq)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2607,8 +2624,8 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 		statusBody.CommitSha != syncBody.Commit ||
 		statusBody.Entrypoint != "main.ts" ||
 		statusBody.Tag != "browser" ||
-		statusBody.CreatedBy != "system" ||
-		statusBody.PermissionedAs != "system" {
+		statusBody.CreatedBy != "runner@example.test" ||
+		statusBody.PermissionedAs != "runner@example.test" {
 		t.Fatalf("status body schemas/input = input_schema:%s output_schema:%s input:%s", statusBody.InputSchema, statusBody.OutputSchema, statusBody.Input)
 	}
 
