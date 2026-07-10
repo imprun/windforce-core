@@ -309,10 +309,12 @@ python tools/windforce_control.py --api-url http://127.0.0.1:18090 --pretty sche
 python tools/windforce_control.py --api-url http://127.0.0.1:18090 --pretty control-openapi
 ```
 
-The schema command reads the canonical action detail endpoint,
-`GET /api/w/{workspace}/apps/{app}/actions/{action}`, decodes Windforce's
-base64 catalog schema fields, and prints only the materialized `input_schema`
-and `output_schema` JSON Schema documents.
+The schema command reads the control-plane schema endpoint,
+`GET /api/w/{workspace}/apps/{app}/actions/{action}/schema`, and prints the
+materialized `input_schema` and `output_schema` JSON Schema documents. The
+canonical action detail endpoint still keeps Windforce's catalog encoding:
+`GET /api/w/{workspace}/apps/{app}/actions/{action}` returns base64-encoded
+schema bytes.
 
 Action schemas are exposed through the Windforce control-plane API. Protocol
 adapters may translate trigger ingress and response envelopes, but they do not
