@@ -715,6 +715,51 @@ func TestJobTokenAuthorizesOnlySDKCallbacks(t *testing.T) {
 	}
 }
 
+func TestAdminTokenRequiresAuthorizationBearer(t *testing.T) {
+	server := httptest.NewServer(New(Config{
+		EnableAPI:  true,
+		AdminToken: "admin-token",
+	}))
+	defer server.Close()
+
+	missingResp, err := http.Get(server.URL + "/api/w/ws-a/openapi.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = missingResp.Body.Close()
+	if missingResp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("missing token status = %d, want %d", missingResp.StatusCode, http.StatusUnauthorized)
+	}
+
+	headerReq, err := http.NewRequest(http.MethodGet, server.URL+"/api/w/ws-a/openapi.json", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	headerReq.Header.Set("X-Windforce-Token", "admin-token")
+	headerResp, err := http.DefaultClient.Do(headerReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = headerResp.Body.Close()
+	if headerResp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("x-windforce token status = %d, want %d", headerResp.StatusCode, http.StatusUnauthorized)
+	}
+
+	bearerReq, err := http.NewRequest(http.MethodGet, server.URL+"/api/w/ws-a/openapi.json", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bearerReq.Header.Set("Authorization", "Bearer admin-token")
+	bearerResp, err := http.DefaultClient.Do(bearerReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = bearerResp.Body.Close()
+	if bearerResp.StatusCode != http.StatusOK {
+		t.Fatalf("bearer token status = %d, want %d", bearerResp.StatusCode, http.StatusOK)
+	}
+}
+
 func TestGitSourceCredsRefResolvesWorkspaceVariableOnly(t *testing.T) {
 	tempDir := t.TempDir()
 	store := state.NewLocalStore(filepath.Join(tempDir, "state.json"))

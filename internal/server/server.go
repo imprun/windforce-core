@@ -2795,8 +2795,5 @@ func authorized(r *http.Request, adminToken string) bool {
 	if r.Header.Get("Authorization") == "Bearer "+adminToken {
 		return true
 	}
-	if r.Header.Get("X-Windforce-Token") == adminToken {
-		return true
-	}
 	return false
 }
