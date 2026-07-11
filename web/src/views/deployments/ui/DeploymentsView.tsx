@@ -12,7 +12,8 @@ import { WindforceApi } from "@/shared/api/client";
 import type { ApiSettings, VariableRow, WorkerTagsResponse } from "@/shared/api/types";
 import { shortID } from "@/shared/lib/format";
 import { AuditSection, DeploymentsSection, ReleasesSection, SourcesSection } from "./DeploymentPanels";
-import type { ConsoleSection, DetailTab, Notice } from "./types";
+import { DeploymentRequestDetailSection, FCodeDetailSection } from "./DeploymentDetailPages";
+import type { ConsoleSection, DetailPage, DetailTab, Notice } from "./types";
 
 const defaultSettings: ApiSettings = {
   workspace: "default",
@@ -57,6 +58,7 @@ export function DeploymentsView() {
   const [notice, setNotice] = useState<Notice>({ tone: "info", text: "" });
   const [deployError, setDeployError] = useState("");
   const [activeSection, setActiveSection] = useState<ConsoleSection>("deployments");
+  const [detailPage, setDetailPage] = useState<DetailPage | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>("contract");
   const [search, setSearch] = useState("");
   const [registrationOpen, setRegistrationOpen] = useState(false);
@@ -69,6 +71,15 @@ export function DeploymentsView() {
       token: saved.getItem("wf.token") || "",
       actor: saved.getItem("wf.actor") || "",
     });
+  }, []);
+
+  useEffect(() => {
+    function syncDetailFromURL() {
+      setDetailPage(readDetailPageFromLocation());
+    }
+    syncDetailFromURL();
+    window.addEventListener("popstate", syncDetailFromURL);
+    return () => window.removeEventListener("popstate", syncDetailFromURL);
   }, []);
 
   useEffect(() => {
@@ -122,6 +133,18 @@ export function DeploymentsView() {
   }, [refresh]);
 
   useEffect(() => {
+    if (detailPage?.kind === "fcode" && sources.some((source) => source.id === detailPage.sourceID)) {
+      setSelectedSourceID(detailPage.sourceID);
+    }
+    if (detailPage?.kind === "request") {
+      const request = deploymentRequests.find((item) => item.id === detailPage.requestID);
+      if (request && sources.some((source) => source.id === request.git_source_id)) {
+        setSelectedSourceID(request.git_source_id);
+      }
+    }
+  }, [deploymentRequests, detailPage, sources]);
+
+  useEffect(() => {
     const appKey = selectedApp?.app_key || (selectedSource ? "" : selectedAppKey);
     if (!appKey) {
       setAppDetail(null);
@@ -165,10 +188,34 @@ export function DeploymentsView() {
   }
 
   function navigate(section: ConsoleSection) {
+    setDetailPage(null);
+    writeDetailPageToHistory(null);
     setActiveSection(section);
     if (section === "sources") setDetailTab("source");
     if (section === "releases") setDetailTab("contract");
     if (section === "audit") setDetailTab("history");
+  }
+
+  function openFCodeDetail(sourceID: number) {
+    const next = { kind: "fcode", sourceID } satisfies DetailPage;
+    setActiveSection("deployments");
+    setSelectedSourceID(sourceID);
+    setDetailPage(next);
+    writeDetailPageToHistory(next);
+  }
+
+  function openRequestDetail(requestID: string) {
+    const next = { kind: "request", requestID } satisfies DetailPage;
+    const request = deploymentRequests.find((item) => item.id === requestID);
+    if (request) setSelectedSourceID(request.git_source_id);
+    setActiveSection("deployments");
+    setDetailPage(next);
+    writeDetailPageToHistory(next);
+  }
+
+  function closeDetailPage() {
+    setDetailPage(null);
+    writeDetailPageToHistory(null);
   }
 
   async function createDeploymentRequest(message: string) {
@@ -192,6 +239,8 @@ export function DeploymentsView() {
       setSelectedSourceID(result.request.git_source_id);
       setSelectedAppKey(result.sync_result.app);
       setDetailTab("history");
+      setDetailPage({ kind: "request", requestID: reviewRequest.id });
+      writeDetailPageToHistory({ kind: "request", requestID: reviewRequest.id });
       await refresh();
       return `Deployed ${result.sync_result.app} at ${shortID(result.sync_result.commit, 12)}.`;
     });
@@ -204,6 +253,8 @@ export function DeploymentsView() {
       const result = await api.rejectDeploymentRequest(reviewRequest.id, message ? { message } : {});
       setReviewRequest(null);
       setSelectedSourceID(result.git_source_id);
+      setDetailPage({ kind: "request", requestID: result.id });
+      writeDetailPageToHistory({ kind: "request", requestID: result.id });
       await refresh();
       return `Rejected deployment request for ${result.source_name}.`;
     });
@@ -216,6 +267,8 @@ export function DeploymentsView() {
     await refresh();
     return `Removed ${source.name}.`;
   });
+
+  const topbarCopy = detailPage ? detailCopy(detailPage, sources, deploymentRequests) : sectionCopy[activeSection];
 
   return (
     <main className="appShell">
@@ -230,8 +283,8 @@ export function DeploymentsView() {
       />
       <section className="mainArea">
         <Topbar
-          title={sectionCopy[activeSection].title}
-          subtitle={sectionCopy[activeSection].subtitle}
+          title={topbarCopy.title}
+          subtitle={topbarCopy.subtitle}
           settings={settings}
           busy={busy}
           onRefresh={refresh}
@@ -256,11 +309,15 @@ export function DeploymentsView() {
             actor={settings.actor}
             liveWorkers={liveWorkers}
             deploymentRequests={deploymentRequests}
+            detailPage={detailPage}
             onSearch={setSearch}
             onSelectSource={setSelectedSourceID}
             onRegister={() => setRegistrationOpen(true)}
             onRequestDeploy={setRequestSource}
             onReviewRequest={setReviewRequest}
+            onOpenFCodeDetail={openFCodeDetail}
+            onOpenRequestDetail={openRequestDetail}
+            onBackToList={closeDetailPage}
             onRemove={removeSource}
             onTabChange={setDetailTab}
             onSettings={() => setSettingsOpen(true)}
@@ -334,8 +391,57 @@ type ActiveSectionProps = ComponentProps<typeof DeploymentsSection> & {
 };
 
 function ActiveSection({ section, ...props }: ActiveSectionProps) {
+  if (props.detailPage?.kind === "fcode") return <FCodeDetailSection {...props} detailPage={props.detailPage} />;
+  if (props.detailPage?.kind === "request") return <DeploymentRequestDetailSection {...props} detailPage={props.detailPage} />;
   if (section === "sources") return <SourcesSection {...props} />;
   if (section === "releases") return <ReleasesSection {...props} />;
   if (section === "audit") return <AuditSection {...props} />;
   return <DeploymentsSection {...props} />;
+}
+
+function readDetailPageFromLocation(): DetailPage | null {
+  if (typeof window === "undefined") return null;
+  const params = new URLSearchParams(window.location.search);
+  const detail = params.get("detail");
+  if (detail === "fcode") {
+    const sourceID = Number(params.get("source"));
+    if (Number.isFinite(sourceID) && sourceID > 0) return { kind: "fcode", sourceID };
+  }
+  if (detail === "request") {
+    const requestID = params.get("id");
+    if (requestID) return { kind: "request", requestID };
+  }
+  return null;
+}
+
+function writeDetailPageToHistory(detailPage: DetailPage | null) {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  url.searchParams.delete("detail");
+  url.searchParams.delete("source");
+  url.searchParams.delete("id");
+  if (detailPage?.kind === "fcode") {
+    url.searchParams.set("detail", "fcode");
+    url.searchParams.set("source", String(detailPage.sourceID));
+  }
+  if (detailPage?.kind === "request") {
+    url.searchParams.set("detail", "request");
+    url.searchParams.set("id", detailPage.requestID);
+  }
+  window.history.pushState(null, "", `${url.pathname}${url.search}${url.hash}`);
+}
+
+function detailCopy(detailPage: DetailPage, sources: GitSource[], deploymentRequests: DeploymentRequest[]) {
+  if (detailPage.kind === "fcode") {
+    const source = sources.find((item) => item.id === detailPage.sourceID);
+    return {
+      title: source ? `${source.name} Detail` : "FCode Detail",
+      subtitle: "Inspect source registration, active contract, deployment readiness, and audit evidence.",
+    };
+  }
+  const request = deploymentRequests.find((item) => item.id === detailPage.requestID);
+  return {
+    title: request ? `${request.source_name} Deployment Request` : "Deployment Request",
+    subtitle: "Review the request timeline, pinned commit, operator decision, and deployment evidence.",
+  };
 }

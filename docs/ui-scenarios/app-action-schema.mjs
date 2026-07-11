@@ -1,5 +1,5 @@
 export default {
-  order: 4,
+  order: 6,
   id: "app-action-schema",
   title: "Inspect active deployment contracts",
   description: "Use the selected FCode detail tabs to inspect the deployed app contract, history, and source snapshot.",

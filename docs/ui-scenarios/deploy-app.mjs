@@ -1,5 +1,5 @@
 export default {
-  order: 3,
+  order: 5,
   id: "deploy-app",
   title: "Approve a deployment request",
   description: "Use the Deployments view to review a developer request and publish the pinned Windforce manifest commit.",
@@ -18,7 +18,7 @@ export default {
     });
     await page.goto();
     await page.waitForSelector("#requestQueue .tableRow");
-    await page.click("#requestQueue .compactButton");
+    await page.click("#requestQueue .compactButton.primary");
     await page.waitForSelector("#reviewDeploymentRequestDialog");
     await page.fill("#reviewDeploymentConfirmInput", "echo");
     await page.fill("#reviewDeploymentMessage", "UI guide approval");

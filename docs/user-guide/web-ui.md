@@ -16,7 +16,7 @@ Use Settings to select the workspace, API token, and actor used by Web UI contro
 
 ## Review deployment requests
 
-Use the deployment console to review pending FCode deployment requests, registered sources, and selected release readiness.
+Use the deployment console to review pending FCode deployment requests, registered sources, and drill into deployable detail pages.
 
 ![Review deployment requests](../assets/ui/deployment-overview.png)
 
@@ -24,7 +24,31 @@ Use the deployment console to review pending FCode deployment requests, register
 2. Use the sidebar to move between deployment, source, release, and audit work areas.
 3. Use the deployment request queue to identify pending operator work.
 4. Use the release candidate table to compare registered FCodes.
-5. Select a row to inspect the release brief, readiness checks, and latest audit entries.
+5. Select a row for quick comparison or open its detail page for deployment evidence.
+
+## Inspect an FCode deployment detail
+
+Open a registered FCode detail page to review source registration, active contract, pending requests, readiness, and audit evidence.
+
+![Inspect an FCode deployment detail](../assets/ui/fcode-detail.png)
+
+1. Open the deployment management console.
+2. Select a registered FCode and open its detail page.
+3. Review the worker contract and exposed actions.
+4. Check pending deployment requests and readiness signals.
+5. Inspect the active source snapshot and latest audit entries.
+
+## Inspect a deployment request detail
+
+Open a deployment request detail page to review the pinned commit, timeline, requester message, operator decision state, and related FCode.
+
+![Inspect a deployment request detail](../assets/ui/deployment-request-detail.png)
+
+1. Open the deployment management console.
+2. Open a pending deployment request detail page from the queue.
+3. Confirm the request timeline and target commit.
+4. Review requester and operator notes.
+5. Open the related FCode detail when source-level evidence is needed.
 
 ## Approve a deployment request
 

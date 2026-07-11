@@ -3,10 +3,10 @@
 import type { ReactNode } from "react";
 import type { AppDetail, AppHistoryItem, AppSummary, DeploymentRequest } from "@/entities/app";
 import type { GitSource } from "@/entities/git-source";
-import type { DetailTab } from "./types";
+import type { DetailPage, DetailTab } from "./types";
 import { formatDate, shortID } from "@/shared/lib/format";
 
-type CommonProps = {
+export type CommonProps = {
   sources: GitSource[];
   apps: AppSummary[];
   selectedSourceID: number | null;
@@ -20,11 +20,15 @@ type CommonProps = {
   actor: string;
   liveWorkers: number;
   deploymentRequests: DeploymentRequest[];
+  detailPage: DetailPage | null;
   onSearch: (value: string) => void;
   onSelectSource: (id: number) => void;
   onRegister: () => void;
   onRequestDeploy: (source: GitSource) => void;
   onReviewRequest: (request: DeploymentRequest) => void;
+  onOpenFCodeDetail: (sourceID: number) => void;
+  onOpenRequestDetail: (requestID: string) => void;
+  onBackToList: () => void;
   onRemove: (source: GitSource) => void;
   onTabChange: (tab: DetailTab) => void;
   onSettings: () => void;
@@ -177,6 +181,7 @@ function DeploymentRequestTable(props: CommonProps) {
               <small>{formatCompactDate(request.created_at)}</small>
             </div>
             <div className="rowButtons">
+              <button className="button compactButton" type="button" onClick={() => props.onOpenRequestDetail(request.id)}>Details</button>
               {request.status === "pending" ? (
                 <button className="button primary compactButton" type="button" onClick={() => props.onReviewRequest(request)}>Review</button>
               ) : (
@@ -266,6 +271,7 @@ function ReleaseBrief(props: CommonProps) {
       </header>
 
       <div className="briefActions">
+        <button id="openSelectedFCodeDetail" className="button" type="button" onClick={() => props.onOpenFCodeDetail(source.id)}>Open detail</button>
         <button id="requestSelectedSource" className="button primary" type="button" onClick={() => props.onRequestDeploy(source)}>Request deployment</button>
         {pendingRequest ? <button id="reviewSelectedRequest" className="button" type="button" onClick={() => props.onReviewRequest(pendingRequest)}>Review pending request</button> : null}
         <button className="button" type="button" onClick={props.onSettings}>Set actor</button>
@@ -308,7 +314,12 @@ function SourceOperationsPanel(props: CommonProps) {
         eyebrow="Source detail"
         title={source.name}
         description={source.repo_url}
-        action={<button className="button primary" type="button" onClick={() => props.onRequestDeploy(source)}>Request Deploy</button>}
+        action={(
+          <div className="rowButtons">
+            <button className="button" type="button" onClick={() => props.onOpenFCodeDetail(source.id)}>Open Detail</button>
+            <button className="button primary" type="button" onClick={() => props.onRequestDeploy(source)}>Request Deploy</button>
+          </div>
+        )}
       />
       <div className="sourceDetailGrid">
         <Field label="Branch" value={source.branch || "main"} />
@@ -377,7 +388,7 @@ function ContractDetail(props: CommonProps) {
   );
 }
 
-function ContractTab({ app, detail }: { app: AppSummary | null; detail: AppDetail | null }) {
+export function ContractTab({ app, detail }: { app: AppSummary | null; detail: AppDetail | null }) {
   if (!app) return <div id="actionList" className="emptyState"><strong>No deployed contract</strong><p>Select or deploy a source first.</p></div>;
   return (
     <div className="contractTab">
@@ -412,7 +423,7 @@ function HistoryTab({ history }: { history: AppHistoryItem[] }) {
   );
 }
 
-function ReadinessPanel({ source, app, actor, liveWorkers }: { source: GitSource | null; app: AppSummary | null; actor: string; liveWorkers: number }) {
+export function ReadinessPanel({ source, app, actor, liveWorkers }: { source: GitSource | null; app: AppSummary | null; actor: string; liveWorkers: number }) {
   return (
     <div className="readinessPanel">
       <span className="eyebrow">Readiness</span>
@@ -427,7 +438,7 @@ function ReadinessPanel({ source, app, actor, liveWorkers }: { source: GitSource
   );
 }
 
-function LatestAudit({ history }: { history: AppHistoryItem[] }) {
+export function LatestAudit({ history }: { history: AppHistoryItem[] }) {
   return (
     <div id="auditTimeline" className="latestAudit">
       <span className="eyebrow">Latest audit</span>
@@ -439,7 +450,7 @@ function LatestAudit({ history }: { history: AppHistoryItem[] }) {
   );
 }
 
-function SourceSnapshotPanel({ files, compact = false }: { files: Record<string, string>; compact?: boolean }) {
+export function SourceSnapshotPanel({ files, compact = false }: { files: Record<string, string>; compact?: boolean }) {
   return (
     <section className={compact ? "snapshotPanel compact" : "workspacePanel snapshotPanel"}>
       {!compact ? <PanelHeader eyebrow="Source snapshot" title="Materialized files" description="The worker contract was built from this source snapshot." /> : null}
@@ -450,7 +461,7 @@ function SourceSnapshotPanel({ files, compact = false }: { files: Record<string,
   );
 }
 
-function PanelHeader({ eyebrow, title, description, action }: { eyebrow: string; title: string; description?: string; action?: ReactNode }) {
+export function PanelHeader({ eyebrow, title, description, action }: { eyebrow: string; title: string; description?: string; action?: ReactNode }) {
   return (
     <header className="panelHeader">
       <div>
@@ -471,7 +482,7 @@ function TabButton({ id, active, children, onClick }: { id: string; active: bool
   );
 }
 
-function Field({ label, value }: { label: string; value: string }) {
+export function Field({ label, value }: { label: string; value: string }) {
   return (
     <div className="kv">
       <span>{label}</span>
@@ -502,7 +513,7 @@ function HistoryItem({ item, compact = false }: { item: AppHistoryItem; compact?
   );
 }
 
-function EmptyLine({ children }: { children: ReactNode }) {
+export function EmptyLine({ children }: { children: ReactNode }) {
   return <p className="emptyText">{children}</p>;
 }
 

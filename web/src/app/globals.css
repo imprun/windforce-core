@@ -207,7 +207,12 @@ h3 {
 .emptyPanel p,
 .dialogHeader p,
 .dangerZone p,
-.actionRow p {
+.actionRow p,
+.detailHero p,
+.timelineItem p,
+.requestDetailItem p,
+.messageBlock p,
+.dangerZonePanel p {
   color: var(--muted);
 }
 
@@ -331,6 +336,68 @@ h3 {
   display: grid;
   gap: 12px;
   padding: 14px;
+}
+
+.detailPage {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.detailHero {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.detailHeroMain,
+.detailHeroActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+}
+
+.detailHeroMain > div {
+  min-width: 0;
+}
+
+.detailHeroActions {
+  justify-content: flex-end;
+}
+
+.detailLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 420px;
+  gap: 14px;
+  align-items: start;
+  min-width: 0;
+}
+
+.requestDetailLayout {
+  grid-template-columns: minmax(0, 1fr) 390px;
+}
+
+.detailMain,
+.detailAside,
+.requestDetailList,
+.messageGrid {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.detailAside {
+  align-content: start;
+}
+
+.messageGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.dangerZonePanel {
+  border-color: #f1c4c0;
+  background: #fffafa;
 }
 
 .releaseBrief {
@@ -507,7 +574,7 @@ textarea:focus {
 .tableHead span,
 .tableCell,
 .tableCellButton,
-.rowButtons {
+.tableRow > .rowButtons {
   min-width: 0;
   padding: 10px;
   border-right: 1px solid var(--line);
@@ -603,6 +670,10 @@ textarea:focus {
   background: var(--danger);
 }
 
+.statusDot.neutral {
+  background: var(--line-strong);
+}
+
 .briefActions {
   border-top: 1px solid var(--line);
   padding-top: 12px;
@@ -637,6 +708,51 @@ textarea:focus {
 
 .requestSummary p {
   color: var(--muted);
+}
+
+.requestDetailItem,
+.messageBlock,
+.timelineItem {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fbfcfd;
+}
+
+.requestDetailItem {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+}
+
+.requestDetailItem > div:first-child {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.messageBlock {
+  display: grid;
+  gap: 4px;
+  padding: 11px;
+}
+
+.timelineList {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.timelineItem {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+  padding: 10px;
 }
 
 .briefMeta,
@@ -879,7 +995,9 @@ textarea:focus {
 @media (max-width: 1180px) {
   .workspaceGrid,
   .releasesGrid,
-  .auditGrid {
+  .auditGrid,
+  .detailLayout,
+  .requestDetailLayout {
     grid-template-columns: 1fr;
   }
 
@@ -895,6 +1013,8 @@ textarea:focus {
   .briefMeta,
   .sourceDetailGrid,
   .detailGrid.two,
+  .messageGrid,
+  .detailHero,
   .registrationGrid,
   .auditRow {
     grid-template-columns: 1fr;
@@ -932,6 +1052,7 @@ textarea:focus {
 
   .topbarActions,
   .briefActions,
+  .detailHeroActions,
   .dialogFooter,
   .actions.end {
     justify-content: stretch;
@@ -940,6 +1061,7 @@ textarea:focus {
   .button,
   .topbarActions .button,
   .briefActions .button,
+  .detailHeroActions .button,
   .dialogFooter .button {
     width: 100%;
   }

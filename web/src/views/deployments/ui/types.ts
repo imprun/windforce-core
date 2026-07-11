@@ -10,6 +10,10 @@ export type ConsoleSection = "deployments" | "sources" | "releases" | "audit";
 
 export type DetailTab = "contract" | "history" | "source";
 
+export type DetailPage =
+  | { kind: "fcode"; sourceID: number }
+  | { kind: "request"; requestID: string };
+
 export type DeploymentSelection = {
   source: GitSource | null;
   app: AppSummary | null;
