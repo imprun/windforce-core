@@ -6,7 +6,7 @@ export type Notice = {
   text: string;
 };
 
-export type ConsoleSection = "deployments" | "sources" | "releases" | "audit";
+export type ConsoleSection = "deployments" | "sources" | "releases" | "audit" | "settings";
 
 export type DetailTab = "contract" | "history" | "source";
 

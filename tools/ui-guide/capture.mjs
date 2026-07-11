@@ -335,7 +335,14 @@ class CdpPage {
     await this.evaluate((args) => {
       const el = document.querySelector(args.selector);
       if (!el) throw new Error(`selector not found: ${args.selector}`);
-      el.value = args.value;
+      const prototype = el instanceof HTMLTextAreaElement
+        ? HTMLTextAreaElement.prototype
+        : el instanceof HTMLSelectElement
+          ? HTMLSelectElement.prototype
+          : HTMLInputElement.prototype;
+      const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
+      if (setter) setter.call(el, args.value);
+      else el.value = args.value;
       el.dispatchEvent(new Event("input", { bubbles: true }));
       el.dispatchEvent(new Event("change", { bubbles: true }));
     }, { selector, value });

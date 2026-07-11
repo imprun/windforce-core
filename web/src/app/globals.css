@@ -67,6 +67,10 @@ h3 {
   min-height: 100vh;
 }
 
+.appShell.sidebarCollapsed {
+  grid-template-columns: 76px minmax(0, 1fr);
+}
+
 .sidebar {
   position: sticky;
   top: 0;
@@ -79,10 +83,20 @@ h3 {
   color: #eef5f7;
 }
 
+.sidebar.collapsed {
+  padding-inline: 10px;
+}
+
+.sidebarHeader {
+  display: grid;
+  gap: 10px;
+}
+
 .sidebarBrand {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
 }
 
 .sidebarBrand strong {
@@ -110,6 +124,33 @@ h3 {
   letter-spacing: 0;
 }
 
+.sidebarText {
+  min-width: 0;
+}
+
+.sidebarToggle {
+  width: 100%;
+  min-height: 32px;
+  border: 1px solid rgba(223, 247, 242, 0.16);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #eef5f7;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.sidebarToggle:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.sidebar.collapsed .sidebarBrand {
+  justify-content: center;
+}
+
+.sidebar.collapsed .sidebarText {
+  display: none;
+}
+
 .sideNav {
   display: grid;
   align-content: start;
@@ -118,7 +159,9 @@ h3 {
 
 .sideNavItem {
   display: grid;
-  gap: 2px;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 9px;
+  align-items: center;
   width: 100%;
   min-height: 54px;
   border: 1px solid transparent;
@@ -130,6 +173,13 @@ h3 {
   cursor: pointer;
 }
 
+.sidebar.collapsed .sideNavItem {
+  grid-template-columns: 1fr;
+  justify-items: center;
+  min-height: 46px;
+  padding: 7px;
+}
+
 .sideNavItem:hover,
 .sideNavItem.active {
   border-color: rgba(223, 247, 242, 0.18);
@@ -138,6 +188,33 @@ h3 {
 
 .sideNavItem span {
   font-weight: 850;
+}
+
+.sideNavIcon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #dff7f2;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.sideNavItem.active .sideNavIcon {
+  background: #dff7f2;
+  color: #0b4d49;
+}
+
+.sideNavText {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sidebar.collapsed .sideNavText {
+  display: none;
 }
 
 .sideNavItem small {
@@ -169,6 +246,10 @@ h3 {
 
 .sidebarStatus strong {
   font-size: 18px;
+}
+
+.sidebar.collapsed .sidebarStatus {
+  display: none;
 }
 
 .mainArea {
@@ -334,6 +415,64 @@ h3 {
   gap: 14px;
   align-items: start;
   min-width: 0;
+}
+
+.settingsPage {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(340px, 0.9fr);
+  gap: 14px;
+  align-items: start;
+  min-width: 0;
+}
+
+.settingsForm {
+  grid-row: span 2;
+}
+
+.settingsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.settingsGrid .field:first-child {
+  grid-column: span 2;
+}
+
+.settingsSummary,
+.settingsSummaryGrid,
+.settingsMetricGrid {
+  display: grid;
+  gap: 10px;
+}
+
+.settingsSummaryGrid {
+  grid-template-columns: 1fr;
+}
+
+.settingsMetricGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.metricTile {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fbfcfd;
+  padding: 12px;
+}
+
+.metricTile span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.metricTile strong {
+  font-size: 24px;
+  line-height: 1;
 }
 
 .leftStack {
@@ -1106,6 +1245,7 @@ textarea:focus {
   .tableToolbar,
   .briefMeta,
   .sourceDetailGrid,
+  .settingsPage,
   .detailGrid.two,
   .messageGrid,
   .decisionGrid,
@@ -1116,13 +1256,38 @@ textarea:focus {
     grid-template-columns: 1fr;
   }
 
+  .appShell.sidebarCollapsed {
+    grid-template-columns: 1fr;
+  }
+
   .sidebar {
     position: static;
     height: auto;
   }
 
+  .sidebar.collapsed .sidebarHeader {
+    grid-template-columns: auto 1fr;
+    align-items: center;
+  }
+
+  .sidebar.collapsed .sidebarBrand {
+    justify-content: flex-start;
+  }
+
   .sideNav {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sidebar.collapsed .sideNav {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  .settingsForm {
+    grid-row: auto;
+  }
+
+  .settingsGrid .field:first-child {
+    grid-column: auto;
   }
 
   .span2 {

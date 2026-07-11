@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, type ComponentProps } from "react";
 import type { AppDetail, AppHistoryItem, AppSummary, DeploymentRequest } from "@/entities/app";
 import type { GitSource } from "@/entities/git-source";
-import { SettingsDialog } from "@/features/control-plane-settings/ui/SettingsDialog";
+import { SettingsPage } from "@/features/control-plane-settings/ui/SettingsPage";
 import { RequestDeploymentDialog, ReviewDeploymentRequestDialog } from "@/features/deployment-request/ui/DeploymentRequestDialogs";
 import { SourceRegistrationForm } from "@/features/source-registration/ui/SourceRegistrationForm";
 import { Sidebar } from "@/widgets/sidebar";
@@ -38,6 +38,10 @@ const sectionCopy: Record<ConsoleSection, { title: string; subtitle: string }> =
     title: "Deployment Audit",
     subtitle: "Track who deployed which commit and the source snapshot used for that release.",
   },
+  settings: {
+    title: "Control Plane Settings",
+    subtitle: "Set the workspace, API token, and actor used by deployment operations.",
+  },
 };
 
 export function DeploymentsView() {
@@ -62,7 +66,7 @@ export function DeploymentsView() {
   const [detailTab, setDetailTab] = useState<DetailTab>("contract");
   const [search, setSearch] = useState("");
   const [registrationOpen, setRegistrationOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   useEffect(() => {
     const saved = globalThis.localStorage;
@@ -71,6 +75,7 @@ export function DeploymentsView() {
       token: saved.getItem("wf.token") || "",
       actor: saved.getItem("wf.actor") || "",
     });
+    setSidebarCollapsed(saved.getItem("wf.sidebarCollapsed") === "true");
   }, []);
 
   useEffect(() => {
@@ -87,6 +92,10 @@ export function DeploymentsView() {
     localStorage.setItem("wf.token", settings.token);
     localStorage.setItem("wf.actor", settings.actor);
   }, [settings]);
+
+  useEffect(() => {
+    localStorage.setItem("wf.sidebarCollapsed", String(sidebarCollapsed));
+  }, [sidebarCollapsed]);
 
   useEffect(() => {
     if (!notice.text || notice.tone === "error") return;
@@ -202,6 +211,15 @@ export function DeploymentsView() {
     if (section === "audit") setDetailTab("history");
   }
 
+  function openSettingsPage() {
+    navigate("settings");
+  }
+
+  function saveSettings(nextSettings: ApiSettings) {
+    setSettings(nextSettings);
+    setNotice({ tone: "ok", text: "Settings saved." });
+  }
+
   function openFCodeDetail(sourceID: number) {
     const next = { kind: "fcode", sourceID } satisfies DetailPage;
     setActiveSection("deployments");
@@ -277,15 +295,16 @@ export function DeploymentsView() {
   const topbarCopy = detailPage ? detailCopy(detailPage, sources, deploymentRequests) : sectionCopy[activeSection];
 
   return (
-    <main className="appShell">
+    <main className={sidebarCollapsed ? "appShell sidebarCollapsed" : "appShell"}>
       <Sidebar
         active={activeSection}
+        collapsed={sidebarCollapsed}
         sourceCount={sources.length}
         appCount={apps.length}
         credentialCount={credentialCount}
         liveWorkers={liveWorkers}
         onNavigate={navigate}
-        onSettings={() => setSettingsOpen(true)}
+        onToggleCollapsed={() => setSidebarCollapsed((current) => !current)}
       />
       <section className="mainArea">
         <Topbar
@@ -296,39 +315,52 @@ export function DeploymentsView() {
           registerTone={detailPage ? "secondary" : "primary"}
           onRefresh={refresh}
           onRegister={() => setRegistrationOpen(true)}
-          onSettings={() => setSettingsOpen(true)}
+          onSettings={openSettingsPage}
         />
 
         <div className="content">
           {notice.text && notice.tone === "error" ? <div id="notice" className={`notice ${notice.tone}`}>{notice.text}</div> : null}
-          <ActiveSection
-            section={activeSection}
-            sources={sources}
-            apps={apps}
-            selectedSourceID={selectedSourceID}
-            selectedSource={selectedSource}
-            selectedApp={selectedApp}
-            detail={appDetail}
-            history={history}
-            sourceFiles={sourceFiles}
-            search={search}
-            activeTab={detailTab}
-            actor={settings.actor}
-            liveWorkers={liveWorkers}
-            deploymentRequests={deploymentRequests}
-            detailPage={detailPage}
-            onSearch={setSearch}
-            onSelectSource={setSelectedSourceID}
-            onRegister={() => setRegistrationOpen(true)}
-            onRequestDeploy={setRequestSource}
-            onReviewRequest={setReviewRequest}
-            onOpenFCodeDetail={openFCodeDetail}
-            onOpenRequestDetail={openRequestDetail}
-            onBackToList={closeDetailPage}
-            onRemove={removeSource}
-            onTabChange={setDetailTab}
-            onSettings={() => setSettingsOpen(true)}
-          />
+          {activeSection === "settings" && !detailPage ? (
+            <SettingsPage
+              settings={settings}
+              sourceCount={sources.length}
+              appCount={apps.length}
+              credentialCount={credentialCount}
+              liveWorkers={liveWorkers}
+              busy={busy}
+              onSave={saveSettings}
+              onRefresh={refresh}
+            />
+          ) : (
+            <ActiveSection
+              section={activeSection}
+              sources={sources}
+              apps={apps}
+              selectedSourceID={selectedSourceID}
+              selectedSource={selectedSource}
+              selectedApp={selectedApp}
+              detail={appDetail}
+              history={history}
+              sourceFiles={sourceFiles}
+              search={search}
+              activeTab={detailTab}
+              actor={settings.actor}
+              liveWorkers={liveWorkers}
+              deploymentRequests={deploymentRequests}
+              detailPage={detailPage}
+              onSearch={setSearch}
+              onSelectSource={setSelectedSourceID}
+              onRegister={() => setRegistrationOpen(true)}
+              onRequestDeploy={setRequestSource}
+              onReviewRequest={setReviewRequest}
+              onOpenFCodeDetail={openFCodeDetail}
+              onOpenRequestDetail={openRequestDetail}
+              onBackToList={closeDetailPage}
+              onRemove={removeSource}
+              onTabChange={setDetailTab}
+              onSettings={openSettingsPage}
+            />
+          )}
         </div>
       </section>
 
@@ -362,8 +394,6 @@ export function DeploymentsView() {
         </div>
       ) : null}
 
-      <SettingsDialog open={settingsOpen} settings={settings} onSave={setSettings} onClose={() => setSettingsOpen(false)} />
-
       <RequestDeploymentDialog
         source={requestSource}
         actor={settings.actor}
@@ -374,7 +404,7 @@ export function DeploymentsView() {
           setRequestSource(null);
         }}
         onRequest={createDeploymentRequest}
-        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenSettings={openSettingsPage}
       />
 
       <ReviewDeploymentRequestDialog
@@ -389,7 +419,7 @@ export function DeploymentsView() {
         }}
         onDeploy={deployDeploymentRequest}
         onReject={rejectDeploymentRequest}
-        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenSettings={openSettingsPage}
       />
     </main>
   );

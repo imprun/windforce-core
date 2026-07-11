@@ -6,13 +6,22 @@ This guide is generated from executable UI scenarios. Screenshots are captured f
 
 ## Set control plane context
 
-Use Settings to select the workspace, API token, and actor used by Web UI control-plane requests.
+Use the Settings page to select the workspace, API token, and actor used by Web UI control-plane requests.
 
 ![Set control plane context](../assets/ui/control-plane-settings.png)
 
 1. Open Settings from the command bar or sidebar.
 2. Set the workspace and optional API token when the control plane requires one.
 3. Set Actor before creating or reviewing deployment requests so audit history has a subject.
+
+## Collapse navigation
+
+Collapse the sidebar while keeping the deployment queue visible.
+
+![Collapse navigation](../assets/ui/collapsed-sidebar.png)
+
+1. Click the sidebar collapse control.
+2. Use the compact navigation rail to keep deployment work visible.
 
 ## Review deployment requests
 
