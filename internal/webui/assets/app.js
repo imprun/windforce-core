@@ -11,10 +11,38 @@ const state = {
 };
 
 const credentialProfiles = [
-  { id: "gitlab-default", label: "GitLab default", ref: "credentials/git/gitlab/default" },
-  { id: "github-default", label: "GitHub default", ref: "credentials/git/github/default" },
-  { id: "public", label: "Public repository", ref: "" },
-  { id: "custom", label: "Custom profile", ref: "" },
+  {
+    id: "gitlab-default",
+    label: "Private GitLab repo",
+    ref: "credentials/git/gitlab/default",
+    help: "Use the saved GitLab token for private repositories.",
+    storedLabel: "GitLab token saved",
+    missingLabel: "GitLab token not saved",
+  },
+  {
+    id: "github-default",
+    label: "Private GitHub repo",
+    ref: "credentials/git/github/default",
+    help: "Use the saved GitHub token for private repositories.",
+    storedLabel: "GitHub token saved",
+    missingLabel: "GitHub token not saved",
+  },
+  {
+    id: "public",
+    label: "Public repository",
+    ref: "",
+    help: "No token is sent. Use this only when the repository can be cloned without authentication.",
+    storedLabel: "public",
+    missingLabel: "public",
+  },
+  {
+    id: "custom",
+    label: "Custom credential",
+    ref: "",
+    help: "Use a named workspace secret variable for this repository.",
+    storedLabel: "custom token saved",
+    missingLabel: "custom token not saved",
+  },
 ];
 
 const $ = (selector) => document.querySelector(selector);
@@ -161,10 +189,12 @@ function updateCredentialControls() {
   const isPublic = profile.id === "public";
   const isCustom = profile.id === "custom";
   const ref = resolveCredentialRef();
-  $("#sourceCredsLabel").hidden = !isCustom;
+  $("#sourceCredsDetails").open = isCustom;
   $("#sourceCredentialValueLabel").hidden = isPublic;
+  $("#saveCredentialButton").hidden = isPublic;
   $("#sourceCreds").required = isCustom;
   $("#sourceCredsPreview").textContent = ref || "no credentials";
+  $("#sourceAuthHelp").textContent = profile.help;
 
   const status = $("#sourceCredsStatus");
   if (isPublic) {
@@ -178,36 +208,8 @@ function updateCredentialControls() {
     return;
   }
   const variable = credentialVariable(ref);
-  status.textContent = variable ? (variable.is_secret ? "secret stored" : "value stored") : "not stored";
+  status.textContent = variable ? profile.storedLabel : profile.missingLabel;
   status.className = `pill ${variable ? "ok" : "warn"}`;
-}
-
-function renderCredentialProfiles() {
-  const rows = credentialProfiles
-    .filter((profile) => profile.id !== "custom")
-    .map((profile) => {
-      const variable = profile.ref ? credentialVariable(profile.ref) : null;
-      const status = profile.ref ? (variable ? "stored" : "not stored") : "public";
-      const pill = profile.ref ? (variable ? "ok" : "warn") : "muted";
-      return `
-        <div class="list-row profile-row" data-profile="${escapeAttr(profile.id)}">
-          <div>
-            <div class="row-title">${escapeHTML(profile.label)}</div>
-            <div class="row-meta">${escapeHTML(profile.ref || "no credential reference")}</div>
-          </div>
-          <span class="pill ${pill}">${escapeHTML(status)}</span>
-        </div>`;
-    })
-    .join("");
-  $("#credentialProfiles").innerHTML = rows || '<div class="row-meta">No credential profiles.</div>';
-  $$("#credentialProfiles [data-profile]").forEach((row) => {
-    row.addEventListener("click", () => {
-      state.credentialProfile = row.dataset.profile;
-      $("#sourceAuthProfile").value = state.credentialProfile;
-      localStorage.setItem("wf.gitCredentialProfile", state.credentialProfile);
-      updateCredentialControls();
-    });
-  });
 }
 
 async function refreshAll() {
@@ -229,7 +231,6 @@ async function refreshAll() {
 
 async function loadVariables() {
   state.variables = await api("/variables");
-  renderCredentialProfiles();
   updateCredentialControls();
 }
 
@@ -357,8 +358,9 @@ async function registerSource(event) {
     subpath: $("#sourceSubpath").value.trim(),
     creds_ref: credsRef,
   };
-  await runAction("Registering app source", async () => {
+  await runAction("Registering Git source", async () => {
     await saveCredentialIfProvided(credsRef);
+    requireCredentialReady(credsRef);
     await api("/git_sources", { method: "POST", body: payload });
     event.target.reset();
     $("#sourceAuthProfile").value = state.credentialProfile;
@@ -377,6 +379,7 @@ async function probeSource() {
   await runAction("Probing app source", async () => {
     const credsRef = resolveCredentialRef();
     await saveCredentialIfProvided(credsRef);
+    requireCredentialReady(credsRef);
     const result = await api("/git_sources/probe", {
       method: "POST",
       body: {
@@ -387,6 +390,13 @@ async function probeSource() {
     });
     showNotice(result.reachable ? "Repository reachable for deployment." : result.error || "Repository is not reachable.", result.reachable ? "ok" : "error");
   });
+}
+
+function requireCredentialReady(credsRef) {
+  const profile = selectedCredentialProfile();
+  if (profile.id === "public") return;
+  if (credsRef && credentialVariable(credsRef)) return;
+  throw new Error("Save an access token first, or choose Public repository.");
 }
 
 async function saveCredentialIfProvided(credsRef) {
@@ -407,6 +417,24 @@ async function saveCredentialIfProvided(credsRef) {
   });
   tokenInput.value = "";
   await loadVariables();
+}
+
+async function saveSelectedCredential() {
+  const credsRef = resolveCredentialRef();
+  const profile = selectedCredentialProfile();
+  const tokenInput = $("#sourceCredentialValue");
+  if (profile.id === "public") {
+    showNotice("Public repositories do not use a token.", "ok");
+    return;
+  }
+  if (!tokenInput.value.trim()) {
+    showNotice("Paste an access token before saving.", "error");
+    return;
+  }
+  await runAction("Saving Git access token", async () => {
+    await saveCredentialIfProvided(credsRef);
+    showNotice(`${credentialLabelForRef(credsRef)} saved`, "ok");
+  }, false);
 }
 
 async function createSampleSource() {
@@ -606,6 +634,7 @@ function bindForms() {
     updateCredentialControls();
   });
   $("#sourceCreds").addEventListener("input", updateCredentialControls);
+  $("#saveCredentialButton").addEventListener("click", saveSelectedCredential);
   $("#sourceForm").addEventListener("submit", registerSource);
   $("#probeSourceButton").addEventListener("click", probeSource);
   $("#sampleSourceButton").addEventListener("click", createSampleSource);

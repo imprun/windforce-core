@@ -152,6 +152,7 @@ h3 {
 label {
   display: grid;
   gap: 5px;
+  min-width: 0;
   color: var(--muted);
   font-size: 12px;
   font-weight: 650;
@@ -161,6 +162,7 @@ input,
 select,
 textarea {
   width: 100%;
+  min-width: 0;
   min-height: 34px;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -357,7 +359,7 @@ textarea:focus {
 
 .deploy-grid {
   display: grid;
-  grid-template-columns: minmax(520px, 1fr) minmax(260px, 0.36fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   align-items: start;
 }
@@ -380,17 +382,69 @@ textarea:focus {
 }
 
 .deploy-form {
-  grid-template-columns: minmax(130px, 0.6fr) minmax(240px, 1.3fr) minmax(110px, 0.55fr) minmax(160px, 0.75fr);
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
 .repo-field {
   grid-column: span 2;
 }
 
+.access-field {
+  grid-column: span 2;
+}
+
+.git-access-panel,
+.source-note {
+  grid-column: 1 / -1;
+}
+
+.git-access-panel {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fbfcfc;
+  padding: 12px;
+}
+
+.git-access-head {
+  display: flex;
+  gap: 12px;
+  align-items: start;
+  justify-content: space-between;
+}
+
+.git-access-head p {
+  margin-top: 3px;
+  color: var(--muted);
+}
+
+.git-access-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.token-actions {
+  align-self: end;
+}
+
+.advanced-details {
+  display: grid;
+  gap: 8px;
+}
+
+.advanced-details summary {
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .credential-summary {
   display: grid;
-  grid-column: span 3;
-  grid-template-columns: 64px minmax(0, 1fr) auto;
+  grid-template-columns: 64px minmax(0, 1fr);
   gap: 8px;
   align-items: center;
   min-height: 34px;
@@ -415,13 +469,10 @@ textarea:focus {
   align-self: end;
 }
 
-.profile-surface {
-  min-height: 100%;
-}
-
-.profile-row {
-  grid-template-columns: minmax(0, 1fr) auto;
-  cursor: pointer;
+.source-note {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .run-grid {
@@ -635,6 +686,7 @@ textarea:focus {
   .deploy-grid,
   .settings-grid,
   .form-grid,
+  .git-access-grid,
   .run-grid,
   .filters,
   .metric-grid {
@@ -668,8 +720,15 @@ textarea:focus {
   }
 
   .repo-field,
+  .access-field,
+  .git-access-panel,
+  .source-note,
   .credential-summary {
     grid-column: auto;
+  }
+
+  .git-access-head {
+    display: grid;
   }
 
   .topbar-actions,
