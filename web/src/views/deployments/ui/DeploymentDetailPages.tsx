@@ -1,10 +1,9 @@
 "use client";
 
-import type { DeploymentRequest } from "@/entities/app";
+import type { AppDetail, AppSummary, DeploymentRequest } from "@/entities/app";
 import type { DetailPage } from "./types";
 import { formatDate, shortID } from "@/shared/lib/format";
 import {
-  ContractTab,
   EmptyLine,
   Field,
   LatestAudit,
@@ -19,6 +18,7 @@ export function FCodeDetailSection(props: CommonProps & { detailPage: Extract<De
   const app = source ? props.apps.find((item) => item.git_source_id === source.id) || null : null;
   const requests = source ? sortRequests(props.deploymentRequests.filter((request) => request.git_source_id === source.id)) : [];
   const pendingRequest = requests.find((request) => request.status === "pending") || null;
+  const actorReady = Boolean(props.actor.trim());
 
   if (!source) {
     return <DetailNotFound title="FCode source not found" onBack={props.onBackToList} />;
@@ -37,7 +37,14 @@ export function FCodeDetailSection(props: CommonProps & { detailPage: Extract<De
         </div>
         <div className="detailHeroActions">
           <span className={source.last_synced_commit ? "badge ok" : "badge warn"}>{source.last_synced_commit ? "deployed" : "registered"}</span>
-          <button className="button primary" type="button" onClick={() => props.onRequestDeploy(source)}>Request deployment</button>
+          {actorReady ? (
+            <button className="button primary" type="button" onClick={() => props.onRequestDeploy(source)}>Request deployment</button>
+          ) : (
+            <>
+              <button className="button primary" type="button" onClick={props.onSettings}>Set actor</button>
+              <button className="button" type="button" disabled>Request deployment</button>
+            </>
+          )}
           {pendingRequest ? <button className="button" type="button" onClick={() => props.onOpenRequestDetail(pendingRequest.id)}>Open pending request</button> : null}
         </div>
       </section>
@@ -46,7 +53,7 @@ export function FCodeDetailSection(props: CommonProps & { detailPage: Extract<De
         <div className="detailMain">
           <section className="workspacePanel">
             <PanelHeader eyebrow="Worker contract" title={app?.app_key || "No active contract"} description={app?.entrypoint || "No deployed app contract for this source."} />
-            <ContractTab app={app} detail={props.detail} />
+            <ContractEvidence app={app} detail={props.detail} />
           </section>
 
           <section className="workspacePanel">
@@ -74,11 +81,11 @@ export function FCodeDetailSection(props: CommonProps & { detailPage: Extract<De
           </section>
 
           <section className="workspacePanel">
-            <ReadinessPanel source={source} app={app} actor={props.actor} liveWorkers={props.liveWorkers} />
+            <LatestAudit history={props.history} />
           </section>
 
           <section className="workspacePanel">
-            <LatestAudit history={props.history} />
+            <ReadinessPanel source={source} app={app} actor={props.actor} liveWorkers={props.liveWorkers} />
           </section>
 
           <section className="workspacePanel dangerZonePanel">
@@ -98,6 +105,7 @@ export function DeploymentRequestDetailSection(props: CommonProps & { detailPage
   const request = props.deploymentRequests.find((item) => item.id === props.detailPage.requestID) || null;
   const source = request ? props.sources.find((item) => item.id === request.git_source_id) || null : null;
   const app = source ? props.apps.find((item) => item.git_source_id === source.id) || null : null;
+  const actorReady = Boolean(props.actor.trim());
 
   if (!request) {
     return <DetailNotFound title="Deployment request not found" onBack={props.onBackToList} />;
@@ -117,39 +125,48 @@ export function DeploymentRequestDetailSection(props: CommonProps & { detailPage
         <div className="detailHeroActions">
           <span className={`badge ${statusTone(request.status)}`}>{request.status}</span>
           {source ? <button className="button" type="button" onClick={() => props.onOpenFCodeDetail(source.id)}>Open FCode detail</button> : null}
-          {request.status === "pending" ? <button className="button primary" type="button" onClick={() => props.onReviewRequest(request)}>Review request</button> : null}
+          {request.status === "pending" && actorReady ? <button className="button primary" type="button" onClick={() => props.onReviewRequest(request)}>Review request</button> : null}
+          {request.status === "pending" && !actorReady ? (
+            <>
+              <button className="button primary" type="button" onClick={props.onSettings}>Set actor</button>
+              <button className="button" type="button" disabled>Review request</button>
+            </>
+          ) : null}
         </div>
       </section>
 
       <div className="detailLayout requestDetailLayout">
         <div className="detailMain">
-          <section className="workspacePanel">
+          <section className="workspacePanel decisionPanel">
             <PanelHeader eyebrow="Request timeline" title="Deployment decision" description="The target commit is fixed when the request is created." />
-            <RequestTimeline request={request} />
-          </section>
-
-          <section className="workspacePanel">
-            <PanelHeader eyebrow="Target release" title={request.app_key || "App pending"} description={request.entrypoint || "Entrypoint not set"} />
-            <div className="sourceDetailGrid">
-              <Field label="Target commit" value={shortID(request.target_commit, 18)} />
-              <Field label="Current commit" value={shortID(request.current_commit, 18)} />
-              <Field label="Branch" value={request.branch || "main"} />
-              <Field label="Subpath" value={request.subpath || "root"} />
-              <Field label="Actions" value={String(request.actions_count || 0)} />
-              <Field label="Deployment ID" value={shortID(request.deployment_id, 16)} />
+            <div className="decisionGrid">
+              <RequestTimeline request={request} />
+              <div className="messageGrid stacked">
+                <MessageBlock label="Requester" actor={request.requested_by || "-"} message={request.request_message || "-"} />
+                <MessageBlock label="Operator" actor={request.reviewed_by || request.deployed_by || "-"} message={request.operator_message || "-"} />
+              </div>
             </div>
           </section>
 
           <section className="workspacePanel">
-            <PanelHeader eyebrow="Review notes" title="Requester and operator messages" />
-            <div className="messageGrid">
-              <MessageBlock label="Requester" actor={request.requested_by || "-"} message={request.request_message || "-"} />
-              <MessageBlock label="Operator" actor={request.reviewed_by || request.deployed_by || "-"} message={request.operator_message || "-"} />
+            <PanelHeader eyebrow="Target release" title={request.app_key || "App pending"} description={request.entrypoint || "Entrypoint not set"} />
+            <div className="evidenceGrid">
+              <CopyField label="Target commit" value={request.target_commit} display={shortID(request.target_commit, 18)} />
+              <CopyField label="Current commit" value={request.current_commit || ""} display={shortID(request.current_commit, 18)} />
+              <Field label="Branch" value={request.branch || "main"} />
+              <Field label="Subpath" value={request.subpath || "root"} />
+              <Field label="Actions" value={String(request.actions_count || 0)} />
+              <CopyField label="Request ID" value={request.id} display={shortID(request.id, 18)} />
+              <CopyField label="Deployment ID" value={request.deployment_id || ""} display={shortID(request.deployment_id, 16)} />
             </div>
           </section>
         </div>
 
         <aside className="detailAside">
+          <section className="workspacePanel">
+            <LatestAudit history={props.history} />
+          </section>
+
           <section className="workspacePanel">
             <PanelHeader eyebrow="Source" title={source?.name || request.source_name} description={request.repo_url} />
             <div className="sourceDetailGrid">
@@ -163,11 +180,35 @@ export function DeploymentRequestDetailSection(props: CommonProps & { detailPage
           <section className="workspacePanel">
             <ReadinessPanel source={source} app={app} actor={props.actor} liveWorkers={props.liveWorkers} />
           </section>
-
-          <section className="workspacePanel">
-            <LatestAudit history={props.history} />
-          </section>
         </aside>
+      </div>
+    </div>
+  );
+}
+
+function ContractEvidence({ app, detail }: { app: AppSummary | null; detail: AppDetail | null }) {
+  if (!app) {
+    return <div id="actionList" className="emptyState"><strong>No deployed contract</strong><p>Select or deploy a source first.</p></div>;
+  }
+  return (
+    <div className="contractTab">
+      <div className="evidenceGrid">
+        <Field label="App key" value={app.app_key} />
+        <Field label="Entrypoint" value={app.entrypoint || "-"} />
+        <CopyField label="Commit" value={app.commit_sha} display={shortID(app.commit_sha, 18)} />
+        <Field label="Updated" value={formatDate(app.updated_at)} />
+      </div>
+      <div id="actionList" className="actionList">
+        {(detail?.actions || []).length === 0 ? <EmptyLine>No actions exposed by this contract.</EmptyLine> : null}
+        {(detail?.actions || []).map((action) => (
+          <div className="actionRow" key={action.action_key}>
+            <div>
+              <strong>{action.action_key}</strong>
+              <p>{(action.effective_capabilities || []).join(", ") || "no capabilities"}</p>
+            </div>
+            <span className="pill subtle">{action.effective_route_tag || "default"}</span>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -197,28 +238,35 @@ function RequestList({ requests, onOpenRequestDetail, onReviewRequest }: { reque
 function RequestTimeline({ request }: { request: DeploymentRequest }) {
   const reviewedAt = request.status === "pending" ? "" : request.updated_at;
   const finalLabel = request.status === "rejected" ? "Rejected" : request.status === "deployed" ? "Deployed" : "Not published";
-  const finalDetail = request.status === "pending"
+  const finalMessage = request.status === "pending"
     ? "Review required before deployment."
     : request.status === "deployed"
-      ? `${shortID(request.deployed_commit || request.target_commit, 18)} / ${formatDate(request.deployed_at || request.updated_at)}`
+      ? `Published ${shortID(request.deployed_commit || request.target_commit, 18)}.`
       : request.operator_message || "-";
   const finalActor = request.reviewed_by || request.deployed_by || "-";
   return (
     <ol className="timelineList">
-      <TimelineItem tone="ok" title="Requested" detail={`${request.requested_by || "-"} / ${formatDate(request.created_at)}`} />
-      <TimelineItem tone={request.status === "pending" ? "warn" : "ok"} title="Operator review" detail={request.status === "pending" ? "Pending" : `${finalActor} / ${formatDate(reviewedAt)}`} />
-      <TimelineItem tone={request.status === "rejected" ? "error" : request.status === "deployed" ? "ok" : "neutral"} title={finalLabel} detail={finalDetail} />
+      <TimelineItem tone="ok" title="Requested" actor={request.requested_by || "-"} time={formatDate(request.created_at)} message={request.request_message || "-"} />
+      <TimelineItem tone={request.status === "pending" ? "warn" : "ok"} title="Operator review" actor={request.status === "pending" ? "-" : finalActor} time={request.status === "pending" ? "Pending" : formatDate(reviewedAt)} message={request.status === "pending" ? "Waiting for approval or rejection." : request.operator_message || "-"} />
+      <TimelineItem tone={request.status === "rejected" ? "error" : request.status === "deployed" ? "ok" : "neutral"} title={finalLabel} actor={request.status === "pending" ? "-" : finalActor} time={request.status === "pending" ? "-" : formatDate(request.deployed_at || request.updated_at)} message={finalMessage} evidence={request.deployment_id ? `deployment ${shortID(request.deployment_id, 16)}` : undefined} evidenceValue={request.deployment_id || ""} />
     </ol>
   );
 }
 
-function TimelineItem({ tone, title, detail }: { tone: "ok" | "warn" | "error" | "neutral"; title: string; detail: string }) {
+function TimelineItem({ tone, title, actor, time, message, evidence, evidenceValue }: { tone: "ok" | "warn" | "error" | "neutral"; title: string; actor: string; time: string; message: string; evidence?: string; evidenceValue?: string }) {
   return (
     <li className="timelineItem">
       <span className={`statusDot ${tone}`} aria-hidden="true" />
       <div>
         <strong>{title}</strong>
-        <p>{detail}</p>
+        <p>{actor} / {time}</p>
+        <p>{message}</p>
+        {evidence ? (
+          <p className="timelineEvidence">
+            <span>{evidence}</span>
+            {evidenceValue ? <CopyButton value={evidenceValue} /> : null}
+          </p>
+        ) : null}
       </div>
     </li>
   );
@@ -234,6 +282,26 @@ function MessageBlock({ label, actor, message }: { label: string; actor: string;
   );
 }
 
+function CopyField({ label, value, display }: { label: string; value: string; display?: string }) {
+  return (
+    <div className="kv copyField">
+      <span>{label}</span>
+      <div>
+        <strong title={value || "-"}>{display || value || "-"}</strong>
+        <CopyButton value={value} />
+      </div>
+    </div>
+  );
+}
+
+function CopyButton({ value }: { value: string }) {
+  return (
+    <button className="copyButton" type="button" disabled={!value} onClick={() => copyText(value)}>
+      Copy
+    </button>
+  );
+}
+
 function DetailNotFound({ title, onBack }: { title: string; onBack: () => void }) {
   return (
     <section className="workspacePanel emptyState">
@@ -242,6 +310,11 @@ function DetailNotFound({ title, onBack }: { title: string; onBack: () => void }
       <button className="button primary" type="button" onClick={onBack}>Back to deployments</button>
     </section>
   );
+}
+
+function copyText(value: string) {
+  if (!value) return;
+  void navigator.clipboard?.writeText(value);
 }
 
 function sortRequests(requests: DeploymentRequest[]) {

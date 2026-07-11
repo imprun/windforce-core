@@ -13,6 +13,10 @@ export default {
   ],
   async run({ page, capture }) {
     await page.goto();
+    await page.evaluate(() => {
+      localStorage.setItem("wf.actor", "ui-guide@example.test");
+    });
+    await page.goto();
     await page.waitForSelector("#sourceDetail");
     await page.click("#openSelectedFCodeDetail");
     await page.waitForSelector("#fcodeDetailPage");

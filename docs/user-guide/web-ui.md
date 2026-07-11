@@ -38,11 +38,11 @@ Open a registered FCode detail page to review source registration, active contra
 4. Check pending deployment requests and readiness signals.
 5. Inspect the active source snapshot and latest audit entries.
 
-## Inspect a deployment request detail
+## Inspect a pending deployment request detail
 
-Open a deployment request detail page to review the pinned commit, timeline, requester message, operator decision state, and related FCode.
+Open a pending deployment request detail page to review the pinned commit, timeline, requester message, operator decision state, and related FCode.
 
-![Inspect a deployment request detail](../assets/ui/deployment-request-detail.png)
+![Inspect a pending deployment request detail](../assets/ui/deployment-request-detail.png)
 
 1. Open the deployment management console.
 2. Open a pending deployment request detail page from the queue.
@@ -61,6 +61,28 @@ Use the Deployments view to review a developer request and publish the pinned Wi
 3. Confirm requester, target commit, current commit, branch, and subpath.
 4. Type the FCode name and add an operator note.
 5. Approve and deploy the request to publish the active app contract.
+
+## Inspect a deployed request detail
+
+Open a deployed request detail page to verify the operator decision, deployment id, published commit, and audit evidence.
+
+![Inspect a deployed request detail](../assets/ui/deployed-request-detail.png)
+
+1. Open the deployment management console after a request has been approved.
+2. Open the deployed request detail page.
+3. Confirm the deployed state, deployment id, target commit, and operator note.
+4. Use copy actions when tracing the request through logs or release history.
+
+## Inspect a rejected request detail
+
+Open a rejected request detail page to verify rejection state, operator note, pinned commit, and source evidence.
+
+![Inspect a rejected request detail](../assets/ui/rejected-request-detail.png)
+
+1. Create a deployment request that should not be published.
+2. Reject the request with an operator note.
+3. Open the rejected request detail page.
+4. Confirm the rejection state, requester note, operator note, and pinned target commit.
 
 ## Inspect active deployment contracts
 

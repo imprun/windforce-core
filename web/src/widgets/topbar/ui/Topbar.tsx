@@ -7,12 +7,13 @@ type Props = {
   subtitle: string;
   settings: ApiSettings;
   busy: boolean;
+  registerTone?: "primary" | "secondary";
   onRefresh: () => void;
   onRegister: () => void;
   onSettings: () => void;
 };
 
-export function Topbar({ title, subtitle, settings, busy, onRefresh, onRegister, onSettings }: Props) {
+export function Topbar({ title, subtitle, settings, busy, registerTone = "primary", onRefresh, onRegister, onSettings }: Props) {
   return (
     <header className="topbar">
       <div className="pageTitle">
@@ -25,7 +26,7 @@ export function Topbar({ title, subtitle, settings, busy, onRefresh, onRegister,
         <span className={settings.token ? "contextPill ok" : "contextPill"}>API token <strong>{settings.token ? "set" : "optional"}</strong></span>
       </div>
       <div className="topbarActions">
-        <button id="openRegisterSource" className="button primary" type="button" aria-label="Register source from command bar" onClick={onRegister}>
+        <button id="openRegisterSource" className={registerTone === "primary" ? "button primary" : "button"} type="button" aria-label="Register source from command bar" onClick={onRegister}>
           Register Source
         </button>
         <button className="button" type="button" onClick={onRefresh} disabled={busy}>

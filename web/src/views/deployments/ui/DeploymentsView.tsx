@@ -287,6 +287,7 @@ export function DeploymentsView() {
           subtitle={topbarCopy.subtitle}
           settings={settings}
           busy={busy}
+          registerTone={detailPage ? "secondary" : "primary"}
           onRefresh={refresh}
           onRegister={() => setRegistrationOpen(true)}
           onSettings={() => setSettingsOpen(true)}

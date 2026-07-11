@@ -212,7 +212,8 @@ h3 {
 .timelineItem p,
 .requestDetailItem p,
 .messageBlock p,
-.dangerZonePanel p {
+.dangerZonePanel p,
+.copyButton {
   color: var(--muted);
 }
 
@@ -381,7 +382,9 @@ h3 {
 .detailMain,
 .detailAside,
 .requestDetailList,
-.messageGrid {
+.messageGrid,
+.decisionGrid,
+.evidenceGrid {
   display: grid;
   gap: 14px;
   min-width: 0;
@@ -392,6 +395,20 @@ h3 {
 }
 
 .messageGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.messageGrid.stacked {
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.decisionGrid {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.72fr);
+  align-items: start;
+}
+
+.evidenceGrid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
@@ -739,6 +756,10 @@ textarea:focus {
   padding: 11px;
 }
 
+.messageBlock p {
+  overflow-wrap: anywhere;
+}
+
 .timelineList {
   display: grid;
   gap: 8px;
@@ -753,6 +774,18 @@ textarea:focus {
   gap: 9px;
   align-items: start;
   padding: 10px;
+}
+
+.timelineItem > div {
+  display: grid;
+  gap: 3px;
+}
+
+.timelineEvidence {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
 }
 
 .briefMeta,
@@ -807,6 +840,34 @@ textarea:focus {
 .credentialPreview strong {
   overflow-wrap: anywhere;
   font-size: 13px;
+}
+
+.copyField > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.copyButton {
+  min-height: 26px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  padding: 3px 7px;
+  font-size: 11px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.copyButton:hover {
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+
+.copyButton:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .readinessList {
@@ -1014,6 +1075,8 @@ textarea:focus {
   .sourceDetailGrid,
   .detailGrid.two,
   .messageGrid,
+  .decisionGrid,
+  .evidenceGrid,
   .detailHero,
   .registrationGrid,
   .auditRow {
