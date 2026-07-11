@@ -18,6 +18,7 @@ export default function nextConfig(phase) {
   const apiTarget = process.env.WINDFORCE_LITE_API_PROXY_TARGET || "http://127.0.0.1:18091";
   return {
     ...sharedConfig,
+    allowedDevOrigins: ["127.0.0.1", "localhost"],
     async rewrites() {
       return [
         {
