@@ -13,7 +13,7 @@ type Props = {
 };
 
 const navItems: Array<{ key: SectionKey; label: string; description: string }> = [
-  { key: "deployments", label: "Deployments", description: "Release console" },
+  { key: "deployments", label: "Deployments", description: "Request queue" },
   { key: "sources", label: "Sources", description: "Git registrations" },
   { key: "releases", label: "Releases", description: "Active contracts" },
   { key: "audit", label: "Audit", description: "Deployment trail" },

@@ -1,10 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type ComponentProps } from "react";
-import type { AppDetail, AppHistoryItem, AppSummary } from "@/entities/app";
+import type { AppDetail, AppHistoryItem, AppSummary, DeploymentRequest } from "@/entities/app";
 import type { GitSource } from "@/entities/git-source";
 import { SettingsDialog } from "@/features/control-plane-settings/ui/SettingsDialog";
-import { DeploySourceDialog } from "@/features/deploy-source/ui/DeploySourceDialog";
+import { RequestDeploymentDialog, ReviewDeploymentRequestDialog } from "@/features/deployment-request/ui/DeploymentRequestDialogs";
 import { SourceRegistrationForm } from "@/features/source-registration/ui/SourceRegistrationForm";
 import { Sidebar } from "@/widgets/sidebar";
 import { Topbar } from "@/widgets/topbar";
@@ -23,7 +23,7 @@ const defaultSettings: ApiSettings = {
 const sectionCopy: Record<ConsoleSection, { title: string; subtitle: string }> = {
   deployments: {
     title: "Deployment Console",
-    subtitle: "Select a deployable FCode, inspect the current contract, and publish a guarded release.",
+    subtitle: "Review deployment requests, inspect pinned commits, and publish guarded releases.",
   },
   sources: {
     title: "Source Registry",
@@ -43,6 +43,7 @@ export function DeploymentsView() {
   const [settings, setSettings] = useState<ApiSettings>(defaultSettings);
   const [sources, setSources] = useState<GitSource[]>([]);
   const [apps, setApps] = useState<AppSummary[]>([]);
+  const [deploymentRequests, setDeploymentRequests] = useState<DeploymentRequest[]>([]);
   const [variables, setVariables] = useState<VariableRow[]>([]);
   const [workerTags, setWorkerTags] = useState<WorkerTagsResponse>({});
   const [selectedSourceID, setSelectedSourceID] = useState<number | null>(null);
@@ -50,7 +51,8 @@ export function DeploymentsView() {
   const [appDetail, setAppDetail] = useState<AppDetail | null>(null);
   const [history, setHistory] = useState<AppHistoryItem[]>([]);
   const [sourceFiles, setSourceFiles] = useState<Record<string, string>>({});
-  const [deploySource, setDeploySource] = useState<GitSource | null>(null);
+  const [requestSource, setRequestSource] = useState<GitSource | null>(null);
+  const [reviewRequest, setReviewRequest] = useState<DeploymentRequest | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<Notice>({ tone: "info", text: "" });
   const [deployError, setDeployError] = useState("");
@@ -87,16 +89,18 @@ export function DeploymentsView() {
     setBusy(true);
     setNotice({ tone: "info", text: "Refreshing deployment state..." });
     try {
-      const [nextVariables, nextSources, nextApps, nextTags] = await Promise.all([
+      const [nextVariables, nextSources, nextApps, nextTags, nextRequests] = await Promise.all([
         api.variables(),
         api.gitSources(),
         api.apps(),
         api.workerTags(),
+        api.deploymentRequests(),
       ]);
       setVariables(nextVariables);
       setSources(nextSources);
       setApps(nextApps.apps || []);
       setWorkerTags(nextTags);
+      setDeploymentRequests(nextRequests.requests || []);
       setSelectedSourceID((current) => {
         if (current && nextSources.some((source) => source.id === current)) return current;
         return nextSources[0]?.id || null;
@@ -167,17 +171,41 @@ export function DeploymentsView() {
     if (section === "audit") setDetailTab("history");
   }
 
-  async function deploy(message: string) {
-    if (!deploySource) return;
+  async function createDeploymentRequest(message: string) {
+    if (!requestSource) return;
     setDeployError("");
-    await run(`Deploying ${deploySource.name}`, async () => {
-      const result = await api.deployGitSource(deploySource.id, message ? { confirm: true, message } : { confirm: true });
-      setDeploySource(null);
-      setSelectedSourceID(deploySource.id);
-      setSelectedAppKey(result.app);
+    await run(`Creating deployment request for ${requestSource.name}`, async () => {
+      const created = await api.createDeploymentRequest(requestSource.id, message ? { message } : {});
+      setRequestSource(null);
+      setSelectedSourceID(requestSource.id);
+      await refresh();
+      return `Requested ${created.source_name} at ${shortID(created.target_commit, 12)}.`;
+    });
+  }
+
+  async function deployDeploymentRequest(message: string) {
+    if (!reviewRequest) return;
+    setDeployError("");
+    await run(`Deploying request ${reviewRequest.id}`, async () => {
+      const result = await api.deployDeploymentRequest(reviewRequest.id, message ? { confirm: true, message } : { confirm: true });
+      setReviewRequest(null);
+      setSelectedSourceID(result.request.git_source_id);
+      setSelectedAppKey(result.sync_result.app);
       setDetailTab("history");
       await refresh();
-      return `Deployed ${result.app} at ${shortID(result.commit, 12)}`;
+      return `Deployed ${result.sync_result.app} at ${shortID(result.sync_result.commit, 12)}.`;
+    });
+  }
+
+  async function rejectDeploymentRequest(message: string) {
+    if (!reviewRequest) return;
+    setDeployError("");
+    await run(`Rejecting request ${reviewRequest.id}`, async () => {
+      const result = await api.rejectDeploymentRequest(reviewRequest.id, message ? { message } : {});
+      setReviewRequest(null);
+      setSelectedSourceID(result.git_source_id);
+      await refresh();
+      return `Rejected deployment request for ${result.source_name}.`;
     });
   }
 
@@ -227,10 +255,12 @@ export function DeploymentsView() {
             activeTab={detailTab}
             actor={settings.actor}
             liveWorkers={liveWorkers}
+            deploymentRequests={deploymentRequests}
             onSearch={setSearch}
             onSelectSource={setSelectedSourceID}
             onRegister={() => setRegistrationOpen(true)}
-            onDeploy={setDeploySource}
+            onRequestDeploy={setRequestSource}
+            onReviewRequest={setReviewRequest}
             onRemove={removeSource}
             onTabChange={setDetailTab}
             onSettings={() => setSettingsOpen(true)}
@@ -268,16 +298,31 @@ export function DeploymentsView() {
 
       <SettingsDialog open={settingsOpen} settings={settings} onSave={setSettings} onClose={() => setSettingsOpen(false)} />
 
-      <DeploySourceDialog
-        source={deploySource}
+      <RequestDeploymentDialog
+        source={requestSource}
         actor={settings.actor}
         busy={busy}
         error={deployError}
         onClose={() => {
           setDeployError("");
-          setDeploySource(null);
+          setRequestSource(null);
         }}
-        onDeploy={deploy}
+        onRequest={createDeploymentRequest}
+        onOpenSettings={() => setSettingsOpen(true)}
+      />
+
+      <ReviewDeploymentRequestDialog
+        request={reviewRequest}
+        source={reviewRequest ? sources.find((source) => source.id === reviewRequest.git_source_id) || null : null}
+        actor={settings.actor}
+        busy={busy}
+        error={deployError}
+        onClose={() => {
+          setDeployError("");
+          setReviewRequest(null);
+        }}
+        onDeploy={deployDeploymentRequest}
+        onReject={rejectDeploymentRequest}
         onOpenSettings={() => setSettingsOpen(true)}
       />
     </main>

@@ -18,7 +18,7 @@ export default {
     await page.click("#tab-contract");
     await page.waitForSelector("#actionList .actionRow");
     await page.click("#tab-history");
-    await page.waitForText("#deploymentHistory", "external_sync");
+    await page.waitForText("#deploymentHistory", "deployment_request");
     await page.click("#tab-source");
     await page.waitForText("#sourceSnapshot", "windforce.json");
     await capture(this.id);

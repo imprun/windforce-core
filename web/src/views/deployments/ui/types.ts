@@ -1,4 +1,4 @@
-import type { AppDetail, AppHistoryItem, AppSummary } from "@/entities/app";
+import type { AppDetail, AppHistoryItem, AppSummary, DeploymentRequest } from "@/entities/app";
 import type { GitSource } from "@/entities/git-source";
 
 export type Notice = {
@@ -16,4 +16,9 @@ export type DeploymentSelection = {
   detail: AppDetail | null;
   history: AppHistoryItem[];
   sourceFiles: Record<string, string>;
+};
+
+export type DeploymentRequestAction = {
+  request: DeploymentRequest;
+  source: GitSource | null;
 };

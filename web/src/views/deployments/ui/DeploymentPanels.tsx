@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import type { AppDetail, AppHistoryItem, AppSummary } from "@/entities/app";
+import type { AppDetail, AppHistoryItem, AppSummary, DeploymentRequest } from "@/entities/app";
 import type { GitSource } from "@/entities/git-source";
 import type { DetailTab } from "./types";
 import { formatDate, shortID } from "@/shared/lib/format";
@@ -19,10 +19,12 @@ type CommonProps = {
   activeTab: DetailTab;
   actor: string;
   liveWorkers: number;
+  deploymentRequests: DeploymentRequest[];
   onSearch: (value: string) => void;
   onSelectSource: (id: number) => void;
   onRegister: () => void;
-  onDeploy: (source: GitSource) => void;
+  onRequestDeploy: (source: GitSource) => void;
+  onReviewRequest: (request: DeploymentRequest) => void;
   onRemove: (source: GitSource) => void;
   onTabChange: (tab: DetailTab) => void;
   onSettings: () => void;
@@ -31,16 +33,26 @@ type CommonProps = {
 export function DeploymentsSection(props: CommonProps) {
   return (
     <div id="deploymentOverview" className="workspaceGrid">
-      <section id="sourceList" className="workspacePanel queuePanel">
-        <PanelHeader
-          eyebrow="Deployment queue"
-          title="FCode release candidates"
-          description="Review deployable sources, current contract state, and last published commit."
-          action={<button className="button primary" type="button" aria-label="Register source from deployment queue" onClick={props.onRegister}>Register Source</button>}
-        />
-        <SourceToolbar search={props.search} onSearch={props.onSearch} />
-        <SourceTable {...props} mode="deployment" />
-      </section>
+      <div className="leftStack">
+        <section id="requestQueue" className="workspacePanel queuePanel">
+          <PanelHeader
+            eyebrow="Deployment queue"
+            title="Deployment requests"
+            description="Developers request validated commits; operators review pending requests before publishing."
+            action={<button className="button primary" type="button" aria-label="Register source from deployment queue" onClick={props.onRegister}>Register Source</button>}
+          />
+          <DeploymentRequestTable {...props} />
+        </section>
+        <section id="sourceList" className="workspacePanel queuePanel">
+          <PanelHeader
+            eyebrow="Source registry"
+            title="FCode release candidates"
+            description="Registered sources can create deployment requests after contract validation."
+          />
+          <SourceToolbar search={props.search} onSearch={props.onSearch} />
+          <SourceTable {...props} mode="deployment" />
+        </section>
+      </div>
       <ReleaseBrief {...props} />
     </div>
   );
@@ -127,6 +139,57 @@ function SourceToolbar({ search, onSearch }: { search: string; onSearch: (value:
   );
 }
 
+function DeploymentRequestTable(props: CommonProps) {
+  const ordered = [...props.deploymentRequests].sort((a, b) => {
+    if (a.status === "pending" && b.status !== "pending") return -1;
+    if (a.status !== "pending" && b.status === "pending") return 1;
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
+
+  return (
+    <div className="dataTable requestTable">
+      <div className="tableHead">
+        <span>Status</span>
+        <span>FCode</span>
+        <span>Target</span>
+        <span>Requested</span>
+        <span>Action</span>
+      </div>
+      {ordered.length === 0 ? <EmptyLine>No deployment requests yet.</EmptyLine> : null}
+      {ordered.slice(0, 12).map((request) => {
+        const source = props.sources.find((item) => item.id === request.git_source_id) || null;
+        return (
+          <div className={`tableRow ${source?.id === props.selectedSourceID ? "selected" : ""}`} key={request.id}>
+            <div className="tableCell">
+              <span className={`badge ${request.status === "pending" ? "warn" : request.status === "deployed" ? "ok" : "neutral"}`}>{request.status}</span>
+              <small>{shortID(request.id, 12)}</small>
+            </div>
+            <button className="tableCellButton" type="button" aria-label={`Select source ${request.source_name}`} onClick={() => source ? props.onSelectSource(source.id) : undefined}>
+              <strong>{request.source_name}</strong>
+              <small>{request.app_key || "app pending"}</small>
+            </button>
+            <div className="tableCell">
+              <strong>{shortID(request.target_commit, 12)}</strong>
+              <small>{request.entrypoint || "entrypoint not set"}</small>
+            </div>
+            <div className="tableCell">
+              <strong>{request.requested_by || "-"}</strong>
+              <small>{formatCompactDate(request.created_at)}</small>
+            </div>
+            <div className="rowButtons">
+              {request.status === "pending" ? (
+                <button className="button primary compactButton" type="button" onClick={() => props.onReviewRequest(request)}>Review</button>
+              ) : (
+                <span className="pill subtle">{request.reviewed_by || request.deployed_by || "-"}</span>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function SourceTable(props: CommonProps & { mode: "deployment" | "source" }) {
   const filtered = props.sources.filter((source) => {
     const needle = props.search.trim().toLowerCase();
@@ -179,6 +242,7 @@ function SourceTable(props: CommonProps & { mode: "deployment" | "source" }) {
 function ReleaseBrief(props: CommonProps) {
   const source = props.selectedSource;
   const app = props.selectedApp;
+  const pendingRequest = source ? props.deploymentRequests.find((request) => request.git_source_id === source.id && request.status === "pending") || null : null;
   if (!source) {
     return (
       <section id="sourceDetail" className="workspacePanel releaseBrief emptyPanel">
@@ -202,7 +266,8 @@ function ReleaseBrief(props: CommonProps) {
       </header>
 
       <div className="briefActions">
-        <button id="deploySelectedSource" className="button primary" type="button" onClick={() => props.onDeploy(source)}>Deploy selected commit</button>
+        <button id="requestSelectedSource" className="button primary" type="button" onClick={() => props.onRequestDeploy(source)}>Request deployment</button>
+        {pendingRequest ? <button id="reviewSelectedRequest" className="button" type="button" onClick={() => props.onReviewRequest(pendingRequest)}>Review pending request</button> : null}
         <button className="button" type="button" onClick={props.onSettings}>Set actor</button>
         <button className="button dangerGhost" type="button" onClick={() => props.onRemove(source)}>Remove</button>
       </div>
@@ -211,6 +276,12 @@ function ReleaseBrief(props: CommonProps) {
         <span className="eyebrow">Current worker contract</span>
         <strong>{app?.app_key || "No active contract"}</strong>
         <p>{app ? `${app.entrypoint || "entrypoint not set"} / ${shortID(app.commit_sha, 14)}` : "Deploy this source to publish a worker-visible contract."}</p>
+      </div>
+
+      <div className={pendingRequest ? "requestSummary active" : "requestSummary"}>
+        <span className="eyebrow">Deployment request</span>
+        <strong>{pendingRequest ? `${pendingRequest.requested_by} requested ${shortID(pendingRequest.target_commit, 12)}` : "No pending request"}</strong>
+        <p>{pendingRequest?.request_message || "Create a request when a developer wants this source promoted."}</p>
       </div>
 
       <div className="briefMeta">
@@ -237,7 +308,7 @@ function SourceOperationsPanel(props: CommonProps) {
         eyebrow="Source detail"
         title={source.name}
         description={source.repo_url}
-        action={<button className="button primary" type="button" onClick={() => props.onDeploy(source)}>Deploy</button>}
+        action={<button className="button primary" type="button" onClick={() => props.onRequestDeploy(source)}>Request Deploy</button>}
       />
       <div className="sourceDetailGrid">
         <Field label="Branch" value={source.branch || "main"} />

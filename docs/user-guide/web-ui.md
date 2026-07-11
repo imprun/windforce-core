@@ -12,30 +12,31 @@ Use Settings to select the workspace, API token, and actor used by Web UI contro
 
 1. Open Settings from the command bar or sidebar.
 2. Set the workspace and optional API token when the control plane requires one.
-3. Set Actor before deployment so audit history has an operator subject.
+3. Set Actor before creating or reviewing deployment requests so audit history has a subject.
 
-## Review deployment inventory
+## Review deployment requests
 
-Use the deployment console to choose a registered FCode, inspect its current release, and check deployment readiness.
+Use the deployment console to review pending FCode deployment requests, registered sources, and selected release readiness.
 
-![Review deployment inventory](../assets/ui/deployment-overview.png)
+![Review deployment requests](../assets/ui/deployment-overview.png)
 
 1. Open the deployment management console.
 2. Use the sidebar to move between deployment, source, release, and audit work areas.
-3. Use the release candidate table to compare registered FCodes.
-4. Select a row to inspect the release brief, readiness checks, and latest audit entries.
+3. Use the deployment request queue to identify pending operator work.
+4. Use the release candidate table to compare registered FCodes.
+5. Select a row to inspect the release brief, readiness checks, and latest audit entries.
 
-## Deploy an app source
+## Approve a deployment request
 
-Use the Deployments view to register an app source and deploy the active Windforce manifest.
+Use the Deployments view to review a developer request and publish the pinned Windforce manifest commit.
 
-![Deploy an app source](../assets/ui/deploy-app.png)
+![Approve a deployment request](../assets/ui/deploy-app.png)
 
 1. Open the deployment management console.
-2. Select the FCode source to deploy.
-3. Confirm readiness and current release metadata in the selected source detail.
-4. Use Deploy to open a confirmation dialog.
-5. Type the source name and add an audit note before publishing the active app contract.
+2. Select a pending deployment request.
+3. Confirm requester, target commit, current commit, branch, and subpath.
+4. Type the FCode name and add an operator note.
+5. Approve and deploy the request to publish the active app contract.
 
 ## Inspect active deployment contracts
 

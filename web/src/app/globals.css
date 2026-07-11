@@ -261,6 +261,11 @@ h3 {
   color: var(--warn);
 }
 
+.badge.neutral {
+  background: #edf2f5;
+  color: #52616a;
+}
+
 .pill.subtle {
   min-height: 24px;
   background: #edf2f5;
@@ -299,6 +304,12 @@ h3 {
   grid-template-columns: minmax(0, 1fr) 400px;
   gap: 14px;
   align-items: start;
+  min-width: 0;
+}
+
+.leftStack {
+  display: grid;
+  gap: 14px;
   min-width: 0;
 }
 
@@ -471,6 +482,11 @@ textarea:focus {
   grid-template-columns: minmax(100px, 0.6fr) minmax(220px, 1.7fr) minmax(90px, 0.48fr) minmax(120px, 0.66fr) minmax(120px, 0.64fr);
 }
 
+.requestTable .tableHead,
+.requestTable .tableRow {
+  grid-template-columns: minmax(110px, 0.55fr) minmax(140px, 0.75fr) minmax(150px, 0.9fr) minmax(160px, 0.85fr) minmax(120px, 0.55fr);
+}
+
 .appTable .tableHead,
 .appTable .tableRow {
   grid-template-columns: minmax(140px, 1fr) minmax(130px, 0.75fr) minmax(150px, 0.85fr) minmax(80px, 0.45fr) minmax(150px, 0.75fr);
@@ -603,6 +619,24 @@ textarea:focus {
 
 .releaseBlock strong {
   font-size: 20px;
+}
+
+.requestSummary {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfd;
+  padding: 12px;
+}
+
+.requestSummary.active {
+  border-color: #f1d18d;
+  background: #fffaf0;
+}
+
+.requestSummary p {
+  color: var(--muted);
 }
 
 .briefMeta,

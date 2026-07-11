@@ -37,6 +37,7 @@ type canonicalGitSourceDeployRequest struct {
 
 type gitSourceOperationAudit struct {
 	Source       string
+	Commit       string
 	DeploymentID *string
 	Message      *string
 	CreatedBy    *string
@@ -526,6 +527,7 @@ func (h *Handler) syncGitSource(w http.ResponseWriter, r *http.Request, workspac
 		GitSourceID:  source.ID,
 		RepoURL:      source.RepoURL,
 		Branch:       source.Branch,
+		Commit:       audit.Commit,
 		Subpath:      source.Subpath,
 		Token:        token,
 		Source:       audit.Source,
