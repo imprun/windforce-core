@@ -46,6 +46,28 @@ services:
     volumes:
       - windforce-data:/data
 
+  worker:
+    image: ${WINDFORCE_LITE_IMAGE:-imprun/windforce-lite:local}
+    build:
+      context: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command:
+      - worker
+      - --state-backend
+      - postgres
+      - --database-url
+      - postgres://${WINDFORCE_POSTGRES_USER:-postgres}@postgres:5432/${WINDFORCE_POSTGRES_DB:-windforce_lite}?sslmode=disable
+      - --migrate
+      - --store
+      - /data/store
+      - --cache
+      - /data/cache
+    volumes:
+      - windforce-data:/data
+
 volumes:
   postgres-data:
   windforce-data:

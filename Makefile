@@ -1,9 +1,10 @@
 .PHONY: help fmt test test-postgres build clean \
-	compose-up compose-db compose-build compose-down compose-reset compose-logs compose-ps postgres-dsn \
+	compose-up compose-db compose-worker compose-build compose-down compose-reset compose-logs compose-ps postgres-dsn \
 	dev-standalone dev-standalone-postgres dev-api dev-worker worker-once \
 	windforce-variable-set windforce-git-token windforce-register windforce-sync windforce-sample \
 	windforce-schema windforce-openapi windforce-control-openapi \
-	windforce-run windforce-run-wait windforce-jobs windforce-job windforce-job-result windforce-job-logs windforce-job-cancel
+	windforce-run windforce-run-wait windforce-jobs windforce-job windforce-job-result windforce-job-logs windforce-job-cancel \
+	ui-guide ui-guide-verify
 
 APP := windforce-lite
 CMD := ./cmd/windforce-lite
@@ -90,8 +91,11 @@ help:
 	@echo "  windforce-job/result/logs/cancel operate on WF_JOB_ID"
 	@echo "  compose-up             start Postgres and control-plane API"
 	@echo "  compose-db             start only Postgres"
+	@echo "  compose-worker         start Postgres and runtime worker"
 	@echo "  compose-build          build the control-plane API image"
 	@echo "  compose-down/reset/logs/ps"
+	@echo "  ui-guide               regenerate Web UI guide screenshots and markdown"
+	@echo "  ui-guide-verify        run guide scenarios and verify generated docs"
 
 fmt:
 	$(GO) fmt ./...
@@ -112,6 +116,9 @@ compose-up:
 compose-db:
 	$(COMPOSE) up -d postgres
 
+compose-worker:
+	$(COMPOSE) up -d postgres worker
+
 compose-build:
 	$(COMPOSE) build control-plane
 
@@ -122,13 +129,21 @@ compose-reset:
 	$(COMPOSE) down -v
 
 compose-logs:
-	$(COMPOSE) logs -f postgres control-plane
+	$(COMPOSE) logs -f postgres control-plane worker
 
 compose-ps:
 	$(COMPOSE) ps
 
 postgres-dsn:
 	@echo "$(POSTGRES_DSN)"
+
+ui-guide: compose-build
+	node --check tools/ui-guide/capture.mjs
+	node tools/ui-guide/capture.mjs
+
+ui-guide-verify: compose-build
+	node --check tools/ui-guide/capture.mjs
+	node tools/ui-guide/capture.mjs --verify
 
 dev-standalone:
 	$(GO) run $(CMD) standalone --addr "$(ADDR)" --store "$(STORE)" --catalog "$(CATALOG)" --state "$(STATE)" --cache "$(CACHE)"
