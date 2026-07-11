@@ -438,10 +438,10 @@ export function ReadinessPanel({ source, app, actor, liveWorkers }: { source: Gi
   );
 }
 
-export function LatestAudit({ history }: { history: AppHistoryItem[] }) {
+export function LatestAudit({ history, title = "FCode deployment audit" }: { history: AppHistoryItem[]; title?: string }) {
   return (
     <div id="auditTimeline" className="latestAudit">
-      <span className="eyebrow">Latest audit</span>
+      <span className="eyebrow">{title}</span>
       <div className="historyList compactHistory">
         {history.length === 0 ? <EmptyLine>No audit entries for this FCode.</EmptyLine> : null}
         {history.slice(0, 4).map((item) => <HistoryItem item={item} key={item.id} compact />)}

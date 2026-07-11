@@ -24,6 +24,6 @@ export default {
     await page.fill("#reviewDeploymentMessage", "UI guide approval");
     await capture(this.id);
     await page.click("#reviewDeploymentRequestDialog .button.primary");
-    await page.waitForText("#notice", "Deployed");
+    await page.waitForText("#toast", "Deployed");
   },
 };

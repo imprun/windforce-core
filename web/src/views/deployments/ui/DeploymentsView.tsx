@@ -88,6 +88,12 @@ export function DeploymentsView() {
     localStorage.setItem("wf.actor", settings.actor);
   }, [settings]);
 
+  useEffect(() => {
+    if (!notice.text || notice.tone === "error") return;
+    const timer = window.setTimeout(() => setNotice((current) => current.text === notice.text ? { tone: "info", text: "" } : current), 2400);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
   const api = useMemo(() => new WindforceApi(settings), [settings]);
   const selectedSource = sources.find((source) => source.id === selectedSourceID) || null;
   const selectedApp = selectedSource
@@ -294,7 +300,7 @@ export function DeploymentsView() {
         />
 
         <div className="content">
-          {notice.text ? <div id="notice" className={`notice ${notice.tone}`}>{notice.text}</div> : null}
+          {notice.text && notice.tone === "error" ? <div id="notice" className={`notice ${notice.tone}`}>{notice.text}</div> : null}
           <ActiveSection
             section={activeSection}
             sources={sources}
@@ -325,6 +331,8 @@ export function DeploymentsView() {
           />
         </div>
       </section>
+
+      {notice.text && notice.tone !== "error" ? <div id="toast" className={`toast ${notice.tone}`}>{notice.text}</div> : null}
 
       {registrationOpen ? (
         <div id="registerSourceDialog" className="modalBackdrop" role="presentation">
@@ -435,14 +443,15 @@ function writeDetailPageToHistory(detailPage: DetailPage | null) {
 function detailCopy(detailPage: DetailPage, sources: GitSource[], deploymentRequests: DeploymentRequest[]) {
   if (detailPage.kind === "fcode") {
     const source = sources.find((item) => item.id === detailPage.sourceID);
+    const state = source?.last_synced_commit ? "deployed" : "registered";
     return {
-      title: source ? `${source.name} Detail` : "FCode Detail",
+      title: source ? `FCode / ${source.name} / ${state}` : "FCode Detail",
       subtitle: "Inspect source registration, active contract, deployment readiness, and audit evidence.",
     };
   }
   const request = deploymentRequests.find((item) => item.id === detailPage.requestID);
   return {
-    title: request ? `${request.source_name} Deployment Request` : "Deployment Request",
+    title: request ? `Deployment Request / ${request.source_name} / ${request.status}` : "Deployment Request",
     subtitle: "Review the request timeline, pinned commit, operator decision, and deployment evidence.",
   };
 }

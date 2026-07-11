@@ -22,6 +22,7 @@ export default {
     await page.waitForSelector("#fcodeDetailPage");
     await page.waitForText("#fcodeDetailPage", "Worker contract");
     await page.waitForText("#fcodeDetailPage", "Request history");
+    await page.waitForText("#fcodeDetailPage", "FCode deployment audit");
     await page.waitForText("#sourceSnapshot", "windforce.json");
     await capture(this.id);
   },

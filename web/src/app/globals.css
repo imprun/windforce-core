@@ -305,6 +305,29 @@ h3 {
   color: var(--danger);
 }
 
+.toast {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 40;
+  max-width: min(420px, calc(100vw - 36px));
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 12px 30px rgba(18, 33, 38, 0.16);
+  padding: 11px 13px;
+  font-weight: 850;
+}
+
+.toast.ok {
+  border-color: #b7dfc6;
+  color: var(--ok);
+}
+
+.toast.info {
+  color: var(--muted);
+}
+
 .workspaceGrid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 400px;
@@ -865,6 +888,12 @@ textarea:focus {
   color: var(--text);
 }
 
+.copyButton.copied {
+  border-color: #b7dfc6;
+  background: #e6f4ea;
+  color: var(--ok);
+}
+
 .copyButton:disabled {
   opacity: 0.45;
   cursor: not-allowed;
@@ -885,6 +914,10 @@ textarea:focus {
 .historyItem {
   display: grid;
   gap: 3px;
+}
+
+.historyItem p {
+  overflow-wrap: anywhere;
 }
 
 .historyItem.compact {

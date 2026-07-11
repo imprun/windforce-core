@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import type { AppDetail, AppSummary, DeploymentRequest } from "@/entities/app";
 import type { DetailPage } from "./types";
 import { formatDate, shortID } from "@/shared/lib/format";
@@ -31,7 +32,7 @@ export function FCodeDetailSection(props: CommonProps & { detailPage: Extract<De
           <button className="button compactButton" type="button" onClick={props.onBackToList}>Back to deployments</button>
           <div>
             <span className="eyebrow">FCode detail</span>
-            <h2>{source.name}</h2>
+            <h2>FCode / {source.name}</h2>
             <p>{source.repo_url}</p>
           </div>
         </div>
@@ -81,7 +82,7 @@ export function FCodeDetailSection(props: CommonProps & { detailPage: Extract<De
           </section>
 
           <section className="workspacePanel">
-            <LatestAudit history={props.history} />
+            <LatestAudit history={props.history} title="FCode deployment audit" />
           </section>
 
           <section className="workspacePanel">
@@ -118,7 +119,7 @@ export function DeploymentRequestDetailSection(props: CommonProps & { detailPage
           <button className="button compactButton" type="button" onClick={props.onBackToList}>Back to deployments</button>
           <div>
             <span className="eyebrow">Deployment request</span>
-            <h2>{request.source_name}</h2>
+            <h2>{request.source_name} / {request.status}</h2>
             <p>{shortID(request.id, 18)} / {request.requested_by || "-"}</p>
           </div>
         </div>
@@ -164,7 +165,7 @@ export function DeploymentRequestDetailSection(props: CommonProps & { detailPage
 
         <aside className="detailAside">
           <section className="workspacePanel">
-            <LatestAudit history={props.history} />
+            <RequestAudit request={request} />
           </section>
 
           <section className="workspacePanel">
@@ -282,6 +283,24 @@ function MessageBlock({ label, actor, message }: { label: string; actor: string;
   );
 }
 
+function RequestAudit({ request }: { request: DeploymentRequest }) {
+  const items = requestAuditItems(request);
+  return (
+    <div id="requestAudit" className="latestAudit">
+      <span className="eyebrow">Request audit</span>
+      <div className="historyList compactHistory">
+        {items.map((item) => (
+          <article className="historyItem compact" key={item.key}>
+            <strong>{item.title}</strong>
+            <p>{item.actor} / {item.time}</p>
+            <p>{item.message}</p>
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function CopyField({ label, value, display }: { label: string; value: string; display?: string }) {
   return (
     <div className="kv copyField">
@@ -295,9 +314,16 @@ function CopyField({ label, value, display }: { label: string; value: string; di
 }
 
 function CopyButton({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+  async function handleCopy() {
+    if (!value) return;
+    await copyText(value);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1200);
+  }
   return (
-    <button className="copyButton" type="button" disabled={!value} onClick={() => copyText(value)}>
-      Copy
+    <button className={copied ? "copyButton copied" : "copyButton"} type="button" disabled={!value} onClick={() => void handleCopy()}>
+      {copied ? "Copied" : "Copy"}
     </button>
   );
 }
@@ -312,9 +338,20 @@ function DetailNotFound({ title, onBack }: { title: string; onBack: () => void }
   );
 }
 
-function copyText(value: string) {
+async function copyText(value: string) {
   if (!value) return;
-  void navigator.clipboard?.writeText(value);
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+  const element = document.createElement("textarea");
+  element.value = value;
+  element.style.position = "fixed";
+  element.style.opacity = "0";
+  document.body.appendChild(element);
+  element.select();
+  document.execCommand("copy");
+  document.body.removeChild(element);
 }
 
 function sortRequests(requests: DeploymentRequest[]) {
@@ -329,4 +366,42 @@ function statusTone(status: DeploymentRequest["status"]) {
   if (status === "pending") return "warn";
   if (status === "deployed") return "ok";
   return "neutral";
+}
+
+function requestAuditItems(request: DeploymentRequest) {
+  const items = [
+    {
+      key: "requested",
+      title: "requested",
+      actor: request.requested_by || "-",
+      time: formatDate(request.created_at),
+      message: request.request_message || "-",
+    },
+  ];
+  if (request.status === "pending") {
+    items.push({
+      key: "pending",
+      title: "pending review",
+      actor: "-",
+      time: "-",
+      message: "Waiting for operator decision.",
+    });
+    return items;
+  }
+  const operator = request.reviewed_by || request.deployed_by || "-";
+  items.push({
+    key: "reviewed",
+    title: "reviewed",
+    actor: operator,
+    time: formatDate(request.updated_at),
+    message: request.operator_message || "-",
+  });
+  items.push({
+    key: request.status,
+    title: request.status,
+    actor: operator,
+    time: formatDate(request.deployed_at || request.updated_at),
+    message: request.deployment_id ? `deployment ${shortID(request.deployment_id, 16)}` : request.operator_message || "-",
+  });
+  return items;
 }

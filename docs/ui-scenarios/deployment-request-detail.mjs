@@ -21,6 +21,7 @@ export default {
     await page.click("#requestQueue .rowButtons .button");
     await page.waitForSelector("#requestDetailPage");
     await page.waitForText("#requestDetailPage", "Request timeline");
+    await page.waitForText("#requestDetailPage", "Request audit");
     await page.waitForText("#requestDetailPage", "Target release");
     await capture(this.id);
   },

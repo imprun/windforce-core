@@ -17,6 +17,7 @@ export default {
     await openRequestDetail(page, request.id);
     await page.waitForText("#requestDetailPage", "deployed");
     await page.waitForText("#requestDetailPage", "Deployed");
+    await page.waitForText("#requestDetailPage", "Request audit");
     await capture(this.id);
   },
 };

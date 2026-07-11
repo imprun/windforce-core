@@ -504,6 +504,9 @@ async function stabilizePage(page) {
         caret-color: transparent !important;
         transition: none !important;
       }
+      .toast {
+        display: none !important;
+      }
     `;
     if (document.activeElement instanceof HTMLElement) {
       document.activeElement.blur();

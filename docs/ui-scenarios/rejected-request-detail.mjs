@@ -28,6 +28,7 @@ export default {
     await openRequestDetail(page, rejected.id);
     await page.waitForText("#requestDetailPage", "rejected");
     await page.waitForText("#requestDetailPage", "Rejected");
+    await page.waitForText("#requestDetailPage", "Request audit");
     await capture(this.id);
   },
 };
