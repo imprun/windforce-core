@@ -324,7 +324,7 @@ function RepositoryTab({ source, onChanged }: { source: GitSource; onChanged: ()
 
   async function handleDelete() {
     const confirmed = window.confirm(
-      `Remove app ${source.name}? The repository source registration is deleted; release history remains in the audit trail.`,
+      `Remove app ${source.name}? The repository source registration is deleted; release history remains available, and this deletion is recorded in audit.`,
     );
     if (!confirmed) return;
     setBusy(true);
