@@ -92,12 +92,13 @@ export function AppDetailPage({ sourceID, tab }: { sourceID: number; tab: string
   // and publishing then have nothing to operate on.
   const visibleTabs = source ? tabs : tabs.filter((item) => item.key !== "repository");
 
+  const title = app ? app.app_key : source!.name;
   return (
     <Layout
-      title={source ? source.name : app!.app_key}
+      title={title}
       subtitle={
         source
-          ? `Repository source #${source.id} · ${source.repo_url}`
+          ? `Repository source #${source.id}${source.name !== title ? ` · ${source.name}` : ""} · ${source.repo_url}`
           : "Repository source removed · the released contract is still active"
       }
       actions={
@@ -138,6 +139,7 @@ export function AppDetailPage({ sourceID, tab }: { sourceID: number; tab: string
       {publishing && source ? (
         <PublishReleaseDialog
           source={source}
+          appKey={app?.app_key}
           onClose={() => setPublishing(false)}
           onPublished={() => {
             setPublishing(false);
@@ -353,7 +355,7 @@ function RepositoryTab({ source, onChanged }: { source: GitSource; onChanged: ()
         }
       >
         <div className="formGrid">
-          <Field label="App name">
+          <Field label="Source name" hint="Repository source alias. The app key comes from windforce.json at release.">
             <input value={name} onChange={(event) => setName(event.target.value)} />
           </Field>
           <Field label="Repository URL">
@@ -403,7 +405,7 @@ function ReleasesTab({ appKey, released, repoURL }: { appKey: string; released: 
   const state = useAsync(async () => (released ? api.appHistory(appKey) : Promise.resolve([])), [api, appKey, released]);
 
   return (
-    <Panel title="Release history" subtitle="Who published which commit, and why.">
+    <Panel title="Release history" subtitle="Who published which worker-visible contract, and why. Configuration changes are on the Audit tab.">
       {state.error ? <ErrorNotice message={state.error} onRetry={state.reload} /> : null}
       {state.loading ? <Loading /> : null}
       {state.data && state.data.length === 0 ? (

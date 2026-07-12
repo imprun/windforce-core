@@ -98,7 +98,7 @@ export function RegisterAppDialog({
       wide
     >
       <div className="formGrid">
-        <Field label="App name">
+        <Field label="Source name" hint="Repository source alias. The app key itself comes from windforce.json at release.">
           <input value={name} onChange={(event) => setName(event.target.value)} placeholder="echo" autoFocus />
         </Field>
         <Field label="Repository URL">

@@ -7,10 +7,12 @@ import { Link } from "../lib/router";
 
 export function PublishReleaseDialog({
   source,
+  appKey,
   onClose,
   onPublished,
 }: {
   source: GitSource;
+  appKey?: string;
   onClose: () => void;
   onPublished: (result: SyncResult) => void;
 }) {
@@ -36,12 +38,13 @@ export function PublishReleaseDialog({
   return (
     <Modal
       id="publishReleaseDialog"
-      title={`Publish Release — ${source.name}`}
+      title={`Publish Release — ${appKey || source.name}`}
       subtitle="Validates the repository source at HEAD and publishes the worker-visible contract."
       onClose={onClose}
     >
       <DefinitionList
         items={[
+          ["Repository source", source.name],
           ["Repository", source.repo_url],
           ["Branch", source.branch || "main"],
           ["Subpath", source.subpath || "(repo root)"],

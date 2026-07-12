@@ -16,8 +16,10 @@ export function App() {
   }
 
   if (matchRoute("/monitoring", path)) return <MonitoringPage />;
-  // Back-compat for the pre-rename bookmark.
-  if (matchRoute("/jobs", path)) return <MonitoringPage />;
+  // Back-compat: /jobs was the pre-rename route, and /jobs/{id} was the
+  // removed per-job detail page (ADR 0005).
+  const legacyJobs = matchRoute("/jobs/:id?", path);
+  if (legacyJobs) return <MonitoringPage legacyJobID={legacyJobs.id} />;
   if (matchRoute("/settings", path)) return <SettingsPage />;
   return <AppsPage />;
 }

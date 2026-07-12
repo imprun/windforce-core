@@ -114,9 +114,17 @@ export function AppsPage() {
                           className="cellTitle"
                           onClick={(event) => event.stopPropagation()}
                         >
-                          {source ? source.name : app!.app_key}
+                          {app ? app.app_key : source!.name}
                         </Link>
-                        <span className="cellSub">{app ? app.app_key : "not released"}</span>
+                        <span className="cellSub">
+                          {app
+                            ? source
+                              ? source.name !== app.app_key
+                                ? `source / ${source.name}`
+                                : "released"
+                              : "repository source removed"
+                            : "registered · pending release"}
+                        </span>
                       </td>
                       <td>
                         <ReleaseStateBadge released={Boolean(app || source?.last_synced_commit)} />

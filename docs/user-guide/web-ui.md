@@ -48,15 +48,15 @@ Publish Release validates the repository source at HEAD and publishes it as the 
 3. Add a release note for the audit trail.
 4. Publish; the release history records the actor, commit, and note.
 
-## Audit release history
+## Review release history
 
-The Releases tab is the audit trail: every record shows who published which commit, from which source, and why.
+The Releases tab is the publish history of the worker-visible contract: who published which commit, from which source, and why. Configuration changes live on the Audit tab.
 
-![Audit release history](../assets/ui/release-history.png)
+![Review release history](../assets/ui/release-history.png)
 
 1. Open an app and switch to the Releases tab.
-2. Each record shows the actor, commit, source, release id, and note.
-3. Use the record to answer who changed the worker-visible contract, and when.
+2. Each release record shows the actor, commit, source, release id, and note.
+3. Use it to answer who published which contract, and when; configuration changes are on the Audit tab.
 
 ## Review action schemas
 

@@ -7,7 +7,7 @@ import { useApp, useAsync } from "../lib/app-context";
 import { formatRelative } from "../lib/format";
 import { Link } from "../lib/router";
 
-export function MonitoringPage() {
+export function MonitoringPage({ legacyJobID }: { legacyJobID?: string } = {}) {
   const { api } = useApp();
   const [windowSeconds, setWindowSeconds] = useState<number>(86400);
 
@@ -35,6 +35,12 @@ export function MonitoringPage() {
         </>
       }
     >
+      {legacyJobID ? (
+        <div className="inlineNotice">
+          The Web UI shows aggregate job activity only. Individual runs such as job{" "}
+          <span className="mono">{legacyJobID}</span> are available through the control-plane API and CLI.
+        </div>
+      ) : null}
       {state.error ? <ErrorNotice message={state.error} onRetry={state.reload} /> : null}
       {state.loading && !summary ? <Loading /> : null}
 
