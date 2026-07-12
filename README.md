@@ -393,6 +393,9 @@ The Web UI is intentionally narrow:
 - monitor aggregate job activity per app and route tag (queued, running,
   recent completed/failed/canceled, failure rate)
 - review released action schemas (the materialized invocation contract)
+- link to the app source on GitHub/GitLab at the pinned release commit
+  instead of mirroring code in the UI
+  ([ADR 0006](docs/adr/0006-source-links-not-source-mirror.md))
 
 The UI deliberately shows aggregates, not individual job records: at
 production volume nobody reads millions of rows. Per-run payloads, logs, and

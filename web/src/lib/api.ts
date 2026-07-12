@@ -120,14 +120,6 @@ export type HistoryItem = {
   created_at: string;
 };
 
-export type AppSource = {
-  app_key: string;
-  git_source_id: number;
-  commit_sha: string;
-  files: Record<string, string>;
-  skipped?: string[];
-};
-
 export type JobStatusCounts = {
   queued_count: number;
   running_count: number;
@@ -228,10 +220,6 @@ export class WindforceApi {
 
   appHistory(appKey: string): Promise<HistoryItem[]> {
     return this.request(`/apps/${encodeURIComponent(appKey)}/history`);
-  }
-
-  appSource(appKey: string): Promise<AppSource> {
-    return this.request(`/apps/${encodeURIComponent(appKey)}/source`);
   }
 
   actionSchemas(appKey: string, actionKey: string): Promise<ActionSchemas> {

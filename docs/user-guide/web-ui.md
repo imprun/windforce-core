@@ -34,8 +34,8 @@ The app detail Overview tab shows the active worker contract, the exposed action
 
 1. Open an app from the Apps view.
 2. Review the active contract: app key, release commit, entrypoint, route tag, and timeout.
-3. Check the action list workers can execute.
-4. Use the tabs for repository settings, release history, action schemas, and the source snapshot.
+3. Follow the source code link to browse the repository at the pinned release commit on GitHub/GitLab.
+4. Use the tabs for repository settings, release history, and action schemas.
 
 ## Publish a release
 

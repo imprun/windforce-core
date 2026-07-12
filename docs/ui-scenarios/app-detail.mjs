@@ -8,8 +8,8 @@ export default {
   guide: [
     "Open an app from the Apps view.",
     "Review the active contract: app key, release commit, entrypoint, route tag, and timeout.",
-    "Check the action list workers can execute.",
-    "Use the tabs for repository settings, release history, action schemas, and the source snapshot.",
+    "Follow the source code link to browse the repository at the pinned release commit on GitHub/GitLab.",
+    "Use the tabs for repository settings, release history, and action schemas.",
   ],
   async run({ page, capture }) {
     await page.goto();

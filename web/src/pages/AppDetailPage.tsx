@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Layout } from "../components/Layout";
 import {
   DefinitionList,
@@ -22,6 +22,7 @@ import {
 } from "../lib/api";
 import { useApp, useAsync } from "../lib/app-context";
 import { formatJSON, formatRelative, formatTime, shortSHA } from "../lib/format";
+import { forgeCommitURL, forgeName, forgeTreeURL } from "../lib/repo";
 import { Link, useRouter } from "../lib/router";
 
 const tabs = [
@@ -29,7 +30,6 @@ const tabs = [
   { key: "repository", label: "Repository" },
   { key: "releases", label: "Releases" },
   { key: "actions", label: "Actions" },
-  { key: "source", label: "Source" },
 ] as const;
 
 type TabKey = (typeof tabs)[number]["key"];
@@ -125,9 +125,10 @@ export function AppDetailPage({ sourceID, tab }: { sourceID: number; tab: string
 
       {activeTab === "overview" ? <OverviewTab source={source} app={app} detail={detail} onPublish={() => setPublishing(true)} /> : null}
       {activeTab === "repository" && source ? <RepositoryTab source={source} onChanged={state.reload} /> : null}
-      {activeTab === "releases" ? <ReleasesTab appKey={app ? app.app_key : source!.name} released={Boolean(app)} /> : null}
+      {activeTab === "releases" ? (
+        <ReleasesTab appKey={app ? app.app_key : source!.name} released={Boolean(app)} repoURL={source?.repo_url || ""} />
+      ) : null}
       {activeTab === "actions" ? <ActionsTab app={app} detail={detail} /> : null}
-      {activeTab === "source" ? <SourceTab appKey={app?.app_key || null} /> : null}
 
       {publishing && source ? (
         <PublishReleaseDialog
@@ -190,7 +191,15 @@ function OverviewTab({
         <DefinitionList
           items={[
             ["App key", <span className="mono">{app.app_key}</span>],
-            ["Release commit", <span className="mono">{shortSHA(app.commit_sha, 16)}</span>],
+            ["Release commit", <CommitRef repoURL={source?.repo_url || ""} commit={app.commit_sha} />],
+            [
+              "Source code",
+              <SourceCodeRef
+                repoURL={source?.repo_url || ""}
+                commit={app.commit_sha}
+                subpath={source?.subpath || ""}
+              />,
+            ],
             ["Entrypoint", <span className="mono">{app.entrypoint}</span>],
             ["Script language", app.script_lang],
             ["Route tag", <span className="mono">{routeTag}</span>],
@@ -384,7 +393,7 @@ function RepositoryTab({ source, onChanged }: { source: GitSource; onChanged: ()
   );
 }
 
-function ReleasesTab({ appKey, released }: { appKey: string; released: boolean }) {
+function ReleasesTab({ appKey, released, repoURL }: { appKey: string; released: boolean; repoURL: string }) {
   const { api } = useApp();
   const state = useAsync(async () => (released ? api.appHistory(appKey) : Promise.resolve([])), [api, appKey, released]);
 
@@ -416,7 +425,9 @@ function ReleasesTab({ appKey, released }: { appKey: string; released: boolean }
                     <span className="cellSub">{formatTime(item.created_at)}</span>
                   </td>
                   <td>{item.created_by || "system"}</td>
-                  <td className="mono">{shortSHA(item.commit_sha, 12)}</td>
+                  <td>
+                    <CommitRef repoURL={repoURL} commit={item.commit_sha} />
+                  </td>
                   <td>{item.source}</td>
                   <td className="mono">{item.deployment_id ? shortSHA(item.deployment_id, 12) : "—"}</td>
                   <td>{item.message || "—"}</td>
@@ -473,58 +484,43 @@ function ActionPanel({ appKey, action }: { appKey: string; action: ActionView })
   );
 }
 
-function SourceTab({ appKey }: { appKey: string | null }) {
-  const { api } = useApp();
-  const state = useAsync(
-    async () => (appKey ? api.appSource(appKey) : Promise.resolve(null)),
-    [api, appKey],
+// Commit reference: linked to the forge commit page when the repo host is
+// GitHub/GitLab, plain text otherwise.
+function CommitRef({ repoURL, commit }: { repoURL: string; commit: string | null | undefined }) {
+  if (!commit) return <span>—</span>;
+  const url = forgeCommitURL(repoURL, commit);
+  if (!url) return <span className="mono">{shortSHA(commit, 12)}</span>;
+  return (
+    <a className="mono" href={url} target="_blank" rel="noreferrer">
+      {shortSHA(commit, 12)}
+    </a>
   );
-  const files = useMemo(() => Object.keys(state.data?.files || {}).sort(), [state.data]);
-  const [selected, setSelected] = useState<string | null>(null);
-  const active = selected && state.data?.files[selected] !== undefined ? selected : files[0] || null;
+}
 
-  if (!appKey) {
+// The UI does not mirror app source; it links to the repository host at the
+// pinned release commit (ADR 0006).
+function SourceCodeRef({
+  repoURL,
+  commit,
+  subpath,
+}: {
+  repoURL: string;
+  commit: string | null | undefined;
+  subpath: string;
+}) {
+  const url = forgeTreeURL(repoURL, commit, subpath);
+  if (url) {
     return (
-      <Panel title="Repository snapshot" subtitle="Materialized files at the release commit.">
-        <EmptyState title="No release published yet, so there is no materialized snapshot." />
-      </Panel>
+      <a href={url} target="_blank" rel="noreferrer">
+        Browse {subpath || "repository"} at {shortSHA(commit, 10)} on {forgeName(repoURL)}
+      </a>
     );
   }
-
+  if (!repoURL) return <span>repository source removed</span>;
   return (
-    <Panel
-      title="Repository snapshot"
-      subtitle={
-        state.data ? `Materialized files at ${shortSHA(state.data.commit_sha, 12)}.` : "Materialized files at the release commit."
-      }
-    >
-      {state.error ? <ErrorNotice message={state.error} onRetry={state.reload} /> : null}
-      {state.loading ? <Loading /> : null}
-      {state.data ? (
-        <div className="fileBrowser">
-          <ul className="fileList">
-            {files.map((file) => (
-              <li key={file}>
-                <button
-                  type="button"
-                  className={file === active ? "fileItem active" : "fileItem"}
-                  onClick={() => setSelected(file)}
-                >
-                  {file}
-                </button>
-              </li>
-            ))}
-            {(state.data.skipped || []).map((file) => (
-              <li key={`skipped-${file}`} className="fileSkipped" title="Skipped: too large or not UTF-8">
-                {file} (skipped)
-              </li>
-            ))}
-          </ul>
-          <div className="fileContent">
-            {active ? <JsonBlock value={state.data.files[active]} /> : <EmptyState title="No files in the snapshot." />}
-          </div>
-        </div>
-      ) : null}
-    </Panel>
+    <span className="mono">
+      {repoURL}
+      {subpath ? ` · ${subpath}` : ""}
+    </span>
   );
 }

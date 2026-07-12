@@ -53,7 +53,7 @@ Settings 세 항목만 노출한다.
 |---|---|
 | `/ui/` | Apps 목록 |
 | `/ui/apps/{sourceId}` | App 상세 (Overview 탭) |
-| `/ui/apps/{sourceId}/{tab}` | App 상세 탭: `overview`, `repository`, `releases`, `actions`, `source` |
+| `/ui/apps/{sourceId}/{tab}` | App 상세 탭: `overview`, `repository`, `releases`, `actions` |
 | `/ui/jobs` | Jobs 집계 대시보드 |
 | `/ui/settings` | 컨트롤 플레인 설정 |
 
@@ -80,8 +80,10 @@ credential을 받고, 등록 전에 `probe`로 도달성과 branch 존재를 확
 한 App의 모든 것을 탭으로 다룬다.
 
 - **Overview**: active contract (entrypoint, script lang, route tag, commit,
-  timeout, capabilities)와 action 목록, readiness 신호(등록 상태, 마지막
-  sync, worker tag). release되지 않았으면 그 사실과 다음 단계를 안내한다.
+  timeout, capabilities)와 action 목록, readiness 신호. 코드는 UI가
+  미러링하지 않는다: release commit에 고정된 GitHub/GitLab 링크로 연결한다
+  ([ADR 0006](adr/0006-source-links-not-source-mirror.md)). release되지
+  않았으면 그 사실과 다음 단계를 안내한다.
 - **Repository**: repository source 설정을 보고 수정한다 (name, repo URL,
   branch, subpath, creds ref). 수정은 `PATCH git_sources/{id}`로 반영되고
   서버가 재검증한다. `probe`로 도달성 확인.
@@ -90,8 +92,6 @@ credential을 받고, 등록 전에 `probe`로 도달성과 branch 존재를 확
   버튼을 둔다.
 - **Actions**: action별 input/output JSON Schema (`actions/{action}/schema`).
   action 호출은 API/CLI의 몫이고 UI는 계약(스키마)만 보여준다.
-- **Source**: 현재 release commit의 materialized repository snapshot 파일
-  뷰어 (`apps/{app}/source`).
 
 위험 작업(App 삭제)은 Repository 탭 하단의 danger zone에 둔다.
 
@@ -120,9 +120,10 @@ UI는 `local-dev`를 기본 actor로 사용한다.
 
 - 버튼은 App 관점으로 쓴다: `Register App`, `Publish Release`, `Open App`.
 - `Repository`는 최상위 메뉴로 쓰지 않는다. App 상세 안의 Repository 탭과
-  repository snapshot에서만 쓴다.
+  repository source 맥락에서만 쓴다.
 - `Source`는 단독 메뉴나 주 대상 이름으로 쓰지 않고 `repository source` 또는
-  source snapshot처럼 범위를 붙인다.
+  `source code`처럼 범위를 붙인다. 코드 자체는 UI가 보여주지 않고 forge
+  링크로 연결한다.
 - `Deployment`는 사용자 작업 이름으로 남발하지 않는다. 상태 변경 record나
   audit 맥락에서는 `release` 또는 `release record`로 쓴다.
 - 집계 화면과 API 대상은 `Job`으로 부르고, 문장 안에서 실행 사건을
