@@ -223,6 +223,7 @@ async function createCdpBrowser(config) {
     "--no-first-run",
     "--no-default-browser-check",
     `--window-size=${config.viewport.width},${config.viewport.height}`,
+    ...(process.env.CHROME_ARGS ? process.env.CHROME_ARGS.split(/\s+/).filter(Boolean) : []),
     "about:blank",
   ], { stdio: "ignore", windowsHide: true });
 
@@ -283,7 +284,7 @@ async function removeTempDir(dir) {
       return;
     } catch (error) {
       if (!["EBUSY", "EPERM", "ENOTEMPTY"].includes(error.code)) throw error;
-      await sleep(250 * (attempt + 1));
+      await delay(250 * (attempt + 1));
     }
   }
 }

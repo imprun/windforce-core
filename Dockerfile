@@ -4,7 +4,7 @@ WORKDIR /src/web
 COPY web/package.json web/bun.lock ./
 RUN bun install --frozen-lockfile
 COPY web ./
-RUN bun run build:next
+RUN bun run build
 
 FROM golang:1.23-bookworm AS build
 
@@ -14,7 +14,7 @@ RUN go mod download
 
 COPY . .
 RUN rm -rf internal/webui/assets
-COPY --from=web-build /src/web/out ./internal/webui/assets
+COPY --from=web-build /src/web/dist ./internal/webui/assets
 RUN CGO_ENABLED=0 GOOS=linux go build -o /out/windforce-lite ./cmd/windforce-lite
 
 FROM debian:bookworm-slim

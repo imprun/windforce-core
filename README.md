@@ -47,16 +47,18 @@ The ordering is intentional: a catalog entry must not point at a bundle that a
 worker cannot fetch.
 
 The Docker Compose control-plane runs inside a container and maps the API to
-`127.0.0.1:18091` by default. The local Web UI is a Bun/Next development server
-on `127.0.0.1:18090/ui/` and proxies control-plane API calls to the backend.
-Local development uses `tools/windforce_control.py` against the API instead of a
-separate source-sync command.
+`127.0.0.1:18091` by default. The local Web UI is a Vite development server
+(run with Bun) on `127.0.0.1:18090/ui/` and proxies control-plane API calls to
+the backend. Local development uses `tools/windforce_control.py` against the
+API instead of a separate source-sync command.
 
-The Web UI is live during local development. Run `make web-dev` for a host Bun
-server, or `make compose-up` for the Compose-managed Bun server. Docker image
-builds are the bundling boundary: the Dockerfile builds the Web UI with Bun,
-copies the exported files into `internal/webui/assets`, then compiles the Go
-binary with embedded assets.
+The Web UI is live during local development. Run `make web-dev` for a host dev
+server, or `make compose-up` for the Compose-managed dev server. The production
+UI is a static Vite build embedded into the Go binary: `make web-embed`
+refreshes `internal/webui/assets` from `web/dist`, and the Dockerfile performs
+the same build inside the image so the embedded assets are always rebuilt from
+source. The API process serves the UI at `/ui/` with an SPA fallback for
+client-side routes. See [ADR 0004](docs/adr/0004-web-ui-rewrite.md).
 
 ## Docker Compose profiles
 
@@ -385,14 +387,16 @@ mutate the Windforce catalog model.
 
 The Web UI is intentionally narrow:
 
-- register git sources
-- sync a source and deploy an app/action catalog entry
-- show deployment history and currently active deployment
-- inspect run status and errors
-- roll back to a previous deployment when the source object is still available
+- register apps backed by git repository sources
+- publish releases (validate a source at HEAD and expose the worker contract)
+- show release history and the currently active contract per app
+- inspect job status, results, and logs, and cancel unsettled jobs
+- test-run released actions against their materialized schemas
 
 It is not the full Windforce console: no SaaS tenant management, billing, quota,
-scheduler UI, workflow designer, or marketplace.
+scheduler UI, workflow designer, or marketplace. The screen model is documented
+in [docs/web-ui-model.md](docs/web-ui-model.md) and the generated user guide in
+[docs/user-guide/web-ui.md](docs/user-guide/web-ui.md).
 
 The local backend stores run, job, event, and HITL state in a JSON file for
 development and smoke checks. The PostgreSQL backend stores production run, job,
