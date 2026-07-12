@@ -9,8 +9,9 @@ import {
   type ReactNode,
 } from "react";
 
-// BASE is "/ui/" in both dev and production builds.
-const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+// BASE is "/ui/" in both dev and production builds. The fallback keeps the
+// module importable outside Vite (e.g. bun test).
+const BASE = (import.meta.env?.BASE_URL ?? "/").replace(/\/$/, "");
 
 type RouterState = {
   path: string;
@@ -78,10 +79,18 @@ export function Link({ to, onClick, children, ...rest }: LinkProps) {
   );
 }
 
+function safeDecode(segment: string): string {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
+
 // matchRoute("/apps/:id/:tab?", "/apps/3/releases") -> { id: "3", tab: "releases" }
 export function matchRoute(pattern: string, path: string): Record<string, string> | null {
   const patternParts = pattern.split("/").filter(Boolean);
-  const pathParts = path.split("/").filter(Boolean).map(decodeURIComponent);
+  const pathParts = path.split("/").filter(Boolean).map(safeDecode);
   const params: Record<string, string> = {};
   let i = 0;
   for (const part of patternParts) {

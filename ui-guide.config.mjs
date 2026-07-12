@@ -24,6 +24,9 @@ export default {
   scenariosDir: "docs/ui-scenarios",
   screenshotsDir: "docs/assets/ui",
   viewport: { width: 1440, height: 980 },
+  // Extra Chromium flags for the CDP fallback browser, e.g.
+  // CHROME_ARGS=--no-sandbox in rootless containers.
+  chromeArgs: (process.env.CHROME_ARGS || "").split(/\s+/).filter(Boolean),
 
   // The guide runs against the embedded Web UI of a standalone build so the
   // screenshots show exactly what `go build` ships. Requires bun and go.

@@ -9,54 +9,37 @@ import {
   Panel,
   StatusBadge,
 } from "../components/ui";
-import type { JobDetail, JobResult } from "../lib/api";
-import { useApp } from "../lib/app-context";
+import { errorMessage } from "../lib/api";
+import { useApp, useAsync } from "../lib/app-context";
 import { formatDuration, formatRelative, formatTime, shortSHA } from "../lib/format";
 import { Link } from "../lib/router";
 
 export function JobDetailPage({ jobID }: { jobID: string }) {
   const { api, notify } = useApp();
-  const [job, setJob] = useState<JobDetail | null>(null);
-  const [result, setResult] = useState<JobResult | null>(null);
-  const [logs, setLogs] = useState<string>("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
   const [canceling, setCanceling] = useState(false);
-  const [tick, setTick] = useState(0);
 
-  useEffect(() => {
-    let canceled = false;
-    async function load() {
-      try {
-        const nextJob = await api.job(jobID);
-        if (canceled) return;
-        setJob(nextJob);
-        setError("");
-        const [nextResult, nextLogs] = await Promise.all([
-          api.jobResult(jobID).catch(() => null),
-          api.jobLogs(jobID).catch(() => ""),
-        ]);
-        if (canceled) return;
-        setResult(nextResult);
-        setLogs(nextLogs);
-      } catch (cause) {
-        if (!canceled) setError(cause instanceof Error ? cause.message : String(cause));
-      } finally {
-        if (!canceled) setLoading(false);
-      }
-    }
-    void load();
-    return () => {
-      canceled = true;
-    };
-  }, [api, jobID, tick]);
+  const state = useAsync(
+    async () => {
+      const job = await api.job(jobID);
+      const [result, logs] = await Promise.all([
+        api.jobResult(jobID).catch(() => null),
+        api.jobLogs(jobID).catch(() => ""),
+      ]);
+      return { job, result, logs };
+    },
+    [api, jobID],
+  );
+  const job = state.data?.job || null;
+  const result = state.data?.result || null;
+  const logs = state.data?.logs || "";
 
   // Poll while the job has not settled.
+  const reload = state.reload;
   useEffect(() => {
     if (!job || job.state === "completed") return;
-    const timer = window.setTimeout(() => setTick((current) => current + 1), 2000);
+    const timer = window.setTimeout(() => reload(), 2000);
     return () => window.clearTimeout(timer);
-  }, [job, tick]);
+  }, [job, reload]);
 
   async function handleCancel() {
     const reason = window.prompt("Cancel reason (optional):", "") ?? null;
@@ -69,9 +52,9 @@ export function JobDetailPage({ jobID }: { jobID: string }) {
       } else if (outcome.completed_now || outcome.soft_canceled) {
         notify("ok", "Cancel requested.");
       }
-      setTick((current) => current + 1);
+      state.reload();
     } catch (cause) {
-      notify("error", cause instanceof Error ? cause.message : String(cause));
+      notify("error", errorMessage(cause));
     } finally {
       setCanceling(false);
     }
@@ -86,7 +69,7 @@ export function JobDetailPage({ jobID }: { jobID: string }) {
       actions={
         <>
           {job ? <StatusBadge status={statusLabel} /> : null}
-          <button className="button" type="button" onClick={() => setTick((current) => current + 1)}>
+          <button className="button" type="button" onClick={() => state.reload()}>
             Refresh
           </button>
           {job && job.state !== "completed" ? (
@@ -100,9 +83,9 @@ export function JobDetailPage({ jobID }: { jobID: string }) {
         </>
       }
     >
-      {error ? <ErrorNotice message={error} onRetry={() => setTick((current) => current + 1)} /> : null}
-      {loading && !job ? <Loading /> : null}
-      {!loading && !job && !error ? <EmptyState title="Job not found." /> : null}
+      {state.error ? <ErrorNotice message={state.error} onRetry={state.reload} /> : null}
+      {state.loading && !job ? <Loading /> : null}
+      {!state.loading && !job && !state.error ? <EmptyState title="Job not found." /> : null}
 
       {job ? (
         <>

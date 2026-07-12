@@ -13,10 +13,12 @@ export const defaultSettings: Settings = {
 export function loadSettings(): Settings {
   const store = globalThis.localStorage;
   if (!store) return defaultSettings;
+  // `??` keeps a deliberately cleared value ("") cleared across reloads;
+  // only a missing key falls back to the default.
   return {
     workspace: store.getItem("wf.workspace") || defaultSettings.workspace,
-    token: store.getItem("wf.token") || defaultSettings.token,
-    actor: store.getItem("wf.actor") || defaultSettings.actor,
+    token: store.getItem("wf.token") ?? defaultSettings.token,
+    actor: store.getItem("wf.actor") ?? defaultSettings.actor,
   };
 }
 
@@ -219,15 +221,6 @@ export type CancelResult = {
   already_completed: boolean;
 };
 
-export type WorkerTags = {
-  tags?: Array<{
-    tag: string;
-    live_workers: number;
-    capabilities?: string[];
-  }>;
-  dedicated_tag?: string | null;
-};
-
 export type RegisterSourcePayload = {
   name: string;
   repo_url: string;
@@ -255,6 +248,14 @@ export class ApiError extends Error {
   ) {
     super(message);
   }
+}
+
+export function errorMessage(cause: unknown): string {
+  if (cause instanceof ApiError && cause.status === 401) {
+    return "Unauthorized — check the API token in Settings.";
+  }
+  if (cause instanceof Error) return cause.message;
+  return String(cause);
 }
 
 type RequestOptions = {
@@ -355,10 +356,6 @@ export class WindforceApi {
       method: "POST",
       body: reason ? { reason } : {},
     });
-  }
-
-  workerTags(): Promise<WorkerTags> {
-    return this.request("/worker-tags");
   }
 
   private async request<T>(path: string, options: RequestOptions = {}): Promise<T> {

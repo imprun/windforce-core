@@ -1,42 +1,77 @@
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { Layout } from "../components/Layout";
 import { EmptyState, ErrorNotice, Loading, StatusBadge } from "../components/ui";
-import type { JobListItem } from "../lib/api";
+import { errorMessage, type JobListItem } from "../lib/api";
 import { useApp, useAsync } from "../lib/app-context";
 import { formatDuration, formatRelative, formatTime } from "../lib/format";
-import { useRouter } from "../lib/router";
+import { Link, useRouter } from "../lib/router";
 
 const statusFilters = ["all", "queued", "running", "success", "failure", "canceled"] as const;
 
+type ExtraPages = {
+  // Which base query the accumulated pages belong to; extra pages from a
+  // previous filter are ignored at render time instead of flashing through.
+  key: string;
+  items: JobListItem[];
+  nextCursor?: string;
+};
+
 export function JobsPage() {
-  const { api } = useApp();
+  const { api, notify } = useApp();
   const { navigate } = useRouter();
   const [status, setStatus] = useState<(typeof statusFilters)[number]>("all");
   const [appFilter, setAppFilter] = useState("");
-  const [pages, setPages] = useState<JobListItem[]>([]);
-  const [cursor, setCursor] = useState<string | undefined>();
+  const [extra, setExtra] = useState<ExtraPages | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
 
+  const filterKey = `${status}|${appFilter.trim()}`;
   const summary = useAsync(() => api.jobsSummary(), [api]);
   const list = useAsync(
     () => api.jobs({ status, app: appFilter.trim() || undefined, limit: 50 }),
     [api, status, appFilter],
   );
 
-  // Reset accumulated pages whenever the first page reloads.
-  useEffect(() => {
-    setPages([]);
-    setCursor(undefined);
-  }, [list.data]);
+  const extraForFilter = extra && extra.key === filterKey ? extra : null;
+  const items = useMemo(() => {
+    const merged = [...(list.data?.items || []), ...(extraForFilter?.items || [])];
+    const seen = new Set<string>();
+    return merged.filter((job) => {
+      if (seen.has(job.id)) return false;
+      seen.add(job.id);
+      return true;
+    });
+  }, [list.data, extraForFilter]);
 
-  const items = [...(list.data?.items || []), ...pages];
-  const hasMore = cursor !== undefined ? Boolean(cursor) : Boolean(list.data?.pagination.has_more);
-  const nextCursor = cursor ?? list.data?.pagination.next_cursor;
+  const nextCursor = extraForFilter ? extraForFilter.nextCursor : list.data?.pagination.next_cursor;
+  const hasMore = extraForFilter
+    ? Boolean(extraForFilter.nextCursor)
+    : Boolean(list.data?.pagination.has_more && nextCursor);
 
   async function loadMore() {
-    if (!nextCursor) return;
-    const response = await api.jobs({ status, app: appFilter.trim() || undefined, limit: 50, cursor: nextCursor });
-    setPages((current) => [...current, ...response.items]);
-    setCursor(response.pagination.has_more ? response.pagination.next_cursor : "");
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    const key = filterKey;
+    try {
+      const response = await api.jobs({ status, app: appFilter.trim() || undefined, limit: 50, cursor: nextCursor });
+      setExtra((current) => {
+        const base = current && current.key === key ? current.items : [];
+        return {
+          key,
+          items: [...base, ...response.items],
+          nextCursor: response.pagination.has_more ? response.pagination.next_cursor : undefined,
+        };
+      });
+    } catch (cause) {
+      notify("error", errorMessage(cause));
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
+  function refresh() {
+    setExtra(null);
+    summary.reload();
+    list.reload();
   }
 
   return (
@@ -44,14 +79,7 @@ export function JobsPage() {
       title="Jobs"
       subtitle="Run status across the workspace. Open a job to inspect its input, result, and logs."
       actions={
-        <button
-          className="button"
-          type="button"
-          onClick={() => {
-            summary.reload();
-            list.reload();
-          }}
-        >
+        <button className="button" type="button" onClick={refresh}>
           Refresh
         </button>
       }
@@ -107,9 +135,13 @@ export function JobsPage() {
               {items.map((job) => (
                 <tr key={job.id} className="tableRow clickable" onClick={() => navigate(`/jobs/${job.id}`)}>
                   <td>
-                    <span className="cellTitle mono">
+                    <Link
+                      to={`/jobs/${job.id}`}
+                      className="cellTitle mono"
+                      onClick={(event) => event.stopPropagation()}
+                    >
                       {job.app_key}/{job.action_key}
-                    </span>
+                    </Link>
                     <span className="cellSub mono">{job.id}</span>
                   </td>
                   <td>
@@ -130,10 +162,10 @@ export function JobsPage() {
         </div>
       ) : null}
 
-      {hasMore && nextCursor ? (
+      {hasMore ? (
         <div className="loadMoreRow">
-          <button className="button" type="button" onClick={() => void loadMore()}>
-            Load more
+          <button className="button" type="button" disabled={loadingMore} onClick={() => void loadMore()}>
+            {loadingMore ? "Loading…" : "Load more"}
           </button>
         </div>
       ) : null}

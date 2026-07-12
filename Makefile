@@ -1,4 +1,4 @@
-.PHONY: help fmt test test-postgres build web-install web-dev web-build web-embed web-typecheck clean \
+.PHONY: help fmt test test-postgres build web-install web-dev web-build web-embed web-test web-typecheck clean \
 	compose-up compose-db compose-worker compose-build compose-down compose-reset compose-logs compose-ps postgres-dsn \
 	dev-standalone dev-standalone-postgres dev-api dev-worker worker-once \
 	windforce-variable-set windforce-git-token windforce-register windforce-sync windforce-deploy windforce-sample \
@@ -90,6 +90,7 @@ help:
 	@echo "  web-dev                run the Vite Web UI dev server with live reload on WINDFORCE_LITE_WEB_PORT"
 	@echo "  web-build              build the Web UI to web/dist without touching Go embed assets"
 	@echo "  web-embed              build the Web UI and refresh the Go embed assets"
+	@echo "  web-test               run Web UI unit tests"
 	@echo "  web-typecheck          type-check the Web UI"
 	@echo "  test                   run go test ./..."
 	@echo "  test-postgres          run PostgreSQL integration test against docker compose"
@@ -135,6 +136,9 @@ web-build:
 web-embed: web-build
 	rm -rf internal/webui/assets
 	cp -r web/dist internal/webui/assets
+
+web-test:
+	cd web && $(BUN) run test
 
 web-typecheck:
 	cd web && $(BUN) run typecheck

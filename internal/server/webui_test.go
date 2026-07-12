@@ -30,12 +30,13 @@ func TestWebUIServedWithoutAPIAuth(t *testing.T) {
 	}
 
 	assetPath := regexp.MustCompile(`src="/ui/([^"]+\.js)"`).FindStringSubmatch(page.Body.String())
-	if len(assetPath) == 2 {
-		script := httptest.NewRecorder()
-		handler.ServeHTTP(script, httptest.NewRequest(http.MethodGet, "/ui/"+assetPath[1], nil))
-		if script.Code != http.StatusOK {
-			t.Fatalf("ui script status = %d, want %d", script.Code, http.StatusOK)
-		}
+	if len(assetPath) != 2 {
+		t.Fatalf("ui page did not reference a script asset")
+	}
+	script := httptest.NewRecorder()
+	handler.ServeHTTP(script, httptest.NewRequest(http.MethodGet, "/ui/"+assetPath[1], nil))
+	if script.Code != http.StatusOK {
+		t.Fatalf("ui script status = %d, want %d", script.Code, http.StatusOK)
 	}
 
 	// Client-side SPA routes fall back to index.html.
@@ -46,6 +47,14 @@ func TestWebUIServedWithoutAPIAuth(t *testing.T) {
 	}
 	if !strings.Contains(deepLink.Body.String(), "windforce-lite") {
 		t.Fatalf("ui deep link did not serve the SPA index page")
+	}
+
+	// Missing hashed assets must stay 404 so stale browsers do not cache
+	// index.html under an old bundle URL.
+	missingAsset := httptest.NewRecorder()
+	handler.ServeHTTP(missingAsset, httptest.NewRequest(http.MethodGet, "/ui/assets/index-stalehash.js", nil))
+	if missingAsset.Code != http.StatusNotFound {
+		t.Fatalf("missing asset status = %d, want %d", missingAsset.Code, http.StatusNotFound)
 	}
 
 	api := httptest.NewRecorder()

@@ -179,7 +179,12 @@ async function createPlaywrightBrowser(config) {
           await page.locator(selector).first().click();
         },
         async clickText(text) {
-          await page.getByRole("button", { name: text }).click();
+          // Scenarios click buttons and navigation links alike.
+          await page
+            .locator("button, [role='button'], a")
+            .filter({ hasText: new RegExp(`^\\s*${text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`) })
+            .first()
+            .click();
         },
         async fill(selector, value) {
           await page.locator(selector).fill(value);
@@ -223,7 +228,7 @@ async function createCdpBrowser(config) {
     "--no-first-run",
     "--no-default-browser-check",
     `--window-size=${config.viewport.width},${config.viewport.height}`,
-    ...(process.env.CHROME_ARGS ? process.env.CHROME_ARGS.split(/\s+/).filter(Boolean) : []),
+    ...(config.chromeArgs || []),
     "about:blank",
   ], { stdio: "ignore", windowsHide: true });
 

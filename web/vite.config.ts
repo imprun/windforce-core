@@ -7,6 +7,9 @@ export default defineConfig({
   base: "/ui/",
   plugins: [react()],
   server: {
+    // The compose devstack reaches this server as http://web:3000; Vite's
+    // default host check only allows localhost and IP literals.
+    allowedHosts: ["web"],
     proxy: {
       "/api": { target: apiTarget, changeOrigin: true },
       "/healthz": { target: apiTarget, changeOrigin: true },

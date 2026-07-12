@@ -8,11 +8,20 @@ import {
   JsonBlock,
   Loading,
   Panel,
+  ProbeNotice,
   ReleaseStateBadge,
   StatusBadge,
 } from "../components/ui";
 import { PublishReleaseDialog } from "../features/PublishReleaseDialog";
-import type { ActionView, AppDetail, AppSummary, GitSource, ProbeResult, RunWaitResult } from "../lib/api";
+import {
+  errorMessage,
+  type ActionView,
+  type AppDetail,
+  type AppSummary,
+  type GitSource,
+  type ProbeResult,
+  type RunWaitResult,
+} from "../lib/api";
 import { useApp, useAsync } from "../lib/app-context";
 import { formatJSON, formatRelative, formatTime, shortSHA } from "../lib/format";
 import { Link, useRouter } from "../lib/router";
@@ -65,7 +74,7 @@ export function AppDetailPage({ sourceID, tab }: { sourceID: number; tab: string
     );
   }
 
-  if (!source) {
+  if (!source && !app) {
     return (
       <Layout title="App not found">
         <EmptyState title="This app is not registered in the current workspace.">
@@ -77,28 +86,39 @@ export function AppDetailPage({ sourceID, tab }: { sourceID: number; tab: string
     );
   }
 
+  // A released app can outlive its repository source registration: the
+  // catalog contract stays after DELETE /git_sources. Repository settings
+  // and publishing then have nothing to operate on.
+  const visibleTabs = source ? tabs : tabs.filter((item) => item.key !== "repository");
+
   return (
     <Layout
-      title={source.name}
-      subtitle={`Repository source #${source.id} · ${source.repo_url}`}
+      title={source ? source.name : app!.app_key}
+      subtitle={
+        source
+          ? `Repository source #${source.id} · ${source.repo_url}`
+          : "Repository source removed · the released contract is still active"
+      }
       actions={
         <>
-          <ReleaseStateBadge released={Boolean(app || source.last_synced_commit)} />
+          <ReleaseStateBadge released={Boolean(app || source?.last_synced_commit)} />
           <button className="button" type="button" onClick={() => state.reload()}>
             Refresh
           </button>
-          <button className="button primary" type="button" id="publishReleaseButton" onClick={() => setPublishing(true)}>
-            Publish Release
-          </button>
+          {source ? (
+            <button className="button primary" type="button" id="publishReleaseButton" onClick={() => setPublishing(true)}>
+              Publish Release
+            </button>
+          ) : null}
         </>
       }
     >
       <nav className="tabBar" aria-label="App detail tabs">
-        {tabs.map((item) => (
+        {visibleTabs.map((item) => (
           <Link
             key={item.key}
             className={item.key === activeTab ? "tab active" : "tab"}
-            to={item.key === "overview" ? `/apps/${source.id}` : `/apps/${source.id}/${item.key}`}
+            to={item.key === "overview" ? `/apps/${sourceID}` : `/apps/${sourceID}/${item.key}`}
           >
             {item.label}
           </Link>
@@ -106,12 +126,12 @@ export function AppDetailPage({ sourceID, tab }: { sourceID: number; tab: string
       </nav>
 
       {activeTab === "overview" ? <OverviewTab source={source} app={app} detail={detail} onPublish={() => setPublishing(true)} /> : null}
-      {activeTab === "repository" ? <RepositoryTab source={source} onChanged={state.reload} /> : null}
-      {activeTab === "releases" ? <ReleasesTab appKey={app?.app_key || source.name} released={Boolean(app)} /> : null}
+      {activeTab === "repository" && source ? <RepositoryTab source={source} onChanged={state.reload} /> : null}
+      {activeTab === "releases" ? <ReleasesTab appKey={app ? app.app_key : source!.name} released={Boolean(app)} /> : null}
       {activeTab === "actions" ? <ActionsTab app={app} detail={detail} /> : null}
       {activeTab === "source" ? <SourceTab appKey={app?.app_key || null} /> : null}
 
-      {publishing ? (
+      {publishing && source ? (
         <PublishReleaseDialog
           source={source}
           onClose={() => setPublishing(false)}
@@ -132,13 +152,13 @@ function OverviewTab({
   detail,
   onPublish,
 }: {
-  source: GitSource;
+  source: GitSource | null;
   app: AppSummary | null;
   detail: AppDetail | null;
   onPublish: () => void;
 }) {
   const { api } = useApp();
-  const workerTags = useAsync(() => api.workerTags(), [api]);
+  const summary = useAsync(() => api.jobsSummary(), [api]);
 
   if (!app || !detail) {
     return (
@@ -157,9 +177,14 @@ function OverviewTab({
   }
 
   const routeTag = app.effective_route_tag || app.tag;
-  const liveWorkers = (workerTags.data?.tags || [])
-    .filter((item) => item.tag === routeTag)
-    .reduce((total, item) => total + item.live_workers, 0);
+  const tagSummary = summary.data?.by_tag?.find((item) => item.tag === routeTag);
+  const tagActivity = summary.error
+    ? "unavailable"
+    : summary.loading
+      ? "checking…"
+      : tagSummary
+        ? `${tagSummary.queued_count} queued · ${tagSummary.running_count} running · ${tagSummary.completed_count_recent} completed in 24h`
+        : "no recent jobs on this tag";
 
   return (
     <>
@@ -208,12 +233,14 @@ function OverviewTab({
       <Panel title="Readiness" subtitle="Signals to check before relying on this contract.">
         <DefinitionList
           items={[
-            ["Registered", formatTime(source.created_at)],
-            ["Last release", source.last_synced_at ? `${formatTime(source.last_synced_at)} (${formatRelative(source.last_synced_at)})` : "never"],
+            ["Registered", source ? formatTime(source.created_at) : "repository source removed"],
             [
-              "Workers on route tag",
-              workerTags.loading ? "checking…" : `${liveWorkers} live worker(s) on ${routeTag}`,
+              "Last release",
+              source?.last_synced_at
+                ? `${formatTime(source.last_synced_at)} (${formatRelative(source.last_synced_at)})`
+                : `${formatTime(app.updated_at)} (${formatRelative(app.updated_at)})`,
             ],
+            [`Jobs on route tag ${routeTag}`, tagActivity],
           ]}
         />
       </Panel>
@@ -262,7 +289,7 @@ function RepositoryTab({ source, onChanged }: { source: GitSource; onChanged: ()
       notify("ok", "Repository settings saved.");
       onChanged();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(errorMessage(cause));
     } finally {
       setBusy(false);
     }
@@ -275,7 +302,7 @@ function RepositoryTab({ source, onChanged }: { source: GitSource; onChanged: ()
     try {
       setProbe(await api.probeGitSource({ repo_url: repoURL, branch, creds_ref: credsRef || undefined }));
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(errorMessage(cause));
     } finally {
       setBusy(false);
     }
@@ -292,7 +319,7 @@ function RepositoryTab({ source, onChanged }: { source: GitSource; onChanged: ()
       notify("ok", `Removed ${source.name}.`);
       navigate("/");
     } catch (cause) {
-      notify("error", cause instanceof Error ? cause.message : String(cause));
+      notify("error", errorMessage(cause));
       setBusy(false);
     }
   }
@@ -330,13 +357,7 @@ function RepositoryTab({ source, onChanged }: { source: GitSource; onChanged: ()
             <input value={credsRef} onChange={(event) => setCredsRef(event.target.value)} placeholder="(public repository)" />
           </Field>
         </div>
-        {probe ? (
-          <div className={probe.reachable ? "inlineNotice ok" : "inlineNotice error"}>
-            {probe.reachable
-              ? `Repository reachable. Branch ${probe.branch || branch} ${probe.branch_exists ? "exists" : "was not found"}.`
-              : probe.error || "Repository is not reachable."}
-          </div>
-        ) : null}
+        {probe ? <ProbeNotice probe={probe} branch={branch} /> : null}
         {error ? <div className="inlineNotice error">{error}</div> : null}
         <DefinitionList
           items={[
@@ -452,7 +473,7 @@ function ActionPanel({ appKey, action }: { appKey: string; action: ActionView })
     try {
       setRunResult(await api.runAndWait(appKey, action.action_key, parsed, 30000));
     } catch (cause) {
-      setRunError(cause instanceof Error ? cause.message : String(cause));
+      setRunError(errorMessage(cause));
     } finally {
       setRunning(false);
     }

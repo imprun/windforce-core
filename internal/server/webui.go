@@ -3,6 +3,7 @@ package server
 import (
 	"io/fs"
 	"net/http"
+	"path"
 	"strings"
 
 	"github.com/imprun/windforce-lite/internal/webui"
@@ -37,13 +38,14 @@ func (h *Handler) handleWebUI(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 	assetPath := strings.TrimPrefix(r.URL.Path, "/ui/")
-	if assetPath != "" && !webUIAssetExists(assetPath) {
+	r = r.Clone(r.Context())
+	if assetPath != "" && !webUIAssetExists(assetPath) && !looksLikeAssetPath(assetPath) {
 		// The Web UI is a single-page app: client-side routes such as
-		// /ui/jobs/{id} fall back to index.html.
-		r = r.Clone(r.Context())
+		// /ui/jobs/{id} fall back to index.html. Paths with a file
+		// extension stay 404 so a stale browser asking for an old hashed
+		// bundle gets an error instead of index.html with a 200.
 		r.URL.Path = "/"
 	} else {
-		r = r.Clone(r.Context())
 		r.URL.Path = "/" + assetPath
 	}
 	webUIAssets.ServeHTTP(w, r)
@@ -53,4 +55,8 @@ func (h *Handler) handleWebUI(w http.ResponseWriter, r *http.Request) bool {
 func webUIAssetExists(assetPath string) bool {
 	info, err := fs.Stat(webUIFS, assetPath)
 	return err == nil && !info.IsDir()
+}
+
+func looksLikeAssetPath(assetPath string) bool {
+	return strings.Contains(path.Base(assetPath), ".")
 }

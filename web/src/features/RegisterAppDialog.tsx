@@ -1,7 +1,7 @@
 import { useState } from "react";
-import type { GitSource, ProbeResult, RegisterSourcePayload } from "../lib/api";
+import { errorMessage, type GitSource, type ProbeResult, type RegisterSourcePayload } from "../lib/api";
 import { useApp } from "../lib/app-context";
-import { Field, Modal } from "../components/ui";
+import { Field, Modal, ProbeNotice } from "../components/ui";
 
 type AuthMethod = "none" | "token" | "basic";
 
@@ -51,7 +51,7 @@ export function RegisterAppDialog({
       const result = await api.probeGitSource({ ...payload, name: undefined });
       setProbe(result);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(errorMessage(cause));
     } finally {
       setBusy(false);
     }
@@ -69,7 +69,7 @@ export function RegisterAppDialog({
       notify("ok", `Registered ${created.name}.`);
       onRegistered(created);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(errorMessage(cause));
     } finally {
       setBusy(false);
     }
@@ -83,7 +83,7 @@ export function RegisterAppDialog({
       notify("ok", `Created sample app ${result.sync_result.app}.`);
       onRegistered(result.source);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(errorMessage(cause));
     } finally {
       setBusy(false);
     }
@@ -151,14 +151,7 @@ export function RegisterAppDialog({
         </Field>
       </div>
 
-      {probe ? (
-        <div className={probe.reachable ? "inlineNotice ok" : "inlineNotice error"}>
-          {probe.reachable
-            ? `Repository reachable. Branch ${probe.branch || branch} ${probe.branch_exists ? "exists" : "was not found"}.` +
-              (probe.branches?.length ? ` Remote branches: ${probe.branches.slice(0, 8).join(", ")}.` : "")
-            : probe.error || "Repository is not reachable."}
-        </div>
-      ) : null}
+      {probe ? <ProbeNotice probe={probe} branch={branch} /> : null}
       {error ? <div className="inlineNotice error">{error}</div> : null}
 
       <footer className="dialogFooter">

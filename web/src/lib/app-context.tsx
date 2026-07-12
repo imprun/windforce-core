@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { loadSettings, saveSettings, WindforceApi, type Settings } from "./api";
+import { errorMessage, loadSettings, saveSettings, WindforceApi, type Settings } from "./api";
 
 export type Toast = {
   id: number;
@@ -91,7 +91,7 @@ export function useAsync<T>(load: () => Promise<T>, deps: unknown[]): AsyncState
       })
       .catch((cause: unknown) => {
         if (canceled) return;
-        setError(cause instanceof Error ? cause.message : String(cause));
+        setError(errorMessage(cause));
       })
       .finally(() => {
         if (!canceled) setLoading(false);

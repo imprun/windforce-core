@@ -8,8 +8,10 @@ import { useApp, useAsync } from "../lib/app-context";
 import { formatRelative, shortSHA } from "../lib/format";
 import { Link, useRouter } from "../lib/router";
 
+// Either side may be missing: a registered source may not be released yet,
+// and a released app's source registration may have been deleted.
 type AppRow = {
-  source: GitSource;
+  source: GitSource | null;
   app: AppSummary | null;
 };
 
@@ -32,17 +34,20 @@ export function AppsPage() {
     if (!state.data) return [];
     const bySource = new Map<number, AppSummary>();
     for (const app of state.data.apps) bySource.set(app.git_source_id, app);
+    const sourceIDs = new Set(state.data.sources.map((source) => source.id));
+    const sourceRows = state.data.sources.map((source) => ({ source, app: bySource.get(source.id) || null }));
+    const orphanRows = state.data.apps
+      .filter((app) => !sourceIDs.has(app.git_source_id))
+      .map((app) => ({ source: null, app }));
     const query = search.trim().toLowerCase();
-    return state.data.sources
-      .map((source) => ({ source, app: bySource.get(source.id) || null }))
-      .filter((row) => {
-        if (!query) return true;
-        return (
-          row.source.name.toLowerCase().includes(query) ||
-          row.source.repo_url.toLowerCase().includes(query) ||
-          (row.app?.app_key || "").toLowerCase().includes(query)
-        );
-      });
+    return [...sourceRows, ...orphanRows].filter((row) => {
+      if (!query) return true;
+      return (
+        (row.source?.name || "").toLowerCase().includes(query) ||
+        (row.source?.repo_url || "").toLowerCase().includes(query) ||
+        (row.app?.app_key || "").toLowerCase().includes(query)
+      );
+    });
   }, [state.data, search]);
 
   return (
@@ -95,52 +100,63 @@ export function AppsPage() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map(({ source, app }) => (
-                  <tr
-                    key={source.id}
-                    className="tableRow clickable"
-                    onClick={() => navigate(`/apps/${source.id}`)}
-                  >
-                    <td>
-                      <Link
-                        to={`/apps/${source.id}`}
-                        className="cellTitle"
-                        onClick={(event) => event.stopPropagation()}
-                      >
-                        {source.name}
-                      </Link>
-                      <span className="cellSub">{app ? app.app_key : "not released"}</span>
-                    </td>
-                    <td>
-                      <ReleaseStateBadge released={Boolean(app || source.last_synced_commit)} />
-                    </td>
-                    <td>
-                      <span className="cellTitle mono">{repoLabel(source.repo_url)}</span>
-                      <span className="cellSub mono">
-                        {source.branch || "main"}
-                        {source.subpath ? ` · ${source.subpath}` : ""}
-                      </span>
-                    </td>
-                    <td>
-                      <span className="cellTitle mono">{shortSHA(app?.commit_sha || source.last_synced_commit)}</span>
-                      <span className="cellSub">{formatRelative(app?.updated_at || source.last_synced_at)}</span>
-                    </td>
-                    <td>{app ? app.actions_count : "—"}</td>
-                    <td>{app ? <span className="mono">{app.effective_route_tag}</span> : "—"}</td>
-                    <td className="rowActions" onClick={(event) => event.stopPropagation()}>
-                      <button
-                        className="button small primary"
-                        type="button"
-                        onClick={() => setPublishing(source)}
-                      >
-                        Publish Release
-                      </button>
-                      <Link className="button small" to={`/apps/${source.id}`}>
-                        Open App
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
+                {rows.map(({ source, app }) => {
+                  const detailID = source ? source.id : app!.git_source_id;
+                  return (
+                    <tr
+                      key={detailID}
+                      className="tableRow clickable"
+                      onClick={() => navigate(`/apps/${detailID}`)}
+                    >
+                      <td>
+                        <Link
+                          to={`/apps/${detailID}`}
+                          className="cellTitle"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          {source ? source.name : app!.app_key}
+                        </Link>
+                        <span className="cellSub">{app ? app.app_key : "not released"}</span>
+                      </td>
+                      <td>
+                        <ReleaseStateBadge released={Boolean(app || source?.last_synced_commit)} />
+                      </td>
+                      <td>
+                        {source ? (
+                          <>
+                            <span className="cellTitle mono">{repoLabel(source.repo_url)}</span>
+                            <span className="cellSub mono">
+                              {source.branch || "main"}
+                              {source.subpath ? ` · ${source.subpath}` : ""}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="cellSub">repository source removed</span>
+                        )}
+                      </td>
+                      <td>
+                        <span className="cellTitle mono">{shortSHA(app?.commit_sha || source?.last_synced_commit)}</span>
+                        <span className="cellSub">{formatRelative(app?.updated_at || source?.last_synced_at)}</span>
+                      </td>
+                      <td>{app ? app.actions_count : "—"}</td>
+                      <td>{app ? <span className="mono">{app.effective_route_tag}</span> : "—"}</td>
+                      <td className="rowActions" onClick={(event) => event.stopPropagation()}>
+                        {source ? (
+                          <button
+                            className="button small primary"
+                            type="button"
+                            onClick={() => setPublishing(source)}
+                          >
+                            Publish Release
+                          </button>
+                        ) : null}
+                        <Link className="button small" to={`/apps/${detailID}`}>
+                          Open App
+                        </Link>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

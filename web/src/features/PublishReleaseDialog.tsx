@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { GitSource, SyncResult } from "../lib/api";
+import { errorMessage, type GitSource, type SyncResult } from "../lib/api";
 import { useApp } from "../lib/app-context";
 import { shortSHA } from "../lib/format";
 import { DefinitionList, Field, Modal } from "../components/ui";
@@ -27,7 +27,7 @@ export function PublishReleaseDialog({
       notify("ok", `Published ${result.app} at ${shortSHA(result.commit, 12)}.`);
       onPublished(result);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(errorMessage(cause));
     } finally {
       setBusy(false);
     }
