@@ -77,6 +77,8 @@ devstack provides PostgreSQL and the HTTP trigger, set `WINDFORCE_LITE_DATABASE_
 and `WINDFORCE_LITE_DATA_VOLUME`, then start only the `backend` and `worker`
 profiles. The data volume must be the same volume mounted by the HTTP trigger,
 because the trigger reads the active catalog that the control-plane writes.
+The compose `volume-init` service fixes the mounted data volume ownership before
+the control-plane or worker starts.
 
 ## Run
 

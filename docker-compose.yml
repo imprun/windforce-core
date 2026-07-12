@@ -3,6 +3,17 @@ name: windforce-lite
 x-windforce-lite-database-url: &windforce-lite-database-url "${WINDFORCE_LITE_DATABASE_URL:-postgres://postgres@postgres:5432/windforce_lite?sslmode=disable}"
 
 services:
+  volume-init:
+    profiles:
+      - backend
+      - worker
+      - standalone
+    image: alpine:3.20
+    restart: "no"
+    command: ["sh", "-lc", "chown -R 10001:999 /data"]
+    volumes:
+      - windforce-data:/data
+
   postgres:
     profiles:
       - pg
@@ -32,6 +43,8 @@ services:
       context: .
     restart: unless-stopped
     depends_on:
+      volume-init:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
         required: false
@@ -87,6 +100,8 @@ services:
       context: .
     restart: unless-stopped
     depends_on:
+      volume-init:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
         required: false
