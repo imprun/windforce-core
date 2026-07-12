@@ -2,6 +2,7 @@ package source
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -65,6 +66,51 @@ func TestRedactRemovesCredentials(t *testing.T) {
 	want := "clone https://[REDACTED]@git.example.test/group/project.git"
 	if got != want {
 		t.Fatalf("redact() = %q, want %q", got, want)
+	}
+}
+
+func TestGitClientUsesInjectedRunner(t *testing.T) {
+	commit := strings.Repeat("a", 40)
+	runner := &recordingGitRunner{
+		outputs: []string{commit + "\trefs/heads/main\n"},
+	}
+	client := GitClient{Runner: runner}
+
+	got, err := client.ResolveBranchCommit(context.Background(), "https://git.example.test/group/project.git", "", "")
+	if err != nil {
+		t.Fatalf("ResolveBranchCommit returned error: %v", err)
+	}
+	if got != commit {
+		t.Fatalf("commit = %q, want %q", got, commit)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("git calls = %d, want 1", len(runner.calls))
+	}
+	call := runner.calls[0]
+	if call.dir != "" {
+		t.Fatalf("call dir = %q, want empty", call.dir)
+	}
+	wantArgs := []string{"ls-remote", "--heads", "https://git.example.test/group/project.git", "main"}
+	if strings.Join(call.args, "\x00") != strings.Join(wantArgs, "\x00") {
+		t.Fatalf("call args = %#v, want %#v", call.args, wantArgs)
+	}
+}
+
+func TestGitCommandRunnerRedactsFailedCommand(t *testing.T) {
+	_, err := GitCommandRunner{}.Run(
+		context.Background(),
+		"",
+		"not-a-real-subcommand",
+		"https://x-access-token:secret-token@git.example.test/group/project.git",
+	)
+	if err == nil {
+		t.Fatal("Run unexpectedly succeeded")
+	}
+	if strings.Contains(err.Error(), "secret-token") {
+		t.Fatalf("error was not redacted: %v", err)
+	}
+	if !strings.Contains(err.Error(), "https://[REDACTED]@git.example.test/group/project.git") {
+		t.Fatalf("error does not contain redacted URL: %v", err)
 	}
 }
 
@@ -235,4 +281,28 @@ func writeTestFile(t *testing.T, path string, content string) {
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+type recordingGitCall struct {
+	dir  string
+	args []string
+}
+
+type recordingGitRunner struct {
+	calls   []recordingGitCall
+	outputs []string
+	err     error
+}
+
+func (r *recordingGitRunner) Run(ctx context.Context, dir string, args ...string) (string, error) {
+	r.calls = append(r.calls, recordingGitCall{dir: dir, args: append([]string(nil), args...)})
+	if r.err != nil {
+		return "", r.err
+	}
+	if len(r.outputs) == 0 {
+		return "", errors.New("missing git runner output")
+	}
+	out := r.outputs[0]
+	r.outputs = r.outputs[1:]
+	return out, nil
 }

@@ -37,10 +37,18 @@ type Source struct {
 	CreatedBy    *string
 }
 
+type GitClient interface {
+	ResolveBranchCommit(ctx context.Context, repoURL string, branch string, token string) (string, error)
+	CommitSubject(ctx context.Context, repoDir string) (string, error)
+	CloneCommit(ctx context.Context, repoURL string, branch string, commit string, destinationDir string, token string) error
+	CloneCommitSparse(ctx context.Context, repoURL string, branch string, commit string, destinationDir string, subpath string, token string) error
+}
+
 type Syncer struct {
 	Store     bundle.Store
 	Catalog   Catalog
 	CloneRoot string
+	Git       GitClient
 }
 
 type inspectedSource struct {
@@ -104,7 +112,7 @@ func (s *Syncer) inspect(ctx context.Context, src Source) (inspectedSource, erro
 			if src.RepoURL == "" {
 				return inspectedSource{}, errors.New("repo URL or local source is required")
 			}
-			commit, err = source.ResolveBranchCommit(ctx, src.RepoURL, src.Branch, src.Token)
+			commit, err = s.gitClient().ResolveBranchCommit(ctx, src.RepoURL, src.Branch, src.Token)
 		}
 		if err != nil {
 			return inspectedSource{}, err
@@ -140,7 +148,7 @@ func (s *Syncer) inspect(ctx context.Context, src Source) (inspectedSource, erro
 	updatedAt := time.Now().UTC()
 	var message *string
 	if src.RepoURL != "" {
-		if subject, err := source.CommitSubject(ctx, repoDir); err != nil {
+		if subject, err := s.gitClient().CommitSubject(ctx, repoDir); err != nil {
 			log.Printf("syncer: read commit subject %s@%s: %v", src.GitSourceID, commit, err)
 		} else if strings.TrimSpace(subject) != "" {
 			trimmed := strings.TrimSpace(subject)
@@ -221,7 +229,7 @@ func (s *Syncer) prepareSource(ctx context.Context, src Source, commit string) (
 	repoDir := filepath.Join(cloneDir, "source")
 	cloned := false
 	if src.Subpath != "" {
-		if err := source.CloneCommitSparse(ctx, src.RepoURL, src.Branch, commit, repoDir, src.Subpath, src.Token); err != nil {
+		if err := s.gitClient().CloneCommitSparse(ctx, src.RepoURL, src.Branch, commit, repoDir, src.Subpath, src.Token); err != nil {
 			log.Printf("syncer: sparse clone %s@%s fell back to full clone: %v", src.GitSourceID, commit, err)
 			_ = os.RemoveAll(repoDir)
 		} else {
@@ -229,7 +237,7 @@ func (s *Syncer) prepareSource(ctx context.Context, src Source, commit string) (
 		}
 	}
 	if !cloned {
-		if err := source.CloneCommit(ctx, src.RepoURL, src.Branch, commit, repoDir, src.Token); err != nil {
+		if err := s.gitClient().CloneCommit(ctx, src.RepoURL, src.Branch, commit, repoDir, src.Token); err != nil {
 			cleanup()
 			return "", "", nil, err
 		}
@@ -240,6 +248,13 @@ func (s *Syncer) prepareSource(ctx context.Context, src Source, commit string) (
 		return "", "", nil, err
 	}
 	return repoDir, sourceDir, cleanup, nil
+}
+
+func (s *Syncer) gitClient() GitClient {
+	if s.Git != nil {
+		return s.Git
+	}
+	return source.DefaultGitClient
 }
 
 func materializeActionSchemas(root string, app *contract.App) error {

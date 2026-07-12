@@ -17,6 +17,18 @@ import (
 var credentialPattern = regexp.MustCompile(`(https?://)[^@/\s]+@`)
 var gitObjectIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{40}([0-9a-fA-F]{24})?$`)
 
+type GitRunner interface {
+	Run(ctx context.Context, dir string, args ...string) (string, error)
+}
+
+type GitCommandRunner struct{}
+
+type GitClient struct {
+	Runner GitRunner
+}
+
+var DefaultGitClient = GitClient{}
+
 type gitCredential struct {
 	Type     string `json:"type"`
 	Token    string `json:"token"`
@@ -25,11 +37,15 @@ type gitCredential struct {
 }
 
 func ResolveBranchCommit(ctx context.Context, repoURL string, branch string, token string) (string, error) {
+	return DefaultGitClient.ResolveBranchCommit(ctx, repoURL, branch, token)
+}
+
+func (c GitClient) ResolveBranchCommit(ctx context.Context, repoURL string, branch string, token string) (string, error) {
 	if branch == "" {
 		branch = "main"
 	}
 
-	out, err := runGit(ctx, "", "ls-remote", "--heads", authURL(repoURL, token), branch)
+	out, err := c.run(ctx, "", "ls-remote", "--heads", authURL(repoURL, token), branch)
 	if err != nil {
 		return "", err
 	}
@@ -55,7 +71,11 @@ func parseRemoteHeadCommit(out string, branch string) (string, bool) {
 }
 
 func ListRemoteBranches(ctx context.Context, repoURL string, token string) ([]string, error) {
-	out, err := runGit(ctx, "", "ls-remote", "--heads", authURL(repoURL, token))
+	return DefaultGitClient.ListRemoteBranches(ctx, repoURL, token)
+}
+
+func (c GitClient) ListRemoteBranches(ctx context.Context, repoURL string, token string) ([]string, error) {
+	out, err := c.run(ctx, "", "ls-remote", "--heads", authURL(repoURL, token))
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +96,11 @@ func ListRemoteBranches(ctx context.Context, repoURL string, token string) ([]st
 }
 
 func CommitSubject(ctx context.Context, repoDir string) (string, error) {
-	out, err := runGit(ctx, repoDir, "log", "-1", "--format=%s")
+	return DefaultGitClient.CommitSubject(ctx, repoDir)
+}
+
+func (c GitClient) CommitSubject(ctx context.Context, repoDir string) (string, error) {
+	out, err := c.run(ctx, repoDir, "log", "-1", "--format=%s")
 	if err != nil {
 		return "", err
 	}
@@ -84,7 +108,11 @@ func CommitSubject(ctx context.Context, repoDir string) (string, error) {
 }
 
 func HeadCommit(ctx context.Context, repoDir string) (string, error) {
-	out, err := runGit(ctx, repoDir, "rev-parse", "HEAD")
+	return DefaultGitClient.HeadCommit(ctx, repoDir)
+}
+
+func (c GitClient) HeadCommit(ctx context.Context, repoDir string) (string, error) {
+	out, err := c.run(ctx, repoDir, "rev-parse", "HEAD")
 	if err != nil {
 		return "", err
 	}
@@ -92,19 +120,23 @@ func HeadCommit(ctx context.Context, repoDir string) (string, error) {
 }
 
 func CloneCommit(ctx context.Context, repoURL string, branch string, commit string, destinationDir string, token string) error {
+	return DefaultGitClient.CloneCommit(ctx, repoURL, branch, commit, destinationDir, token)
+}
+
+func (c GitClient) CloneCommit(ctx context.Context, repoURL string, branch string, commit string, destinationDir string, token string) error {
 	cloneURL := authURL(repoURL, token)
 	args := []string{"clone"}
 	if branch != "" {
 		args = append(args, "--branch", branch)
 	}
 	args = append(args, cloneURL, destinationDir)
-	if _, err := runGit(ctx, "", args...); err != nil {
-		if _, retryErr := runGit(ctx, "", "clone", cloneURL, destinationDir); retryErr != nil {
+	if _, err := c.run(ctx, "", args...); err != nil {
+		if _, retryErr := c.run(ctx, "", "clone", cloneURL, destinationDir); retryErr != nil {
 			return fmt.Errorf("git clone: %w", retryErr)
 		}
 	}
 	if commit != "" {
-		if _, err := runGit(ctx, destinationDir, "checkout", "--detach", commit); err != nil {
+		if _, err := c.run(ctx, destinationDir, "checkout", "--detach", commit); err != nil {
 			return fmt.Errorf("git checkout %s: %w", commit, err)
 		}
 	}
@@ -112,6 +144,10 @@ func CloneCommit(ctx context.Context, repoURL string, branch string, commit stri
 }
 
 func CloneCommitSparse(ctx context.Context, repoURL string, branch string, commit string, destinationDir string, subpath string, token string) error {
+	return DefaultGitClient.CloneCommitSparse(ctx, repoURL, branch, commit, destinationDir, subpath, token)
+}
+
+func (c GitClient) CloneCommitSparse(ctx context.Context, repoURL string, branch string, commit string, destinationDir string, subpath string, token string) error {
 	if err := contract.ValidateSourceSubpath(subpath); err != nil {
 		return err
 	}
@@ -124,17 +160,17 @@ func CloneCommitSparse(ctx context.Context, repoURL string, branch string, commi
 		args = append(args, "--branch", branch)
 	}
 	args = append(args, cloneURL, destinationDir)
-	if _, err := runGit(ctx, "", args...); err != nil {
+	if _, err := c.run(ctx, "", args...); err != nil {
 		return fmt.Errorf("git clone (sparse): %w", err)
 	}
-	if _, err := runGit(ctx, destinationDir, "sparse-checkout", "set", filepath.ToSlash(subpath)); err != nil {
+	if _, err := c.run(ctx, destinationDir, "sparse-checkout", "set", filepath.ToSlash(subpath)); err != nil {
 		return fmt.Errorf("git sparse-checkout set %s: %w", subpath, err)
 	}
 	ref := commit
 	if ref == "" {
 		ref = "HEAD"
 	}
-	if _, err := runGit(ctx, destinationDir, "checkout", "--detach", ref); err != nil {
+	if _, err := c.run(ctx, destinationDir, "checkout", "--detach", ref); err != nil {
 		return fmt.Errorf("git checkout %s (sparse): %w", ref, err)
 	}
 	return nil
@@ -185,7 +221,15 @@ func parseGitCredential(value string) (string, string, bool) {
 	return "x-access-token", value, true
 }
 
-func runGit(ctx context.Context, dir string, args ...string) (string, error) {
+func (c GitClient) run(ctx context.Context, dir string, args ...string) (string, error) {
+	runner := c.Runner
+	if runner == nil {
+		runner = GitCommandRunner{}
+	}
+	return runner.Run(ctx, dir, args...)
+}
+
+func (GitCommandRunner) Run(ctx context.Context, dir string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	if dir != "" {
 		cmd.Dir = dir
