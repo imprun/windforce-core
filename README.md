@@ -408,6 +408,16 @@ scheduler UI, workflow designer, or marketplace. The screen model is documented
 in [docs/web-ui-model.md](docs/web-ui-model.md) and the generated user guide in
 [docs/user-guide/web-ui.md](docs/user-guide/web-ui.md).
 
+Raw job records are retained per outcome and pruned by the API process:
+succeeded runs for 7 days, failed/canceled runs for 30 days, and queued or
+running runs that make no progress for 24 hours are expired into the failure
+family first. Tune with `--job-success-retention`, `--job-failure-retention`,
+and `--job-stuck-after` (or `WINDFORCE_LITE_JOB_SUCCESS_RETENTION_DAYS`,
+`WINDFORCE_LITE_JOB_FAILURE_RETENTION_DAYS`,
+`WINDFORCE_LITE_JOB_STUCK_AFTER_HOURS`); `0` disables a rule. Release history
+and the audit trail live in the catalog and are not affected. See
+[ADR 0007](docs/adr/0007-job-storage-retention.md).
+
 The local backend stores run, job, event, and HITL state in a JSON file for
 development and smoke checks. The PostgreSQL backend stores production run, job,
 event, and HITL state. Redis is optional for notification/cache only. See
