@@ -1,4 +1,4 @@
-.PHONY: help fmt test test-postgres build web-install web-dev web-build web-typecheck clean \
+.PHONY: help fmt test test-postgres build web-install web-dev web-build web-embed web-test web-typecheck clean \
 	compose-up compose-db compose-worker compose-build compose-down compose-reset compose-logs compose-ps postgres-dsn \
 	dev-standalone dev-standalone-postgres dev-api dev-worker worker-once \
 	windforce-variable-set windforce-git-token windforce-register windforce-sync windforce-deploy windforce-sample \
@@ -86,10 +86,12 @@ export POSTGRES_DSN
 help:
 	@echo "targets:"
 	@echo "  fmt                    run gofmt"
-	@echo "  web-install            install Next.js Web UI dependencies"
-	@echo "  web-dev                run Bun/Next Web UI with live reload on WINDFORCE_LITE_WEB_PORT"
-	@echo "  web-build              export Next.js Web UI locally without touching Go embed assets"
-	@echo "  web-typecheck          type-check the Next.js Web UI"
+	@echo "  web-install            install Web UI dependencies"
+	@echo "  web-dev                run the Vite Web UI dev server with live reload on WINDFORCE_LITE_WEB_PORT"
+	@echo "  web-build              build the Web UI to web/dist without touching Go embed assets"
+	@echo "  web-embed              build the Web UI and refresh the Go embed assets"
+	@echo "  web-test               run Web UI unit tests"
+	@echo "  web-typecheck          type-check the Web UI"
 	@echo "  test                   run go test ./..."
 	@echo "  test-postgres          run PostgreSQL integration test against docker compose"
 	@echo "  build                  build $(BIN)"
@@ -116,7 +118,7 @@ help:
 	@echo "  compose-worker         start Postgres and runtime worker"
 	@echo "  compose-build          build the Go Docker image; Dockerfile builds and embeds Web UI assets"
 	@echo "  compose-down/reset/logs/ps"
-	@echo "  ui-guide               regenerate Web UI guide screenshots and markdown"
+	@echo "  ui-guide               regenerate Web UI guide screenshots and markdown (needs bun, go, and a Chromium browser)"
 	@echo "  ui-guide-verify        run guide scenarios and verify generated docs"
 
 fmt:
@@ -126,10 +128,17 @@ web-install:
 	cd web && $(BUN) install
 
 web-dev:
-	cd web && WINDFORCE_LITE_API_PROXY_TARGET="$(WF_API_URL)" $(BUN) run dev
+	cd web && WINDFORCE_LITE_API_PROXY_TARGET="$(WF_API_URL)" $(BUN) run dev -- --port "$(WINDFORCE_LITE_WEB_PORT)"
 
 web-build:
 	cd web && $(BUN) run build
+
+web-embed: web-build
+	rm -rf internal/webui/assets
+	cp -r web/dist internal/webui/assets
+
+web-test:
+	cd web && $(BUN) run test
 
 web-typecheck:
 	cd web && $(BUN) run typecheck
@@ -171,11 +180,11 @@ compose-ps:
 postgres-dsn:
 	@echo "$(POSTGRES_DSN)"
 
-ui-guide: compose-build
+ui-guide:
 	node --check tools/ui-guide/capture.mjs
 	node tools/ui-guide/capture.mjs
 
-ui-guide-verify: compose-build
+ui-guide-verify:
 	node --check tools/ui-guide/capture.mjs
 	node tools/ui-guide/capture.mjs --verify
 

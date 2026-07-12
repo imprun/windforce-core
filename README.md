@@ -47,16 +47,18 @@ The ordering is intentional: a catalog entry must not point at a bundle that a
 worker cannot fetch.
 
 The Docker Compose control-plane runs inside a container and maps the API to
-`127.0.0.1:18091` by default. The local Web UI is a Bun/Next development server
-on `127.0.0.1:18090/ui/` and proxies control-plane API calls to the backend.
-Local development uses `tools/windforce_control.py` against the API instead of a
-separate source-sync command.
+`127.0.0.1:18091` by default. The local Web UI is a Vite development server
+(run with Bun) on `127.0.0.1:18090/ui/` and proxies control-plane API calls to
+the backend. Local development uses `tools/windforce_control.py` against the
+API instead of a separate source-sync command.
 
-The Web UI is live during local development. Run `make web-dev` for a host Bun
-server, or `make compose-up` for the Compose-managed Bun server. Docker image
-builds are the bundling boundary: the Dockerfile builds the Web UI with Bun,
-copies the exported files into `internal/webui/assets`, then compiles the Go
-binary with embedded assets.
+The Web UI is live during local development. Run `make web-dev` for a host dev
+server, or `make compose-up` for the Compose-managed dev server. The production
+UI is a static Vite build embedded into the Go binary: `make web-embed`
+refreshes `internal/webui/assets` from `web/dist`, and the Dockerfile performs
+the same build inside the image so the embedded assets are always rebuilt from
+source. The API process serves the UI at `/ui/` with an SPA fallback for
+client-side routes. See [ADR 0004](docs/adr/0004-web-ui-rewrite.md).
 
 ## Docker Compose profiles
 
@@ -207,6 +209,7 @@ Implemented control-plane endpoints:
 - `DELETE /api/w/{workspace}/git_sources/{gitSourceId}`
 - `POST /api/w/{workspace}/git_sources/{gitSourceId}/sync`
 - `POST /api/w/{workspace}/git_sources/{gitSourceId}/deploy`
+- `GET /api/w/{workspace}/git_sources/{gitSourceId}/audit` (configuration change audit trail)
 - `GET /api/w/{workspace}/apps`
 - `GET /api/w/{workspace}/apps?view=summary`
 - `GET /api/w/{workspace}/apps/{app}`
@@ -385,14 +388,35 @@ mutate the Windforce catalog model.
 
 The Web UI is intentionally narrow:
 
-- register git sources
-- sync a source and deploy an app/action catalog entry
-- show deployment history and currently active deployment
-- inspect run status and errors
-- roll back to a previous deployment when the source object is still available
+- register apps backed by git repository sources
+- publish releases (validate a source at HEAD and expose the worker contract)
+- show release history and the currently active contract per app
+- monitor aggregate job activity per app and route tag (queued, running,
+  recent completed/failed/canceled, failure rate)
+- review released action schemas (the materialized invocation contract)
+- link to the app source on GitHub/GitLab at the pinned release commit
+  instead of mirroring code in the UI
+  ([ADR 0006](docs/adr/0006-source-links-not-source-mirror.md))
+
+The UI deliberately shows aggregates, not individual job records: at
+production volume nobody reads millions of rows. Per-run payloads, logs, and
+cancel stay on the control-plane API and `tools/windforce_control.py`
+([ADR 0005](docs/adr/0005-aggregate-job-observability.md)).
 
 It is not the full Windforce console: no SaaS tenant management, billing, quota,
-scheduler UI, workflow designer, or marketplace.
+scheduler UI, workflow designer, or marketplace. The screen model is documented
+in [docs/web-ui-model.md](docs/web-ui-model.md) and the generated user guide in
+[docs/user-guide/web-ui.md](docs/user-guide/web-ui.md).
+
+Raw job records are retained per outcome and pruned by the API process:
+succeeded runs for 7 days, failed/canceled runs for 30 days, and queued or
+running runs that make no progress for 24 hours are expired into the failure
+family first. Tune with `--job-success-retention`, `--job-failure-retention`,
+and `--job-stuck-after` (or `WINDFORCE_LITE_JOB_SUCCESS_RETENTION_DAYS`,
+`WINDFORCE_LITE_JOB_FAILURE_RETENTION_DAYS`,
+`WINDFORCE_LITE_JOB_STUCK_AFTER_HOURS`); `0` disables a rule. Release history
+and the audit trail live in the catalog and are not affected. See
+[ADR 0007](docs/adr/0007-job-storage-retention.md).
 
 The local backend stores run, job, event, and HITL state in a JSON file for
 development and smoke checks. The PostgreSQL backend stores production run, job,

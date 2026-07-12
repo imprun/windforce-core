@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -88,6 +89,10 @@ func runServer(args []string, mode string) int {
 	workerGroup := flags.String("worker-group", "default", "worker group name exposed to action ctx")
 	egressProxy := flags.String("egress-proxy", "", "host:port of a co-located egress proxy sidecar")
 	workerTags := flags.String("tags", "", "comma-separated route tags this worker claims")
+	jobSuccessRetention := flags.Duration("job-success-retention", envDays("WINDFORCE_LITE_JOB_SUCCESS_RETENTION_DAYS", defaultJobSuccessRetention), "how long succeeded job records are kept; 0 keeps them forever")
+	jobFailureRetention := flags.Duration("job-failure-retention", envDays("WINDFORCE_LITE_JOB_FAILURE_RETENTION_DAYS", defaultJobFailureRetention), "how long failed/canceled/expired job records are kept; 0 keeps them forever")
+	jobStuckAfter := flags.Duration("job-stuck-after", envHours("WINDFORCE_LITE_JOB_STUCK_AFTER_HOURS", defaultJobStuckAfter), "expire queued/running jobs with no progress for this long; 0 disables")
+	jobRetentionInterval := flags.Duration("job-retention-interval", defaultJobRetentionInterval, "how often the retention pruner runs")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -120,6 +125,16 @@ func runServer(args []string, mode string) int {
 		SecretKey:         secretKey,
 		SecretKeyPrevious: secretKeyPrevious,
 	})
+
+	retention := jobRetentionPolicy{
+		Success:    *jobSuccessRetention,
+		Failure:    *jobFailureRetention,
+		StuckAfter: *jobStuckAfter,
+		Interval:   *jobRetentionInterval,
+	}
+	if retention.Enabled() {
+		go runJobRetentionLoop(context.Background(), stateStore, retention)
+	}
 
 	if mode == "standalone" {
 		processor := worker.Processor{
@@ -233,6 +248,92 @@ func runWorker(args []string) int {
 		return 1
 	}
 	return 0
+}
+
+const (
+	// Raw job records are short-lived incident data, not history
+	// (ADR 0007): succeeded runs cover the Monitoring dashboard's largest
+	// aggregation window, failures stay longer for incident analysis, and
+	// stuck queued/running runs expire so they cannot pin storage forever.
+	defaultJobSuccessRetention  = 7 * 24 * time.Hour
+	defaultJobFailureRetention  = 30 * 24 * time.Hour
+	defaultJobStuckAfter        = 24 * time.Hour
+	defaultJobRetentionInterval = 10 * time.Minute
+)
+
+type jobRetentionPolicy struct {
+	Success    time.Duration
+	Failure    time.Duration
+	StuckAfter time.Duration
+	Interval   time.Duration
+}
+
+func (p jobRetentionPolicy) Enabled() bool {
+	return p.Success > 0 || p.Failure > 0 || p.StuckAfter > 0
+}
+
+func runJobRetentionLoop(ctx context.Context, store state.Store, policy jobRetentionPolicy) {
+	if policy.Interval <= 0 {
+		policy.Interval = defaultJobRetentionInterval
+	}
+	// A zero TTL means "keep forever": collapse it to a cutoff no run can
+	// ever be older than.
+	cutoff := func(ttl time.Duration, now time.Time) time.Time {
+		if ttl <= 0 {
+			return time.Time{}
+		}
+		return now.Add(-ttl)
+	}
+	tick := func() {
+		now := time.Now().UTC()
+		if policy.StuckAfter > 0 {
+			if expired, err := store.ExpireStuckJobs(ctx, now.Add(-policy.StuckAfter)); err != nil {
+				fmt.Fprintf(os.Stderr, "job retention: expire stuck: %v\n", err)
+			} else if expired > 0 {
+				fmt.Fprintf(os.Stderr, "job retention: expired %d stuck run(s)\n", expired)
+			}
+		}
+		if policy.Success > 0 || policy.Failure > 0 {
+			pruned, err := store.PruneSettledJobs(ctx, cutoff(policy.Success, now), cutoff(policy.Failure, now))
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "job retention: prune: %v\n", err)
+			} else if pruned > 0 {
+				fmt.Fprintf(os.Stderr, "job retention: pruned %d settled job(s)\n", pruned)
+			}
+		}
+	}
+	tick()
+	ticker := time.NewTicker(policy.Interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			tick()
+		}
+	}
+}
+
+func envDays(name string, fallback time.Duration) time.Duration {
+	return envDuration(name, 24*time.Hour, fallback)
+}
+
+func envHours(name string, fallback time.Duration) time.Duration {
+	return envDuration(name, time.Hour, fallback)
+}
+
+func envDuration(name string, unit time.Duration, fallback time.Duration) time.Duration {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return fallback
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 0 {
+		fmt.Fprintf(os.Stderr, "ignoring %s=%q: expected a non-negative integer\n", name, raw)
+		return fallback
+	}
+	return time.Duration(value) * unit
 }
 
 func openStateStore(ctx context.Context, backend string, path string, databaseURL string, migrate bool) (state.Store, func(), error) {

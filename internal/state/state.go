@@ -26,6 +26,28 @@ const (
 	RunExpired      RunState = "EXPIRED"
 )
 
+// TerminalRunState reports whether a run has settled: it will never be
+// claimed or resumed again, so its records are eligible for retention
+// pruning.
+func TerminalRunState(state RunState) bool {
+	switch state {
+	case RunSucceeded, RunFailed, RunCanceled, RunExpired:
+		return true
+	}
+	return false
+}
+
+// retentionCutoff picks the per-outcome cutoff for a settled run: succeeded
+// runs age out on the success TTL, everything else (failed, canceled,
+// expired) on the failure TTL, which is typically longer for incident
+// analysis (ADR 0007).
+func retentionCutoff(state RunState, successOlderThan time.Time, failureOlderThan time.Time) time.Time {
+	if state == RunSucceeded {
+		return successOlderThan
+	}
+	return failureOlderThan
+}
+
 type JobState string
 
 const (
@@ -293,6 +315,8 @@ type Store interface {
 	ResumeHumanTask(ctx context.Context, taskID string, resumeInput json.RawMessage) (Run, Job, error)
 	ResumeRun(ctx context.Context, runID string, resumeInput json.RawMessage) (Run, Job, error)
 	CancelJob(ctx context.Context, workspaceID string, jobID string, by string, reason string) (CancelResult, error)
+	PruneSettledJobs(ctx context.Context, successOlderThan time.Time, failureOlderThan time.Time) (int64, error)
+	ExpireStuckJobs(ctx context.Context, stuckBefore time.Time) (int64, error)
 	CancelRun(ctx context.Context, runID string, reason string) (Run, error)
 	RetryRun(ctx context.Context, runID string) (Run, Job, error)
 }

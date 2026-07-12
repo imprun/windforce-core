@@ -4,69 +4,118 @@
 
 This guide is generated from executable UI scenarios. Screenshots are captured from the local windforce-lite devstack.
 
-## Set control plane context
+## Review registered apps
 
-Use the Settings page to select the workspace, API token, and audit actor used by Web UI control-plane requests.
+The Apps view is the home screen. Every row is one app: its release state, repository source, last release, and route tag.
 
-![Set control plane context](../assets/ui/control-plane-settings.png)
+![Review registered apps](../assets/ui/apps-overview.png)
 
-1. Open Settings from the command bar or sidebar.
-2. Set the workspace and optional API token when the control plane requires one.
-3. Set the audit actor that release history records for state-changing requests.
+1. Open the Web UI; the Apps view lists every registered app.
+2. Check the release state badge: released apps have a worker-visible contract, registered apps do not yet.
+3. Compare repository source, last release commit, action count, and route tag per app.
+4. Use Publish Release directly from a row, or Open App for the full detail view.
 
-## Collapse navigation
+## Register an app
 
-Collapse the sidebar while keeping app release work visible.
+Register App points the control plane at a repository source. Registration validates repository access, branch, and windforce.json before saving.
 
-![Collapse navigation](../assets/ui/collapsed-sidebar.png)
+![Register an app](../assets/ui/register-app.png)
 
-1. Click the sidebar collapse control.
-2. Use the compact navigation rail to keep app release work visible.
+1. Click Register App in the Apps view.
+2. Enter the app name, repository URL, branch, and optional subpath.
+3. Pick a git auth method or reference an existing credential variable path.
+4. Use Probe repository to confirm reachability and branch existence before registering.
 
-## Manage app releases
+## Inspect an app
 
-Use the app console to inspect registered apps, active contracts, readiness, and release audit evidence.
+The app detail Overview tab shows the active worker contract, the exposed actions, and readiness signals for the release.
 
-![Manage app releases](../assets/ui/deployment-overview.png)
+![Inspect an app](../assets/ui/app-detail.png)
 
-1. Open the app release console.
-2. Use the sidebar to move between Apps, Contracts, History, and Settings.
-3. Use the app table to compare registered apps.
-4. Open an app sheet for release evidence.
-5. Use the active contracts table to confirm what workers can execute.
+1. Open an app from the Apps view.
+2. Review the active contract: app key, release commit, entrypoint, route tag, and timeout.
+3. Follow the source code link to browse the repository at the pinned release commit on GitHub/GitLab.
+4. Use the tabs for repository settings, release history, and action schemas.
 
-## Inspect an app detail sheet
+## Publish a release
 
-Open a registered app sheet to review repository settings, active contract, readiness, repository snapshot, and audit evidence.
+Publish Release validates the repository source at HEAD and publishes it as the worker-visible contract, recorded with the audit actor.
 
-![Inspect an app detail sheet](../assets/ui/app-detail.png)
+![Publish a release](../assets/ui/publish-release.png)
 
-1. Open the app release console.
-2. Open a registered app detail sheet.
-3. Review the active worker contract and exposed actions.
-4. Check readiness signals before publishing a release.
-5. Inspect the repository snapshot and latest audit entries.
+1. Open an app and click Publish Release.
+2. Confirm the repository, branch, subpath, and current release commit.
+3. Add a release note for the audit trail.
+4. Publish; the release history records the actor, commit, and note.
 
-## Publish app release
+## Review release history
 
-Use the Apps view to publish the selected app as the active worker contract.
+The Releases tab is the publish history of the worker-visible contract: who published which commit, from which source, and why. Configuration changes live on the Audit tab.
 
-![Publish app release](../assets/ui/deploy-app.png)
+![Review release history](../assets/ui/release-history.png)
 
-1. Open the app release console.
-2. Select a registered app.
-3. Open the release dialog.
-4. Confirm repository, branch, subpath, and current release.
-5. Add a release note and publish the app.
+1. Open an app and switch to the Releases tab.
+2. Each release record shows the actor, commit, source, release id, and note.
+3. Use it to answer who published which contract, and when; configuration changes are on the Audit tab.
 
-## Inspect active contracts
+## Review action schemas
 
-Use the Active Contracts view to inspect the worker-visible app contract, release history, and repository snapshot.
+The Actions tab shows each action's materialized input and output JSON Schemas — the contract workers and callers rely on.
 
-![Inspect active contracts](../assets/ui/deployment-contracts.png)
+![Review action schemas](../assets/ui/action-schemas.png)
 
-1. Open the app release console.
-2. Select an active app contract.
-3. Use Contract to review the worker-visible action list and route tag.
-4. Use History to inspect release audit entries.
-5. Use Repository Snapshot to inspect the materialized files used by the release.
+1. Open an app and switch to the Actions tab.
+2. Review the input and output JSON Schemas materialized from the release.
+3. Invoke actions through the control-plane API or the CLI; the UI documents the contract only.
+
+## Monitor one app
+
+The app detail Monitoring tab narrows the workspace job aggregates to a single app: queued and running now, plus completed, failed, canceled, and the failure rate in the selected window.
+
+![Monitor one app](../assets/ui/app-monitoring.png)
+
+1. Open an app and switch to the Monitoring tab.
+2. Read the tiles for this app's queued, running, and windowed completed/failed/canceled counts.
+3. Switch the window between 1h, 24h, and 7d.
+4. Watch the failure rate; the workspace-wide picture lives on the Monitoring page.
+
+## Audit configuration changes
+
+The Audit tab records who changed the app's configuration: repository settings edits, source deletion, and route tag overrides. Releases have their own history on the Releases tab.
+
+![Audit configuration changes](../assets/ui/audit.png)
+
+1. Open an app and switch to the Audit tab.
+2. Each record shows the actor, the kind of change, and the changed fields.
+3. Use it together with the Releases tab to answer who changed what, and when.
+
+## Monitor job activity
+
+The Monitoring view aggregates job activity for the whole workspace: totals, per-app and per-route-tag breakdowns, and failure rates. Individual runs are an API/CLI concern.
+
+![Monitor job activity](../assets/ui/monitoring.png)
+
+1. Open Monitoring from the sidebar.
+2. Read the tiles: queued and running now, plus completed, failed, and canceled runs in the selected window.
+3. Switch the window between 1h, 24h, and 7d.
+4. Use the by-app and by-route-tag tables to find where the failure rate is moving; app names link to the app detail.
+
+## Set the control-plane context
+
+Settings holds the workspace, API token, and audit actor that every Web UI request uses. Values are stored in the browser.
+
+![Set the control-plane context](../assets/ui/settings.png)
+
+1. Open Settings from the sidebar.
+2. Set the workspace and, when the control plane requires one, the API token.
+3. Set the audit actor recorded on releases and cancels; local development defaults to local-dev.
+
+## Collapse the sidebar
+
+The sidebar collapses to an icon rail so wide tables get the full viewport. The choice is remembered in the browser.
+
+![Collapse the sidebar](../assets/ui/collapse-sidebar.png)
+
+1. Click the collapse control at the bottom of the sidebar.
+2. Navigate with the icon rail; hover shows each destination.
+3. Click the control again to expand the sidebar.

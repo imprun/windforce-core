@@ -1,26 +1,26 @@
 {
   "name": "@windforce-lite/web",
   "private": true,
+  "type": "module",
   "packageManager": "bun@1.3.12",
   "scripts": {
-    "dev": "next dev --hostname 127.0.0.1 --port 3000",
-    "dev:docker": "next dev --hostname 0.0.0.0 --port 3000",
-    "build:next": "next build",
-    "build": "next build",
-    "typecheck": "next typegen && tsc --noEmit"
+    "dev": "vite --host 127.0.0.1 --port 3000",
+    "dev:docker": "vite --host 0.0.0.0 --port 3000",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "bun test src",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "next": "16.2.10",
     "react": "19.2.7",
     "react-dom": "19.2.7"
   },
   "devDependencies": {
-    "@types/node": "26.1.1",
+    "@types/bun": "^1.3.14",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
-    "typescript": "5.9.3"
-  },
-  "overrides": {
-    "postcss": "8.5.10"
+    "@vitejs/plugin-react": "^5.1.2",
+    "typescript": "5.9.3",
+    "vite": "^7.3.4"
   }
 }

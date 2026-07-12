@@ -1075,3 +1075,94 @@ func staleLock(path string, maxAge time.Duration) bool {
 	}
 	return time.Since(info.ModTime()) > maxAge
 }
+
+// PruneSettledJobs removes settled runs together with their jobs, logs,
+// events, and human tasks: succeeded runs older than successOlderThan, and
+// failed/canceled/expired runs older than failureOlderThan. Queued, running,
+// and waiting-human runs are never touched. It returns the number of jobs
+// removed.
+func (s *LocalStore) PruneSettledJobs(ctx context.Context, successOlderThan time.Time, failureOlderThan time.Time) (int64, error) {
+	var pruned int64
+	err := s.update(ctx, func(snapshot *Snapshot, _ time.Time) error {
+		expiredRuns := map[string]bool{}
+		for id, run := range snapshot.Runs {
+			if TerminalRunState(run.State) && run.UpdatedAt.Before(retentionCutoff(run.State, successOlderThan, failureOlderThan)) {
+				expiredRuns[id] = true
+			}
+		}
+		if len(expiredRuns) == 0 {
+			return nil
+		}
+		for id, job := range snapshot.Jobs {
+			if expiredRuns[job.RunID] {
+				delete(snapshot.Jobs, id)
+				delete(snapshot.JobLogs, id)
+				pruned++
+			}
+		}
+		for id, task := range snapshot.HumanTasks {
+			if expiredRuns[task.RunID] {
+				delete(snapshot.HumanTasks, id)
+			}
+		}
+		events := snapshot.Events[:0]
+		for _, event := range snapshot.Events {
+			if !expiredRuns[event.RunID] {
+				events = append(events, event)
+			}
+		}
+		snapshot.Events = events
+		for id := range expiredRuns {
+			delete(snapshot.Runs, id)
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return pruned, nil
+}
+
+// ExpireStuckJobs transitions runs that have been sitting in a non-terminal,
+// non-waiting state (queued, running, resuming) without progress since
+// stuckBefore into the expired/failure family, so the retention pruner can
+// eventually reclaim them. Actively heartbeating jobs refresh UpdatedAt and
+// are never considered stuck. It returns the number of runs expired.
+func (s *LocalStore) ExpireStuckJobs(ctx context.Context, stuckBefore time.Time) (int64, error) {
+	var expired int64
+	err := s.update(ctx, func(snapshot *Snapshot, now time.Time) error {
+		for id, run := range snapshot.Runs {
+			if run.State != RunQueued && run.State != RunRunning && run.State != RunResuming {
+				continue
+			}
+			latest := run.UpdatedAt
+			for _, job := range snapshot.Jobs {
+				if job.RunID == id && job.UpdatedAt.After(latest) {
+					latest = job.UpdatedAt
+				}
+			}
+			if !latest.Before(stuckBefore) {
+				continue
+			}
+			run.State = RunExpired
+			run.UpdatedAt = now
+			snapshot.Runs[id] = run
+			for jobID, job := range snapshot.Jobs {
+				if job.RunID != id || job.State == JobSucceeded || job.State == JobFailed {
+					continue
+				}
+				job.State = JobFailed
+				reason := "expired by retention policy: no progress before " + stuckBefore.UTC().Format(time.RFC3339)
+				job.CanceledReason = &reason
+				job.UpdatedAt = now
+				snapshot.Jobs[jobID] = job
+			}
+			expired++
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return expired, nil
+}

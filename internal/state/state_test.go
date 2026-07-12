@@ -925,3 +925,156 @@ func assertCanceledOutput(t *testing.T, output json.RawMessage, message string) 
 		t.Fatalf("canceled output = %s, want Canceled/%q", output, message)
 	}
 }
+
+func TestLocalStorePruneSettledJobs(t *testing.T) {
+	store := NewLocalStore(t.TempDir() + "/state.json")
+	exercisePruneSettledJobs(t, store)
+}
+
+func TestPostgresStorePruneSettledJobs(t *testing.T) {
+	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("WINDFORCE_LITE_POSTGRES_TEST_DSN is not set")
+	}
+	store, err := OpenPostgresStore(context.Background(), dsn)
+	if err != nil {
+		t.Fatalf("OpenPostgresStore returned error: %v", err)
+	}
+	defer store.Close()
+	if err := store.Migrate(context.Background()); err != nil {
+		t.Fatalf("Migrate returned error: %v", err)
+	}
+	if _, err := store.pool.Exec(context.Background(), `TRUNCATE job_logs, run_events, human_tasks, jobs, runs RESTART IDENTITY CASCADE`); err != nil {
+		t.Fatalf("TRUNCATE returned error: %v", err)
+	}
+	exercisePruneSettledJobs(t, store)
+}
+
+func exercisePruneSettledJobs(t *testing.T, store Store) {
+	t.Helper()
+	ctx := context.Background()
+	deployment := contract.Deployment{
+		Workspace: "default",
+		App:       "echo",
+		Commit:    "commit-a",
+		Actions: map[string]contract.Action{
+			"echo": {Action: "echo", Command: []string{"helper"}},
+		},
+	}
+
+	settledRun := NewRun("windforce", "run-settled-"+NewID("run"), "echo", "echo", deployment, json.RawMessage(`{}`))
+	settledJob := NewActionJob(settledRun, nil)
+	if err := store.CreateRunAndEnqueue(ctx, settledRun, settledJob); err != nil {
+		t.Fatalf("CreateRunAndEnqueue(settled) returned error: %v", err)
+	}
+	claimed, lease, err := store.ClaimJob(ctx, "worker-a", time.Minute)
+	if err != nil {
+		t.Fatalf("ClaimJob returned error: %v", err)
+	}
+	if claimed.ID != settledJob.ID {
+		t.Fatalf("claimed job = %s, want %s", claimed.ID, settledJob.ID)
+	}
+	if err := store.AppendLogs(ctx, settledJob.ID, "default", "settled log line\n"); err != nil {
+		t.Fatalf("AppendLogs returned error: %v", err)
+	}
+	if err := store.CompleteJobSucceeded(ctx, lease, contract.JobResult{App: "echo", Action: "echo", Output: json.RawMessage(`{"ok":true}`)}); err != nil {
+		t.Fatalf("CompleteJobSucceeded returned error: %v", err)
+	}
+
+	queuedRun := NewRun("windforce", "run-queued-"+NewID("run"), "echo", "echo", deployment, json.RawMessage(`{}`))
+	queuedJob := NewActionJob(queuedRun, nil)
+	if err := store.CreateRunAndEnqueue(ctx, queuedRun, queuedJob); err != nil {
+		t.Fatalf("CreateRunAndEnqueue(queued) returned error: %v", err)
+	}
+
+	canceledRun := NewRun("windforce", "run-canceled-"+NewID("run"), "echo", "echo", deployment, json.RawMessage(`{}`))
+	canceledJob := NewActionJob(canceledRun, nil)
+	if err := store.CreateRunAndEnqueue(ctx, canceledRun, canceledJob); err != nil {
+		t.Fatalf("CreateRunAndEnqueue(canceled) returned error: %v", err)
+	}
+	if _, err := store.CancelJob(ctx, "default", canceledJob.ID, "tester", "cleanup"); err != nil {
+		t.Fatalf("CancelJob returned error: %v", err)
+	}
+
+	// Success TTL elapsed, failure TTL disabled: only the succeeded run goes.
+	pruned, err := store.PruneSettledJobs(ctx, time.Now().UTC().Add(time.Hour), time.Time{})
+	if err != nil {
+		t.Fatalf("PruneSettledJobs returned error: %v", err)
+	}
+	if pruned != 1 {
+		t.Fatalf("pruned = %d, want 1", pruned)
+	}
+	if _, _, found, err := store.GetJob(ctx, "default", canceledJob.ID); err != nil {
+		t.Fatalf("GetJob(canceled) returned error: %v", err)
+	} else if !found {
+		t.Fatalf("canceled job was pruned by the success TTL")
+	}
+
+	// Failure TTL elapsed: the canceled run goes too.
+	prunedFailures, err := store.PruneSettledJobs(ctx, time.Time{}, time.Now().UTC().Add(time.Hour))
+	if err != nil {
+		t.Fatalf("PruneSettledJobs(failures) returned error: %v", err)
+	}
+	if prunedFailures != 1 {
+		t.Fatalf("pruned failures = %d, want 1", prunedFailures)
+	}
+
+	if _, _, found, err := store.GetJob(ctx, "default", settledJob.ID); err != nil {
+		t.Fatalf("GetJob(settled) returned error: %v", err)
+	} else if found {
+		t.Fatalf("settled job still exists after prune")
+	}
+	if _, found, err := store.GetLogs(ctx, "default", settledJob.ID); err != nil {
+		t.Fatalf("GetLogs returned error: %v", err)
+	} else if found {
+		t.Fatalf("settled job logs still exist after prune")
+	}
+	if _, _, found, err := store.GetJob(ctx, "default", queuedJob.ID); err != nil {
+		t.Fatalf("GetJob(queued) returned error: %v", err)
+	} else if !found {
+		t.Fatalf("queued job was pruned")
+	}
+	summary, err := store.JobSummary(ctx, "default", 24*time.Hour)
+	if err != nil {
+		t.Fatalf("JobSummary returned error: %v", err)
+	}
+	if summary.QueuedCount != 1 {
+		t.Fatalf("queued count after prune = %d, want 1", summary.QueuedCount)
+	}
+
+	again, err := store.PruneSettledJobs(ctx, time.Now().UTC().Add(time.Hour), time.Now().UTC().Add(time.Hour))
+	if err != nil {
+		t.Fatalf("second PruneSettledJobs returned error: %v", err)
+	}
+	if again != 0 {
+		t.Fatalf("second prune = %d, want 0", again)
+	}
+
+	// A queued run with no progress past the stuck cutoff expires into the
+	// failure family and becomes prunable; the fresh queued run above must
+	// have been expired by the same call, so recreate one that stays live.
+	expired, err := store.ExpireStuckJobs(ctx, time.Now().UTC().Add(time.Hour))
+	if err != nil {
+		t.Fatalf("ExpireStuckJobs returned error: %v", err)
+	}
+	if expired != 1 {
+		t.Fatalf("expired = %d, want 1", expired)
+	}
+	if job, run, found, err := store.GetJob(ctx, "default", queuedJob.ID); err != nil || !found {
+		t.Fatalf("GetJob(expired) = found %v, err %v", found, err)
+	} else {
+		if run.State != RunExpired {
+			t.Fatalf("stuck run state = %s, want %s", run.State, RunExpired)
+		}
+		if job.State != JobFailed {
+			t.Fatalf("stuck job state = %s, want %s", job.State, JobFailed)
+		}
+	}
+	prunedExpired, err := store.PruneSettledJobs(ctx, time.Time{}, time.Now().UTC().Add(time.Hour))
+	if err != nil {
+		t.Fatalf("PruneSettledJobs(expired) returned error: %v", err)
+	}
+	if prunedExpired != 1 {
+		t.Fatalf("pruned expired = %d, want 1", prunedExpired)
+	}
+}

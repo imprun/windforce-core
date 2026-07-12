@@ -5,9 +5,7 @@
 /.windforce-lite/
 /.serena/
 /web/node_modules/
-/web/.next/
-/web/out/
-/web/next-env.d.ts
+/web/dist/
 /web/*.tsbuildinfo
 .env
 *.exe

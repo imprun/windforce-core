@@ -908,3 +908,89 @@ func (s *PostgresStore) withTx(ctx context.Context, fn func(pgx.Tx) error) error
 	}
 	return tx.Commit(ctx)
 }
+
+// PruneSettledJobs removes settled runs together with their jobs, logs,
+// events, and human tasks: succeeded runs older than successOlderThan, and
+// failed/canceled/expired runs older than failureOlderThan. Queued, running,
+// and waiting-human runs are never touched. It returns the number of jobs
+// removed.
+func (s *PostgresStore) PruneSettledJobs(ctx context.Context, successOlderThan time.Time, failureOlderThan time.Time) (int64, error) {
+	var pruned int64
+	err := s.withTx(ctx, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `
+CREATE TEMPORARY TABLE prune_runs ON COMMIT DROP AS
+SELECT id FROM runs
+WHERE (state = 'SUCCEEDED' AND updated_at < $1)
+   OR (state IN ('FAILED', 'CANCELED', 'EXPIRED') AND updated_at < $2)
+`, successOlderThan, failureOlderThan); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `
+DELETE FROM job_logs WHERE job_id IN (SELECT id FROM jobs WHERE run_id IN (SELECT id FROM prune_runs))
+`); err != nil {
+			return err
+		}
+		jobs, err := tx.Exec(ctx, `DELETE FROM jobs WHERE run_id IN (SELECT id FROM prune_runs)`)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM run_events WHERE run_id IN (SELECT id FROM prune_runs)`); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM human_tasks WHERE run_id IN (SELECT id FROM prune_runs)`); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM runs WHERE id IN (SELECT id FROM prune_runs)`); err != nil {
+			return err
+		}
+		pruned = jobs.RowsAffected()
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return pruned, nil
+}
+
+// ExpireStuckJobs transitions runs stuck in queued/running/resuming without
+// progress since stuckBefore into the expired/failure family. Heartbeats
+// refresh jobs.updated_at, so actively leased jobs are never stuck. It
+// returns the number of runs expired.
+func (s *PostgresStore) ExpireStuckJobs(ctx context.Context, stuckBefore time.Time) (int64, error) {
+	var expired int64
+	err := s.withTx(ctx, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `
+CREATE TEMPORARY TABLE stuck_runs ON COMMIT DROP AS
+SELECT r.id FROM runs r
+WHERE r.state IN ('QUEUED', 'RUNNING', 'RESUMING')
+  AND r.updated_at < $1
+  AND NOT EXISTS (
+    SELECT 1 FROM jobs j WHERE j.run_id = r.id AND j.updated_at >= $1
+  )
+`, stuckBefore); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `
+UPDATE jobs SET state = 'failed',
+  canceled_reason = COALESCE(canceled_reason, 'expired by retention policy: no progress before ' || to_char($1::timestamptz at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')),
+  updated_at = now()
+WHERE run_id IN (SELECT id FROM stuck_runs)
+  AND state NOT IN ('succeeded', 'failed')
+`, stuckBefore); err != nil {
+			return err
+		}
+		runs, err := tx.Exec(ctx, `
+UPDATE runs SET state = 'EXPIRED', updated_at = now()
+WHERE id IN (SELECT id FROM stuck_runs)
+`)
+		if err != nil {
+			return err
+		}
+		expired = runs.RowsAffected()
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return expired, nil
+}

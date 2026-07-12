@@ -70,7 +70,6 @@ services:
       - "127.0.0.1:${WINDFORCE_LITE_WEB_PORT:-18090}:3000"
     environment:
       WINDFORCE_LITE_API_PROXY_TARGET: http://control-plane:8080
-      NEXT_TELEMETRY_DISABLED: "1"
     command:
       - sh
       - -lc
