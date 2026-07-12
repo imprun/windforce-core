@@ -153,10 +153,26 @@ p {
 }
 
 .navItem {
+  display: flex;
+  align-items: center;
+  gap: 9px;
   padding: 8px 10px;
   border-radius: var(--radius-small);
   color: var(--text-secondary);
   font-weight: 520;
+}
+
+.navIcon {
+  width: 18px;
+  text-align: center;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.navItem.active .navIcon {
+  color: var(--accent);
 }
 
 .navItem:hover {
@@ -169,6 +185,54 @@ p {
   background: var(--surface-2);
   color: var(--text-primary);
   font-weight: 640;
+}
+
+.sidebarToggle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: var(--radius-small);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-align: left;
+}
+
+.sidebarToggle:hover {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+
+.sidebarToggle span[aria-hidden] {
+  width: 18px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.sidebarCollapsed .sidebar {
+  width: 60px;
+  padding: 20px 10px;
+}
+
+.sidebarCollapsed .brand {
+  justify-content: center;
+  padding: 4px 0;
+}
+
+.sidebarCollapsed .brandName,
+.sidebarCollapsed .navLabel,
+.sidebarCollapsed .sidebarFooter {
+  display: none;
+}
+
+.sidebarCollapsed .navItem,
+.sidebarCollapsed .sidebarToggle {
+  justify-content: center;
+  padding: 8px 0;
 }
 
 .sidebarFooter {
@@ -868,8 +932,17 @@ textarea {
     flex-direction: row;
   }
 
-  .sidebarFooter {
+  .sidebarFooter,
+  .sidebarToggle {
     display: none;
+  }
+
+  .sidebarCollapsed .navLabel {
+    display: inline;
+  }
+
+  .sidebarCollapsed .brandName {
+    display: inline;
   }
 
   .topbar,

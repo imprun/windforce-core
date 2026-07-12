@@ -88,3 +88,13 @@ Settings holds the workspace, API token, and audit actor that every Web UI reque
 1. Open Settings from the sidebar.
 2. Set the workspace and, when the control plane requires one, the API token.
 3. Set the audit actor recorded on releases and cancels; local development defaults to local-dev.
+
+## Collapse the sidebar
+
+The sidebar collapses to an icon rail so wide tables get the full viewport. The choice is remembered in the browser.
+
+![Collapse the sidebar](../assets/ui/collapse-sidebar.png)
+
+1. Click the collapse control at the bottom of the sidebar.
+2. Navigate with the icon rail; hover shows each destination.
+3. Click the control again to expand the sidebar.

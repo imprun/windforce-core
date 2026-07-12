@@ -1,12 +1,16 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useApp } from "../lib/app-context";
 import { Link, useRouter } from "../lib/router";
 
 const navItems = [
-  { to: "/", label: "Apps", match: (path: string) => path === "/" || path.startsWith("/apps") },
-  { to: "/jobs", label: "Jobs", match: (path: string) => path.startsWith("/jobs") },
-  { to: "/settings", label: "Settings", match: (path: string) => path.startsWith("/settings") },
+  { to: "/", label: "Apps", icon: "▤", match: (path: string) => path === "/" || path.startsWith("/apps") },
+  { to: "/jobs", label: "Jobs", icon: "◔", match: (path: string) => path.startsWith("/jobs") },
+  { to: "/settings", label: "Settings", icon: "⚙", match: (path: string) => path.startsWith("/settings") },
 ];
+
+function loadCollapsed(): boolean {
+  return globalThis.localStorage?.getItem("wf.sidebarCollapsed") === "true";
+}
 
 export function Layout({
   title,
@@ -21,11 +25,16 @@ export function Layout({
 }) {
   const { path } = useRouter();
   const { settings, toasts, dismissToast } = useApp();
+  const [collapsed, setCollapsed] = useState(loadCollapsed);
+
+  useEffect(() => {
+    globalThis.localStorage?.setItem("wf.sidebarCollapsed", String(collapsed));
+  }, [collapsed]);
 
   return (
-    <div className="appShell">
+    <div className={collapsed ? "appShell sidebarCollapsed" : "appShell"}>
       <aside className="sidebar">
-        <Link className="brand" to="/">
+        <Link className="brand" to="/" title="windforce-lite">
           <span className="brandMark" aria-hidden="true">
             ⌁
           </span>
@@ -33,11 +42,30 @@ export function Layout({
         </Link>
         <nav className="nav" aria-label="Primary">
           {navItems.map((item) => (
-            <Link key={item.to} to={item.to} className={item.match(path) ? "navItem active" : "navItem"}>
-              {item.label}
+            <Link
+              key={item.to}
+              to={item.to}
+              className={item.match(path) ? "navItem active" : "navItem"}
+              title={item.label}
+            >
+              <span className="navIcon" aria-hidden="true">
+                {item.icon}
+              </span>
+              <span className="navLabel">{item.label}</span>
             </Link>
           ))}
         </nav>
+        <button
+          id="sidebarToggle"
+          type="button"
+          className="sidebarToggle"
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-expanded={!collapsed}
+          onClick={() => setCollapsed((current) => !current)}
+        >
+          <span aria-hidden="true">{collapsed ? "»" : "«"}</span>
+          <span className="navLabel">Collapse</span>
+        </button>
         <div className="sidebarFooter">
           <span className="workspacePill" title="Active workspace">
             workspace / {settings.workspace}

@@ -179,12 +179,14 @@ async function createPlaywrightBrowser(config) {
           await page.locator(selector).first().click();
         },
         async clickText(text) {
-          // Scenarios click buttons and navigation links alike.
-          await page
-            .locator("button, [role='button'], a")
-            .filter({ hasText: new RegExp(`^\\s*${text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`) })
-            .first()
-            .click();
+          // Scenarios click buttons and navigation links alike. Accessible
+          // names ignore aria-hidden icon glyphs inside the element.
+          const button = page.getByRole("button", { name: text, exact: true });
+          if ((await button.count()) > 0) {
+            await button.first().click();
+            return;
+          }
+          await page.getByRole("link", { name: text, exact: true }).first().click();
         },
         async fill(selector, value) {
           await page.locator(selector).fill(value);
@@ -329,8 +331,15 @@ class CdpPage {
 
   async clickText(text) {
     await this.evaluate((label) => {
+      // Ignore aria-hidden decorations (icon glyphs) when matching labels,
+      // mirroring how accessible names are computed.
+      const visibleText = (el) => {
+        const clone = el.cloneNode(true);
+        for (const hidden of clone.querySelectorAll("[aria-hidden='true']")) hidden.remove();
+        return clone.textContent.trim();
+      };
       const candidates = Array.from(document.querySelectorAll("button, [role='button'], a"));
-      const el = candidates.find((item) => item.textContent.trim() === label);
+      const el = candidates.find((item) => visibleText(item) === label);
       if (!el) throw new Error(`button not found: ${label}`);
       el.click();
     }, text);
