@@ -158,9 +158,6 @@ export function AppsPage() {
                             Publish Release
                           </button>
                         ) : null}
-                        <Link className="button small" to={`/apps/${detailID}`}>
-                          Open App
-                        </Link>
                       </td>
                     </tr>
                   );
