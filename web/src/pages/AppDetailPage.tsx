@@ -301,7 +301,7 @@ function ReleasesTab({
                 <th>Actor</th>
                 <th>Commit</th>
                 <th>Source</th>
-                <th>Release id</th>
+                <th title="Unique identifier for this publish operation">Publish ID</th>
                 <th>Note</th>
               </tr>
             </thead>
@@ -317,7 +317,15 @@ function ReleasesTab({
                     <CommitRef repoURL={repoURL} commit={item.commit_sha} />
                   </td>
                   <td>{item.source}</td>
-                  <td className="mono">{item.deployment_id ? shortSHA(item.deployment_id, 12) : "—"}</td>
+                  <td className="mono">
+                    {item.deployment_id ? (
+                      <span title={item.deployment_id} aria-label={`Publish ID ${item.deployment_id}`}>
+                        {shortSHA(item.deployment_id, 12)}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                   <td>{item.message || "—"}</td>
                 </tr>
               ))}
