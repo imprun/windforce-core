@@ -1,4 +1,4 @@
-.PHONY: help fmt test test-postgres build web-install web-dev web-build web-embed web-test web-typecheck clean \
+.PHONY: help fmt test test-postgres build web-install web-dev web-build web-embed web-test web-typecheck clean dev \
 	compose-up compose-db compose-worker compose-dev compose-dev-worker compose-dev-build compose-dev-logs compose-build compose-down compose-reset compose-logs compose-ps postgres-dsn \
 	dev-standalone dev-standalone-postgres dev-api dev-worker worker-once \
 	windforce-variable-set windforce-git-token windforce-register windforce-sync windforce-deploy windforce-sample \
@@ -88,7 +88,8 @@ help:
 	@echo "targets:"
 	@echo "  fmt                    run gofmt"
 	@echo "  web-install            install Web UI dependencies"
-	@echo "  web-dev                run the Vite Web UI dev server with live reload on WINDFORCE_LITE_WEB_PORT"
+	@echo "  dev                    start Docker air control-plane/worker, then run local Web UI dev server"
+	@echo "  web-dev                run the local Vite Web UI dev server with live reload on WINDFORCE_LITE_WEB_PORT"
 	@echo "  web-build              build the Web UI to web/dist without touching Go embed assets"
 	@echo "  web-embed              build the Web UI and refresh the Go embed assets"
 	@echo "  web-test               run Web UI unit tests"
@@ -117,10 +118,10 @@ help:
 	@echo "  compose-up             start control-plane API and Bun Web UI against configured PostgreSQL"
 	@echo "  compose-db             start repo-local PostgreSQL for standalone testing"
 	@echo "  compose-worker         start runtime worker against configured PostgreSQL"
-	@echo "  compose-dev            start hot-reload Go control-plane and Bun Web UI with docker compose + air"
+	@echo "  compose-dev            start hot-reload Go control-plane with docker compose + air"
 	@echo "  compose-dev-worker     start hot-reload Go runtime worker with docker compose + air"
 	@echo "  compose-dev-build      build the dev image that contains Go, Python, git, and air"
-	@echo "  compose-dev-logs       follow hot-reload control-plane/web/worker logs"
+	@echo "  compose-dev-logs       follow hot-reload control-plane/worker logs"
 	@echo "  compose-build          build the Go Docker image; Dockerfile builds and embeds Web UI assets"
 	@echo "  compose-down/reset/logs/ps"
 	@echo "  ui-guide               regenerate Web UI guide screenshots and markdown (needs bun, go, and a Chromium browser)"
@@ -134,6 +135,8 @@ web-install:
 
 web-dev:
 	cd web && WINDFORCE_LITE_API_PROXY_TARGET="$(WF_API_URL)" $(BUN) run dev -- --port "$(WINDFORCE_LITE_WEB_PORT)"
+
+dev: compose-dev compose-dev-worker web-dev
 
 web-build:
 	cd web && $(BUN) run build
@@ -168,7 +171,7 @@ compose-worker:
 	$(COMPOSE) --profile worker up -d worker
 
 compose-dev:
-	$(COMPOSE_DEV) --profile backend up -d control-plane web
+	$(COMPOSE_DEV) --profile backend up -d control-plane
 
 compose-dev-worker:
 	$(COMPOSE_DEV) --profile worker up -d worker
@@ -177,7 +180,7 @@ compose-dev-build:
 	$(COMPOSE_DEV) build control-plane worker
 
 compose-dev-logs:
-	$(COMPOSE_DEV) logs -f control-plane web worker
+	$(COMPOSE_DEV) logs -f control-plane worker
 
 compose-build:
 	$(COMPOSE) build control-plane worker

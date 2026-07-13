@@ -3,7 +3,7 @@ tmp_dir = "/tmp/windforce-lite-air-control-plane"
 
 [build]
 cmd = '''
-go build -o /tmp/windforce-lite-air-control-plane/windforce-lite ./cmd/windforce-lite
+go build -buildvcs=false -o /tmp/windforce-lite-air-control-plane/windforce-lite ./cmd/windforce-lite
 cat > /tmp/windforce-lite-air-control-plane/run <<'EOF'
 #!/bin/sh
 exec /tmp/windforce-lite-air-control-plane/windforce-lite api --addr :8080 --state-backend postgres --database-url "$WINDFORCE_LITE_DATABASE_URL" --migrate --store /data/store --catalog /data/catalog.json --git-sources /data/git-sources.json
