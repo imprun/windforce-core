@@ -1,0 +1,22 @@
+FROM golang:1-bookworm AS go-toolchain
+
+FROM python:3-slim-bookworm
+
+COPY --from=go-toolchain /usr/local/go /usr/local/go
+
+ENV GOPATH=/go
+ENV GOTOOLCHAIN=local
+ENV PATH=/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates git \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN go install github.com/air-verse/air@latest
+
+RUN useradd --system --uid 10001 --create-home windforce \
+    && mkdir -p /data/store /data/cache /go/pkg/mod /home/windforce/.cache/go-build \
+    && chown -R windforce:windforce /data /go/pkg/mod /home/windforce
+
+USER windforce
+WORKDIR /src

@@ -1,5 +1,5 @@
 .PHONY: help fmt test test-postgres build web-install web-dev web-build web-embed web-test web-typecheck clean \
-	compose-up compose-db compose-worker compose-build compose-down compose-reset compose-logs compose-ps postgres-dsn \
+	compose-up compose-db compose-worker compose-dev compose-dev-worker compose-dev-build compose-dev-logs compose-build compose-down compose-reset compose-logs compose-ps postgres-dsn \
 	dev-standalone dev-standalone-postgres dev-api dev-worker worker-once \
 	windforce-variable-set windforce-git-token windforce-register windforce-sync windforce-deploy windforce-sample \
 	windforce-schema windforce-openapi windforce-control-openapi \
@@ -22,6 +22,7 @@ GO ?= go
 endif
 
 COMPOSE ?= docker compose
+COMPOSE_DEV := $(COMPOSE) -f docker-compose.yml -f docker-compose.dev.yml
 BUN ?= bun
 
 ifneq (,$(wildcard .env))
@@ -116,6 +117,10 @@ help:
 	@echo "  compose-up             start control-plane API and Bun Web UI against configured PostgreSQL"
 	@echo "  compose-db             start repo-local PostgreSQL for standalone testing"
 	@echo "  compose-worker         start runtime worker against configured PostgreSQL"
+	@echo "  compose-dev            start hot-reload Go control-plane and Bun Web UI with docker compose + air"
+	@echo "  compose-dev-worker     start hot-reload Go runtime worker with docker compose + air"
+	@echo "  compose-dev-build      build the dev image that contains Go, Python, git, and air"
+	@echo "  compose-dev-logs       follow hot-reload control-plane/web/worker logs"
 	@echo "  compose-build          build the Go Docker image; Dockerfile builds and embeds Web UI assets"
 	@echo "  compose-down/reset/logs/ps"
 	@echo "  ui-guide               regenerate Web UI guide screenshots and markdown (needs bun, go, and a Chromium browser)"
@@ -161,6 +166,18 @@ compose-db:
 
 compose-worker:
 	$(COMPOSE) --profile worker up -d worker
+
+compose-dev:
+	$(COMPOSE_DEV) --profile backend up -d control-plane web
+
+compose-dev-worker:
+	$(COMPOSE_DEV) --profile worker up -d worker
+
+compose-dev-build:
+	$(COMPOSE_DEV) build control-plane worker
+
+compose-dev-logs:
+	$(COMPOSE_DEV) logs -f control-plane web worker
 
 compose-build:
 	$(COMPOSE) build control-plane worker

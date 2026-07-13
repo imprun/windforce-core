@@ -1,0 +1,29 @@
+root = "."
+tmp_dir = "/tmp/windforce-lite-air-worker"
+
+[build]
+cmd = '''
+go build -o /tmp/windforce-lite-air-worker/windforce-lite ./cmd/windforce-lite
+cat > /tmp/windforce-lite-air-worker/run <<'EOF'
+#!/bin/sh
+exec /tmp/windforce-lite-air-worker/windforce-lite worker --state-backend postgres --database-url "$WINDFORCE_LITE_DATABASE_URL" --migrate --store /data/store --cache /data/cache
+EOF
+chmod +x /tmp/windforce-lite-air-worker/run
+'''
+entrypoint = "/tmp/windforce-lite-air-worker/run"
+include_ext = ["go", "mod", "sum"]
+exclude_dir = [".git", ".claude", ".serena", ".tmp", ".windforce-lite", "tmp", "web"]
+exclude_regex = ["_test\\.go"]
+delay = 1000
+poll = true
+poll_interval = 500
+stop_on_error = true
+send_interrupt = true
+kill_delay = "2s"
+
+[log]
+time = true
+
+[screen]
+clear_on_rebuild = false
+keep_scroll = true
