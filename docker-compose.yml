@@ -15,9 +15,6 @@ services:
       - windforce-data:/data
 
   postgres:
-    profiles:
-      - pg
-      - standalone
     image: postgres:16-alpine
     restart: unless-stopped
     ports:
@@ -47,7 +44,6 @@ services:
         condition: service_completed_successfully
       postgres:
         condition: service_healthy
-        required: false
     ports:
       - "127.0.0.1:${WINDFORCE_LITE_API_PORT:-18091}:8080"
     command:
@@ -104,7 +100,6 @@ services:
         condition: service_completed_successfully
       postgres:
         condition: service_healthy
-        required: false
     command:
       - worker
       - --state-backend
@@ -129,7 +124,13 @@ services:
 
 volumes:
   postgres-data:
+    name: ${WINDFORCE_LITE_POSTGRES_VOLUME:-windforce-lite_postgres-data}
+    external: ${WINDFORCE_LITE_POSTGRES_VOLUME_EXTERNAL:-false}
   windforce-data:
     name: ${WINDFORCE_LITE_DATA_VOLUME:-windforce-lite_windforce-data}
     external: ${WINDFORCE_LITE_DATA_VOLUME_EXTERNAL:-false}
   web-node-modules:
+
+networks:
+  default:
+    name: ${WINDFORCE_LITE_NETWORK:-windforce-lite}
