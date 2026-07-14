@@ -25,7 +25,7 @@ import { actionDisplayName } from "../lib/action-label";
 import { useApp, useAsync } from "../lib/app-context";
 import { formatJSON, formatRelative, formatTime, shortSHA } from "../lib/format";
 import { forgeCommitURL, forgeName, forgeTreeURL } from "../lib/repo";
-import { href, Link, useRouter } from "../lib/router";
+import { Link, useRouter } from "../lib/router";
 import { describeSchema, formatSchemaValue, type SchemaField } from "../lib/schema-document";
 
 const tabs = [
@@ -405,7 +405,7 @@ function DocsTab({
         </aside>
         <section className="docsMain">
           {activeSection === "guide" ? <GuideDocument source={source} app={app} /> : null}
-          {activeSection === "actions" && !actionKey ? <ActionReferenceList sourceID={sourceID} app={app} actions={actions} /> : null}
+          {activeSection === "actions" && !actionKey ? <ActionReferenceList sourceID={sourceID} actions={actions} /> : null}
           {activeSection === "actions" && selectedAction ? (
             <ActionReferenceDetail app={app} action={selectedAction} />
           ) : null}
@@ -450,9 +450,7 @@ function RenderedGuide({ documentation, source }: { documentation: AppDocumentat
   );
 }
 
-function ActionReferenceList({ sourceID, app, actions }: { sourceID: number; app: AppSummary; actions: ActionView[] }) {
-  const { settings } = useApp();
-  const openAPIReferenceURL = href(`/openapi/${encodeURIComponent(settings.workspace || "default")}/${encodeURIComponent(app.app_key)}`);
+function ActionReferenceList({ sourceID, actions }: { sourceID: number; actions: ActionView[] }) {
   return (
     <section className="docsArticle">
       <header className="docsHeader">
@@ -461,9 +459,6 @@ function ActionReferenceList({ sourceID, app, actions }: { sourceID: number; app
             <h2>Actions</h2>
             <p>Select an action to review its request and result schemas.</p>
           </div>
-          <a className="button small" href={openAPIReferenceURL} target="_blank" rel="noreferrer">
-            OpenAPI
-          </a>
         </div>
       </header>
       {actions.length === 0 ? (
@@ -482,10 +477,9 @@ function ActionReferenceList({ sourceID, app, actions }: { sourceID: number; app
 }
 
 function ActionReferenceDetail({ app, action }: { app: AppSummary; action: ActionView }) {
-  const { api, settings } = useApp();
+  const { api } = useApp();
   const schemas = useAsync(() => api.actionSchemas(app.app_key, action.action_key), [api, app.app_key, action.action_key]);
   const name = actionDisplayName(action.display_name);
-  const openAPIReferenceURL = href(`/openapi/${encodeURIComponent(settings.workspace || "default")}/${encodeURIComponent(app.app_key)}`);
   return (
     <article className="docsArticle">
       <header className="docsHeader">
@@ -496,9 +490,6 @@ function ActionReferenceDetail({ app, action }: { app: AppSummary; action: Actio
               Action key <span className="mono">{action.action_key}</span>
             </p>
           </div>
-          <a className="button small" href={openAPIReferenceURL} target="_blank" rel="noreferrer">
-            OpenAPI
-          </a>
         </div>
       </header>
       {schemas.error ? <ErrorNotice message={schemas.error} onRetry={schemas.reload} /> : null}

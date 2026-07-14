@@ -1192,45 +1192,6 @@ textarea {
   margin-top: 10px;
 }
 
-/* ---------- OpenAPI viewer ---------- */
-
-.openAPIPublicPage {
-  min-height: 100vh;
-  padding: 28px clamp(20px, 4vw, 72px) 48px;
-  background: var(--surface-1);
-}
-
-.openAPIPageHeader {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 20px;
-  flex-wrap: wrap;
-  max-width: 1280px;
-  margin: 0 auto 28px;
-  padding-bottom: 20px;
-  border-bottom: 1px solid var(--border);
-}
-
-.openAPIPageHeader h1 {
-  font-size: 24px;
-}
-
-.openAPIPageHeader p:not(.eyebrow) {
-  margin-top: 5px;
-  color: var(--text-secondary);
-}
-
-.openAPIReference {
-  max-width: 1280px;
-  margin: 0 auto;
-  min-width: 0;
-}
-
-.openAPIReference .swagger-ui {
-  color: var(--text-primary);
-}
-
 /* ---------- repository settings ---------- */
 
 .repositoryActions {

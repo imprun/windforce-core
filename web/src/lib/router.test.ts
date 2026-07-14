@@ -17,10 +17,6 @@ describe("matchRoute", () => {
       section: "actions",
       action: "1000",
     });
-    expect(matchRoute("/openapi/:workspace/:app", "/openapi/default/4MDCPCM")).toEqual({
-      workspace: "default",
-      app: "4MDCPCM",
-    });
   });
 
   test("optional trailing params may be omitted", () => {
