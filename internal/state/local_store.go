@@ -974,12 +974,20 @@ func ensureSnapshot(snapshot *Snapshot) {
 	if snapshot.Resources == nil {
 		snapshot.Resources = map[string]map[string]Resource{}
 	}
-	if snapshot.APIClients == nil {
-		snapshot.APIClients = map[string]map[string]APIClient{}
+	if snapshot.Clients == nil {
+		snapshot.Clients = snapshot.LegacyClients
+		if snapshot.Clients == nil {
+			snapshot.Clients = map[string]map[string]Client{}
+		}
 	}
-	if snapshot.APIClientAudits == nil {
-		snapshot.APIClientAudits = map[string][]APIClientAudit{}
+	if snapshot.ClientAudits == nil {
+		snapshot.ClientAudits = snapshot.LegacyClientAudits
+		if snapshot.ClientAudits == nil {
+			snapshot.ClientAudits = map[string][]ClientAudit{}
+		}
 	}
+	snapshot.LegacyClients = nil
+	snapshot.LegacyClientAudits = nil
 }
 
 func variableKey(appKey string, path string) string {

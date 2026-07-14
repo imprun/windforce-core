@@ -1,7 +1,7 @@
 import { matchRoute, useRouter } from "./lib/router";
 import { AppDetailPage } from "./pages/AppDetailPage";
 import { AppsPage } from "./pages/AppsPage";
-import { APIClientsPage } from "./pages/APIClientsPage";
+import { ClientRegistryPage } from "./pages/ClientRegistryPage";
 import { MonitoringPage } from "./pages/MonitoringPage";
 import { SettingsPage } from "./pages/SettingsPage";
 
@@ -17,7 +17,7 @@ export function App() {
   }
 
   if (matchRoute("/monitoring", path)) return <MonitoringPage />;
-  if (matchRoute("/api-clients", path)) return <APIClientsPage />;
+  if (matchRoute("/clients", path)) return <ClientRegistryPage />;
   // Back-compat: /jobs was the pre-rename route, and /jobs/{id} was the
   // removed per-job detail page (ADR 0005).
   const legacyJobs = matchRoute("/jobs/:id?", path);

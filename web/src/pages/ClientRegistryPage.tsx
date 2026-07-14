@@ -1,22 +1,22 @@
 import { useMemo, useState } from "react";
 import { Layout } from "../components/Layout";
 import { EmptyState, ErrorNotice, Loading } from "../components/ui";
-import { APIClientDialog } from "../features/APIClientDialog";
-import type { APIClient } from "../lib/api";
+import { ClientDialog } from "../features/ClientDialog";
+import type { Client } from "../lib/api";
 import { useApp, useAsync } from "../lib/app-context";
 import { formatRelative, formatTime } from "../lib/format";
 
-export function APIClientsPage() {
+export function ClientRegistryPage() {
   const { api } = useApp();
   const [search, setSearch] = useState("");
-  const [editing, setEditing] = useState<APIClient | "new" | null>(null);
-  const state = useAsync(() => api.apiClients(), [api]);
+  const [editing, setEditing] = useState<Client | "new" | null>(null);
+  const state = useAsync(() => api.clients(), [api]);
 
   const clients = useMemo(() => {
     const query = search.trim().toLowerCase();
     if (!state.data || !query) return state.data || [];
     return state.data.filter(
-      (client) => client.name.toLowerCase().includes(query) || client.client_key.toLowerCase().includes(query),
+      (client) => client.name.toLowerCase().includes(query) || client.external_key.toLowerCase().includes(query),
     );
   }, [search, state.data]);
 
@@ -27,38 +27,42 @@ export function APIClientsPage() {
 
   return (
     <Layout
-      title="API Clients"
-      subtitle="Stable client identities used by app and action configuration."
+      title="Client Registry"
+      subtitle="External clients available for app- and action-specific configuration."
       actions={
         <>
           <input
             className="searchInput"
-            placeholder="Filter API clients…"
+            placeholder="Filter clients…"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            aria-label="Filter API clients"
+            aria-label="Filter clients"
           />
           <button className="button" type="button" onClick={() => state.reload()}>
             Refresh
           </button>
           <button className="button primary" type="button" onClick={() => setEditing("new")}>
-            Create API Client
+            Register Client
           </button>
         </>
       }
     >
+      <div className="inlineNotice">
+        External Key identifies an external client for app- and action-specific configuration. It is not a
+        Windforce API credential.
+      </div>
       {state.error ? <ErrorNotice message={state.error} onRetry={state.reload} /> : null}
       {state.loading && !state.data ? <Loading /> : null}
       {state.data ? (
         clients.length === 0 ? (
-          <EmptyState title={search ? "No API clients match the filter." : "No API clients registered yet."} />
+          <EmptyState title={search ? "No clients match the filter." : "No clients registered yet."} />
         ) : (
           <div className="tableWrap">
-            <table className="table" id="apiClientList">
+            <table className="table" id="clientList">
               <thead>
                 <tr>
                   <th>Name</th>
-                  <th>Client key</th>
+                  <th>External key</th>
                   <th>Updated</th>
                   <th>Updated by</th>
                   <th aria-label="Row actions" />
@@ -70,7 +74,7 @@ export function APIClientsPage() {
                     <td>
                       <span className="cellTitle">{client.name}</span>
                     </td>
-                    <td className="mono">{client.client_key}</td>
+                    <td className="mono">{client.external_key}</td>
                     <td title={formatTime(client.updated_at)}>
                       <span className="cellTitle">{formatRelative(client.updated_at)}</span>
                       <span className="cellSub">{formatTime(client.updated_at)}</span>
@@ -90,7 +94,7 @@ export function APIClientsPage() {
       ) : null}
 
       {editing ? (
-        <APIClientDialog
+        <ClientDialog
           client={editing === "new" ? undefined : editing}
           onClose={() => setEditing(null)}
           onSaved={finishChange}

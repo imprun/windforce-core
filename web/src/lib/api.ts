@@ -44,20 +44,20 @@ export type GitSource = {
   created_at: string;
 };
 
-export type APIClient = {
+export type Client = {
   id: string;
   workspace_id: string;
   name: string;
-  client_key: string;
+  external_key: string;
   created_by: string;
   updated_by: string;
   created_at: string;
   updated_at: string;
 };
 
-export type APIClientPayload = {
+export type ClientPayload = {
   name: string;
-  client_key: string;
+  external_key: string;
 };
 
 export type ProbeResult = {
@@ -238,20 +238,20 @@ type RequestOptions = {
 export class WindforceApi {
   constructor(private readonly settings: Settings) {}
 
-  apiClients(): Promise<APIClient[]> {
-    return this.request("/api_clients");
+  clients(): Promise<Client[]> {
+    return this.request("/clients");
   }
 
-  createAPIClient(payload: APIClientPayload): Promise<APIClient> {
-    return this.request("/api_clients", { method: "POST", body: payload });
+  createClient(payload: ClientPayload): Promise<Client> {
+    return this.request("/clients", { method: "POST", body: payload });
   }
 
-  updateAPIClient(id: string, payload: APIClientPayload): Promise<APIClient> {
-    return this.request(`/api_clients/${encodeURIComponent(id)}`, { method: "PATCH", body: payload });
+  updateClient(id: string, payload: ClientPayload): Promise<Client> {
+    return this.request(`/clients/${encodeURIComponent(id)}`, { method: "PATCH", body: payload });
   }
 
-  async deleteAPIClient(id: string): Promise<void> {
-    await this.request(`/api_clients/${encodeURIComponent(id)}`, { method: "DELETE" });
+  async deleteClient(id: string): Promise<void> {
+    await this.request(`/clients/${encodeURIComponent(id)}`, { method: "DELETE" });
   }
 
   gitSources(): Promise<GitSource[]> {

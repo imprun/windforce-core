@@ -259,25 +259,59 @@ type Resource struct {
 	Description  string          `json:"description"`
 }
 
-type APIClient struct {
+type Client struct {
 	ID          string    `json:"id"`
 	WorkspaceID string    `json:"workspace_id"`
 	Name        string    `json:"name"`
-	ClientKey   string    `json:"client_key"`
+	ExternalKey string    `json:"external_key"`
 	CreatedBy   string    `json:"created_by"`
 	UpdatedBy   string    `json:"updated_by"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
-type APIClientAudit struct {
+func (client *Client) UnmarshalJSON(data []byte) error {
+	type clientAlias Client
+	if err := json.Unmarshal(data, (*clientAlias)(client)); err != nil {
+		return err
+	}
+	if client.ExternalKey == "" {
+		var legacy struct {
+			ExternalKey string `json:"client_key"`
+		}
+		if err := json.Unmarshal(data, &legacy); err != nil {
+			return err
+		}
+		client.ExternalKey = legacy.ExternalKey
+	}
+	return nil
+}
+
+type ClientAudit struct {
 	ID          string    `json:"id"`
 	WorkspaceID string    `json:"workspace_id"`
-	APIClientID string    `json:"api_client_id"`
+	ClientID    string    `json:"client_id"`
 	Kind        string    `json:"kind"`
 	Detail      string    `json:"detail,omitempty"`
 	Actor       string    `json:"actor"`
 	CreatedAt   time.Time `json:"created_at"`
+}
+
+func (record *ClientAudit) UnmarshalJSON(data []byte) error {
+	type auditAlias ClientAudit
+	if err := json.Unmarshal(data, (*auditAlias)(record)); err != nil {
+		return err
+	}
+	if record.ClientID == "" {
+		var legacy struct {
+			ClientID string `json:"api_client_id"`
+		}
+		if err := json.Unmarshal(data, &legacy); err != nil {
+			return err
+		}
+		record.ClientID = legacy.ClientID
+	}
+	return nil
 }
 
 type RunEvent struct {
@@ -296,17 +330,19 @@ type JobLog struct {
 }
 
 type Snapshot struct {
-	Sequence        int64                                 `json:"sequence"`
-	Runs            map[string]Run                        `json:"runs"`
-	Jobs            map[string]Job                        `json:"jobs"`
-	HumanTasks      map[string]HumanTask                  `json:"humanTasks"`
-	Events          []RunEvent                            `json:"events"`
-	JobLogs         map[string]JobLog                     `json:"jobLogs"`
-	JobState        map[string]map[string]json.RawMessage `json:"jobState"`
-	Variables       map[string]map[string]Variable        `json:"variables"`
-	Resources       map[string]map[string]Resource        `json:"resources"`
-	APIClients      map[string]map[string]APIClient       `json:"apiClients"`
-	APIClientAudits map[string][]APIClientAudit           `json:"apiClientAudits"`
+	Sequence           int64                                 `json:"sequence"`
+	Runs               map[string]Run                        `json:"runs"`
+	Jobs               map[string]Job                        `json:"jobs"`
+	HumanTasks         map[string]HumanTask                  `json:"humanTasks"`
+	Events             []RunEvent                            `json:"events"`
+	JobLogs            map[string]JobLog                     `json:"jobLogs"`
+	JobState           map[string]map[string]json.RawMessage `json:"jobState"`
+	Variables          map[string]map[string]Variable        `json:"variables"`
+	Resources          map[string]map[string]Resource        `json:"resources"`
+	Clients            map[string]map[string]Client          `json:"clients"`
+	ClientAudits       map[string][]ClientAudit              `json:"clientAudits"`
+	LegacyClients      map[string]map[string]Client          `json:"apiClients,omitempty"`
+	LegacyClientAudits map[string][]ClientAudit              `json:"apiClientAudits,omitempty"`
 }
 
 type Store interface {
@@ -328,12 +364,12 @@ type Store interface {
 	DeleteVariable(ctx context.Context, workspaceID string, appKey string, path string) error
 	SetResource(ctx context.Context, workspaceID string, path string, value json.RawMessage, resourceType string, description string) error
 	GetResource(ctx context.Context, workspaceID string, path string) (Resource, bool, error)
-	ListAPIClients(ctx context.Context, workspaceID string) ([]APIClient, error)
-	GetAPIClient(ctx context.Context, workspaceID string, id string) (APIClient, error)
-	CreateAPIClient(ctx context.Context, workspaceID string, name string, clientKey string, actor string) (APIClient, error)
-	UpdateAPIClient(ctx context.Context, workspaceID string, id string, name string, clientKey string, actor string) (APIClient, error)
-	DeleteAPIClient(ctx context.Context, workspaceID string, id string, actor string) error
-	ListAPIClientAudit(ctx context.Context, workspaceID string, id string) ([]APIClientAudit, error)
+	ListClients(ctx context.Context, workspaceID string) ([]Client, error)
+	GetClient(ctx context.Context, workspaceID string, id string) (Client, error)
+	CreateClient(ctx context.Context, workspaceID string, name string, externalKey string, actor string) (Client, error)
+	UpdateClient(ctx context.Context, workspaceID string, id string, name string, externalKey string, actor string) (Client, error)
+	DeleteClient(ctx context.Context, workspaceID string, id string, actor string) error
+	ListClientAudit(ctx context.Context, workspaceID string, id string) ([]ClientAudit, error)
 	DecryptInput(ctx context.Context, workspaceID string, input json.RawMessage) (json.RawMessage, error)
 	ClaimJob(ctx context.Context, workerID string, leaseTTL time.Duration) (Job, Lease, error)
 	ClaimJobForTags(ctx context.Context, workerID string, tags []string, leaseTTL time.Duration) (Job, Lease, error)

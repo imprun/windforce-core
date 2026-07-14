@@ -12,7 +12,7 @@ import (
 	"github.com/imprun/windforce-lite/internal/state"
 )
 
-func TestCanonicalAPIClientLifecycle(t *testing.T) {
+func TestCanonicalClientLifecycle(t *testing.T) {
 	server := httptest.NewServer(New(Config{
 		Store:     state.NewLocalStore(filepath.Join(t.TempDir(), "state.json")),
 		EnableAPI: true,
@@ -51,33 +51,36 @@ func TestCanonicalAPIClientLifecycle(t *testing.T) {
 		return payload.Bytes()
 	}
 
-	var created state.APIClient
-	do(http.MethodPost, "/api/w/ws-a/api_clients", "alice@example.test", `{"name":"Acme Operations","client_key":"client-key-a"}`, http.StatusCreated, &created)
-	if created.ID == "" || created.WorkspaceID != "ws-a" || created.Name != "Acme Operations" || created.ClientKey != "client-key-a" {
+	var created state.Client
+	createdBody := do(http.MethodPost, "/api/w/ws-a/clients", "alice@example.test", `{"name":"Acme Operations","external_key":"client-key-a"}`, http.StatusCreated, &created)
+	if created.ID == "" || created.WorkspaceID != "ws-a" || created.Name != "Acme Operations" || created.ExternalKey != "client-key-a" {
 		t.Fatalf("created = %#v", created)
 	}
 	if created.CreatedBy != "alice@example.test" || created.UpdatedBy != "alice@example.test" {
 		t.Fatalf("created actors = %#v", created)
 	}
+	if bytes.Contains(createdBody, []byte("client_key")) || !bytes.Contains(createdBody, []byte("external_key")) {
+		t.Fatalf("created response uses legacy field: %s", createdBody)
+	}
 
-	do(http.MethodPost, "/api/w/ws-a/api_clients", "alice@example.test", `{"name":"Duplicate","client_key":"client-key-a"}`, http.StatusConflict, nil)
-	do(http.MethodPost, "/api/w/ws-b/api_clients", "alice@example.test", `{"name":"Other workspace","client_key":"client-key-a"}`, http.StatusCreated, nil)
-	do(http.MethodPost, "/api/w/ws-a/api_clients", "alice@example.test", `{"name":"Whitespace","client_key":"bad key"}`, http.StatusBadRequest, nil)
+	do(http.MethodPost, "/api/w/ws-a/clients", "alice@example.test", `{"name":"Duplicate","external_key":"client-key-a"}`, http.StatusConflict, nil)
+	do(http.MethodPost, "/api/w/ws-b/clients", "alice@example.test", `{"name":"Other workspace","external_key":"client-key-a"}`, http.StatusCreated, nil)
+	do(http.MethodPost, "/api/w/ws-a/clients", "alice@example.test", `{"name":"Whitespace","external_key":"bad key"}`, http.StatusBadRequest, nil)
 
-	var clients []state.APIClient
-	do(http.MethodGet, "/api/w/ws-a/api_clients", "", "", http.StatusOK, &clients)
+	var clients []state.Client
+	do(http.MethodGet, "/api/w/ws-a/clients", "", "", http.StatusOK, &clients)
 	if len(clients) != 1 || clients[0].ID != created.ID {
 		t.Fatalf("clients = %#v", clients)
 	}
 
-	var updated state.APIClient
-	clientPath := "/api/w/ws-a/api_clients/" + created.ID
-	do(http.MethodPatch, clientPath, "bob@example.test", `{"name":"Acme Korea","client_key":"client-key-b"}`, http.StatusOK, &updated)
-	if updated.ID != created.ID || updated.Name != "Acme Korea" || updated.ClientKey != "client-key-b" || updated.UpdatedBy != "bob@example.test" {
+	var updated state.Client
+	clientPath := "/api/w/ws-a/clients/" + created.ID
+	do(http.MethodPatch, clientPath, "bob@example.test", `{"name":"Acme Korea","external_key":"client-key-b"}`, http.StatusOK, &updated)
+	if updated.ID != created.ID || updated.Name != "Acme Korea" || updated.ExternalKey != "client-key-b" || updated.UpdatedBy != "bob@example.test" {
 		t.Fatalf("updated = %#v", updated)
 	}
 
-	var audit []state.APIClientAudit
+	var audit []state.ClientAudit
 	auditBody := do(http.MethodGet, clientPath+"/audit", "", "", http.StatusOK, &audit)
 	if len(audit) != 2 || audit[0].Kind != "updated" || audit[0].Actor != "bob@example.test" || audit[1].Kind != "created" {
 		t.Fatalf("audit = %#v", audit)
@@ -97,18 +100,18 @@ func TestCanonicalAPIClientLifecycle(t *testing.T) {
 	}
 }
 
-func TestControlPlaneOpenAPIIncludesAPIClients(t *testing.T) {
+func TestControlPlaneOpenAPIIncludesClients(t *testing.T) {
 	schemas := controlPlaneSchemas()
-	for _, name := range []string{"APIClient", "CreateAPIClientRequest", "UpdateAPIClientRequest", "APIClientAudit"} {
+	for _, name := range []string{"Client", "CreateClientRequest", "UpdateClientRequest", "ClientAudit"} {
 		if schemas[name] == nil {
 			t.Fatalf("missing schema %s", name)
 		}
 	}
 	paths := buildControlPlaneOpenAPI("http://example.test", "default")["paths"].(map[string]any)
 	for _, path := range []string{
-		"/api/w/{workspace}/api_clients",
-		"/api/w/{workspace}/api_clients/{api_client_id}",
-		"/api/w/{workspace}/api_clients/{api_client_id}/audit",
+		"/api/w/{workspace}/clients",
+		"/api/w/{workspace}/clients/{client_id}",
+		"/api/w/{workspace}/clients/{client_id}/audit",
 	} {
 		if paths[path] == nil {
 			t.Fatalf("missing path %s", path)

@@ -104,23 +104,51 @@ CREATE TABLE IF NOT EXISTS workspace_key (
     kek_version INTEGER NOT NULL DEFAULT 0
 );
 
-CREATE TABLE IF NOT EXISTS api_client (
+DO $$
+BEGIN
+    IF to_regclass('client_registry') IS NULL AND to_regclass('api_client') IS NOT NULL THEN
+        ALTER TABLE api_client RENAME TO client_registry;
+    END IF;
+    IF to_regclass('client_registry_audit') IS NULL AND to_regclass('api_client_audit') IS NOT NULL THEN
+        ALTER TABLE api_client_audit RENAME TO client_registry_audit;
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema() AND table_name = 'client_registry' AND column_name = 'client_key'
+    ) AND NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema() AND table_name = 'client_registry' AND column_name = 'external_key'
+    ) THEN
+        ALTER TABLE client_registry RENAME COLUMN client_key TO external_key;
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema() AND table_name = 'client_registry_audit' AND column_name = 'api_client_id'
+    ) AND NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema() AND table_name = 'client_registry_audit' AND column_name = 'client_id'
+    ) THEN
+        ALTER TABLE client_registry_audit RENAME COLUMN api_client_id TO client_id;
+    END IF;
+END $$;
+
+CREATE TABLE IF NOT EXISTS client_registry (
     workspace_id TEXT NOT NULL,
     id TEXT NOT NULL,
     name TEXT NOT NULL,
-    client_key TEXT NOT NULL,
+    external_key TEXT NOT NULL,
     created_by TEXT NOT NULL,
     updated_by TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (workspace_id, id),
-    UNIQUE (workspace_id, client_key)
+    UNIQUE (workspace_id, external_key)
 );
 
-CREATE TABLE IF NOT EXISTS api_client_audit (
+CREATE TABLE IF NOT EXISTS client_registry_audit (
     id BIGSERIAL PRIMARY KEY,
     workspace_id TEXT NOT NULL,
-    api_client_id TEXT NOT NULL,
+    client_id TEXT NOT NULL,
     kind TEXT NOT NULL,
     detail TEXT NOT NULL DEFAULT '',
     actor TEXT NOT NULL,
@@ -152,8 +180,8 @@ CREATE INDEX IF NOT EXISTS runs_correlation_id_idx
     ON runs (correlation_id)
     WHERE correlation_id IS NOT NULL;
 
-CREATE INDEX IF NOT EXISTS api_client_audit_client_idx
-    ON api_client_audit (workspace_id, api_client_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS client_registry_audit_client_idx
+    ON client_registry_audit (workspace_id, client_id, created_at DESC);
 `)
 	return err
 }
