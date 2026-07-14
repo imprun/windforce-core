@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Layout } from "../components/Layout";
+import { ReleaseMarkdown } from "../components/ReleaseMarkdown";
 import {
   DefinitionList,
   EmptyState,
@@ -14,7 +15,9 @@ import { PublishReleaseDialog } from "../features/PublishReleaseDialog";
 import { RepositorySettings } from "../features/RepositorySettings";
 import {
   type ActionView,
+  type ActionSchemas,
   type AppDetail,
+  type AppDocumentation,
   type AppSummary,
   type GitSource,
 } from "../lib/api";
@@ -25,16 +28,26 @@ import { Link, useRouter } from "../lib/router";
 
 const tabs = [
   { key: "overview", label: "Overview" },
+  { key: "docs", label: "Docs" },
   { key: "monitoring", label: "Monitoring" },
   { key: "repository", label: "Repository" },
   { key: "releases", label: "Releases" },
   { key: "audit", label: "Audit" },
-  { key: "actions", label: "Actions" },
 ] as const;
 
 type TabKey = (typeof tabs)[number]["key"];
 
-export function AppDetailPage({ sourceID, tab }: { sourceID: number; tab: string }) {
+export function AppDetailPage({
+  sourceID,
+  tab,
+  section,
+  actionKey,
+}: {
+  sourceID: number;
+  tab: string;
+  section?: string;
+  actionKey?: string;
+}) {
   const { api } = useApp();
   const { navigate } = useRouter();
   const [publishing, setPublishing] = useState(false);
@@ -125,7 +138,19 @@ export function AppDetailPage({ sourceID, tab }: { sourceID: number; tab: string
         ))}
       </nav>
 
-      {activeTab === "overview" ? <OverviewTab source={source} app={app} detail={detail} onPublish={() => setPublishing(true)} /> : null}
+      {activeTab === "overview" ? (
+        <OverviewTab sourceID={sourceID} source={source} app={app} detail={detail} onPublish={() => setPublishing(true)} />
+      ) : null}
+      {activeTab === "docs" ? (
+        <DocsTab
+          sourceID={sourceID}
+          source={source}
+          app={app}
+          detail={detail}
+          section={section}
+          actionKey={actionKey}
+        />
+      ) : null}
       {activeTab === "monitoring" ? <MonitoringTab app={app} /> : null}
       {activeTab === "repository" && source ? <RepositorySettings source={source} onChanged={state.reload} /> : null}
       {activeTab === "releases" ? (
@@ -137,8 +162,6 @@ export function AppDetailPage({ sourceID, tab }: { sourceID: number; tab: string
         />
       ) : null}
       {activeTab === "audit" ? <AuditTab sourceID={sourceID} /> : null}
-      {activeTab === "actions" ? <ActionsTab app={app} detail={detail} /> : null}
-
       {publishing && source ? (
         <PublishReleaseDialog
           source={source}
@@ -157,11 +180,13 @@ export function AppDetailPage({ sourceID, tab }: { sourceID: number; tab: string
 }
 
 function OverviewTab({
+  sourceID,
   source,
   app,
   detail,
   onPublish,
 }: {
+  sourceID: number;
   source: GitSource | null;
   app: AppSummary | null;
   detail: AppDetail | null;
@@ -198,7 +223,7 @@ function OverviewTab({
 
   return (
     <>
-      <Panel title="Active contract" subtitle="What workers read when they execute this app.">
+      <Panel title="Active release" subtitle="The release currently selected for workers.">
         <DefinitionList
           items={[
             ["App key", <span className="mono">{app.app_key}</span>],
@@ -216,36 +241,10 @@ function OverviewTab({
             ["Route tag", <span className="mono">{routeTag}</span>],
             ["Timeout", `${app.timeout_s}s`],
             ["Required capabilities", app.required_capabilities?.length ? app.required_capabilities.join(", ") : "none"],
+            ["API reference", <Link to={`/apps/${sourceID}/docs/reference`}>{detail.actions.length} action(s)</Link>],
             ["Updated", `${formatTime(app.updated_at)} (${formatRelative(app.updated_at)})`],
           ]}
         />
-      </Panel>
-
-      <Panel title="Actions" subtitle={`${detail.actions.length} action(s) exposed by the active contract.`}>
-        <div className="tableWrap">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Action</th>
-                <th>Route tag</th>
-                <th>Timeout</th>
-                <th>Capabilities</th>
-              </tr>
-            </thead>
-            <tbody>
-              {detail.actions.map((action) => (
-                <tr key={action.action_key}>
-                  <td>
-                    <span className="cellTitle mono">{action.action_key}</span>
-                  </td>
-                  <td className="mono">{action.effective_route_tag || routeTag}</td>
-                  <td>{action.timeout_s ? `${action.timeout_s}s` : `${app.timeout_s}s (app default)`}</td>
-                  <td>{action.effective_capabilities?.length ? action.effective_capabilities.join(", ") : "none"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
       </Panel>
 
       <Panel title="Readiness" subtitle="Signals to check before relying on this contract.">
@@ -337,46 +336,189 @@ function ReleasesTab({
   );
 }
 
-function ActionsTab({ app, detail }: { app: AppSummary | null; detail: AppDetail | null }) {
-  if (!app || !detail || detail.actions.length === 0) {
+function DocsTab({
+  sourceID,
+  source,
+  app,
+  detail,
+  section,
+  actionKey,
+}: {
+  sourceID: number;
+  source: GitSource | null;
+  app: AppSummary | null;
+  detail: AppDetail | null;
+  section?: string;
+  actionKey?: string;
+}) {
+  if (!app || !detail) {
     return (
-      <Panel title="Actions" subtitle="Materialized action schemas from the active contract.">
-        <EmptyState title="No released actions." >
-          <p>Publish a release first; action schemas come from the materialized contract.</p>
+      <Panel title="Docs" subtitle="Release-pinned documentation and API reference.">
+        <EmptyState title="No release published yet.">
+          <p>Publish a release first. Docs are generated from that immutable source snapshot.</p>
         </EmptyState>
       </Panel>
     );
   }
+
+  const activeSection = section === "reference" || section === "actions" ? section : "guide";
+  const selectedAction =
+    activeSection === "actions" ? detail.actions.find((item) => item.action_key === actionKey) || null : null;
   return (
-    <>
-      {detail.actions.map((action) => (
-        <ActionPanel key={action.action_key} appKey={app.app_key} action={action} />
-      ))}
-    </>
+    <div className="docsLayout">
+      <aside className="docsNav" aria-label="Documentation navigation">
+        <p className="docsNavTitle">Docs</p>
+        <Link
+          className={activeSection === "guide" ? "docsNavLink active" : "docsNavLink"}
+          to={`/apps/${sourceID}/docs`}
+        >
+          Guide
+        </Link>
+        <p className="docsNavGroup">API Reference</p>
+        <Link
+          className={activeSection === "reference" ? "docsNavLink active" : "docsNavLink"}
+          to={`/apps/${sourceID}/docs/reference`}
+        >
+          All actions
+        </Link>
+        {detail.actions.map((action) => (
+          <Link
+            key={action.action_key}
+            className={
+              action.action_key === actionKey ? "docsNavLink docsNavAction active" : "docsNavLink docsNavAction"
+            }
+            to={`/apps/${sourceID}/docs/actions/${encodeURIComponent(action.action_key)}`}
+          >
+            <span className="mono">{action.action_key}</span>
+          </Link>
+        ))}
+      </aside>
+      <section className="docsMain">
+        {activeSection === "guide" ? <GuideDocument app={app} source={source} /> : null}
+        {activeSection === "reference" ? (
+          <ActionReferenceList sourceID={sourceID} app={app} actions={detail.actions} />
+        ) : null}
+        {activeSection === "actions" && selectedAction ? (
+          <ActionReferenceDetail app={app} action={selectedAction} />
+        ) : null}
+        {activeSection === "actions" && !selectedAction ? <EmptyState title="Action not found in the active release." /> : null}
+      </section>
+    </div>
   );
 }
 
-function ActionPanel({ appKey, action }: { appKey: string; action: ActionView }) {
+function GuideDocument({ app, source }: { app: AppSummary; source: GitSource | null }) {
   const { api } = useApp();
-  const schemas = useAsync(() => api.actionSchemas(appKey, action.action_key), [api, appKey, action.action_key]);
-
+  const documentation = useAsync(() => api.appDocumentation(app.app_key), [api, app.app_key]);
   return (
-    <Panel
-      title={`Action · ${action.action_key}`}
-      subtitle="Materialized JSON Schemas from the active contract. Invoke actions through the control-plane API or CLI."
-    >
+    <article className="docsArticle">
+      <header className="docsHeader">
+        <p className="eyebrow">Guide</p>
+        <h2>Release documentation</h2>
+        <p>README.md pinned to release {shortSHA(app.commit_sha, 12)}.</p>
+      </header>
+      {documentation.error ? <ErrorNotice message={documentation.error} onRetry={documentation.reload} /> : null}
+      {documentation.loading && !documentation.data ? <Loading /> : null}
+      {documentation.data && !documentation.data.available ? (
+        <EmptyState title="This release does not include README.md." />
+      ) : null}
+      {documentation.data?.available ? <RenderedGuide source={source} documentation={documentation.data} /> : null}
+    </article>
+  );
+}
+
+function RenderedGuide({ source, documentation }: { source: GitSource | null; documentation: AppDocumentation }) {
+  return (
+    <ReleaseMarkdown
+      markdown={documentation.markdown || ""}
+      repoURL={source?.repo_url || ""}
+      commit={documentation.commit_sha}
+      subpath={source?.subpath || ""}
+    />
+  );
+}
+
+function ActionReferenceList({ sourceID, app, actions }: { sourceID: number; app: AppSummary; actions: ActionView[] }) {
+  return (
+    <section className="docsArticle">
+      <header className="docsHeader">
+        <p className="eyebrow">API Reference</p>
+        <h2>Actions</h2>
+        <p>{actions.length} action(s) exposed by release {shortSHA(app.commit_sha, 12)}.</p>
+      </header>
+      {actions.length === 0 ? (
+        <EmptyState title="No actions in the active release." />
+      ) : (
+        <div className="tableWrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Action</th>
+                <th>Route tag</th>
+                <th>Timeout</th>
+                <th>Capabilities</th>
+              </tr>
+            </thead>
+            <tbody>
+              {actions.map((action) => (
+                <tr key={action.action_key}>
+                  <td>
+                    <Link className="mono" to={`/apps/${sourceID}/docs/actions/${encodeURIComponent(action.action_key)}`}>
+                      {action.action_key}
+                    </Link>
+                  </td>
+                  <td className="mono">{action.effective_route_tag}</td>
+                  <td>{action.timeout_s ? `${action.timeout_s}s` : `${app.timeout_s}s (app default)`}</td>
+                  <td>{action.effective_capabilities?.length ? action.effective_capabilities.join(", ") : "none"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ActionReferenceDetail({ app, action }: { app: AppSummary; action: ActionView }) {
+  const { api } = useApp();
+  const schemas = useAsync(() => api.actionSchemas(app.app_key, action.action_key), [api, app.app_key, action.action_key]);
+  return (
+    <article className="docsArticle">
+      <header className="docsHeader">
+        <p className="eyebrow">API Reference</p>
+        <h2>
+          Action <span className="mono">{action.action_key}</span>
+        </h2>
+        <p>Input and output JSON Schemas from release {shortSHA(app.commit_sha, 12)}.</p>
+      </header>
+      <DefinitionList
+        items={[
+          ["Route tag", <span className="mono">{action.effective_route_tag}</span>],
+          ["Timeout", action.timeout_s ? `${action.timeout_s}s` : `${app.timeout_s}s (app default)`],
+          ["Capabilities", action.effective_capabilities?.length ? action.effective_capabilities.join(", ") : "none"],
+        ]}
+      />
       {schemas.error ? <ErrorNotice message={schemas.error} onRetry={schemas.reload} /> : null}
-      <div className="schemaGrid">
-        <div>
-          <h3 className="subHeading">Input schema</h3>
-          <JsonBlock value={schemas.data ? formatJSON(schemas.data.input_schema) : "loading…"} maxHeight={280} />
-        </div>
-        <div>
-          <h3 className="subHeading">Output schema</h3>
-          <JsonBlock value={schemas.data ? formatJSON(schemas.data.output_schema) : "loading…"} maxHeight={280} />
-        </div>
+      <SchemaReference schemas={schemas.data} loading={schemas.loading} />
+    </article>
+  );
+}
+
+function SchemaReference({ schemas, loading }: { schemas: ActionSchemas | null; loading: boolean }) {
+  if (loading && !schemas) return <Loading />;
+  if (!schemas) return null;
+  return (
+    <div className="schemaGrid">
+      <div>
+        <h3 className="subHeading">Input schema</h3>
+        <JsonBlock value={formatJSON(schemas.input_schema)} maxHeight={480} />
       </div>
-    </Panel>
+      <div>
+        <h3 className="subHeading">Output schema</h3>
+        <JsonBlock value={formatJSON(schemas.output_schema)} maxHeight={480} />
+      </div>
+    </div>
   );
 }
 

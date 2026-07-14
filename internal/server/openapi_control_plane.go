@@ -206,6 +206,17 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 				}, "400", "401", "403", "404"),
 			},
 		},
+		"/api/w/{workspace}/apps/{app}/documentation": map[string]any{
+			"get": map[string]any{
+				"operationId": "getAppDocumentation",
+				"summary":     "Get active release documentation",
+				"description": "Returns README.md from the source snapshot pinned by the active release. It never reads a mutable repository branch.",
+				"parameters":  []any{oapiWorkspaceParam(workspaceID), oapiPathParam("app", "App key.")},
+				"responses": withErrors(map[string]any{
+					"200": oapiResponse("Active release README, when present.", oapiSchemaRef("AppDocumentationResponse")),
+				}, "400", "401", "403", "404", "422"),
+			},
+		},
 		"/api/w/{workspace}/apps/{app}/history": map[string]any{
 			"get": map[string]any{
 				"operationId": "getAppHistory",
@@ -800,6 +811,17 @@ func controlPlaneSchemas() map[string]any {
 				"files":         map[string]any{"type": "object", "additionalProperties": oapiStringSchema()},
 				"skipped":       stringArray,
 			},
+		},
+		"AppDocumentationResponse": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"app_key":    oapiStringSchema(),
+				"commit_sha": oapiStringSchema(),
+				"available":  map[string]any{"type": "boolean"},
+				"path":       nullableString,
+				"markdown":   nullableString,
+			},
+			"required": []any{"app_key", "commit_sha", "available"},
 		},
 		"AppHistoryItem": map[string]any{
 			"type": "object",

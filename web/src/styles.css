@@ -670,6 +670,196 @@ textarea {
   border-bottom-color: var(--accent);
 }
 
+/* ---------- release documentation ---------- */
+
+.docsLayout {
+  display: grid;
+  grid-template-columns: 184px minmax(0, 1fr);
+  gap: 28px;
+  align-items: start;
+}
+
+.docsNav {
+  position: sticky;
+  top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 4px 0;
+}
+
+.docsNavTitle,
+.docsNavGroup {
+  margin: 0;
+  padding: 7px 10px 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 640;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.docsNavGroup {
+  margin-top: 12px;
+}
+
+.docsNavLink {
+  display: block;
+  padding: 7px 10px;
+  border-left: 2px solid transparent;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.docsNavLink:hover {
+  color: var(--text-primary);
+  background: var(--surface-2);
+  text-decoration: none;
+}
+
+.docsNavLink.active {
+  border-left-color: var(--accent);
+  color: var(--text-primary);
+  font-weight: 620;
+}
+
+.docsNavAction {
+  padding-left: 18px;
+}
+
+.docsMain {
+  min-width: 0;
+}
+
+.docsArticle {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+
+.docsHeader {
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.eyebrow {
+  margin: 0 0 5px;
+  color: var(--accent-strong);
+  font-size: 11px;
+  font-weight: 660;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.docsHeader h2 {
+  font-size: 22px;
+  line-height: 1.25;
+}
+
+.docsHeader p:not(.eyebrow) {
+  margin-top: 6px;
+  color: var(--text-secondary);
+}
+
+.releaseMarkdown {
+  max-width: 900px;
+  color: var(--text-primary);
+}
+
+.releaseMarkdown > :first-child {
+  margin-top: 0;
+}
+
+.releaseMarkdown > * + * {
+  margin-top: 16px;
+}
+
+.releaseMarkdown h1,
+.releaseMarkdown h2,
+.releaseMarkdown h3,
+.releaseMarkdown h4 {
+  line-height: 1.25;
+  scroll-margin-top: 20px;
+}
+
+.releaseMarkdown h1 {
+  font-size: 24px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.releaseMarkdown h2 {
+  font-size: 19px;
+  margin-top: 28px;
+}
+
+.releaseMarkdown h3 {
+  font-size: 16px;
+  margin-top: 22px;
+}
+
+.releaseMarkdown p,
+.releaseMarkdown li {
+  color: var(--text-secondary);
+}
+
+.releaseMarkdown ul,
+.releaseMarkdown ol {
+  margin: 0;
+  padding-left: 22px;
+}
+
+.releaseMarkdown li + li {
+  margin-top: 4px;
+}
+
+.releaseMarkdown pre {
+  margin: 0;
+  padding: 14px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--surface-2);
+}
+
+.releaseMarkdown code:not(pre code) {
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--surface-2);
+}
+
+.releaseMarkdown blockquote {
+  margin: 0;
+  padding: 2px 0 2px 14px;
+  border-left: 3px solid var(--border-strong);
+  color: var(--text-secondary);
+}
+
+.releaseMarkdown table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.releaseMarkdown th,
+.releaseMarkdown td {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  text-align: left;
+}
+
+.releaseMarkdown th {
+  background: var(--surface-2);
+}
+
+.releaseMarkdown img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+}
+
 /* ---------- definition lists ---------- */
 
 .defList {
@@ -1013,5 +1203,31 @@ textarea {
   .dangerZone.compact {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .docsLayout {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .docsNav {
+    position: static;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 12px;
+  }
+
+  .docsNavTitle,
+  .docsNavGroup {
+    grid-column: 1 / -1;
+  }
+
+  .docsNavGroup {
+    margin-top: 4px;
+  }
+
+  .docsNavAction {
+    padding-left: 10px;
   }
 }

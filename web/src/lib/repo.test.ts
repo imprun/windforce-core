@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { forgeCommitURL, forgeName, forgeTreeURL } from "./repo";
+import { forgeCommitURL, forgeName, forgeRawFileURL, forgeTreeURL } from "./repo";
 
 describe("forgeTreeURL", () => {
   test("github https remotes", () => {
@@ -40,6 +40,17 @@ describe("forgeCommitURL", () => {
     );
     expect(forgeCommitURL("https://gitlab.com/org/repo.git", "abc")).toBe(
       "https://gitlab.com/org/repo/-/commit/abc",
+    );
+  });
+});
+
+describe("forgeRawFileURL", () => {
+  test("creates raw file URLs for supported forges", () => {
+    expect(forgeRawFileURL("https://github.com/acme/widgets.git", "abc123", "docs/logo.png")).toBe(
+      "https://github.com/acme/widgets/raw/abc123/docs/logo.png",
+    );
+    expect(forgeRawFileURL("https://gitlab.example.test/group/project.git", "abc123", "docs/logo.png")).toBe(
+      "https://gitlab.example.test/group/project/-/raw/abc123/docs/logo.png",
     );
   });
 });

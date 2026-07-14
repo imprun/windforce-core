@@ -8,11 +8,18 @@ import { SettingsPage } from "./pages/SettingsPage";
 export function App() {
   const { path } = useRouter();
 
-  const appDetail = matchRoute("/apps/:id/:tab?", path);
+  const appDetail = matchRoute("/apps/:id/:tab?/:section?/:action?", path);
   if (appDetail) {
     const sourceID = Number(appDetail.id);
     if (Number.isFinite(sourceID) && sourceID > 0) {
-      return <AppDetailPage sourceID={sourceID} tab={appDetail.tab || "overview"} />;
+      return (
+        <AppDetailPage
+          sourceID={sourceID}
+          tab={appDetail.tab || "overview"}
+          section={appDetail.section}
+          actionKey={appDetail.action}
+        />
+      );
     }
   }
 

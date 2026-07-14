@@ -1511,6 +1511,7 @@ func TestCanonicalControlPlaneRejectsInvalidAppAndActionKeys(t *testing.T) {
 	}{
 		{http.MethodGet, "/api/w/ws-a/apps/Bad!", "", "invalid app key"},
 		{http.MethodGet, "/api/w/ws-a/apps/Bad!/source", "", "invalid app key"},
+		{http.MethodGet, "/api/w/ws-a/apps/Bad!/documentation", "", "invalid app key"},
 		{http.MethodGet, "/api/w/ws-a/apps/Bad!/history", "", "invalid app key"},
 		{http.MethodGet, "/api/w/ws-a/apps/Bad!/openapi.json", "", "invalid app key"},
 		{http.MethodGet, "/api/w/ws-a/apps/echo/actions/Bad!", "", "invalid app/action key"},
@@ -2659,6 +2660,9 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repoDir, "output.schema.json"), []byte(`{"type":"object","properties":{"ok":{"type":"boolean"}}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(repoDir, "README.md"), []byte("# Echo\n\nReleased documentation.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(repoDir, "logo.bin"), []byte{0xff, 0xfe, 0x00, 0x01}, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -3207,6 +3211,29 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 		t.Fatalf("source body leaked materialization marker: %#v", sourceBody)
 	}
 
+	documentationResp, err := http.Get(server.URL + "/api/w/ws-a/apps/echo/documentation")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer documentationResp.Body.Close()
+	if documentationResp.StatusCode != http.StatusOK {
+		t.Fatalf("documentation status = %d, want %d", documentationResp.StatusCode, http.StatusOK)
+	}
+	var documentationBody struct {
+		AppKey    string `json:"app_key"`
+		CommitSHA string `json:"commit_sha"`
+		Available bool   `json:"available"`
+		Path      string `json:"path"`
+		Markdown  string `json:"markdown"`
+	}
+	if err := json.NewDecoder(documentationResp.Body).Decode(&documentationBody); err != nil {
+		t.Fatal(err)
+	}
+	if documentationBody.AppKey != "echo" || documentationBody.CommitSHA != syncBody.Commit || !documentationBody.Available ||
+		documentationBody.Path != "README.md" || documentationBody.Markdown != "# Echo\n\nReleased documentation.\n" {
+		t.Fatalf("documentation body = %#v", documentationBody)
+	}
+
 	historyResp, err := http.Get(server.URL + "/api/w/ws-a/apps/echo/history")
 	if err != nil {
 		t.Fatal(err)
@@ -3457,7 +3484,7 @@ func TestCanonicalGitSourceSyncReturnsRegistryErrors(t *testing.T) {
 	}
 }
 
-func TestCanonicalAppSourceStorageErrors(t *testing.T) {
+func TestCanonicalAppMaterializationErrors(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
 		store      failingBundleStore
@@ -3506,19 +3533,22 @@ func TestCanonicalAppSourceStorageErrors(t *testing.T) {
 			}))
 			defer server.Close()
 
-			resp, err := http.Get(server.URL + "/api/w/ws-a/apps/echo/source")
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer resp.Body.Close()
-			var body struct {
-				Error string `json:"error"`
-			}
-			if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-				t.Fatal(err)
-			}
-			if resp.StatusCode != tc.wantStatus || body.Error != tc.wantError {
-				t.Fatalf("source response = %d %#v, want %d %q", resp.StatusCode, body, tc.wantStatus, tc.wantError)
+			for _, endpoint := range []string{"source", "documentation"} {
+				resp, err := http.Get(server.URL + "/api/w/ws-a/apps/echo/" + endpoint)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var body struct {
+					Error string `json:"error"`
+				}
+				if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+					_ = resp.Body.Close()
+					t.Fatal(err)
+				}
+				_ = resp.Body.Close()
+				if resp.StatusCode != tc.wantStatus || body.Error != tc.wantError {
+					t.Fatalf("%s response = %d %#v, want %d %q", endpoint, resp.StatusCode, body, tc.wantStatus, tc.wantError)
+				}
 			}
 		})
 	}

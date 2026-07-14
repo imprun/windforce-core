@@ -43,6 +43,16 @@ export function forgeTreeURL(repoURL: string, commit: string | null | undefined,
     : `${forge.base}/-/tree/${commit}${suffix}`;
 }
 
+export function forgeRawFileURL(repoURL: string, commit: string | null | undefined, path: string): string | null {
+  const forge = forgeBase(repoURL);
+  if (!forge || !commit) return null;
+  const cleanPath = path.replace(/^\/+/, "");
+  if (!cleanPath) return null;
+  return forge.kind === "github"
+    ? `${forge.base}/raw/${commit}/${cleanPath}`
+    : `${forge.base}/-/raw/${commit}/${cleanPath}`;
+}
+
 export function forgeCommitURL(repoURL: string, commit: string | null | undefined): string | null {
   const forge = forgeBase(repoURL);
   if (!forge || !commit) return null;

@@ -125,6 +125,14 @@ export type ActionSchemas = {
   output_schema: unknown;
 };
 
+export type AppDocumentation = {
+  app_key: string;
+  commit_sha: string;
+  available: boolean;
+  path?: string;
+  markdown?: string;
+};
+
 export type HistoryItem = {
   id: string;
   commit_sha: string;
@@ -304,6 +312,10 @@ export class WindforceApi {
     return this.request(
       `/apps/${encodeURIComponent(appKey)}/actions/${encodeURIComponent(actionKey)}/schema`,
     );
+  }
+
+  appDocumentation(appKey: string): Promise<AppDocumentation> {
+    return this.request(`/apps/${encodeURIComponent(appKey)}/documentation`);
   }
 
   jobsSummary(recentSeconds = 86400): Promise<JobsSummary> {
