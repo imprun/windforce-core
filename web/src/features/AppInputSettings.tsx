@@ -1,4 +1,4 @@
-import { Lock, Pencil, Plus } from "lucide-react";
+import { Lock, Pencil, Plus, Unlock } from "lucide-react";
 import { useMemo, useState } from "react";
 import { EmptyState, ErrorNotice, Loading, Panel } from "../components/ui";
 import { type AppDetail, type InputConfig } from "../lib/api";
@@ -7,6 +7,10 @@ import { useApp, useAsync } from "../lib/app-context";
 import { formatRelative, formatTime } from "../lib/format";
 import { Link } from "../lib/router";
 import { InputConfigDialog } from "./InputConfigDialog";
+
+export function formatInputSettingValue(value: unknown): string {
+  return JSON.stringify(value, null, 2) ?? String(value);
+}
 
 export function AppInputSettings({ detail }: { detail: AppDetail }) {
   const { api } = useApp();
@@ -40,7 +44,7 @@ export function AppInputSettings({ detail }: { detail: AppDetail }) {
     <>
       <Panel
         title="Input settings"
-        subtitle="Default and client-specific values applied to this app before execution."
+        subtitle="Values applied before execution. Locked values cannot be overridden by the incoming request."
         actions={
           <button className="button primary" type="button" onClick={() => setEditing("new")}>
             <Plus size={16} aria-hidden="true" />
@@ -54,70 +58,81 @@ export function AppInputSettings({ detail }: { detail: AppDetail }) {
           <EmptyState title="No input settings for this app." />
         ) : null}
         {state.data && state.data.configs.length > 0 ? (
-          <div className="tableWrap">
-            <table className="table inputSettingsTable" id="appInputSettings">
-              <thead>
-                <tr>
-                  <th>Client scope</th>
-                  <th>Action scope</th>
-                  <th>Keys</th>
-                  <th>Locked</th>
-                  <th>Updated</th>
-                  <th>Actor</th>
-                  <th aria-label="Row actions" />
-                </tr>
-              </thead>
-              <tbody>
-                {state.data.configs.map((config) => {
-                  const client = config.client_id ? clientsByID.get(config.client_id) : undefined;
-                  const action = config.action_key ? actionsByKey.get(config.action_key) : undefined;
-                  return (
-                    <tr key={`${config.client_id || "default"}-${config.action_key || "all"}`}>
-                      <td>
-                        {client ? (
-                          <Link className="cellTitle" to={`/clients/${client.id}`}>
-                            {client.name}
-                          </Link>
-                        ) : (
-                          <span className="cellTitle">All clients</span>
-                        )}
-                        <span className="cellSub">{client ? "client override" : "default"}</span>
-                      </td>
-                      <td>
-                        <span className="cellTitle">{action ? actionDisplayName(action.display_name) || action.action_key : "All actions"}</span>
-                        <span className="cellSub mono">{config.action_key || "app default"}</span>
-                      </td>
-                      <td>{Object.keys(config.config).length}</td>
-                      <td>
-                        {config.locked_keys.length ? (
-                          <span className="lockedCount">
-                            <Lock size={14} aria-hidden="true" /> {config.locked_keys.length}
-                          </span>
-                        ) : (
-                          "0"
-                        )}
-                      </td>
-                      <td title={formatTime(config.updated_at)}>
-                        <span className="cellTitle">{formatRelative(config.updated_at)}</span>
-                        <span className="cellSub">{formatTime(config.updated_at)}</span>
-                      </td>
-                      <td>{config.updated_by}</td>
-                      <td className="rowActions">
-                        <button
-                          className="button small iconButton"
-                          type="button"
-                          title="Edit input settings"
-                          aria-label="Edit input settings"
-                          onClick={() => setEditing(config)}
-                        >
-                          <Pencil size={15} aria-hidden="true" />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="inputSettingsList" id="appInputSettings">
+            {state.data.configs.map((config) => {
+              const client = config.client_id ? clientsByID.get(config.client_id) : undefined;
+              const action = config.action_key ? actionsByKey.get(config.action_key) : undefined;
+              return (
+                <section className="inputSettingScope" key={`${config.client_id || "default"}-${config.action_key || "all"}`}>
+                  <header className="inputSettingScopeHeader">
+                    <div className="inputSettingFact inputSettingClientScope">
+                      <span className="inputSettingFactLabel">Client scope</span>
+                      {client ? (
+                        <Link className="inputSettingFactValue" to={`/clients/${client.id}`}>
+                          {client.name}
+                        </Link>
+                      ) : (
+                        <span className="inputSettingFactValue">All clients</span>
+                      )}
+                      <span className="inputSettingFactMeta">{client ? "Client override" : "App default"}</span>
+                    </div>
+                    <div className="inputSettingFact inputSettingActionScope">
+                      <span className="inputSettingFactLabel">Action scope</span>
+                      <span className="inputSettingFactValue">
+                        {action ? actionDisplayName(action.display_name) || action.action_key : "All actions"}
+                      </span>
+                      <span className="inputSettingFactMeta mono">{config.action_key || "App default"}</span>
+                    </div>
+                    <div className="inputSettingFact inputSettingChange" title={formatTime(config.updated_at)}>
+                      <span className="inputSettingFactLabel">Last change</span>
+                      <span className="inputSettingFactValue">{formatRelative(config.updated_at)}</span>
+                      <span className="inputSettingFactMeta">
+                        {formatTime(config.updated_at)} · {config.updated_by}
+                      </span>
+                    </div>
+                    <button
+                      className="button small iconButton inputSettingEdit"
+                      type="button"
+                      title="Edit input settings"
+                      aria-label={`Edit input settings for ${client?.name || "all clients"}, ${action ? actionDisplayName(action.display_name) || action.action_key : "all actions"}`}
+                      onClick={() => setEditing(config)}
+                    >
+                      <Pencil size={15} aria-hidden="true" />
+                    </button>
+                  </header>
+
+                  <div className="inputSettingValues" role="table" aria-label="Applied input values">
+                    <div className="inputSettingValuesHeader" role="row">
+                      <span role="columnheader">Input key</span>
+                      <span role="columnheader">Applied value</span>
+                      <span role="columnheader">Request policy</span>
+                    </div>
+                    {Object.entries(config.config).map(([key, value]) => {
+                      const locked = config.locked_keys.includes(key);
+                      return (
+                        <div className="inputSettingValueRow" role="row" key={key}>
+                          <div className="inputSettingValueCell" role="cell">
+                            <span className="inputSettingFieldLabel">Input key</span>
+                            <code className="inputSettingKey">{key}</code>
+                          </div>
+                          <div className="inputSettingValueCell" role="cell">
+                            <span className="inputSettingFieldLabel">Applied value</span>
+                            <pre className="inputSettingValue">{formatInputSettingValue(value)}</pre>
+                          </div>
+                          <div className="inputSettingValueCell" role="cell">
+                            <span className="inputSettingFieldLabel">Request policy</span>
+                            <span className={locked ? "inputSettingPolicy locked" : "inputSettingPolicy"}>
+                              {locked ? <Lock size={14} aria-hidden="true" /> : <Unlock size={14} aria-hidden="true" />}
+                              {locked ? "Request cannot override" : "Request may override"}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+              );
+            })}
           </div>
         ) : null}
       </Panel>

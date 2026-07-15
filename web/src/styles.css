@@ -576,12 +576,128 @@ textarea {
   margin-top: 2px;
 }
 
-.inputSettingsTable th:nth-child(3),
-.inputSettingsTable th:nth-child(4),
-.inputSettingsTable td:nth-child(3),
-.inputSettingsTable td:nth-child(4) {
-  width: 88px;
-  text-align: right;
+.inputSettingsList {
+  display: flex;
+  flex-direction: column;
+}
+
+.inputSettingScope {
+  padding-bottom: 18px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.inputSettingScope:last-child {
+  padding-bottom: 0;
+  margin-bottom: 0;
+  border-bottom: none;
+}
+
+.inputSettingScopeHeader {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) minmax(230px, 0.9fr) 34px;
+  gap: 24px;
+  align-items: start;
+  margin-bottom: 12px;
+}
+
+.inputSettingFact {
+  min-width: 0;
+}
+
+.inputSettingFactLabel,
+.inputSettingFieldLabel {
+  display: block;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.inputSettingFactValue {
+  display: block;
+  color: var(--text-primary);
+  font-weight: 620;
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+}
+
+.inputSettingFactMeta {
+  display: block;
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+
+.inputSettingValues {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.inputSettingValuesHeader,
+.inputSettingValueRow {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.7fr) minmax(260px, 1.7fr) minmax(190px, 0.75fr);
+}
+
+.inputSettingValuesHeader {
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.inputSettingValuesHeader > span,
+.inputSettingValueCell {
+  min-width: 0;
+  padding: 9px 12px;
+}
+
+.inputSettingValuesHeader > span + span,
+.inputSettingValueCell + .inputSettingValueCell {
+  border-left: 1px solid var(--border);
+}
+
+.inputSettingValueRow {
+  border-top: 1px solid var(--border);
+}
+
+.inputSettingKey {
+  color: var(--text-primary);
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.inputSettingValue {
+  margin: 0;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.inputSettingPolicy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 580;
+}
+
+.inputSettingPolicy.locked {
+  color: var(--text-primary);
+}
+
+.inputSettingFieldLabel {
+  display: none;
 }
 
 /* ---------- badges ---------- */
@@ -1497,6 +1613,20 @@ textarea {
     flex-direction: column;
   }
 
+  .inputSettingScopeHeader {
+    grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) 34px;
+    gap: 16px;
+  }
+
+  .inputSettingChange {
+    grid-column: 1 / 3;
+  }
+
+  .inputSettingEdit {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
   .docsLayout {
     grid-template-columns: 1fr;
     gap: 16px;
@@ -1577,6 +1707,43 @@ textarea {
 
   .inputConfigHeader {
     display: none;
+  }
+
+  .inputSettingScopeHeader {
+    grid-template-columns: minmax(0, 1fr) 34px;
+    gap: 12px;
+  }
+
+  .inputSettingActionScope,
+  .inputSettingChange {
+    grid-column: 1 / -1;
+  }
+
+  .inputSettingEdit {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .inputSettingValuesHeader {
+    display: none;
+  }
+
+  .inputSettingValueRow {
+    grid-template-columns: 1fr;
+    padding: 2px 0;
+  }
+
+  .inputSettingValueCell {
+    padding: 8px 10px;
+  }
+
+  .inputSettingValueCell + .inputSettingValueCell {
+    border-left: none;
+  }
+
+  .inputSettingFieldLabel {
+    display: block;
+    margin-bottom: 4px;
   }
 
   .inputConfigRow {
