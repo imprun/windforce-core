@@ -133,3 +133,32 @@ lite는 **core 불변식을 두 백엔드 대칭으로 잘 보존**한 견고한
 **신규 회귀테스트**: `TestStoreAtRestEncryptionSymmetry`(양 백엔드 at-rest 물리검증), `Test{Local,Postgres}StoreExpiredLeaseIsReclaimed`(죽은 워커 회수).
 
 **다음 δ**: ① L-2 HITL API 구현/정정 ② L-3 client 키 마스킹+해싱 ③ 미검증 경로 — resume 이중제출·CancelRun running-job·**Postgres HTTP 종단**(server 테스트가 전부 LocalStore 전용) ④ L-1 reclaim bound.
+
+---
+
+## 부록: 교차검증 라운드 (Fable 2차 + 3AI: opus·gpt-5.5·gemini)
+
+1차 리뷰 후 **Fable 심층 crypto/보안 2차 + 3모델 교차검증**(opus 독립 subagent·gpt-5.5·gemini)을 돌렸다. gemini는 어댑터 502로 불참. 이 라운드가 **신규 보안버그 발견 + 1차 발견 2건 교정**으로 매우 값졌다.
+
+### 신규 발견 (수정/박제 완료 또는 권고)
+| ID | 위치 | 심각도 | 상태 |
+|---|---|---|---|
+| **N-1** | `bundle/storage.go` `safeSegment` | **Med~High** | ✅**수정** — `.` 허용으로 `..` 미중화 → `bundleDir` Root 이탈 + `Materialize`의 `os.RemoveAll` 경유 임의 디렉토리 삭제. all-dots 세그먼트 중화. `TestSafeSegmentNeutralizesDotDot`·`TestBundleDirStaysUnderRoot` RED→GREEN. |
+| **N-1b** | 실행 계층 (worker heartbeat) | **Med** | 권고 — at-least-once 중복실행: heartbeat 에러 시 `continue`(취소 안 함) + fencing 없음 → DB 파티션 시 원 워커 실행 중 타 워커 reclaim·재실행. gpt·opus 수렴. 비멱등 액션 위험. 문서에 at-least-once 명시 + heartbeat 실패정책 강화 필요. |
+| **N-2** | `server.go` `authorized` | **Low~Med** | ✅**수정** — admin 토큰 `==` 비교(job token은 constant-time인데 admin만) → `subtle.ConstantTimeCompare`. |
+| **N-2b** | Postgres `ClaimJobForTags` | **Med** | 권고 — 이중백엔드 이벤트 divergence: Postgres는 `run_running`/`job_lease_expired` 이벤트 미방출, Local은 방출(opus). 감사/관측 스파인이 백엔드 교체 시 달라짐. |
+| N-3 | `runtime.go` `jobToken` | Low(잠재) | 권고 — JobID/secret 빈 경우 admin 토큰을 WF_TOKEN으로 주입하는 fallback. **현재 도달 불가**(worker가 항상 JobID 세팅) 확인됨 → latent hygiene. fallback 제거 권고. |
+| N-4 | `crypto.go` `ResolveDEK` v0 | Low~Med | 권고 — legacy kek_version=0 행은 DEK가 DB 평문. wrapped(v1) 백필 마이그레이션. |
+| N-5 | `workspace_state.go` vs `state/crypto.go` | Low | 권고 — ws 정규화 불일치(raw vs Normalize) → fallback 파생키 복호 실패(가용성). |
+
+### L-1 정밀화 (opus 직독)
+reclaim UPDATE 자체는 partial index(`jobs_lease_idx`) 사용이라 무제한 스캔 아님. **진짜 문제는 claim SELECT에 LIMIT 없어 전체 queued를 Go 메모리로 적재**(`postgres_store.go:409`) + `postgresRunningJobsForApp` 풀스캔. 올바른 수정 = reclaim을 주기 스윕(`ExpireStuckJobs`처럼)으로 분리 + claim 핫패스 `LIMIT 1`.
+
+### ★ 교정된 1차 발견 (교차검증이 잡음)
+- **run ID 48-bit 충돌 = 오판**. gpt(및 최초 패킷)가 48-bit라 했으나 opus가 코드 직독 — `hex(digest[:12])` = **12바이트 = 96-bit**(+비멱등 ID는 128-bit UUID). 충돌 실질 무의미. **폐기.**
+- **L-3 성격 격하**. opus·Fable 공통 교정 — `external_key`를 **인증에 소비하는 경로가 0개**(grep). 크리덴셜이 아니라 외부 시스템용 등록 식별자. "인증 비밀/타이밍공격" 프레이밍 철회. 남는 실질 = "평문 레지스트리 필드 무마스킹 노출"(정보노출/최소권한), 심각도 하향.
+
+### 교차검증 clean 재확인
+AES-GCM 랜덤 nonce(비재사용)·token HMAC constant-time·만료·스코프·ws-간 키 격리·KEK previous-grace·decrypt fail-closed(평문 누출 없음)·run 입력 방어(`__wf_enc`·크기·JSON-object).
+
+**이 라운드 순효과**: 실제 보안버그 1건(N-1) 수정·박제, hygiene 1건(N-2) 수정, 아키텍처 권고 4건(N-1b·N-2b·N-3·N-4), 오판 2건 교정. **교차검증 없이 코드만 봤으면 N-1 traversal을 놓치고 run-ID 오판을 실었을 것.**

@@ -198,5 +198,14 @@ func safeSegment(value string) string {
 	if builder.Len() == 0 {
 		return "_"
 	}
-	return builder.String()
+	out := builder.String()
+	// Neutralize path-traversal tokens: a segment that is only dots (".", "..",
+	// "...") would let filepath.Join in bundleDir escape Root, and Materialize
+	// does os.RemoveAll(targetDir) — so an all-dots workspace/gitSourceID could
+	// delete an arbitrary directory. NormalizeWorkspace only trims, so this is the
+	// last line of defense.
+	if strings.Trim(out, ".") == "" {
+		return "_"
+	}
+	return out
 }
