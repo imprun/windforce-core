@@ -19,6 +19,26 @@ services:
       - go-mod-cache:/go/pkg/mod
       - go-build-cache:/home/windforce/.cache/go-build
 
+  execution-api:
+    image: ${WINDFORCE_LITE_DEV_IMAGE:-imprun/windforce-lite-dev:local}
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    working_dir: /src
+    command:
+      - air
+      - -c
+      - .air.execution-api.toml
+    environment:
+      GOCACHE: /home/windforce/.cache/go-build
+      GOMODCACHE: /go/pkg/mod
+      WINDFORCE_LITE_DATABASE_URL: ${WINDFORCE_LITE_DATABASE_URL:-postgres://postgres@postgres:5432/windforce_lite?sslmode=disable}
+    volumes:
+      - .:/src
+      - windforce-data:/data
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/home/windforce/.cache/go-build
+
   worker:
     image: ${WINDFORCE_LITE_DEV_IMAGE:-imprun/windforce-lite-dev:local}
     build:

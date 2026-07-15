@@ -1,8 +1,9 @@
 # Architecture
 
 Windforce Lite separates deployment management, protocol ingress, and action
-execution into three planes. The planes can run in one process for development,
-but their contracts do not depend on that process layout.
+execution into three planes. Compose runs the Control Plane, Execution API, and
+workers as distinct processes. The `standalone` command combines them for
+single-process development without changing their contracts.
 
 ```text
 operators / CI / Web UI
@@ -39,14 +40,16 @@ its inbound protocol and compatibility policy:
 - correlation and idempotency metadata
 - mapping the generic run result to a protocol response
 
-The built-in HTTP adapter is the versioned Execution API. Other HTTP contracts,
-message queues, schedulers, and webhooks call the same API through an execution
-SDK. They do not write queue tables or read catalog files.
+HTTP contracts, message queues, schedulers, and webhooks call the versioned
+Execution API through an execution SDK. They do not write queue tables or read
+catalog files.
 
 ## Execution Plane
 
 The Execution Plane owns run admission, the PostgreSQL queue, runtime workers,
-and execution results. Its HTTP contract is rooted at `/execution/v1`.
+execution results, and job-scoped runtime callbacks. Its public HTTP contract is
+rooted at `/execution/v1`; workers receive the Execution API as `WF_API_URL` for
+state, variable, and resource callbacks.
 
 Run admission performs one atomic decision:
 

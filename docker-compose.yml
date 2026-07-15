@@ -47,7 +47,7 @@ services:
     ports:
       - "127.0.0.1:${WINDFORCE_LITE_API_PORT:-18091}:8080"
     command:
-      - api
+      - control-plane
       - --addr
       - :8080
       - --state-backend
@@ -61,6 +61,38 @@ services:
       - /data/catalog.json
       - --git-sources
       - /data/git-sources.json
+    volumes:
+      - windforce-data:/data
+
+  execution-api:
+    profiles:
+      - backend
+      - worker
+      - standalone
+    image: ${WINDFORCE_LITE_IMAGE:-imprun/windforce-lite:local}
+    build:
+      context: .
+    restart: unless-stopped
+    depends_on:
+      volume-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${WINDFORCE_LITE_EXECUTION_API_PORT:-18092}:8080"
+    command:
+      - execution-api
+      - --addr
+      - :8080
+      - --state-backend
+      - postgres
+      - --database-url
+      - *windforce-lite-database-url
+      - --migrate
+      - --store
+      - /data/store
+      - --catalog
+      - /data/catalog.json
     volumes:
       - windforce-data:/data
 
@@ -100,6 +132,8 @@ services:
         condition: service_completed_successfully
       postgres:
         condition: service_healthy
+      execution-api:
+        condition: service_started
     command:
       - worker
       - --state-backend
@@ -111,6 +145,8 @@ services:
       - /data/store
       - --cache
       - /data/cache
+      - --base-url
+      - http://execution-api:8080
     environment:
       PIP_INDEX_URL: ${PIP_INDEX_URL:-}
       PIP_EXTRA_INDEX_URL: ${PIP_EXTRA_INDEX_URL:-}

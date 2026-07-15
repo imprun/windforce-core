@@ -46,8 +46,8 @@ that already calls it.
 The ordering is intentional: a catalog entry must not point at a bundle that a
 worker cannot fetch.
 
-The Docker Compose control-plane runs inside a container and maps the API to
-`127.0.0.1:18091` by default. The local Web UI is a Vite development server
+The Docker Compose control plane maps its API to `127.0.0.1:18091`. The
+execution API is a separate service mapped to `127.0.0.1:18092`. The local Web UI is a Vite development server
 (run with Bun) on `127.0.0.1:18090/ui/` and proxies control-plane API calls to
 the backend. Local development uses `tools/windforce_control.py` against the
 API instead of a separate source-sync command.
@@ -62,13 +62,13 @@ client-side routes. See [ADR 0004](docs/adr/0004-web-ui-rewrite.md).
 
 ## Docker Compose profiles
 
-The Compose file keeps PostgreSQL, the control-plane backend, and the worker as
-separate profiles.
+The Compose file keeps PostgreSQL, the control plane, the execution API, and the
+worker as separate processes.
 
 ```bash
 docker compose --profile standalone up -d
 docker compose --profile pg up -d postgres
-docker compose --profile backend up -d control-plane
+docker compose --profile backend up -d control-plane execution-api
 docker compose --profile worker up -d worker
 ```
 
@@ -189,7 +189,8 @@ Invoke-RestMethod `
 Separated local processes use the same state file:
 
 ```powershell
-go run ./cmd/windforce-lite api --addr :8081 --state .tmp/state.json
+go run ./cmd/windforce-lite control-plane --addr :8081 --state .tmp/state.json
+go run ./cmd/windforce-lite execution-api --addr :8082 --state .tmp/state.json
 go run ./cmd/windforce-lite worker --state .tmp/state.json --store .tmp/store
 ```
 
@@ -345,7 +346,7 @@ PostgreSQL is the production state backend. All runtime modes accept
 ```powershell
 $env:WINDFORCE_DATABASE_URL = "postgres://user:pass@host:5432/windforce_lite?sslmode=disable"
 
-go run ./cmd/windforce-lite api `
+go run ./cmd/windforce-lite control-plane `
   --state-backend postgres `
   --database-url $env:WINDFORCE_DATABASE_URL `
   --migrate
@@ -362,7 +363,7 @@ the admin token value is reused as the local signing secret so the raw admin
 token is not injected into scripts:
 
 ```powershell
-go run ./cmd/windforce-lite api `
+go run ./cmd/windforce-lite control-plane `
   --admin-token-env WINDFORCE_ADMIN_TOKEN `
   --job-token-secret-env WINDFORCE_JOB_TOKEN_SECRET
 ```
@@ -393,7 +394,8 @@ the next job.
 
 Process roles are separated:
 
-- `windforce-lite api`: control plane and versioned Execution API
+- `windforce-lite control-plane`: source, release, configuration, audit, and Web UI APIs
+- `windforce-lite execution-api`: run admission and job-scoped runtime callbacks
 - `windforce-lite worker`: job polling and action execution
 - `windforce-lite standalone`: local/dev combined mode
 

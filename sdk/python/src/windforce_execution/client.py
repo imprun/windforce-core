@@ -134,6 +134,10 @@ class WindforceExecutionClient:
     def describe_app(self, app: str) -> Mapping[str, Any]:
         return self._request("GET", self._workspace_path("apps", app))
 
+    def ready(self) -> bool:
+        response = self._request("GET", "/readyz")
+        return response.get("ready") is True
+
     def _workspace_path(self, *segments: str) -> str:
         encoded = [quote(self.workspace, safe=""), *(quote(str(value), safe="") for value in segments)]
         return "/execution/v1/workspaces/" + "/".join(encoded)

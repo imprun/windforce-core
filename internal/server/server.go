@@ -35,33 +35,38 @@ type GitSourceRegistry interface {
 const DefaultSecretKey = "dev-insecure-change-me-0000000000000000000000000000"
 
 type Config struct {
-	Store             state.Store
-	Catalog           Catalog
-	Syncer            *syncer.Syncer
-	GitSources        GitSourceRegistry
-	EnableAPI         bool
-	AdminToken        string
-	JobTokenSecret    string
-	SecretKey         string
-	SecretKeyPrevious string
-	SampleRoot        string
-	Wait              time.Duration
+	Store              state.Store
+	Catalog            Catalog
+	Syncer             *syncer.Syncer
+	GitSources         GitSourceRegistry
+	EnableAPI          bool
+	EnableControlAPI   bool
+	EnableExecutionAPI bool
+	EnableWebUI        bool
+	AdminToken         string
+	JobTokenSecret     string
+	SecretKey          string
+	SecretKeyPrevious  string
+	SampleRoot         string
+	Wait               time.Duration
 }
 
 type Handler struct {
-	store             state.Store
-	catalog           Catalog
-	syncer            *syncer.Syncer
-	gitSources        GitSourceRegistry
-	enableAPI         bool
-	adminToken        string
-	jobTokenSecret    string
-	secretKey         string
-	secretKeyPrevious string
-	sampleRoot        string
-	wait              time.Duration
-	execution         *executionpkg.Service
-	syncLocks         sync.Map
+	store              state.Store
+	catalog            Catalog
+	syncer             *syncer.Syncer
+	gitSources         GitSourceRegistry
+	enableControlAPI   bool
+	enableExecutionAPI bool
+	enableWebUI        bool
+	adminToken         string
+	jobTokenSecret     string
+	secretKey          string
+	secretKeyPrevious  string
+	sampleRoot         string
+	wait               time.Duration
+	execution          *executionpkg.Service
+	syncLocks          sync.Map
 }
 
 type jobPrincipal struct {
@@ -110,19 +115,24 @@ func New(config Config) http.Handler {
 	if config.Syncer != nil {
 		bundleStore = config.Syncer.Store
 	}
+	enableControlAPI := config.EnableAPI || config.EnableControlAPI
+	enableExecutionAPI := config.EnableAPI || config.EnableExecutionAPI
+	enableWebUI := config.EnableAPI || config.EnableWebUI
 	return &Handler{
-		store:             config.Store,
-		catalog:           config.Catalog,
-		syncer:            config.Syncer,
-		gitSources:        config.GitSources,
-		enableAPI:         config.EnableAPI,
-		adminToken:        config.AdminToken,
-		jobTokenSecret:    config.JobTokenSecret,
-		secretKey:         secretKey,
-		secretKeyPrevious: config.SecretKeyPrevious,
-		sampleRoot:        config.SampleRoot,
-		wait:              config.Wait,
-		execution:         executionpkg.NewService(config.Store, config.Catalog, bundleStore),
+		store:              config.Store,
+		catalog:            config.Catalog,
+		syncer:             config.Syncer,
+		gitSources:         config.GitSources,
+		enableControlAPI:   enableControlAPI,
+		enableExecutionAPI: enableExecutionAPI,
+		enableWebUI:        enableWebUI,
+		adminToken:         config.AdminToken,
+		jobTokenSecret:     config.JobTokenSecret,
+		secretKey:          secretKey,
+		secretKeyPrevious:  config.SecretKeyPrevious,
+		sampleRoot:         config.SampleRoot,
+		wait:               config.Wait,
+		execution:          executionpkg.NewService(config.Store, config.Catalog, bundleStore),
 	}
 }
 
@@ -135,20 +145,44 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]bool{"ready": h.store != nil})
 		return
 	}
-	if h.handleWebUI(w, r) {
+	if h.enableWebUI && h.handleWebUI(w, r) {
 		return
 	}
-	if h.enableAPI {
+	if h.enableControlAPI || h.enableExecutionAPI {
 		authorizedRequest, status, message := h.authorizeAPIRequest(r)
 		if status != 0 {
 			writeError(w, status, message)
 			return
 		}
-		if h.handleExecutionAPI(w, authorizedRequest) || h.handleAPI(w, authorizedRequest) {
+		if h.enableExecutionAPI && (h.handleExecutionAPI(w, authorizedRequest) || h.handleRuntimeAPI(w, authorizedRequest)) {
+			return
+		}
+		if h.enableControlAPI && h.handleAPI(w, authorizedRequest) {
 			return
 		}
 	}
 	writeError(w, http.StatusNotFound, "not found")
+}
+
+func (h *Handler) handleRuntimeAPI(w http.ResponseWriter, r *http.Request) bool {
+	parts := splitPath(r.URL.Path)
+	if len(parts) == 4 && parts[0] == "api" && parts[1] == "w" && parts[3] == "state" && r.Method == http.MethodGet {
+		h.handleGetState(w, r, parts[2])
+		return true
+	}
+	if len(parts) == 4 && parts[0] == "api" && parts[1] == "w" && parts[3] == "state" && r.Method == http.MethodPost {
+		h.handleSetState(w, r, parts[2])
+		return true
+	}
+	if len(parts) >= 7 && parts[0] == "api" && parts[1] == "w" && parts[3] == "variables" && parts[4] == "get" && parts[5] == "p" && r.Method == http.MethodGet {
+		h.handleGetVariable(w, r, parts[2], joinPathParts(parts, 6))
+		return true
+	}
+	if len(parts) >= 7 && parts[0] == "api" && parts[1] == "w" && parts[3] == "resources" && parts[4] == "get" && parts[5] == "p" && r.Method == http.MethodGet {
+		h.handleGetResource(w, r, parts[2], joinPathParts(parts, 6))
+		return true
+	}
+	return false
 }
 
 func (h *Handler) handleAPI(w http.ResponseWriter, r *http.Request) bool {
@@ -173,14 +207,6 @@ func (h *Handler) handleAPI(w http.ResponseWriter, r *http.Request) bool {
 		h.handleJobSummary(w, r, parts[2])
 		return true
 	}
-	if len(parts) == 4 && parts[0] == "api" && parts[1] == "w" && parts[3] == "state" && r.Method == http.MethodGet {
-		h.handleGetState(w, r, parts[2])
-		return true
-	}
-	if len(parts) == 4 && parts[0] == "api" && parts[1] == "w" && parts[3] == "state" && r.Method == http.MethodPost {
-		h.handleSetState(w, r, parts[2])
-		return true
-	}
 	if len(parts) == 4 && parts[0] == "api" && parts[1] == "w" && parts[3] == "variables" && r.Method == http.MethodGet {
 		h.handleListVariables(w, r, parts[2])
 		return true
@@ -189,20 +215,12 @@ func (h *Handler) handleAPI(w http.ResponseWriter, r *http.Request) bool {
 		h.handleSetVariable(w, r, parts[2])
 		return true
 	}
-	if len(parts) >= 7 && parts[0] == "api" && parts[1] == "w" && parts[3] == "variables" && parts[4] == "get" && parts[5] == "p" && r.Method == http.MethodGet {
-		h.handleGetVariable(w, r, parts[2], joinPathParts(parts, 6))
-		return true
-	}
 	if len(parts) >= 6 && parts[0] == "api" && parts[1] == "w" && parts[3] == "variables" && parts[4] == "p" && r.Method == http.MethodDelete {
 		h.handleDeleteVariable(w, r, parts[2], joinPathParts(parts, 5))
 		return true
 	}
 	if len(parts) == 4 && parts[0] == "api" && parts[1] == "w" && parts[3] == "resources" && r.Method == http.MethodPost {
 		h.handleSetResource(w, r, parts[2])
-		return true
-	}
-	if len(parts) >= 7 && parts[0] == "api" && parts[1] == "w" && parts[3] == "resources" && parts[4] == "get" && parts[5] == "p" && r.Method == http.MethodGet {
-		h.handleGetResource(w, r, parts[2], joinPathParts(parts, 6))
 		return true
 	}
 	if len(parts) == 4 && parts[0] == "api" && parts[1] == "w" && parts[3] == "openapi.json" && r.Method == http.MethodGet {

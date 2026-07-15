@@ -12,6 +12,12 @@ from windforce_execution import WindforceExecutionClient, WindforceTimeoutError 
 
 
 class WindforceExecutionClientTest(TestCase):
+    def test_ready_uses_service_readiness_endpoint(self) -> None:
+        client = WindforceExecutionClient("http://windforce")
+        with patch.object(client, "_request", return_value={"ready": True}) as request:
+            self.assertTrue(client.ready())
+        request.assert_called_once_with("GET", "/readyz")
+
     def test_create_run_uses_versioned_workspace_endpoint(self) -> None:
         client = WindforceExecutionClient("http://windforce", workspace="team a")
         with patch.object(

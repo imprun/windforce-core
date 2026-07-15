@@ -47,8 +47,10 @@ func run(args []string) int {
 		return 0
 	case "run-json":
 		return runJSON(args[1:])
-	case "api":
-		return runServer(args[1:], "api")
+	case "api", "control-plane":
+		return runServer(args[1:], "control-plane")
+	case "execution-api":
+		return runServer(args[1:], "execution-api")
 	case "worker":
 		return runWorker(args[1:])
 	case "standalone":
@@ -115,16 +117,19 @@ func runServer(args []string, mode string) int {
 	if runtimeBaseURL == "" && mode == "standalone" {
 		runtimeBaseURL = localBaseURL(*addr)
 	}
+	combinedMode := mode == "standalone"
 	handler := server.New(server.Config{
-		Store:             stateStore,
-		Catalog:           fileCatalog,
-		Syncer:            &syncer.Syncer{Store: bundle.NewLocalStore(*storeDir), Catalog: fileCatalog},
-		GitSources:        gitSources,
-		EnableAPI:         mode == "api" || mode == "standalone",
-		AdminToken:        adminToken,
-		JobTokenSecret:    jobTokenSecret,
-		SecretKey:         secretKey,
-		SecretKeyPrevious: secretKeyPrevious,
+		Store:              stateStore,
+		Catalog:            fileCatalog,
+		Syncer:             &syncer.Syncer{Store: bundle.NewLocalStore(*storeDir), Catalog: fileCatalog},
+		GitSources:         gitSources,
+		EnableControlAPI:   mode == "control-plane" || combinedMode,
+		EnableExecutionAPI: mode == "execution-api" || combinedMode,
+		EnableWebUI:        mode == "control-plane" || combinedMode,
+		AdminToken:         adminToken,
+		JobTokenSecret:     jobTokenSecret,
+		SecretKey:          secretKey,
+		SecretKeyPrevious:  secretKeyPrevious,
 	})
 
 	retention := jobRetentionPolicy{
@@ -133,7 +138,7 @@ func runServer(args []string, mode string) int {
 		StuckAfter: *jobStuckAfter,
 		Interval:   *jobRetentionInterval,
 	}
-	if retention.Enabled() {
+	if retention.Enabled() && (mode == "execution-api" || combinedMode) {
 		go runJobRetentionLoop(context.Background(), stateStore, retention)
 	}
 
@@ -504,7 +509,8 @@ func defaultStatePath() string {
 func printUsage(file *os.File) {
 	fmt.Fprintln(file, "usage:")
 	fmt.Fprintln(file, "  windforce-lite version")
-	fmt.Fprintln(file, "  windforce-lite api [--addr :8080] [--state-backend local|postgres] [--git-sources <path>]")
+	fmt.Fprintln(file, "  windforce-lite control-plane [--addr :8080] [--state-backend local|postgres] [--git-sources <path>]")
+	fmt.Fprintln(file, "  windforce-lite execution-api [--addr :8080] [--state-backend local|postgres]")
 	fmt.Fprintln(file, "  windforce-lite worker [--state-backend local|postgres] [--worker-group default] [--egress-proxy host:port] [--bun-path <path>] [--python-path <path>] [--go-path <path>] [--prepare-timeout 5m] [--once]")
 	fmt.Fprintln(file, "  windforce-lite standalone [--addr :8080] [--state-backend local|postgres] [--worker-group default] [--egress-proxy host:port] [--git-sources <path>] [--bun-path <path>] [--python-path <path>] [--go-path <path>] [--prepare-timeout 5m]")
 	fmt.Fprintln(file, "  windforce-lite run-json [flags] -- <command> [args...]")
