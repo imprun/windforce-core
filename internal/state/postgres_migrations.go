@@ -267,6 +267,17 @@ CREATE TABLE IF NOT EXISTS webhook_delivery (
     UNIQUE (event_id, subscription_id)
 );
 
+CREATE TABLE IF NOT EXISTS webhook_audit (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL,
+    subscription_id TEXT,
+    delivery_id TEXT,
+    kind TEXT NOT NULL,
+    detail TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL
+);
+
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS result JSONB;
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS correlation_id TEXT;
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS env JSONB;
@@ -323,6 +334,9 @@ CREATE INDEX IF NOT EXISTS webhook_delivery_lease_idx
 
 CREATE INDEX IF NOT EXISTS webhook_delivery_subscription_idx
     ON webhook_delivery (workspace_id, subscription_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS webhook_audit_workspace_idx
+    ON webhook_audit (workspace_id, created_at DESC, id DESC);
 `)
 	return err
 }

@@ -67,3 +67,22 @@ func TestValidateRejectsUnknownTypeAndFields(t *testing.T) {
 		t.Fatalf("unknown field error = %v", err)
 	}
 }
+
+func TestWebhookTestEvent(t *testing.T) {
+	event, err := NewWebhookTest("evt_test", time.Date(2026, 7, 16, 12, 0, 0, 0, time.UTC), WebhookTestData{
+		Workspace: "workspace-a", SubscriptionID: "whs_example", Actor: "operator@example.test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if event.Type != WebhookTestType || event.Subject != "webhooks/whs_example/test" {
+		t.Fatalf("event = %#v", event)
+	}
+	data, err := WebhookTest(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data.Workspace != "workspace-a" || data.SubscriptionID != "whs_example" || data.Actor != "operator@example.test" {
+		t.Fatalf("data = %#v", data)
+	}
+}

@@ -187,6 +187,9 @@ func (h *Handler) handleRuntimeAPI(w http.ResponseWriter, r *http.Request) bool 
 
 func (h *Handler) handleAPI(w http.ResponseWriter, r *http.Request) bool {
 	parts := splitPath(r.URL.Path)
+	if h.handleCanonicalWebhookAPI(w, r, parts) {
+		return true
+	}
 	if len(parts) == 7 && parts[0] == "api" && parts[1] == "w" && parts[3] == "jobs" && parts[4] == "run" && r.Method == http.MethodPost {
 		h.handleJobRun(w, r, parts[2], parts[5], parts[6], false)
 		return true

@@ -66,6 +66,31 @@ type Delivery struct {
 	CompletedAt    *time.Time    `json:"completed_at,omitempty"`
 }
 
+type DeliveryListQuery struct {
+	SubscriptionID  string
+	State           DeliveryState
+	Limit           int
+	CursorCreatedAt time.Time
+	CursorID        string
+}
+
+type DeliveryDetail struct {
+	Delivery         Delivery              `json:"delivery"`
+	Event            controlevent.Envelope `json:"event"`
+	SubscriptionName string                `json:"subscription_name"`
+}
+
+type Audit struct {
+	ID             string    `json:"id"`
+	WorkspaceID    string    `json:"workspace_id"`
+	SubscriptionID string    `json:"subscription_id,omitempty"`
+	DeliveryID     string    `json:"delivery_id,omitempty"`
+	Kind           string    `json:"kind"`
+	Detail         string    `json:"detail"`
+	Actor          string    `json:"actor"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
 type DeliveryLease struct {
 	DeliveryID string
 	WorkerID   string
@@ -91,13 +116,18 @@ type DeliveryResult struct {
 
 type Store interface {
 	ListSubscriptions(ctx context.Context, workspaceID string) ([]Subscription, error)
+	ListSubscriptionsIncludingDeleted(ctx context.Context, workspaceID string) ([]Subscription, error)
 	GetSubscription(ctx context.Context, workspaceID string, subscriptionID string) (Subscription, error)
 	CreateSubscription(ctx context.Context, subscription Subscription) (Subscription, error)
 	UpdateSubscription(ctx context.Context, subscription Subscription) (Subscription, error)
 	DeleteSubscription(ctx context.Context, workspaceID string, subscriptionID string, actor string) error
+	ListDeliveries(ctx context.Context, workspaceID string, query DeliveryListQuery) ([]DeliveryDetail, error)
+	GetDelivery(ctx context.Context, workspaceID string, deliveryID string) (DeliveryDetail, error)
+	CreateTestDelivery(ctx context.Context, workspaceID string, subscriptionID string, actor string) (DeliveryDetail, error)
 	ClaimDelivery(ctx context.Context, workerID string, leaseTTL time.Duration) (*ClaimedDelivery, error)
 	CompleteDelivery(ctx context.Context, lease DeliveryLease, result DeliveryResult) error
 	RetryDelivery(ctx context.Context, workspaceID string, deliveryID string, actor string) error
+	ListAudit(ctx context.Context, workspaceID string) ([]Audit, error)
 }
 
 func ValidateSubscription(subscription Subscription) error {
@@ -188,6 +218,15 @@ func ValidateDeliveryResult(result DeliveryResult) error {
 		return invalid("unsupported completion state %q", result.State)
 	}
 	return nil
+}
+
+func ValidDeliveryState(state DeliveryState) bool {
+	switch state {
+	case DeliveryPending, DeliveryDelivering, DeliveryRetrying, DeliverySucceeded, DeliveryFailed, DeliveryCanceled:
+		return true
+	default:
+		return false
+	}
 }
 
 func uniqueSorted(values []string) []string {

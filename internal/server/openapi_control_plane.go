@@ -20,7 +20,7 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 					oapiWorkspaceParam(workspaceID),
 					oapiQueryParam("app_key", "Optional app key filter.", oapiStringSchema(), false),
 					oapiQueryParam("client_id", "Optional client id filter.", oapiStringSchema(), false),
-					oapiQueryParam("category", "Optional event category filter.", map[string]any{"type": "string", "enum": []any{"repository", "release", "client", "input_settings"}}, false),
+					oapiQueryParam("category", "Optional event category filter.", map[string]any{"type": "string", "enum": []any{"repository", "release", "client", "input_settings", "webhook"}}, false),
 					oapiQueryParam("actor", "Optional case-insensitive actor filter.", oapiStringSchema(), false),
 					oapiQueryParam("git_source_id", "Optional numeric git source id filter.", oapiIntegerSchema(), false),
 					oapiQueryParam("since", "RFC3339 lower bound for created_at.", oapiStringSchema(), false),
@@ -592,6 +592,9 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 			},
 		},
 	}
+	addWebhookControlPlanePaths(paths, workspaceID)
+	schemas := controlPlaneSchemas()
+	addWebhookControlPlaneSchemas(schemas)
 
 	return map[string]any{
 		"openapi": "3.1.0",
@@ -603,7 +606,7 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 		"servers":  []any{map[string]any{"url": baseURL}},
 		"security": []any{map[string]any{"bearerAuth": []any{}}},
 		"components": map[string]any{
-			"schemas":         controlPlaneSchemas(),
+			"schemas":         schemas,
 			"responses":       openAPIErrorResponses(),
 			"securitySchemes": openAPISecuritySchemes(),
 		},

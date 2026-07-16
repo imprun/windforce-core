@@ -16,6 +16,7 @@ const (
 	CloudEventsSpecVersion = "1.0"
 	JSONContentType        = "application/json"
 	ReleasePublishedType   = "windforce.release.published"
+	WebhookTestType        = "windforce.webhook.test"
 )
 
 var ErrInvalidEvent = errors.New("invalid control plane event")
@@ -40,6 +41,12 @@ type ReleasePublishedData struct {
 	PreviousCommit    *string `json:"previous_commit,omitempty"`
 	Actor             string  `json:"actor"`
 	Note              *string `json:"note,omitempty"`
+}
+
+type WebhookTestData struct {
+	Workspace      string `json:"workspace"`
+	SubscriptionID string `json:"subscription_id"`
+	Actor          string `json:"actor"`
 }
 
 func NewReleasePublished(id string, occurredAt time.Time, data ReleasePublishedData) (Envelope, error) {
@@ -76,6 +83,33 @@ func NewReleasePublished(id string, occurredAt time.Time, data ReleasePublishedD
 	return event, nil
 }
 
+func NewWebhookTest(id string, occurredAt time.Time, data WebhookTestData) (Envelope, error) {
+	data.Workspace = contract.NormalizeWorkspace(data.Workspace)
+	data.SubscriptionID = strings.TrimSpace(data.SubscriptionID)
+	data.Actor = strings.TrimSpace(data.Actor)
+	if data.Actor == "" {
+		data.Actor = "system"
+	}
+	raw, err := json.Marshal(data)
+	if err != nil {
+		return Envelope{}, err
+	}
+	event := Envelope{
+		SpecVersion:     CloudEventsSpecVersion,
+		ID:              strings.TrimSpace(id),
+		Type:            WebhookTestType,
+		Source:          "/workspaces/" + data.Workspace + "/control-plane",
+		Subject:         "webhooks/" + data.SubscriptionID + "/test",
+		Time:            occurredAt.UTC(),
+		DataContentType: JSONContentType,
+		Data:            raw,
+	}
+	if err := Validate(event); err != nil {
+		return Envelope{}, err
+	}
+	return event, nil
+}
+
 func Validate(value Envelope) error {
 	if value.SpecVersion != CloudEventsSpecVersion {
 		return invalid("specversion must be %q", CloudEventsSpecVersion)
@@ -95,9 +129,28 @@ func Validate(value Envelope) error {
 	switch value.Type {
 	case ReleasePublishedType:
 		return validateReleasePublished(value)
+	case WebhookTestType:
+		return validateWebhookTest(value)
 	default:
 		return invalid("unsupported event type %q", value.Type)
 	}
+}
+
+func WebhookTest(value Envelope) (WebhookTestData, error) {
+	if value.Type != WebhookTestType {
+		return WebhookTestData{}, invalid("event type is %q", value.Type)
+	}
+	var data WebhookTestData
+	decoder := json.NewDecoder(bytes.NewReader(value.Data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&data); err != nil {
+		return WebhookTestData{}, invalid("webhook test data: %v", err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return WebhookTestData{}, invalid("webhook test data has trailing values")
+	}
+	return data, nil
 }
 
 func ReleasePublished(value Envelope) (ReleasePublishedData, error) {
@@ -140,6 +193,29 @@ func validateReleasePublished(value Envelope) error {
 		return invalid("source must be %q", wantSource)
 	}
 	wantSubject := "apps/" + data.AppKey + "/releases/" + data.ReleaseID
+	if value.Subject != wantSubject {
+		return invalid("subject must be %q", wantSubject)
+	}
+	return nil
+}
+
+func validateWebhookTest(value Envelope) error {
+	data, err := WebhookTest(value)
+	if err != nil {
+		return err
+	}
+	data.Workspace = contract.NormalizeWorkspace(data.Workspace)
+	if strings.TrimSpace(data.SubscriptionID) == "" {
+		return invalid("data.subscription_id is required")
+	}
+	if strings.TrimSpace(data.Actor) == "" {
+		return invalid("data.actor is required")
+	}
+	wantSource := "/workspaces/" + data.Workspace + "/control-plane"
+	if value.Source != wantSource {
+		return invalid("source must be %q", wantSource)
+	}
+	wantSubject := "webhooks/" + data.SubscriptionID + "/test"
 	if value.Subject != wantSubject {
 		return invalid("subject must be %q", wantSubject)
 	}

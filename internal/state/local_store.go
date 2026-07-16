@@ -1005,6 +1005,9 @@ func ensureSnapshot(snapshot *Snapshot) {
 	if snapshot.WebhookDeliveries == nil {
 		snapshot.WebhookDeliveries = map[string]webhook.Delivery{}
 	}
+	if snapshot.WebhookAudits == nil {
+		snapshot.WebhookAudits = map[string][]webhook.Audit{}
+	}
 	snapshot.LegacyClients = nil
 	snapshot.LegacyClientAudits = nil
 }

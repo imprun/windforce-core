@@ -322,6 +322,23 @@ python tools/windforce_control.py --api-url http://127.0.0.1:18091 --pretty sche
 python tools/windforce_control.py --api-url http://127.0.0.1:18091 --pretty control-openapi
 ```
 
+Webhook subscriptions use the same authenticated control-plane API. Keep an
+operator-supplied signing secret in an environment variable, or omit
+`--secret-env` and retain the generated secret returned by `webhook-create`.
+Stored secrets and endpoint paths cannot be read back.
+
+```powershell
+$env:WINDFORCE_WEBHOOK_SECRET = "replace-with-a-local-secret"
+python tools/windforce_control.py --api-url http://127.0.0.1:18091 --pretty webhook-create `
+  --name release-notifier --endpoint https://hooks.example.test/windforce `
+  --secret-env WINDFORCE_WEBHOOK_SECRET --app-key echo
+python tools/windforce_control.py --api-url http://127.0.0.1:18091 --pretty webhook-subscriptions
+python tools/windforce_control.py --api-url http://127.0.0.1:18091 --pretty webhook-test `
+  --webhook-id whs_example
+python tools/windforce_control.py --api-url http://127.0.0.1:18091 --pretty webhook-deliveries `
+  --webhook-id whs_example --state failed
+```
+
 The schema command reads the control-plane schema endpoint,
 `GET /api/w/{workspace}/apps/{app}/actions/{action}/schema`, and prints the
 materialized `input_schema` and `output_schema` JSON Schema documents. The

@@ -65,7 +65,6 @@ WHERE id = $1
 	if _, err := store.CreateSubscription(ctx, subscription); !errors.Is(err, webhook.ErrConflict) {
 		t.Fatalf("duplicate subscription error = %v", err)
 	}
-
 	actor := "operator@example.test"
 	first := releaseCatalogDeployment("workspace-a", "source-a", "checkout", "commit-a")
 	first.CreatedBy = &actor
@@ -157,6 +156,27 @@ WHERE id = $1
 	if manualRetry.Delivery.ID != recovered.Delivery.ID {
 		t.Fatalf("manual retry delivery = %#v", manualRetry.Delivery)
 	}
+	testDelivery, err := store.CreateTestDelivery(ctx, "workspace-a", created.ID, "tester@example.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if testDelivery.Event.Type != controlevent.WebhookTestType || testDelivery.SubscriptionName != created.Name {
+		t.Fatalf("test delivery = %#v", testDelivery)
+	}
+	deliveries, err := store.ListDeliveries(ctx, "workspace-a", webhook.DeliveryListQuery{SubscriptionID: created.ID, Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(deliveries) != 3 || deliveries[0].Delivery.ID != testDelivery.Delivery.ID {
+		t.Fatalf("deliveries = %#v", deliveries)
+	}
+	loadedDelivery, err := store.GetDelivery(ctx, "workspace-a", testDelivery.Delivery.ID)
+	if err != nil || loadedDelivery.Event.ID != testDelivery.Event.ID {
+		t.Fatalf("loaded delivery = %#v, err = %v", loadedDelivery, err)
+	}
+	if _, err := store.GetDelivery(ctx, "workspace-b", testDelivery.Delivery.ID); !errors.Is(err, webhook.ErrNotFound) {
+		t.Fatalf("cross-workspace delivery error = %v", err)
+	}
 	if err := store.DeleteSubscription(ctx, "workspace-a", created.ID, actor); err != nil {
 		t.Fatal(err)
 	}
@@ -169,6 +189,20 @@ WHERE id = $1
 	}
 	if finalState != string(webhook.DeliveryCanceled) {
 		t.Fatalf("deleted subscription in-flight state = %q, want canceled", finalState)
+	}
+	allSubscriptions, err := store.ListSubscriptionsIncludingDeleted(ctx, "workspace-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(allSubscriptions) != 1 || allSubscriptions[0].DeletedAt == nil {
+		t.Fatalf("subscriptions including deleted = %#v", allSubscriptions)
+	}
+	audits, err := store.ListAudit(ctx, "workspace-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(audits) < 4 || audits[0].Kind != "webhook_subscription_deleted" {
+		t.Fatalf("webhook audit = %#v", audits)
 	}
 }
 

@@ -46,6 +46,13 @@ event and one pending delivery for each enabled matching Webhook subscription.
 Endpoint and signing-secret values use workspace encryption. External HTTP
 delivery is always outside the publication transaction.
 
+The Control Plane API owns workspace-scoped Webhook subscription CRUD, test
+events, delivery history, and failed-delivery retry. Read responses expose only
+the endpoint scheme and host. A signing secret is returned only by the create
+or rotation response, and every management change is included in the canonical
+workspace audit stream. Deleted subscriptions remain visible only through the
+explicit history query while pending deliveries are canceled.
+
 ## Webhook Dispatcher
 
 The Webhook Dispatcher reads only encrypted subscriptions, immutable event

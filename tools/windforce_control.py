@@ -126,6 +126,56 @@ def main(argv: list[str] | None = None) -> int:
     control_openapi = sub.add_parser("control-openapi", help="get workspace control-plane OpenAPI")
     control_openapi.set_defaults(func=cmd_control_openapi)
 
+    webhook_subscriptions = sub.add_parser("webhook-subscriptions", help="list webhook subscriptions")
+    webhook_subscriptions.add_argument("--include-deleted", action="store_true")
+    webhook_subscriptions.set_defaults(func=cmd_webhook_subscriptions)
+
+    webhook_create = sub.add_parser("webhook-create", help="create a webhook subscription")
+    webhook_create.add_argument("--name", required=True)
+    webhook_create.add_argument("--endpoint", required=True)
+    webhook_create.add_argument("--secret-env", default="", help="optional env var containing a signing secret")
+    webhook_create.add_argument("--event-type", action="append", dest="event_types")
+    webhook_create.add_argument("--app-key", action="append", dest="app_keys")
+    webhook_create.add_argument("--disabled", action="store_true")
+    webhook_create.set_defaults(func=cmd_webhook_create)
+
+    webhook_update = sub.add_parser("webhook-update", help="update a webhook subscription")
+    webhook_update.add_argument("--webhook-id", required=True)
+    webhook_update.add_argument("--name")
+    webhook_update.add_argument("--endpoint")
+    webhook_update.add_argument("--secret-env", default="", help="optional env var containing a replacement signing secret")
+    webhook_update.add_argument("--rotate-secret", action="store_true")
+    webhook_update.add_argument("--event-type", action="append", dest="event_types")
+    webhook_update.add_argument("--app-key", action="append", dest="app_keys")
+    webhook_update.add_argument("--all-apps", action="store_true", help="clear app filters")
+    enabled = webhook_update.add_mutually_exclusive_group()
+    enabled.add_argument("--enable", action="store_true", dest="enabled")
+    enabled.add_argument("--disable", action="store_false", dest="enabled")
+    webhook_update.set_defaults(enabled=None, func=cmd_webhook_update)
+
+    webhook_delete = sub.add_parser("webhook-delete", help="delete a webhook subscription")
+    webhook_delete.add_argument("--webhook-id", required=True)
+    webhook_delete.set_defaults(func=cmd_webhook_delete)
+
+    webhook_test = sub.add_parser("webhook-test", help="queue a test webhook delivery")
+    webhook_test.add_argument("--webhook-id", required=True)
+    webhook_test.set_defaults(func=cmd_webhook_test)
+
+    webhook_deliveries = sub.add_parser("webhook-deliveries", help="list webhook delivery history")
+    webhook_deliveries.add_argument("--webhook-id", required=True)
+    webhook_deliveries.add_argument("--state", default="")
+    webhook_deliveries.add_argument("--limit", type=int, default=None)
+    webhook_deliveries.add_argument("--cursor", default="")
+    webhook_deliveries.set_defaults(func=cmd_webhook_deliveries)
+
+    webhook_delivery = sub.add_parser("webhook-delivery", help="get webhook delivery detail")
+    webhook_delivery.add_argument("--delivery-id", required=True)
+    webhook_delivery.set_defaults(func=cmd_webhook_delivery)
+
+    webhook_retry = sub.add_parser("webhook-retry", help="retry a failed webhook delivery")
+    webhook_retry.add_argument("--delivery-id", required=True)
+    webhook_retry.set_defaults(func=cmd_webhook_retry)
+
     run = sub.add_parser("run", help="enqueue an action job")
     run.add_argument("--app", required=True)
     run.add_argument("--action", required=True)
@@ -449,6 +499,92 @@ def cmd_control_openapi(args: argparse.Namespace) -> Any:
     return request(args, "GET", f"/api/w/{quote_path(args.workspace)}/openapi.json")
 
 
+def cmd_webhook_subscriptions(args: argparse.Namespace) -> Any:
+    query = query_string({"include_deleted": "true" if args.include_deleted else ""})
+    return request(args, "GET", f"/api/w/{quote_path(args.workspace)}/webhooks{query}")
+
+
+def cmd_webhook_create(args: argparse.Namespace) -> Any:
+    secret = value_from_optional_env(args.secret_env)
+    return request(
+        args,
+        "POST",
+        f"/api/w/{quote_path(args.workspace)}/webhooks",
+        compact(
+            {
+                "name": args.name,
+                "endpoint": args.endpoint,
+                "signing_secret": secret,
+                "event_types": args.event_types,
+                "app_keys": args.app_keys,
+                "enabled": not args.disabled,
+            }
+        ),
+    )
+
+
+def cmd_webhook_update(args: argparse.Namespace) -> Any:
+    app_keys = [] if args.all_apps else args.app_keys
+    body = compact(
+        {
+            "name": args.name,
+            "endpoint": args.endpoint,
+            "signing_secret": value_from_optional_env(args.secret_env),
+            "rotate_signing_secret": args.rotate_secret or None,
+            "event_types": args.event_types,
+            "app_keys": app_keys,
+            "enabled": args.enabled,
+        }
+    )
+    return request(
+        args,
+        "PATCH",
+        f"/api/w/{quote_path(args.workspace)}/webhooks/{quote_path(args.webhook_id)}",
+        body,
+    )
+
+
+def cmd_webhook_delete(args: argparse.Namespace) -> Any:
+    return request(
+        args,
+        "DELETE",
+        f"/api/w/{quote_path(args.workspace)}/webhooks/{quote_path(args.webhook_id)}",
+    )
+
+
+def cmd_webhook_test(args: argparse.Namespace) -> Any:
+    return request(
+        args,
+        "POST",
+        f"/api/w/{quote_path(args.workspace)}/webhooks/{quote_path(args.webhook_id)}/test",
+    )
+
+
+def cmd_webhook_deliveries(args: argparse.Namespace) -> Any:
+    query = query_string({"state": args.state, "limit": args.limit, "cursor": args.cursor})
+    return request(
+        args,
+        "GET",
+        f"/api/w/{quote_path(args.workspace)}/webhooks/{quote_path(args.webhook_id)}/deliveries{query}",
+    )
+
+
+def cmd_webhook_delivery(args: argparse.Namespace) -> Any:
+    return request(
+        args,
+        "GET",
+        f"/api/w/{quote_path(args.workspace)}/webhook-deliveries/{quote_path(args.delivery_id)}",
+    )
+
+
+def cmd_webhook_retry(args: argparse.Namespace) -> Any:
+    return request(
+        args,
+        "POST",
+        f"/api/w/{quote_path(args.workspace)}/webhook-deliveries/{quote_path(args.delivery_id)}/retry",
+    )
+
+
 def cmd_run(args: argparse.Namespace) -> Any:
     return request(
         args,
@@ -660,6 +796,15 @@ def print_json(payload: Any, pretty: bool, stream: Any = sys.stdout) -> None:
 
 def compact(payload: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in payload.items() if value not in ("", None)}
+
+
+def value_from_optional_env(name: str) -> str:
+    name = str(name or "").strip()
+    if not name:
+        return ""
+    if name not in os.environ:
+        raise APIError({"error": f"environment variable {name} is not set"})
+    return os.environ[name]
 
 
 def query_string(params: dict[str, Any]) -> str:

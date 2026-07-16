@@ -25,6 +25,11 @@ id, workspace_id, event_id, subscription_id, state, attempt, next_attempt_at,
 lease_owner, lease_expires_at, response_status, latency_ms, error_summary,
 created_at, updated_at, completed_at`
 
+const webhookDeliveryQualifiedColumns = `
+d.id, d.workspace_id, d.event_id, d.subscription_id, d.state, d.attempt, d.next_attempt_at,
+d.lease_owner, d.lease_expires_at, d.response_status, d.latency_ms, d.error_summary,
+d.created_at, d.updated_at, d.completed_at`
+
 var _ webhook.Store = (*PostgresStore)(nil)
 
 type postgresTxWorkspaceKeyProvider struct {
@@ -49,12 +54,20 @@ WHERE workspace_id = $1
 }
 
 func (s *PostgresStore) ListSubscriptions(ctx context.Context, workspaceID string) ([]webhook.Subscription, error) {
+	return s.listSubscriptions(ctx, workspaceID, false)
+}
+
+func (s *PostgresStore) ListSubscriptionsIncludingDeleted(ctx context.Context, workspaceID string) ([]webhook.Subscription, error) {
+	return s.listSubscriptions(ctx, workspaceID, true)
+}
+
+func (s *PostgresStore) listSubscriptions(ctx context.Context, workspaceID string, includeDeleted bool) ([]webhook.Subscription, error) {
 	rows, err := s.pool.Query(ctx, `
 SELECT `+webhookSubscriptionColumns+`
 FROM webhook_subscription
-WHERE workspace_id = $1 AND deleted_at IS NULL
+WHERE workspace_id = $1 AND ($2 OR deleted_at IS NULL)
 ORDER BY name, id
-`, contract.NormalizeWorkspace(workspaceID))
+`, contract.NormalizeWorkspace(workspaceID), includeDeleted)
 	if err != nil {
 		return nil, err
 	}
@@ -94,22 +107,26 @@ func (s *PostgresStore) CreateSubscription(ctx context.Context, subscription web
 	if err != nil {
 		return webhook.Subscription{}, err
 	}
-	endpoint, secret, err := s.encryptPostgresSubscription(ctx, prepared)
-	if err != nil {
-		return webhook.Subscription{}, err
-	}
-	eventTypes, _ := json.Marshal(prepared.EventTypes)
-	appKeys, _ := json.Marshal(prepared.AppKeys)
-	_, err = s.pool.Exec(ctx, `
+	err = s.withTx(ctx, func(tx pgx.Tx) error {
+		provider := postgresTxWorkspaceKeyProvider{tx: tx}
+		endpoint, secret, err := s.encryptPostgresSubscriptionWithProvider(ctx, provider, prepared)
+		if err != nil {
+			return err
+		}
+		eventTypes, _ := json.Marshal(prepared.EventTypes)
+		appKeys, _ := json.Marshal(prepared.AppKeys)
+		if _, err = tx.Exec(ctx, `
 INSERT INTO webhook_subscription (
     id, workspace_id, name, endpoint_encrypted, signing_secret_encrypted,
     event_types, app_keys, enabled, created_by, updated_by, created_at, updated_at, deleted_at
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NULL)
-`, prepared.ID, prepared.WorkspaceID, prepared.Name, endpoint, secret, eventTypes, appKeys, prepared.Enabled, prepared.CreatedBy, prepared.UpdatedBy, prepared.CreatedAt, prepared.UpdatedAt)
-	if err != nil {
-		return webhook.Subscription{}, webhookPostgresError(err)
-	}
-	return prepared, nil
+`, prepared.ID, prepared.WorkspaceID, prepared.Name, endpoint, secret, eventTypes, appKeys, prepared.Enabled, prepared.CreatedBy, prepared.UpdatedBy, prepared.CreatedAt, prepared.UpdatedAt); err != nil {
+			return webhookPostgresError(err)
+		}
+		audit := newWebhookAudit(prepared.WorkspaceID, prepared.ID, "", "webhook_subscription_created", webhookSubscriptionAuditDetail(prepared), prepared.CreatedBy, prepared.CreatedAt)
+		return insertWebhookAudit(ctx, tx, audit)
+	})
+	return prepared, err
 }
 
 func (s *PostgresStore) UpdateSubscription(ctx context.Context, update webhook.Subscription) (webhook.Subscription, error) {
@@ -154,25 +171,38 @@ SET name = $3,
     updated_at = $10
 WHERE workspace_id = $1 AND id = $2 AND deleted_at IS NULL
 `, prepared.WorkspaceID, prepared.ID, prepared.Name, endpoint, secret, eventTypes, appKeys, prepared.Enabled, prepared.UpdatedBy, prepared.UpdatedAt)
-		return webhookPostgresError(err)
+		if err != nil {
+			return webhookPostgresError(err)
+		}
+		kind := "webhook_subscription_updated"
+		if existing.Enabled && !prepared.Enabled {
+			kind = "webhook_subscription_disabled"
+		} else if !existing.Enabled && prepared.Enabled {
+			kind = "webhook_subscription_enabled"
+		}
+		audit := newWebhookAudit(prepared.WorkspaceID, prepared.ID, "", kind, webhookSubscriptionUpdateAuditDetail(existing, prepared), prepared.UpdatedBy, prepared.UpdatedAt)
+		return insertWebhookAudit(ctx, tx, audit)
 	})
 	return prepared, err
 }
 
 func (s *PostgresStore) DeleteSubscription(ctx context.Context, workspaceID string, subscriptionID string, actor string) error {
 	workspaceID = contract.NormalizeWorkspace(workspaceID)
+	actor = firstNonEmpty(strings.TrimSpace(actor), "system")
 	return s.withTx(ctx, func(tx pgx.Tx) error {
 		now := time.Now().UTC()
-		result, err := tx.Exec(ctx, `
+		var name string
+		err := tx.QueryRow(ctx, `
 UPDATE webhook_subscription
 SET enabled = false, updated_by = $3, updated_at = $4, deleted_at = $4
 WHERE workspace_id = $1 AND id = $2 AND deleted_at IS NULL
-`, workspaceID, subscriptionID, firstNonEmpty(strings.TrimSpace(actor), "system"), now)
+		RETURNING name
+`, workspaceID, subscriptionID, actor, now).Scan(&name)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return webhook.ErrNotFound
+		}
 		if err != nil {
 			return err
-		}
-		if result.RowsAffected() == 0 {
-			return webhook.ErrNotFound
 		}
 		_, err = tx.Exec(ctx, `
 UPDATE webhook_delivery
@@ -181,8 +211,118 @@ WHERE workspace_id = $1
   AND subscription_id = $2
   AND state IN ($5, $6)
 `, workspaceID, subscriptionID, webhook.DeliveryCanceled, now, webhook.DeliveryPending, webhook.DeliveryRetrying)
-		return err
+		if err != nil {
+			return err
+		}
+		audit := newWebhookAudit(workspaceID, subscriptionID, "", "webhook_subscription_deleted", "name="+name+"; subscription deleted", actor, now)
+		return insertWebhookAudit(ctx, tx, audit)
 	})
+}
+
+func (s *PostgresStore) ListDeliveries(ctx context.Context, workspaceID string, query webhook.DeliveryListQuery) ([]webhook.DeliveryDetail, error) {
+	query, err := prepareWebhookDeliveryQuery(query)
+	if err != nil {
+		return nil, err
+	}
+	var cursor any
+	if !query.CursorCreatedAt.IsZero() {
+		cursor = query.CursorCreatedAt
+	}
+	rows, err := s.pool.Query(ctx, `
+SELECT `+webhookDeliveryQualifiedColumns+`, e.body, s.name
+FROM webhook_delivery d
+JOIN control_plane_event e ON e.id = d.event_id AND e.workspace_id = d.workspace_id
+JOIN webhook_subscription s ON s.id = d.subscription_id AND s.workspace_id = d.workspace_id
+WHERE d.workspace_id = $1
+  AND ($2 = '' OR d.subscription_id = $2)
+  AND ($3 = '' OR d.state = $3)
+  AND ($4::timestamptz IS NULL OR (d.created_at, d.id) < ($4, $5))
+ORDER BY d.created_at DESC, d.id DESC
+LIMIT $6
+`, contract.NormalizeWorkspace(workspaceID), query.SubscriptionID, string(query.State), cursor, query.CursorID, query.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]webhook.DeliveryDetail, 0)
+	for rows.Next() {
+		detail, err := scanWebhookDeliveryDetail(rows)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, detail)
+	}
+	return result, rows.Err()
+}
+
+func (s *PostgresStore) GetDelivery(ctx context.Context, workspaceID string, deliveryID string) (webhook.DeliveryDetail, error) {
+	detail, err := scanWebhookDeliveryDetail(s.pool.QueryRow(ctx, `
+SELECT `+webhookDeliveryQualifiedColumns+`, e.body, s.name
+FROM webhook_delivery d
+JOIN control_plane_event e ON e.id = d.event_id AND e.workspace_id = d.workspace_id
+JOIN webhook_subscription s ON s.id = d.subscription_id AND s.workspace_id = d.workspace_id
+WHERE d.workspace_id = $1 AND d.id = $2
+`, contract.NormalizeWorkspace(workspaceID), strings.TrimSpace(deliveryID)))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return webhook.DeliveryDetail{}, webhook.ErrNotFound
+	}
+	return detail, err
+}
+
+func (s *PostgresStore) CreateTestDelivery(ctx context.Context, workspaceID string, subscriptionID string, actor string) (webhook.DeliveryDetail, error) {
+	workspaceID = contract.NormalizeWorkspace(workspaceID)
+	actor = firstNonEmpty(strings.TrimSpace(actor), "system")
+	var detail webhook.DeliveryDetail
+	err := s.withTx(ctx, func(tx pgx.Tx) error {
+		record, err := scanWebhookSubscription(tx.QueryRow(ctx, `
+SELECT `+webhookSubscriptionColumns+`
+FROM webhook_subscription
+WHERE workspace_id = $1 AND id = $2 AND deleted_at IS NULL
+FOR UPDATE
+`, workspaceID, subscriptionID))
+		if errors.Is(err, pgx.ErrNoRows) {
+			return webhook.ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if !record.Enabled {
+			return webhook.ErrConflict
+		}
+		now := time.Now().UTC()
+		event, err := controlevent.NewWebhookTest(NewID("evt"), now, controlevent.WebhookTestData{
+			Workspace: workspaceID, SubscriptionID: subscriptionID, Actor: actor,
+		})
+		if err != nil {
+			return err
+		}
+		eventJSON, err := json.Marshal(event)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `
+INSERT INTO control_plane_event (id, workspace_id, event_type, subject, body, created_at)
+VALUES ($1, $2, $3, $4, $5, $6)
+`, event.ID, workspaceID, event.Type, event.Subject, eventJSON, event.Time); err != nil {
+			return err
+		}
+		delivery := newWebhookDelivery(event, workspaceID, subscriptionID, now)
+		if _, err := tx.Exec(ctx, `
+INSERT INTO webhook_delivery (
+    id, workspace_id, event_id, subscription_id, state, attempt, next_attempt_at,
+    created_at, updated_at
+) VALUES ($1, $2, $3, $4, $5, 0, $6, $6, $6)
+`, delivery.ID, delivery.WorkspaceID, delivery.EventID, delivery.SubscriptionID, delivery.State, delivery.NextAttemptAt); err != nil {
+			return err
+		}
+		audit := newWebhookAudit(workspaceID, subscriptionID, delivery.ID, "webhook_test_requested", "test delivery queued", actor, now)
+		if err := insertWebhookAudit(ctx, tx, audit); err != nil {
+			return err
+		}
+		detail = webhook.DeliveryDetail{Delivery: delivery, Event: event, SubscriptionName: record.Name}
+		return nil
+	})
+	return detail, err
 }
 
 func (s *PostgresStore) ClaimDelivery(ctx context.Context, workerID string, leaseTTL time.Duration) (*webhook.ClaimedDelivery, error) {
@@ -324,8 +464,33 @@ WHERE id = $1
 }
 
 func (s *PostgresStore) RetryDelivery(ctx context.Context, workspaceID string, deliveryID string, actor string) error {
-	now := time.Now().UTC()
-	command, err := s.pool.Exec(ctx, `
+	workspaceID = contract.NormalizeWorkspace(workspaceID)
+	actor = firstNonEmpty(strings.TrimSpace(actor), "system")
+	return s.withTx(ctx, func(tx pgx.Tx) error {
+		now := time.Now().UTC()
+		var subscriptionID string
+		err := tx.QueryRow(ctx, `
+SELECT d.subscription_id
+FROM webhook_delivery d
+JOIN webhook_subscription s ON s.id = d.subscription_id AND s.workspace_id = d.workspace_id
+WHERE d.workspace_id = $1 AND d.id = $2 AND d.state = $3
+  AND s.enabled = true AND s.deleted_at IS NULL
+FOR UPDATE OF d, s
+`, workspaceID, deliveryID, webhook.DeliveryFailed).Scan(&subscriptionID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			var found bool
+			if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM webhook_delivery WHERE workspace_id = $1 AND id = $2)`, workspaceID, deliveryID).Scan(&found); err != nil {
+				return err
+			}
+			if !found {
+				return webhook.ErrNotFound
+			}
+			return webhook.ErrConflict
+		}
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `
 UPDATE webhook_delivery
 SET state = $3,
     next_attempt_at = $4,
@@ -334,24 +499,34 @@ SET state = $3,
     completed_at = NULL,
     updated_at = $4
 WHERE workspace_id = $1 AND id = $2 AND state = $5
-`, contract.NormalizeWorkspace(workspaceID), deliveryID, webhook.DeliveryRetrying, now, webhook.DeliveryFailed)
-	if err != nil {
-		return err
-	}
-	if command.RowsAffected() == 0 {
-		var state string
-		err := s.pool.QueryRow(ctx, `
-SELECT state FROM webhook_delivery WHERE workspace_id = $1 AND id = $2
-`, contract.NormalizeWorkspace(workspaceID), deliveryID).Scan(&state)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return webhook.ErrNotFound
-		}
-		if err != nil {
+`, workspaceID, deliveryID, webhook.DeliveryRetrying, now, webhook.DeliveryFailed); err != nil {
 			return err
 		}
-		return webhook.ErrConflict
+		audit := newWebhookAudit(workspaceID, subscriptionID, deliveryID, "webhook_delivery_retried", "failed delivery queued for retry", actor, now)
+		return insertWebhookAudit(ctx, tx, audit)
+	})
+}
+
+func (s *PostgresStore) ListAudit(ctx context.Context, workspaceID string) ([]webhook.Audit, error) {
+	rows, err := s.pool.Query(ctx, `
+SELECT id, workspace_id, subscription_id, delivery_id, kind, detail, actor, created_at
+FROM webhook_audit
+WHERE workspace_id = $1
+ORDER BY created_at DESC, id DESC
+`, contract.NormalizeWorkspace(workspaceID))
+	if err != nil {
+		return nil, err
 	}
-	return nil
+	defer rows.Close()
+	audits := make([]webhook.Audit, 0)
+	for rows.Next() {
+		var audit webhook.Audit
+		if err := rows.Scan(&audit.ID, &audit.WorkspaceID, &audit.SubscriptionID, &audit.DeliveryID, &audit.Kind, &audit.Detail, &audit.Actor, &audit.CreatedAt); err != nil {
+			return nil, err
+		}
+		audits = append(audits, audit)
+	}
+	return audits, rows.Err()
 }
 
 func (s *PostgresStore) postgresSubscription(ctx context.Context, record WebhookSubscriptionRecord) (webhook.Subscription, error) {
@@ -443,6 +618,51 @@ func scanWebhookDelivery(row rowScanner) (webhook.Delivery, error) {
 	)
 	delivery.State = webhook.DeliveryState(state)
 	return delivery, err
+}
+
+func scanWebhookDeliveryDetail(row rowScanner) (webhook.DeliveryDetail, error) {
+	var detail webhook.DeliveryDetail
+	var state string
+	var eventRaw []byte
+	err := row.Scan(
+		&detail.Delivery.ID,
+		&detail.Delivery.WorkspaceID,
+		&detail.Delivery.EventID,
+		&detail.Delivery.SubscriptionID,
+		&state,
+		&detail.Delivery.Attempt,
+		&detail.Delivery.NextAttemptAt,
+		&detail.Delivery.LeaseOwner,
+		&detail.Delivery.LeaseExpiresAt,
+		&detail.Delivery.ResponseStatus,
+		&detail.Delivery.LatencyMillis,
+		&detail.Delivery.ErrorSummary,
+		&detail.Delivery.CreatedAt,
+		&detail.Delivery.UpdatedAt,
+		&detail.Delivery.CompletedAt,
+		&eventRaw,
+		&detail.SubscriptionName,
+	)
+	if err != nil {
+		return webhook.DeliveryDetail{}, err
+	}
+	detail.Delivery.State = webhook.DeliveryState(state)
+	if err := json.Unmarshal(eventRaw, &detail.Event); err != nil {
+		return webhook.DeliveryDetail{}, err
+	}
+	if err := controlevent.Validate(detail.Event); err != nil {
+		return webhook.DeliveryDetail{}, err
+	}
+	return detail, nil
+}
+
+func insertWebhookAudit(ctx context.Context, tx pgx.Tx, audit webhook.Audit) error {
+	_, err := tx.Exec(ctx, `
+INSERT INTO webhook_audit (
+    id, workspace_id, subscription_id, delivery_id, kind, detail, actor, created_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+`, audit.ID, audit.WorkspaceID, audit.SubscriptionID, audit.DeliveryID, audit.Kind, audit.Detail, audit.Actor, audit.CreatedAt)
+	return err
 }
 
 func webhookPostgresError(err error) error {

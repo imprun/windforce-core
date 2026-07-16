@@ -207,6 +207,72 @@ func newWebhookDelivery(event controlevent.Envelope, workspaceID string, subscri
 	}
 }
 
+func prepareWebhookDeliveryQuery(query webhook.DeliveryListQuery) (webhook.DeliveryListQuery, error) {
+	query.SubscriptionID = strings.TrimSpace(query.SubscriptionID)
+	query.CursorID = strings.TrimSpace(query.CursorID)
+	if query.State != "" && !webhook.ValidDeliveryState(query.State) {
+		return webhook.DeliveryListQuery{}, fmt.Errorf("%w: invalid delivery state %q", webhook.ErrInvalid, query.State)
+	}
+	if query.Limit <= 0 {
+		query.Limit = 50
+	}
+	if query.Limit > 101 {
+		query.Limit = 101
+	}
+	if query.CursorCreatedAt.IsZero() != (query.CursorID == "") {
+		return webhook.DeliveryListQuery{}, fmt.Errorf("%w: delivery cursor requires created_at and id", webhook.ErrInvalid)
+	}
+	return query, nil
+}
+
+func webhookDeliveryMatches(delivery webhook.Delivery, workspaceID string, query webhook.DeliveryListQuery) bool {
+	if contract.NormalizeWorkspace(delivery.WorkspaceID) != contract.NormalizeWorkspace(workspaceID) {
+		return false
+	}
+	if query.SubscriptionID != "" && delivery.SubscriptionID != query.SubscriptionID {
+		return false
+	}
+	if query.State != "" && delivery.State != query.State {
+		return false
+	}
+	if !query.CursorCreatedAt.IsZero() {
+		if delivery.CreatedAt.After(query.CursorCreatedAt) || (delivery.CreatedAt.Equal(query.CursorCreatedAt) && delivery.ID >= query.CursorID) {
+			return false
+		}
+	}
+	return true
+}
+
+func newWebhookAudit(workspaceID string, subscriptionID string, deliveryID string, kind string, detail string, actor string, now time.Time) webhook.Audit {
+	return webhook.Audit{
+		ID:             NewID("wha"),
+		WorkspaceID:    contract.NormalizeWorkspace(workspaceID),
+		SubscriptionID: strings.TrimSpace(subscriptionID),
+		DeliveryID:     strings.TrimSpace(deliveryID),
+		Kind:           strings.TrimSpace(kind),
+		Detail:         strings.TrimSpace(detail),
+		Actor:          firstNonEmpty(strings.TrimSpace(actor), "system"),
+		CreatedAt:      now.UTC(),
+	}
+}
+
+func webhookSubscriptionAuditDetail(subscription webhook.Subscription) string {
+	return fmt.Sprintf("name=%s; enabled=%t; event_types=%d; app_keys=%d", subscription.Name, subscription.Enabled, len(subscription.EventTypes), len(subscription.AppKeys))
+}
+
+func webhookSubscriptionUpdateAuditDetail(before webhook.Subscription, after webhook.Subscription) string {
+	return fmt.Sprintf(
+		"name=%s; enabled=%t->%t; event_types=%d->%d; app_keys=%d->%d",
+		after.Name,
+		before.Enabled,
+		after.Enabled,
+		len(before.EventTypes),
+		len(after.EventTypes),
+		len(before.AppKeys),
+		len(after.AppKeys),
+	)
+}
+
 func cloneTime(value *time.Time) *time.Time {
 	if value == nil {
 		return nil

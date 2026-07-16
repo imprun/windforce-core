@@ -12,6 +12,7 @@ import (
 	"github.com/imprun/windforce-lite/internal/catalog"
 	"github.com/imprun/windforce-lite/internal/contract"
 	"github.com/imprun/windforce-lite/internal/state"
+	"github.com/imprun/windforce-lite/internal/webhook"
 )
 
 type canonicalAuditChanges struct {
@@ -23,19 +24,21 @@ type canonicalAuditChanges struct {
 }
 
 type canonicalAuditEvent struct {
-	ID          string                 `json:"id"`
-	Category    string                 `json:"category"`
-	Kind        string                 `json:"kind"`
-	Summary     string                 `json:"summary"`
-	Detail      string                 `json:"detail,omitempty"`
-	AppKey      string                 `json:"app_key,omitempty"`
-	ActionKey   string                 `json:"action_key,omitempty"`
-	ClientID    string                 `json:"client_id,omitempty"`
-	ClientName  string                 `json:"client_name,omitempty"`
-	GitSourceID int64                  `json:"git_source_id,omitempty"`
-	Actor       string                 `json:"actor"`
-	Changes     *canonicalAuditChanges `json:"changes,omitempty"`
-	CreatedAt   time.Time              `json:"created_at"`
+	ID                    string                 `json:"id"`
+	Category              string                 `json:"category"`
+	Kind                  string                 `json:"kind"`
+	Summary               string                 `json:"summary"`
+	Detail                string                 `json:"detail,omitempty"`
+	AppKey                string                 `json:"app_key,omitempty"`
+	ActionKey             string                 `json:"action_key,omitempty"`
+	ClientID              string                 `json:"client_id,omitempty"`
+	ClientName            string                 `json:"client_name,omitempty"`
+	GitSourceID           int64                  `json:"git_source_id,omitempty"`
+	WebhookSubscriptionID string                 `json:"webhook_subscription_id,omitempty"`
+	WebhookDeliveryID     string                 `json:"webhook_delivery_id,omitempty"`
+	Actor                 string                 `json:"actor"`
+	Changes               *canonicalAuditChanges `json:"changes,omitempty"`
+	CreatedAt             time.Time              `json:"created_at"`
 }
 
 type canonicalAuditQuery struct {
@@ -90,6 +93,16 @@ func (h *Handler) handleCanonicalAuditEvents(w http.ResponseWriter, r *http.Requ
 			event := newInputConfigAuditEvent(record, clientNames[record.ClientID])
 			event.GitSourceID = sourceByApp[record.AppKey]
 			events = append(events, event)
+		}
+		if webhookStore, ok := h.store.(webhook.Store); ok {
+			webhookAudit, err := webhookStore.ListAudit(r.Context(), workspaceID)
+			if err != nil {
+				writeWebhookError(w, err)
+				return
+			}
+			for _, record := range webhookAudit {
+				events = append(events, newWebhookAuditEvent(record))
+			}
 		}
 	}
 
@@ -191,6 +204,20 @@ func newClientAuditEvent(record state.ClientAudit, clientName string) canonicalA
 	}
 }
 
+func newWebhookAuditEvent(record webhook.Audit) canonicalAuditEvent {
+	return canonicalAuditEvent{
+		ID:                    "webhook:" + record.ID,
+		Category:              "webhook",
+		Kind:                  record.Kind,
+		Summary:               canonicalAuditSummary("webhook", record.Kind),
+		Detail:                record.Detail,
+		WebhookSubscriptionID: record.SubscriptionID,
+		WebhookDeliveryID:     record.DeliveryID,
+		Actor:                 firstNonEmpty(record.Actor, "system"),
+		CreatedAt:             record.CreatedAt,
+	}
+}
+
 func newInputConfigAuditEvent(record state.InputConfigAudit, clientName string) canonicalAuditEvent {
 	event := canonicalAuditEvent{
 		ID:         "input_settings:" + record.ID,
@@ -237,7 +264,7 @@ func parseCanonicalAuditQuery(r *http.Request) (canonicalAuditQuery, error) {
 		Limit:    100,
 	}
 	if query.Category != "" {
-		validCategories := map[string]bool{"repository": true, "release": true, "client": true, "input_settings": true}
+		validCategories := map[string]bool{"repository": true, "release": true, "client": true, "input_settings": true, "webhook": true}
 		if !validCategories[query.Category] {
 			return canonicalAuditQuery{}, fmt.Errorf("invalid audit category")
 		}
@@ -310,16 +337,23 @@ func canonicalAuditEventMatches(event canonicalAuditEvent, query canonicalAuditQ
 
 func canonicalAuditSummary(category string, kind string) string {
 	labels := map[string]string{
-		"source_registered":      "Repository source registered",
-		"settings_changed":       "Repository settings changed",
-		"source_deleted":         "Repository source removed",
-		"route_tag_override":     "Route tag changed",
-		"release_published":      "Release published",
-		"created":                "Client registered",
-		"updated":                "Client updated",
-		"deleted":                "Client removed",
-		"input_settings_set":     "Input settings updated",
-		"input_settings_deleted": "Input settings removed",
+		"source_registered":             "Repository source registered",
+		"settings_changed":              "Repository settings changed",
+		"source_deleted":                "Repository source removed",
+		"route_tag_override":            "Route tag changed",
+		"release_published":             "Release published",
+		"created":                       "Client registered",
+		"updated":                       "Client updated",
+		"deleted":                       "Client removed",
+		"input_settings_set":            "Input settings updated",
+		"input_settings_deleted":        "Input settings removed",
+		"webhook_subscription_created":  "Webhook subscription created",
+		"webhook_subscription_updated":  "Webhook subscription updated",
+		"webhook_subscription_disabled": "Webhook subscription disabled",
+		"webhook_subscription_enabled":  "Webhook subscription enabled",
+		"webhook_subscription_deleted":  "Webhook subscription deleted",
+		"webhook_test_requested":        "Webhook test queued",
+		"webhook_delivery_retried":      "Webhook delivery retried",
 	}
 	lookup := kind
 	if category == "input_settings" {

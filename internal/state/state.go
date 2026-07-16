@@ -377,6 +377,7 @@ type Snapshot struct {
 	WebhookSubscriptions map[string]WebhookSubscriptionRecord  `json:"webhookSubscriptions"`
 	ControlPlaneEvents   map[string]controlevent.Envelope      `json:"controlPlaneEvents"`
 	WebhookDeliveries    map[string]webhook.Delivery           `json:"webhookDeliveries"`
+	WebhookAudits        map[string][]webhook.Audit            `json:"webhookAudits"`
 }
 
 type Store interface {

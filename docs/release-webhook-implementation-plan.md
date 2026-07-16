@@ -358,7 +358,7 @@ GET    /api/w/{workspace}/webhook-deliveries/{delivery_id}
 POST   /api/w/{workspace}/webhook-deliveries/{delivery_id}/retry
 ```
 
-API 응답은 endpoint를 `<SCHEME>://<HOST>/<MASKED>` 형태로 반환한다. Signing secret은 생성 또는 rotation 응답에서만 한 번 표시하거나 서버 생성 후 다운로드 없이 즉시 복사할 수 있게 한다. 저장된 secret을 다시 조회하는 API는 제공하지 않는다.
+API 응답은 endpoint의 scheme과 host만 `<SCHEME>://<HOST>` 형태로 반환한다. path, query와 fragment는 반환하지 않는다. Signing secret은 생성 또는 rotation 응답에서만 한 번 표시한다. 저장된 secret을 다시 조회하는 API는 제공하지 않는다.
 
 `test`는 선택한 subscription에만 `windforce.webhook.test` event와 delivery를 생성한다. 실제 릴리즈 event를 위조하지 않는다.
 
@@ -367,7 +367,9 @@ Audit event:
 - `webhook_subscription_created`
 - `webhook_subscription_updated`
 - `webhook_subscription_disabled`
+- `webhook_subscription_enabled`
 - `webhook_subscription_deleted`
+- `webhook_test_requested`
 - `webhook_delivery_retried`
 
 Audit detail에는 subscription ID, 이름, event/app filter 변경 요약만 기록한다.

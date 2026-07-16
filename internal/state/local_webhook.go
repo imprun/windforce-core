@@ -8,12 +8,21 @@ import (
 	"time"
 
 	"github.com/imprun/windforce-lite/internal/contract"
+	controlevent "github.com/imprun/windforce-lite/internal/event"
 	"github.com/imprun/windforce-lite/internal/webhook"
 )
 
 var _ webhook.Store = (*LocalStore)(nil)
 
 func (s *LocalStore) ListSubscriptions(ctx context.Context, workspaceID string) ([]webhook.Subscription, error) {
+	return s.listSubscriptions(ctx, workspaceID, false)
+}
+
+func (s *LocalStore) ListSubscriptionsIncludingDeleted(ctx context.Context, workspaceID string) ([]webhook.Subscription, error) {
+	return s.listSubscriptions(ctx, workspaceID, true)
+}
+
+func (s *LocalStore) listSubscriptions(ctx context.Context, workspaceID string, includeDeleted bool) ([]webhook.Subscription, error) {
 	snapshot, err := s.Load(ctx)
 	if err != nil {
 		return nil, err
@@ -21,7 +30,7 @@ func (s *LocalStore) ListSubscriptions(ctx context.Context, workspaceID string) 
 	workspaceID = contract.NormalizeWorkspace(workspaceID)
 	result := make([]webhook.Subscription, 0)
 	for _, record := range snapshot.WebhookSubscriptions {
-		if contract.NormalizeWorkspace(record.WorkspaceID) != workspaceID || record.DeletedAt != nil {
+		if contract.NormalizeWorkspace(record.WorkspaceID) != workspaceID || (!includeDeleted && record.DeletedAt != nil) {
 			continue
 		}
 		subscription, err := s.localSubscription(ctx, record)
@@ -71,6 +80,8 @@ func (s *LocalStore) CreateSubscription(ctx context.Context, subscription webhoo
 			}
 		}
 		snapshot.WebhookSubscriptions[key] = subscriptionRecord(prepared, endpoint, secret)
+		audit := newWebhookAudit(prepared.WorkspaceID, prepared.ID, "", "webhook_subscription_created", webhookSubscriptionAuditDetail(prepared), prepared.CreatedBy, now)
+		snapshot.WebhookAudits[prepared.WorkspaceID] = append(snapshot.WebhookAudits[prepared.WorkspaceID], audit)
 		return nil
 	})
 	return prepared, err
@@ -103,6 +114,14 @@ func (s *LocalStore) UpdateSubscription(ctx context.Context, update webhook.Subs
 			return err
 		}
 		snapshot.WebhookSubscriptions[key] = subscriptionRecord(prepared, endpoint, secret)
+		kind := "webhook_subscription_updated"
+		if existing.Enabled && !prepared.Enabled {
+			kind = "webhook_subscription_disabled"
+		} else if !existing.Enabled && prepared.Enabled {
+			kind = "webhook_subscription_enabled"
+		}
+		audit := newWebhookAudit(prepared.WorkspaceID, prepared.ID, "", kind, webhookSubscriptionUpdateAuditDetail(existing, prepared), prepared.UpdatedBy, now)
+		snapshot.WebhookAudits[prepared.WorkspaceID] = append(snapshot.WebhookAudits[prepared.WorkspaceID], audit)
 		return nil
 	})
 	return prepared, err
@@ -129,8 +148,95 @@ func (s *LocalStore) DeleteSubscription(ctx context.Context, workspaceID string,
 			delivery.CompletedAt = cloneTime(&now)
 			snapshot.WebhookDeliveries[deliveryID] = delivery
 		}
+		audit := newWebhookAudit(workspaceID, subscriptionID, "", "webhook_subscription_deleted", "name="+record.Name+"; subscription deleted", actor, now)
+		workspaceID = contract.NormalizeWorkspace(workspaceID)
+		snapshot.WebhookAudits[workspaceID] = append(snapshot.WebhookAudits[workspaceID], audit)
 		return nil
 	})
+}
+
+func (s *LocalStore) ListDeliveries(ctx context.Context, workspaceID string, query webhook.DeliveryListQuery) ([]webhook.DeliveryDetail, error) {
+	query, err := prepareWebhookDeliveryQuery(query)
+	if err != nil {
+		return nil, err
+	}
+	snapshot, err := s.Load(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]webhook.DeliveryDetail, 0)
+	for _, delivery := range snapshot.WebhookDeliveries {
+		if !webhookDeliveryMatches(delivery, workspaceID, query) {
+			continue
+		}
+		event, ok := snapshot.ControlPlaneEvents[delivery.EventID]
+		if !ok {
+			continue
+		}
+		name := ""
+		if record, ok := snapshot.WebhookSubscriptions[webhookSubscriptionKey(delivery.WorkspaceID, delivery.SubscriptionID)]; ok {
+			name = record.Name
+		}
+		result = append(result, webhook.DeliveryDetail{Delivery: delivery, Event: event, SubscriptionName: name})
+	}
+	sort.Slice(result, func(i int, j int) bool {
+		if result[i].Delivery.CreatedAt.Equal(result[j].Delivery.CreatedAt) {
+			return result[i].Delivery.ID > result[j].Delivery.ID
+		}
+		return result[i].Delivery.CreatedAt.After(result[j].Delivery.CreatedAt)
+	})
+	if len(result) > query.Limit {
+		result = result[:query.Limit]
+	}
+	return result, nil
+}
+
+func (s *LocalStore) GetDelivery(ctx context.Context, workspaceID string, deliveryID string) (webhook.DeliveryDetail, error) {
+	snapshot, err := s.Load(ctx)
+	if err != nil {
+		return webhook.DeliveryDetail{}, err
+	}
+	delivery, ok := snapshot.WebhookDeliveries[strings.TrimSpace(deliveryID)]
+	if !ok || contract.NormalizeWorkspace(delivery.WorkspaceID) != contract.NormalizeWorkspace(workspaceID) {
+		return webhook.DeliveryDetail{}, webhook.ErrNotFound
+	}
+	event, ok := snapshot.ControlPlaneEvents[delivery.EventID]
+	if !ok {
+		return webhook.DeliveryDetail{}, webhook.ErrNotFound
+	}
+	name := ""
+	if record, ok := snapshot.WebhookSubscriptions[webhookSubscriptionKey(delivery.WorkspaceID, delivery.SubscriptionID)]; ok {
+		name = record.Name
+	}
+	return webhook.DeliveryDetail{Delivery: delivery, Event: event, SubscriptionName: name}, nil
+}
+
+func (s *LocalStore) CreateTestDelivery(ctx context.Context, workspaceID string, subscriptionID string, actor string) (webhook.DeliveryDetail, error) {
+	var detail webhook.DeliveryDetail
+	err := s.update(ctx, func(snapshot *Snapshot, now time.Time) error {
+		workspaceID = contract.NormalizeWorkspace(workspaceID)
+		record, ok := snapshot.WebhookSubscriptions[webhookSubscriptionKey(workspaceID, subscriptionID)]
+		if !ok || record.DeletedAt != nil {
+			return webhook.ErrNotFound
+		}
+		if !record.Enabled {
+			return webhook.ErrConflict
+		}
+		event, err := controlevent.NewWebhookTest(NewID("evt"), now, controlevent.WebhookTestData{
+			Workspace: workspaceID, SubscriptionID: subscriptionID, Actor: actor,
+		})
+		if err != nil {
+			return err
+		}
+		delivery := newWebhookDelivery(event, workspaceID, subscriptionID, now)
+		snapshot.ControlPlaneEvents[event.ID] = event
+		snapshot.WebhookDeliveries[delivery.ID] = delivery
+		audit := newWebhookAudit(workspaceID, subscriptionID, delivery.ID, "webhook_test_requested", "test delivery queued", actor, now)
+		snapshot.WebhookAudits[workspaceID] = append(snapshot.WebhookAudits[workspaceID], audit)
+		detail = webhook.DeliveryDetail{Delivery: delivery, Event: event, SubscriptionName: record.Name}
+		return nil
+	})
+	return detail, err
 }
 
 func (s *LocalStore) ClaimDelivery(ctx context.Context, workerID string, leaseTTL time.Duration) (*webhook.ClaimedDelivery, error) {
@@ -231,6 +337,10 @@ func (s *LocalStore) RetryDelivery(ctx context.Context, workspaceID string, deli
 		if delivery.State != webhook.DeliveryFailed {
 			return webhook.ErrConflict
 		}
+		record, ok := snapshot.WebhookSubscriptions[webhookSubscriptionKey(delivery.WorkspaceID, delivery.SubscriptionID)]
+		if !ok || record.DeletedAt != nil || !record.Enabled {
+			return webhook.ErrConflict
+		}
 		delivery.State = webhook.DeliveryRetrying
 		delivery.NextAttemptAt = now
 		delivery.LeaseOwner = nil
@@ -238,8 +348,26 @@ func (s *LocalStore) RetryDelivery(ctx context.Context, workspaceID string, deli
 		delivery.CompletedAt = nil
 		delivery.UpdatedAt = now
 		snapshot.WebhookDeliveries[delivery.ID] = delivery
+		audit := newWebhookAudit(workspaceID, delivery.SubscriptionID, delivery.ID, "webhook_delivery_retried", "failed delivery queued for retry", actor, now)
+		workspaceID = contract.NormalizeWorkspace(workspaceID)
+		snapshot.WebhookAudits[workspaceID] = append(snapshot.WebhookAudits[workspaceID], audit)
 		return nil
 	})
+}
+
+func (s *LocalStore) ListAudit(ctx context.Context, workspaceID string) ([]webhook.Audit, error) {
+	snapshot, err := s.Load(ctx)
+	if err != nil {
+		return nil, err
+	}
+	audits := append([]webhook.Audit(nil), snapshot.WebhookAudits[contract.NormalizeWorkspace(workspaceID)]...)
+	sort.Slice(audits, func(i int, j int) bool {
+		if audits[i].CreatedAt.Equal(audits[j].CreatedAt) {
+			return audits[i].ID > audits[j].ID
+		}
+		return audits[i].CreatedAt.After(audits[j].CreatedAt)
+	})
+	return audits, nil
 }
 
 func (s *LocalStore) localSubscription(ctx context.Context, record WebhookSubscriptionRecord) (webhook.Subscription, error) {
