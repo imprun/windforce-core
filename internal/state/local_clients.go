@@ -123,7 +123,7 @@ func (s *LocalStore) ListClientAudit(ctx context.Context, workspaceID string, id
 	workspaceID = contract.NormalizeWorkspace(workspaceID)
 	records := []ClientAudit{}
 	for _, record := range snapshot.ClientAudits[workspaceID] {
-		if record.ClientID == id {
+		if id == "" || record.ClientID == id {
 			records = append(records, record)
 		}
 	}

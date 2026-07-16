@@ -5,6 +5,7 @@ import { ClientRegistryPage } from "./pages/ClientRegistryPage";
 import { ClientDetailPage } from "./pages/ClientDetailPage";
 import { MonitoringPage } from "./pages/MonitoringPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { AuditPage } from "./pages/AuditPage";
 
 export function App() {
   const { path } = useRouter();
@@ -25,6 +26,7 @@ export function App() {
   }
 
   if (matchRoute("/monitoring", path)) return <MonitoringPage />;
+  if (matchRoute("/audit", path)) return <AuditPage />;
   const clientDetail = matchRoute("/clients/:id", path);
   if (clientDetail?.id) return <ClientDetailPage clientID={clientDetail.id} />;
   if (matchRoute("/clients", path)) return <ClientRegistryPage />;

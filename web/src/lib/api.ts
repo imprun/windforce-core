@@ -200,6 +200,41 @@ export type AuditRecord = {
   created_at: string;
 };
 
+export type AuditChanges = {
+  added?: string[];
+  updated?: string[];
+  removed?: string[];
+  locked?: string[];
+  unlocked?: string[];
+};
+
+export type AuditEvent = {
+  id: string;
+  category: "repository" | "release" | "client" | "input_settings" | string;
+  kind: string;
+  summary: string;
+  detail?: string;
+  app_key?: string;
+  action_key?: string;
+  client_id?: string;
+  client_name?: string;
+  git_source_id?: number;
+  actor: string;
+  changes?: AuditChanges;
+  created_at: string;
+};
+
+export type AuditEventQuery = {
+  appKey?: string;
+  clientID?: string;
+  category?: string;
+  actor?: string;
+  gitSourceID?: number;
+  since?: string;
+  until?: string;
+  limit?: number;
+};
+
 export type RegisterSourcePayload = {
   name: string;
   repo_url: string;
@@ -389,6 +424,20 @@ export class WindforceApi {
 
   auditTrail(sourceID: number): Promise<AuditRecord[]> {
     return this.request(`/git_sources/${sourceID}/audit`);
+  }
+
+  auditEvents(query: AuditEventQuery = {}): Promise<AuditEvent[]> {
+    const params = new URLSearchParams();
+    if (query.appKey) params.set("app_key", query.appKey);
+    if (query.clientID) params.set("client_id", query.clientID);
+    if (query.category) params.set("category", query.category);
+    if (query.actor) params.set("actor", query.actor);
+    if (query.gitSourceID) params.set("git_source_id", String(query.gitSourceID));
+    if (query.since) params.set("since", query.since);
+    if (query.until) params.set("until", query.until);
+    if (query.limit) params.set("limit", String(query.limit));
+    const suffix = params.size ? `?${params.toString()}` : "";
+    return this.request(`/audit-events${suffix}`);
   }
 
   private async request<T>(path: string, options: RequestOptions = {}): Promise<T> {

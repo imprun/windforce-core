@@ -4,6 +4,7 @@ import { Layout } from "../components/Layout";
 import { DefinitionList, EmptyState, ErrorNotice, Loading, Modal, Panel } from "../components/ui";
 import { ClientDialog } from "../features/ClientDialog";
 import { InputConfigDialog } from "../features/InputConfigDialog";
+import { AuditEventTable } from "../features/AuditEventTable";
 import { type InputConfig } from "../lib/api";
 import { useApp, useAsync } from "../lib/app-context";
 import { formatRelative, formatTime } from "../lib/format";
@@ -19,13 +20,13 @@ export function ClientDetailPage({ clientID }: { clientID: string }) {
   const [selectedApp, setSelectedApp] = useState("");
   const state = useAsync(
     async () => {
-      const [client, configs, audit, apps] = await Promise.all([
+      const [client, configs, auditEvents, apps] = await Promise.all([
         api.client(clientID),
         api.clientInputConfigs(clientID),
-        api.clientInputConfigAudit(clientID),
+        api.auditEvents({ clientID, limit: 250 }),
         api.apps(),
       ]);
-      return { client, configs, audit, apps: apps.apps || [] };
+      return { client, configs, auditEvents, apps: apps.apps || [] };
     },
     [api, clientID],
   );
@@ -54,7 +55,7 @@ export function ClientDetailPage({ clientID }: { clientID: string }) {
     );
   }
 
-  const { client, configs, audit, apps } = state.data;
+  const { client, configs, auditEvents, apps } = state.data;
   function finishConfig() {
     setEditingConfig(null);
     state.reload();
@@ -169,37 +170,8 @@ export function ClientDetailPage({ clientID }: { clientID: string }) {
         )}
       </Panel>
 
-      <Panel title="Input settings audit" subtitle="Who changed client-specific input settings, and when.">
-        {audit.length === 0 ? (
-          <EmptyState title="No input-setting changes recorded yet." />
-        ) : (
-          <div className="tableWrap">
-            <table className="table" id="clientInputSettingsAudit">
-              <thead>
-                <tr>
-                  <th>When</th>
-                  <th>Actor</th>
-                  <th>App</th>
-                  <th>Action</th>
-                  <th>Change</th>
-                  <th>Summary</th>
-                </tr>
-              </thead>
-              <tbody>
-                {audit.map((record) => (
-                  <tr key={record.id}>
-                    <td title={formatTime(record.created_at)}>{formatRelative(record.created_at)}</td>
-                    <td>{record.actor}</td>
-                    <td className="mono">{record.app_key}</td>
-                    <td className="mono">{record.action_key || "all actions"}</td>
-                    <td>{record.kind}</td>
-                    <td className="mono">{record.detail || "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+      <Panel title="Audit trail" subtitle="Registry and input-setting changes for this client.">
+        <AuditEventTable events={auditEvents} emptyTitle="No changes have been recorded for this client." />
       </Panel>
 
       {editingClient ? (

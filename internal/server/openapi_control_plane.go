@@ -12,6 +12,28 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 				},
 			},
 		},
+		"/api/w/{workspace}/audit-events": map[string]any{
+			"get": map[string]any{
+				"operationId": "listAuditEvents",
+				"summary":     "List canonical workspace audit events",
+				"parameters": []any{
+					oapiWorkspaceParam(workspaceID),
+					oapiQueryParam("app_key", "Optional app key filter.", oapiStringSchema(), false),
+					oapiQueryParam("client_id", "Optional client id filter.", oapiStringSchema(), false),
+					oapiQueryParam("category", "Optional event category filter.", map[string]any{"type": "string", "enum": []any{"repository", "release", "client", "input_settings"}}, false),
+					oapiQueryParam("actor", "Optional case-insensitive actor filter.", oapiStringSchema(), false),
+					oapiQueryParam("git_source_id", "Optional numeric git source id filter.", oapiIntegerSchema(), false),
+					oapiQueryParam("since", "RFC3339 lower bound for created_at.", oapiStringSchema(), false),
+					oapiQueryParam("until", "RFC3339 upper bound for created_at.", oapiStringSchema(), false),
+					oapiQueryParam("limit", "Maximum number of events from 1 to 500. Defaults to 100.", oapiIntegerSchema(), false),
+				},
+				"responses": withErrors(map[string]any{
+					"200": oapiResponse("Canonical workspace audit events, newest first.", map[string]any{
+						"type": "array", "items": oapiSchemaRef("AuditEvent"),
+					}),
+				}, "400", "401", "403"),
+			},
+		},
 		"/api/w/{workspace}/clients": map[string]any{
 			"get": map[string]any{
 				"operationId": "listClients",
@@ -689,6 +711,35 @@ func controlPlaneSchemas() map[string]any {
 				"created_at":   oapiDateTimeSchema(),
 			},
 			"required": []any{"id", "workspace_id", "client_id", "kind", "actor", "created_at"},
+		},
+		"AuditChanges": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"added":    stringArray,
+				"updated":  stringArray,
+				"removed":  stringArray,
+				"locked":   stringArray,
+				"unlocked": stringArray,
+			},
+		},
+		"AuditEvent": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"id":            oapiStringSchema(),
+				"category":      map[string]any{"type": "string", "enum": []any{"repository", "release", "client", "input_settings"}},
+				"kind":          oapiStringSchema(),
+				"summary":       oapiStringSchema(),
+				"detail":        oapiStringSchema(),
+				"app_key":       oapiStringSchema(),
+				"action_key":    oapiStringSchema(),
+				"client_id":     oapiStringSchema(),
+				"client_name":   oapiStringSchema(),
+				"git_source_id": oapiIntegerSchema(),
+				"actor":         oapiStringSchema(),
+				"changes":       oapiSchemaRef("AuditChanges"),
+				"created_at":    oapiDateTimeSchema(),
+			},
+			"required": []any{"id", "category", "kind", "summary", "actor", "created_at"},
 		},
 		"InputConfig": map[string]any{
 			"type": "object",

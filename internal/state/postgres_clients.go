@@ -120,7 +120,7 @@ func (s *PostgresStore) ListClientAudit(ctx context.Context, workspaceID string,
 	workspaceID = contract.NormalizeWorkspace(workspaceID)
 	rows, err := s.pool.Query(ctx, `
 SELECT id::text, workspace_id, client_id, kind, detail, actor, created_at
-FROM client_registry_audit WHERE workspace_id=$1 AND client_id=$2
+FROM client_registry_audit WHERE workspace_id=$1 AND ($2='' OR client_id=$2)
 ORDER BY created_at DESC, id DESC
 `, workspaceID, id)
 	if err != nil {

@@ -1,6 +1,7 @@
 package state
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -87,10 +88,88 @@ func inputConfigKey(appKey string, actionKey string, clientID string) string {
 	return appKey + "\x00" + actionKey + "\x00" + clientID
 }
 
-func inputConfigAuditDetail(config InputConfig) string {
-	var values map[string]json.RawMessage
-	_ = json.Unmarshal(config.Config, &values)
-	return fmt.Sprintf("keys=%d; locked=%d", len(values), len(config.LockedKeys))
+type inputConfigAuditChanges struct {
+	Added    []string `json:"added,omitempty"`
+	Updated  []string `json:"updated,omitempty"`
+	Removed  []string `json:"removed,omitempty"`
+	Locked   []string `json:"locked,omitempty"`
+	Unlocked []string `json:"unlocked,omitempty"`
+}
+
+func inputConfigAuditDetail(previous *InputConfig, next *InputConfig) string {
+	previousValues := inputConfigValues(previous)
+	nextValues := inputConfigValues(next)
+	changes := inputConfigAuditChanges{
+		Added:    changedInputKeys(previousValues, nextValues, "added"),
+		Updated:  changedInputKeys(previousValues, nextValues, "updated"),
+		Removed:  changedInputKeys(previousValues, nextValues, "removed"),
+		Locked:   changedStringSet(inputConfigLockedKeys(previous), inputConfigLockedKeys(next)),
+		Unlocked: changedStringSet(inputConfigLockedKeys(next), inputConfigLockedKeys(previous)),
+	}
+	payload, _ := json.Marshal(changes)
+	return string(payload)
+}
+
+func inputConfigValues(config *InputConfig) map[string]json.RawMessage {
+	values := map[string]json.RawMessage{}
+	if config != nil {
+		_ = json.Unmarshal(config.Config, &values)
+	}
+	return values
+}
+
+func inputConfigLockedKeys(config *InputConfig) []string {
+	if config == nil {
+		return nil
+	}
+	return config.LockedKeys
+}
+
+func changedInputKeys(previous map[string]json.RawMessage, next map[string]json.RawMessage, kind string) []string {
+	keys := []string{}
+	for key, nextValue := range next {
+		previousValue, exists := previous[key]
+		if kind == "added" && !exists {
+			keys = append(keys, key)
+		}
+		if kind == "updated" && exists && !bytes.Equal(previousValue, nextValue) {
+			keys = append(keys, key)
+		}
+	}
+	if kind == "removed" {
+		for key := range previous {
+			if _, exists := next[key]; !exists {
+				keys = append(keys, key)
+			}
+		}
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func changedStringSet(previous []string, next []string) []string {
+	existing := make(map[string]struct{}, len(previous))
+	for _, value := range previous {
+		existing[value] = struct{}{}
+	}
+	changed := []string{}
+	for _, value := range next {
+		if _, exists := existing[value]; !exists {
+			changed = append(changed, value)
+		}
+	}
+	sort.Strings(changed)
+	return changed
+}
+
+func findInputConfig(configs []InputConfig, actionKey string, clientID string) *InputConfig {
+	for i := range configs {
+		if configs[i].ActionKey == actionKey && configs[i].ClientID == clientID {
+			copy := configs[i]
+			return &copy
+		}
+	}
+	return nil
 }
 
 func normalizedLockedKeys(config map[string]json.RawMessage, keys []string) ([]string, error) {

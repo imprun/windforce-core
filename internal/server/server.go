@@ -263,6 +263,10 @@ func (h *Handler) handleAPI(w http.ResponseWriter, r *http.Request) bool {
 		h.handleCanonicalGitSources(w, r, parts[2])
 		return true
 	}
+	if len(parts) == 4 && parts[0] == "api" && parts[1] == "w" && parts[3] == "audit-events" && r.Method == http.MethodGet {
+		h.handleCanonicalAuditEvents(w, r, parts[2])
+		return true
+	}
 	if len(parts) == 4 && parts[0] == "api" && parts[1] == "w" && parts[3] == "git_sources" && r.Method == http.MethodPost {
 		h.handleCanonicalRegisterGitSource(w, r, parts[2])
 		return true

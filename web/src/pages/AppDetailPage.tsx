@@ -14,6 +14,7 @@ import { StatTile, WindowSelector, windowLabel } from "../components/stats";
 import { PublishReleaseDialog } from "../features/PublishReleaseDialog";
 import { RepositorySettings } from "../features/RepositorySettings";
 import { AppInputSettings } from "../features/AppInputSettings";
+import { AuditEventTable } from "../features/AuditEventTable";
 import {
   type ActionView,
   type ActionSchemas,
@@ -155,7 +156,7 @@ export function AppDetailPage({
           actionKey={actionKey}
         />
       ) : null}
-      {activeTab === "input-settings" && detail ? <AppInputSettings detail={detail} /> : null}
+      {activeTab === "input-settings" && detail ? <AppInputSettings detail={detail} sourceID={sourceID} /> : null}
       {activeTab === "monitoring" ? <MonitoringTab app={app} /> : null}
       {activeTab === "repository" && source ? <RepositorySettings source={source} onChanged={state.reload} /> : null}
       {activeTab === "releases" ? (
@@ -166,7 +167,7 @@ export function AppDetailPage({
           refreshRevision={releaseHistoryRevision}
         />
       ) : null}
-      {activeTab === "audit" ? <AuditTab sourceID={sourceID} /> : null}
+      {activeTab === "audit" ? <AuditTab sourceID={sourceID} appKey={app?.app_key || source?.name || ""} /> : null}
       {publishing && source ? (
         <PublishReleaseDialog
           source={source}
@@ -802,55 +803,18 @@ function MonitoringTab({ app }: { app: AppSummary | null }) {
   );
 }
 
-const auditKindLabels: Record<string, string> = {
-  source_registered: "Registered",
-  settings_changed: "Settings changed",
-  source_deleted: "Source deleted",
-  route_tag_override: "Route tag override",
-};
-
-// Change history for the repository source: settings edits, deletions, and
-// route tag overrides. Releases have their own tab.
-function AuditTab({ sourceID }: { sourceID: number }) {
+function AuditTab({ sourceID, appKey }: { sourceID: number; appKey: string }) {
   const { api } = useApp();
-  const state = useAsync(() => api.auditTrail(sourceID), [api, sourceID]);
+  const state = useAsync(
+    () => api.auditEvents({ appKey, gitSourceID: sourceID, limit: 250 }),
+    [api, sourceID, appKey],
+  );
 
   return (
-    <Panel title="Audit trail" subtitle="Who changed this app's configuration, and when. Releases are on the Releases tab.">
+    <Panel title="Audit trail" subtitle="Repository, release, and input-setting changes for this app.">
       {state.error ? <ErrorNotice message={state.error} onRetry={state.reload} /> : null}
       {state.loading && !state.data ? <Loading /> : null}
-      {state.data && state.data.length === 0 ? (
-        <EmptyState title="No configuration changes recorded yet.">
-          <p>Repository settings edits, source deletion, and route tag overrides are recorded here.</p>
-        </EmptyState>
-      ) : null}
-      {state.data && state.data.length > 0 ? (
-        <div className="tableWrap">
-          <table className="table" id="auditTrail">
-            <thead>
-              <tr>
-                <th>When</th>
-                <th>Actor</th>
-                <th>Change</th>
-                <th>Detail</th>
-              </tr>
-            </thead>
-            <tbody>
-              {state.data.map((record) => (
-                <tr key={record.id}>
-                  <td>
-                    <span className="cellTitle">{formatRelative(record.created_at)}</span>
-                    <span className="cellSub">{formatTime(record.created_at)}</span>
-                  </td>
-                  <td>{record.actor}</td>
-                  <td>{auditKindLabels[record.kind] || record.kind}</td>
-                  <td className="mono">{record.detail || "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : null}
+      {state.data ? <AuditEventTable events={state.data} emptyTitle="No changes have been recorded for this app." /> : null}
     </Panel>
   );
 }

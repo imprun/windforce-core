@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -27,6 +28,32 @@ func TestApplyInputOverlayUsesShallowPrecedenceAndLocks(t *testing.T) {
 	_, rejected = ApplyInputOverlay(rawObject(t, `{"tenant":"spoofed"}`), layers)
 	if len(rejected) != 1 || rejected[0] != "tenant" {
 		t.Fatalf("rejected = %v, want tenant", rejected)
+	}
+}
+
+func TestInputConfigAuditDetailRecordsKeysWithoutValues(t *testing.T) {
+	previous := InputConfig{
+		Config:     json.RawMessage(`{"removed":"private-old","updated":"private-before","stable":true}`),
+		LockedKeys: []string{"stable", "updated"},
+	}
+	next := InputConfig{
+		Config:     json.RawMessage(`{"added":"private-new","updated":"private-after","stable":true}`),
+		LockedKeys: []string{"added", "stable"},
+	}
+	detail := inputConfigAuditDetail(&previous, &next)
+	if strings.Contains(detail, "private") {
+		t.Fatalf("audit detail exposes values: %s", detail)
+	}
+	var changes inputConfigAuditChanges
+	if err := json.Unmarshal([]byte(detail), &changes); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(changes.Added, ",") != "added" ||
+		strings.Join(changes.Updated, ",") != "updated" ||
+		strings.Join(changes.Removed, ",") != "removed" ||
+		strings.Join(changes.Locked, ",") != "added" ||
+		strings.Join(changes.Unlocked, ",") != "updated" {
+		t.Fatalf("changes = %#v", changes)
 	}
 }
 
@@ -129,10 +156,24 @@ func exerciseInputConfigStore(t *testing.T, store Store, workspaceID string) {
 	if err != nil || len(audit) != 2 {
 		t.Fatalf("audit = %#v, %v", audit, err)
 	}
+	foundActionChange := false
 	for _, record := range audit {
 		if strings.Contains(record.Detail, "server-only-value") {
 			t.Fatalf("audit exposes config value: %#v", record)
 		}
+		if record.ActionKey == "orders" {
+			var changes inputConfigAuditChanges
+			if err := json.Unmarshal([]byte(record.Detail), &changes); err != nil {
+				t.Fatalf("action audit detail = %q: %v", record.Detail, err)
+			}
+			if !reflect.DeepEqual(changes.Added, []string{"tenant"}) || !reflect.DeepEqual(changes.Locked, []string{"tenant"}) {
+				t.Fatalf("action audit changes = %#v", changes)
+			}
+			foundActionChange = true
+		}
+	}
+	if !foundActionChange {
+		t.Fatal("missing action input-setting audit detail")
 	}
 	if err := store.DeleteClient(ctx, workspaceID, client.ID, "alice"); err != nil {
 		t.Fatal(err)

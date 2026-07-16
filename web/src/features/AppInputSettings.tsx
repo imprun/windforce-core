@@ -12,17 +12,16 @@ export function formatInputSettingValue(value: unknown): string {
   return JSON.stringify(value, null, 2) ?? String(value);
 }
 
-export function AppInputSettings({ detail }: { detail: AppDetail }) {
+export function AppInputSettings({ detail, sourceID }: { detail: AppDetail; sourceID: number }) {
   const { api } = useApp();
   const [editing, setEditing] = useState<InputConfig | "new" | null>(null);
   const state = useAsync(
     async () => {
-      const [configs, clients, audit] = await Promise.all([
+      const [configs, clients] = await Promise.all([
         api.appInputConfigs(detail.app.app_key),
         api.clients(),
-        api.appInputConfigAudit(detail.app.app_key),
       ]);
-      return { configs, clients, audit };
+      return { configs, clients };
     },
     [api, detail.app.app_key],
   );
@@ -46,10 +45,13 @@ export function AppInputSettings({ detail }: { detail: AppDetail }) {
         title="Input settings"
         subtitle="Values applied before execution. Locked values cannot be overridden by the incoming request."
         actions={
-          <button className="button primary" type="button" onClick={() => setEditing("new")}>
-            <Plus size={16} aria-hidden="true" />
-            Add settings
-          </button>
+          <>
+            <Link className="button" to={`/apps/${sourceID}/audit`}>View audit</Link>
+            <button className="button primary" type="button" onClick={() => setEditing("new")}>
+              <Plus size={16} aria-hidden="true" />
+              Add settings
+            </button>
+          </>
         }
       >
         {state.error ? <ErrorNotice message={state.error} onRetry={state.reload} /> : null}
@@ -136,37 +138,6 @@ export function AppInputSettings({ detail }: { detail: AppDetail }) {
           </div>
         ) : null}
       </Panel>
-
-      {state.data?.audit.length ? (
-        <Panel title="Input settings audit" subtitle="Configuration changes without stored input values.">
-          <div className="tableWrap">
-            <table className="table" id="appInputSettingsAudit">
-              <thead>
-                <tr>
-                  <th>When</th>
-                  <th>Actor</th>
-                  <th>Scope</th>
-                  <th>Change</th>
-                  <th>Summary</th>
-                </tr>
-              </thead>
-              <tbody>
-                {state.data.audit.slice(0, 20).map((record) => (
-                  <tr key={record.id}>
-                    <td title={formatTime(record.created_at)}>{formatRelative(record.created_at)}</td>
-                    <td>{record.actor}</td>
-                    <td className="mono">
-                      {record.client_id ? clientsByID.get(record.client_id)?.name || record.client_id : "all clients"} / {record.action_key || "all actions"}
-                    </td>
-                    <td>{record.kind}</td>
-                    <td className="mono">{record.detail || "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Panel>
-      ) : null}
 
       {editing && state.data ? (
         <InputConfigDialog

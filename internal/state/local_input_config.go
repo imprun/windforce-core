@@ -58,6 +58,11 @@ func (s *LocalStore) SetInputConfig(ctx context.Context, config InputConfig, act
 	config.ActionKey = strings.TrimSpace(config.ActionKey)
 	config.ClientID = strings.TrimSpace(config.ClientID)
 	actor = firstNonEmpty(strings.TrimSpace(actor), defaultActorSubject)
+	existing, err := s.ListInputConfigsForApp(ctx, config.WorkspaceID, config.AppKey)
+	if err != nil {
+		return InputConfig{}, err
+	}
+	previous := findInputConfig(existing, config.ActionKey, config.ClientID)
 	var values map[string]json.RawMessage
 	if err := json.Unmarshal(canonicalJSONInput(config.Config), &values); err != nil || values == nil {
 		return InputConfig{}, ErrInvalidInputConfig
@@ -90,7 +95,8 @@ func (s *LocalStore) SetInputConfig(ctx context.Context, config InputConfig, act
 			ClientID: config.ClientID, Config: encrypted, LockedKeys: locked, UpdatedBy: actor, UpdatedAt: now,
 		}
 		snapshot.InputConfigs[config.WorkspaceID][key] = saved
-		appendLocalInputConfigAudit(snapshot, saved, "set", inputConfigAuditDetail(InputConfig{Config: plain, LockedKeys: locked}), actor, now)
+		next := InputConfig{Config: plain, LockedKeys: locked}
+		appendLocalInputConfigAudit(snapshot, saved, "set", inputConfigAuditDetail(previous, &next), actor, now)
 		return nil
 	})
 	if err != nil {
@@ -102,6 +108,11 @@ func (s *LocalStore) SetInputConfig(ctx context.Context, config InputConfig, act
 
 func (s *LocalStore) DeleteInputConfig(ctx context.Context, workspaceID string, appKey string, actionKey string, clientID string, actor string) error {
 	workspaceID = contract.NormalizeWorkspace(workspaceID)
+	existing, err := s.ListInputConfigsForApp(ctx, workspaceID, strings.TrimSpace(appKey))
+	if err != nil {
+		return err
+	}
+	previous := findInputConfig(existing, strings.TrimSpace(actionKey), strings.TrimSpace(clientID))
 	return s.update(ctx, func(snapshot *Snapshot, now time.Time) error {
 		key := inputConfigKey(strings.TrimSpace(appKey), strings.TrimSpace(actionKey), strings.TrimSpace(clientID))
 		config, ok := snapshot.InputConfigs[workspaceID][key]
@@ -109,7 +120,7 @@ func (s *LocalStore) DeleteInputConfig(ctx context.Context, workspaceID string, 
 			return nil
 		}
 		delete(snapshot.InputConfigs[workspaceID], key)
-		appendLocalInputConfigAudit(snapshot, config, "deleted", "", firstNonEmpty(strings.TrimSpace(actor), defaultActorSubject), now)
+		appendLocalInputConfigAudit(snapshot, config, "deleted", inputConfigAuditDetail(previous, nil), firstNonEmpty(strings.TrimSpace(actor), defaultActorSubject), now)
 		return nil
 	})
 }

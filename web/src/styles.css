@@ -810,6 +810,82 @@ textarea {
   flex-wrap: wrap;
 }
 
+.auditFilters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(150px, 1fr)) minmax(260px, 1.4fr);
+  gap: 12px;
+  align-items: end;
+}
+
+.filterField {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.filterField > span:first-child {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.filterField select,
+.filterField input {
+  width: 100%;
+  min-width: 0;
+}
+
+.filterInputAction {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.auditTable {
+  min-width: 980px;
+  table-layout: fixed;
+}
+
+.auditTable th:nth-child(1) { width: 160px; }
+.auditTable th:nth-child(2) { width: 150px; }
+.auditTable th:nth-child(3) { width: 140px; }
+.auditTable th:nth-child(4) { width: 190px; }
+.auditTable th:nth-child(5) { width: 180px; }
+
+.auditTable td {
+  overflow-wrap: anywhere;
+}
+
+.auditCategory {
+  border-radius: var(--radius-small);
+  font-weight: 560;
+}
+
+.auditScope,
+.auditChanges {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.auditChanges span {
+  display: grid;
+  grid-template-columns: 68px minmax(0, 1fr);
+  gap: 6px;
+  font-size: 12px;
+}
+
+.auditChanges strong {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.auditChanges code,
+.auditDetail {
+  overflow-wrap: anywhere;
+}
+
 .segmented {
   display: inline-flex;
   border: 1px solid var(--border-strong);
@@ -1671,6 +1747,10 @@ textarea {
     padding: 0;
     border: none;
   }
+
+  .auditFilters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 640px) {
@@ -1768,5 +1848,9 @@ textarea {
   .inlineActions select {
     min-width: 0;
     flex: 1 1 170px;
+  }
+
+  .auditFilters {
+    grid-template-columns: 1fr;
   }
 }

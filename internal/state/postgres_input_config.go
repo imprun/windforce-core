@@ -70,6 +70,11 @@ func (s *PostgresStore) SetInputConfig(ctx context.Context, config InputConfig, 
 	config.ActionKey = strings.TrimSpace(config.ActionKey)
 	config.ClientID = strings.TrimSpace(config.ClientID)
 	actor = firstNonEmpty(strings.TrimSpace(actor), defaultActorSubject)
+	existing, err := s.ListInputConfigsForApp(ctx, config.WorkspaceID, config.AppKey)
+	if err != nil {
+		return InputConfig{}, err
+	}
+	previous := findInputConfig(existing, config.ActionKey, config.ClientID)
 	if config.ClientID != "" {
 		if _, err := s.GetClient(ctx, config.WorkspaceID, config.ClientID); err != nil {
 			return InputConfig{}, err
@@ -104,10 +109,11 @@ RETURNING workspace_id, app_key, action_key, COALESCE(client_id, ''), config, lo
 		if scanErr != nil {
 			return scanErr
 		}
+		next := InputConfig{Config: plain, LockedKeys: locked}
 		_, err := tx.Exec(ctx, `
 INSERT INTO input_config_audit (workspace_id, app_key, action_key, client_id, kind, detail, actor)
 VALUES ($1, $2, $3, $4, 'set', $5, $6)
-`, config.WorkspaceID, config.AppKey, config.ActionKey, nullableString(config.ClientID), inputConfigAuditDetail(InputConfig{Config: plain, LockedKeys: locked}), actor)
+`, config.WorkspaceID, config.AppKey, config.ActionKey, nullableString(config.ClientID), inputConfigAuditDetail(previous, &next), actor)
 		return err
 	})
 	if err != nil {
@@ -119,6 +125,11 @@ VALUES ($1, $2, $3, $4, 'set', $5, $6)
 
 func (s *PostgresStore) DeleteInputConfig(ctx context.Context, workspaceID string, appKey string, actionKey string, clientID string, actor string) error {
 	workspaceID = contract.NormalizeWorkspace(workspaceID)
+	existing, err := s.ListInputConfigsForApp(ctx, workspaceID, strings.TrimSpace(appKey))
+	if err != nil {
+		return err
+	}
+	previous := findInputConfig(existing, strings.TrimSpace(actionKey), strings.TrimSpace(clientID))
 	return s.withTx(ctx, func(tx pgx.Tx) error {
 		var deleted InputConfig
 		deleted, err := scanInputConfig(tx.QueryRow(ctx, `
@@ -134,8 +145,8 @@ RETURNING workspace_id, app_key, action_key, COALESCE(client_id, ''), config, lo
 		}
 		_, err = tx.Exec(ctx, `
 INSERT INTO input_config_audit (workspace_id, app_key, action_key, client_id, kind, detail, actor)
-VALUES ($1, $2, $3, $4, 'deleted', '', $5)
-`, deleted.WorkspaceID, deleted.AppKey, deleted.ActionKey, nullableString(deleted.ClientID), firstNonEmpty(strings.TrimSpace(actor), defaultActorSubject))
+VALUES ($1, $2, $3, $4, 'deleted', $5, $6)
+`, deleted.WorkspaceID, deleted.AppKey, deleted.ActionKey, nullableString(deleted.ClientID), inputConfigAuditDetail(previous, nil), firstNonEmpty(strings.TrimSpace(actor), defaultActorSubject))
 		return err
 	})
 }
