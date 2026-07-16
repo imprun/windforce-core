@@ -44,3 +44,15 @@ func TestValidateSubscriptionRejectsUnsafeValues(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateSubscriptionAllowsLoopbackHTTPForOptInDevelopmentDispatch(t *testing.T) {
+	subscription := Subscription{
+		Name:          "local receiver",
+		Endpoint:      "http://127.0.0.1:18081/releases",
+		SigningSecret: "0123456789abcdef",
+		EventTypes:    []string{controlevent.ReleasePublishedType},
+	}
+	if err := ValidateSubscription(subscription); err != nil {
+		t.Fatal(err)
+	}
+}

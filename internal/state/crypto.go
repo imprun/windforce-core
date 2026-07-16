@@ -67,6 +67,10 @@ func decryptJSONAtRest(ctx context.Context, provider inputWorkspaceKeyProvider, 
 		return nil, err
 	}
 	plain, err := wfcrypto.UnwrapEnc(dek, value)
+	if err != nil && provider == nil && strings.TrimSpace(config.SecretKeyPrevious) != "" {
+		previousDEK := wfcrypto.DeriveWorkspaceKey(strings.TrimSpace(config.SecretKeyPrevious), contract.NormalizeWorkspace(workspaceID))
+		plain, err = wfcrypto.UnwrapEnc(previousDEK, value)
+	}
 	if err != nil {
 		return nil, err
 	}

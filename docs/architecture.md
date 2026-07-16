@@ -1,15 +1,21 @@
 # Architecture
 
 Windforce Lite separates deployment management, protocol ingress, and action
-execution into three planes. Compose runs the Control Plane, Execution API, and
-workers as distinct processes. The `standalone` command combines them for
-single-process development without changing their contracts.
+execution into three planes. Compose runs the Control Plane, Execution API,
+workers, and Webhook Dispatcher as distinct processes. The `standalone` command
+combines them for single-process development without changing their contracts.
 
 ```text
 operators / CI / Web UI
           |
           v
     Control Plane ------> source bundles + active release catalog
+          |                       |
+          v                       |
+ event + delivery outbox          |
+          |                       |
+          v                       |
+ Webhook Dispatcher ---> signed HTTPS endpoint
                                   |
 HTTP / queue / scheduler          |
 protocol adapters                 v
@@ -39,6 +45,22 @@ The same publication transaction stores a CloudEvents-compatible Control Plane
 event and one pending delivery for each enabled matching Webhook subscription.
 Endpoint and signing-secret values use workspace encryption. External HTTP
 delivery is always outside the publication transaction.
+
+## Webhook Dispatcher
+
+The Webhook Dispatcher reads only encrypted subscriptions, immutable event
+bodies, and delivery state. It claims work with a lease, signs the CloudEvents
+body, sends it outside the release transaction, and records success, terminal
+failure, or a scheduled retry. Multiple PostgreSQL-backed dispatchers may run
+at once; row locks prevent duplicate active claims while expired leases remain
+recoverable.
+
+Each attempt resolves DNS again and connects directly to an address that passed
+the egress policy. HTTPS is required except for explicitly enabled local HTTP
+loopback. Redirects, link-local and metadata addresses are rejected. Private
+addresses require a configured host or CIDR allowlist. Logs identify the
+delivery and event type without endpoint paths, queries, signing secrets, or
+response bodies.
 
 ## Trigger Plane
 

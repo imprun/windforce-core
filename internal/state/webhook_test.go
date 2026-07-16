@@ -72,6 +72,34 @@ func TestWebhookOpaqueIDsUseStablePrefixes(t *testing.T) {
 	}
 }
 
+func TestLocalWebhookSubscriptionReadsPreviousEncryptionKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	ctx := context.Background()
+	oldStore := NewLocalStore(path)
+	oldStore.ConfigureInputCrypto("old-webhook-encryption-key", "")
+	created, err := oldStore.CreateSubscription(ctx, webhook.Subscription{
+		WorkspaceID:   "workspace-a",
+		Name:          "Operations",
+		Endpoint:      "https://hooks.example.test/private?token=endpoint-secret",
+		SigningSecret: "signing-secret-0123456789",
+		EventTypes:    []string{controlevent.ReleasePublishedType},
+		Enabled:       true,
+		CreatedBy:     "operator@example.test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rotatedStore := NewLocalStore(path)
+	rotatedStore.ConfigureInputCrypto("new-webhook-encryption-key", "old-webhook-encryption-key")
+	loaded, err := rotatedStore.GetSubscription(ctx, "workspace-a", created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Endpoint != "https://hooks.example.test/private?token=endpoint-secret" || loaded.SigningSecret != "signing-secret-0123456789" {
+		t.Fatalf("loaded rotated subscription = %#v", loaded)
+	}
+}
+
 func TestLocalReleasePublicationCreatesMatchingWebhookOutbox(t *testing.T) {
 	store := NewLocalStore(filepath.Join(t.TempDir(), "state.json"))
 	store.ConfigureInputCrypto("local-test-secret-key", "")

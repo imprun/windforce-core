@@ -1,6 +1,6 @@
 .PHONY: help fmt test test-postgres build web-install web-dev web-build web-embed web-test web-typecheck clean dev \
-	compose-up compose-db compose-execution-api compose-worker compose-dev compose-dev-worker compose-dev-build compose-dev-logs compose-build compose-down compose-reset compose-logs compose-ps postgres-dsn \
-	dev-standalone dev-standalone-postgres dev-api dev-worker worker-once \
+	compose-up compose-db compose-execution-api compose-worker compose-webhook-dispatcher compose-dev compose-dev-worker compose-dev-build compose-dev-logs compose-build compose-down compose-reset compose-logs compose-ps postgres-dsn \
+	dev-standalone dev-standalone-postgres dev-api dev-worker worker-once dev-webhook-dispatcher webhook-once \
 	windforce-variable-set windforce-git-token windforce-register windforce-sync windforce-deploy windforce-sample \
 	windforce-schema windforce-openapi windforce-control-openapi \
 	windforce-run windforce-run-wait windforce-jobs windforce-job windforce-job-result windforce-job-logs windforce-job-cancel \
@@ -102,6 +102,8 @@ help:
 	@echo "  dev-api                run API process with PostgreSQL state"
 	@echo "  dev-worker             run worker process with PostgreSQL state"
 	@echo "  worker-once            claim at most one PostgreSQL-backed queued job"
+	@echo "  dev-webhook-dispatcher run release webhook dispatcher with PostgreSQL state"
+	@echo "  webhook-once           process at most one pending webhook delivery"
 	@echo "  windforce-variable-set set secret WF_VARIABLE_PATH from WF_VARIABLE_VALUE_ENV through the control API"
 	@echo "  windforce-git-token    store WF_GIT_TOKEN_ENV at WF_VARIABLE_PATH for git source auth"
 	@echo "  windforce-register     register WF_REPO_URL as WF_GIT_SOURCE_NAME through the control API"
@@ -119,6 +121,7 @@ help:
 	@echo "  compose-db             start repo-local PostgreSQL for standalone testing"
 	@echo "  compose-execution-api  start the execution API against configured PostgreSQL"
 	@echo "  compose-worker         start runtime worker against configured PostgreSQL"
+	@echo "  compose-webhook-dispatcher start release webhook dispatcher against configured PostgreSQL"
 	@echo "  compose-dev            start PostgreSQL and hot-reload control-plane/execution-api with air"
 	@echo "  compose-dev-worker     start PostgreSQL and hot-reload Go runtime worker with docker compose + air"
 	@echo "  compose-dev-build      build the dev image that contains Go, Python, git, and air"
@@ -163,7 +166,7 @@ build:
 	$(GO) build -o "$(BIN)" $(CMD)
 
 compose-up:
-	$(COMPOSE) --profile backend up -d control-plane execution-api web
+	$(COMPOSE) --profile backend up -d control-plane execution-api webhook-dispatcher web
 
 compose-db:
 	$(COMPOSE) --profile pg up -d postgres
@@ -174,20 +177,23 @@ compose-execution-api:
 compose-worker:
 	$(COMPOSE) --profile worker up -d worker
 
+compose-webhook-dispatcher:
+	$(COMPOSE) --profile backend up -d webhook-dispatcher
+
 compose-dev:
-	$(COMPOSE_DEV) --profile backend up -d control-plane execution-api
+	$(COMPOSE_DEV) --profile backend up -d control-plane execution-api webhook-dispatcher
 
 compose-dev-worker:
 	$(COMPOSE_DEV) --profile worker up -d worker
 
 compose-dev-build:
-	$(COMPOSE_DEV) build control-plane execution-api worker
+	$(COMPOSE_DEV) build control-plane execution-api worker webhook-dispatcher
 
 compose-dev-logs:
-	$(COMPOSE_DEV) logs -f control-plane execution-api worker
+	$(COMPOSE_DEV) logs -f control-plane execution-api worker webhook-dispatcher
 
 compose-build:
-	$(COMPOSE) build control-plane execution-api worker
+	$(COMPOSE) build control-plane execution-api worker webhook-dispatcher
 
 compose-down:
 	$(COMPOSE) down
@@ -196,7 +202,7 @@ compose-reset:
 	$(COMPOSE) down -v
 
 compose-logs:
-	$(COMPOSE) logs -f postgres control-plane execution-api web worker
+	$(COMPOSE) logs -f postgres control-plane execution-api webhook-dispatcher web worker
 
 compose-ps:
 	$(COMPOSE) ps
@@ -226,6 +232,12 @@ dev-worker: compose-up
 
 worker-once: compose-up
 	$(GO) run $(CMD) worker --store "$(STORE)" --cache "$(CACHE)" --state-backend postgres --database-url "$(POSTGRES_DSN)" --migrate --once
+
+dev-webhook-dispatcher: compose-db
+	$(GO) run $(CMD) webhook-dispatcher --state-backend postgres --database-url "$(POSTGRES_DSN)" --migrate
+
+webhook-once: compose-db
+	$(GO) run $(CMD) webhook-dispatcher --state-backend postgres --database-url "$(POSTGRES_DSN)" --migrate --once
 
 windforce-variable-set:
 	python tools/windforce_control.py --api-url "$(WF_API_URL)" --workspace "$(WF_WORKSPACE)" --pretty variable-set --path "$(WF_VARIABLE_PATH)" --value-env "$(WF_VARIABLE_VALUE_ENV)" --app "$(WF_VARIABLE_APP)" --secret --description "$(WF_VARIABLE_DESCRIPTION)"

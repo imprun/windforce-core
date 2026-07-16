@@ -54,6 +54,8 @@ func run(args []string) int {
 		return runServer(args[1:], "execution-api")
 	case "worker":
 		return runWorker(args[1:])
+	case "webhook-dispatcher":
+		return runWebhookDispatcher(args[1:])
 	case "standalone":
 		return runServer(args[1:], "standalone")
 	default:
@@ -97,6 +99,7 @@ func runServer(args []string, mode string) int {
 	jobFailureRetention := flags.Duration("job-failure-retention", envDays("WINDFORCE_LITE_JOB_FAILURE_RETENTION_DAYS", defaultJobFailureRetention), "how long failed/canceled/expired job records are kept; 0 keeps them forever")
 	jobStuckAfter := flags.Duration("job-stuck-after", envHours("WINDFORCE_LITE_JOB_STUCK_AFTER_HOURS", defaultJobStuckAfter), "expire queued/running jobs with no progress for this long; 0 disables")
 	jobRetentionInterval := flags.Duration("job-retention-interval", defaultJobRetentionInterval, "how often the retention pruner runs")
+	webhookDispatcherFlags := bindWebhookDispatcherFlags(flags, "webhook-")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -152,6 +155,11 @@ func runServer(args []string, mode string) int {
 	}
 
 	if mode == "standalone" {
+		dispatcher, err := newWebhookDispatcher(stateStore, webhookDispatcherFlags)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "standalone webhook dispatcher: %v\n", err)
+			return 1
+		}
 		processor := worker.Processor{
 			Store: stateStore,
 			Runner: runtime.Runner{
@@ -176,6 +184,11 @@ func runServer(args []string, mode string) int {
 		go func() {
 			if err := processor.RunLoop(context.Background(), *poll); err != nil {
 				fmt.Fprintf(os.Stderr, "standalone worker: %v\n", err)
+			}
+		}()
+		go func() {
+			if err := dispatcher.RunLoop(context.Background(), *webhookDispatcherFlags.dispatchInterval); err != nil {
+				fmt.Fprintf(os.Stderr, "standalone webhook dispatcher: %v\n", err)
 			}
 		}()
 	}
@@ -546,6 +559,7 @@ func printUsage(file *os.File) {
 	fmt.Fprintln(file, "  windforce-lite control-plane [--addr :8080] [--state-backend local|postgres] [--git-sources <path>]")
 	fmt.Fprintln(file, "  windforce-lite execution-api [--addr :8080] [--state-backend local|postgres]")
 	fmt.Fprintln(file, "  windforce-lite worker [--state-backend local|postgres] [--worker-group default] [--egress-proxy host:port] [--bun-path <path>] [--python-path <path>] [--go-path <path>] [--prepare-timeout 5m] [--once]")
+	fmt.Fprintln(file, "  windforce-lite webhook-dispatcher [--state-backend local|postgres] [--database-url <url>] [--once]")
 	fmt.Fprintln(file, "  windforce-lite standalone [--addr :8080] [--state-backend local|postgres] [--worker-group default] [--egress-proxy host:port] [--git-sources <path>] [--bun-path <path>] [--python-path <path>] [--go-path <path>] [--prepare-timeout 5m]")
 	fmt.Fprintln(file, "  windforce-lite run-json [flags] -- <command> [args...]")
 }

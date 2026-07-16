@@ -1,6 +1,9 @@
 name: windforce-lite
 
 x-windforce-lite-database-url: &windforce-lite-database-url "${WINDFORCE_LITE_DATABASE_URL:-postgres://postgres@postgres:5432/windforce_lite?sslmode=disable}"
+x-windforce-lite-secret-env: &windforce-lite-secret-env
+  SECRET_KEY: ${SECRET_KEY:-}
+  SECRET_KEY_PREVIOUS: ${SECRET_KEY_PREVIOUS:-}
 
 services:
   volume-init:
@@ -46,6 +49,8 @@ services:
         condition: service_healthy
     ports:
       - "127.0.0.1:${WINDFORCE_LITE_API_PORT:-18091}:8080"
+    environment:
+      <<: *windforce-lite-secret-env
     command:
       - control-plane
       - --addr
@@ -80,6 +85,8 @@ services:
         condition: service_healthy
     ports:
       - "127.0.0.1:${WINDFORCE_LITE_EXECUTION_API_PORT:-18092}:8080"
+    environment:
+      <<: *windforce-lite-secret-env
     command:
       - execution-api
       - --addr
@@ -148,6 +155,7 @@ services:
       - --base-url
       - http://execution-api:8080
     environment:
+      <<: *windforce-lite-secret-env
       PIP_INDEX_URL: ${PIP_INDEX_URL:-}
       PIP_EXTRA_INDEX_URL: ${PIP_EXTRA_INDEX_URL:-}
       PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
@@ -157,6 +165,34 @@ services:
       PIP_CLIENT_CERT: ${PIP_CLIENT_CERT:-}
     volumes:
       - windforce-data:/data
+
+  webhook-dispatcher:
+    profiles:
+      - backend
+      - standalone
+    image: ${WINDFORCE_LITE_IMAGE:-imprun/windforce-lite:local}
+    build:
+      context: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command:
+      - webhook-dispatcher
+      - --state-backend
+      - postgres
+      - --database-url
+      - *windforce-lite-database-url
+      - --migrate
+    environment:
+      <<: *windforce-lite-secret-env
+      WINDFORCE_LITE_WEBHOOK_DISPATCH_INTERVAL: ${WINDFORCE_LITE_WEBHOOK_DISPATCH_INTERVAL:-500ms}
+      WINDFORCE_LITE_WEBHOOK_REQUEST_TIMEOUT: ${WINDFORCE_LITE_WEBHOOK_REQUEST_TIMEOUT:-10s}
+      WINDFORCE_LITE_WEBHOOK_MAX_ATTEMPTS: ${WINDFORCE_LITE_WEBHOOK_MAX_ATTEMPTS:-8}
+      WINDFORCE_LITE_WEBHOOK_LEASE_TTL: ${WINDFORCE_LITE_WEBHOOK_LEASE_TTL:-30s}
+      WINDFORCE_LITE_WEBHOOK_ALLOWED_HOSTS: ${WINDFORCE_LITE_WEBHOOK_ALLOWED_HOSTS:-}
+      WINDFORCE_LITE_WEBHOOK_ALLOWED_CIDRS: ${WINDFORCE_LITE_WEBHOOK_ALLOWED_CIDRS:-}
+      WINDFORCE_LITE_WEBHOOK_ALLOW_INSECURE_LOOPBACK: ${WINDFORCE_LITE_WEBHOOK_ALLOW_INSECURE_LOOPBACK:-false}
 
 volumes:
   postgres-data:

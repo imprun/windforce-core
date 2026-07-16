@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/netip"
 	"net/url"
 	"sort"
 	"strings"
@@ -103,7 +104,7 @@ func ValidateSubscription(subscription Subscription) error {
 	if strings.TrimSpace(subscription.Name) == "" {
 		return invalid("name is required")
 	}
-	if _, err := ValidateEndpoint(subscription.Endpoint, false); err != nil {
+	if _, err := ValidateEndpoint(subscription.Endpoint, true); err != nil {
 		return err
 	}
 	if len(subscription.SigningSecret) < 16 {
@@ -139,9 +140,9 @@ func Matches(subscription Subscription, eventType string, appKey string) bool {
 func ValidateEndpoint(raw string, allowHTTP bool) (*url.URL, error) {
 	parsed, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
-		return nil, invalid("endpoint: %v", err)
+		return nil, invalid("endpoint is invalid")
 	}
-	if parsed.Scheme != "https" && !(allowHTTP && parsed.Scheme == "http") {
+	if parsed.Scheme != "https" && !(allowHTTP && parsed.Scheme == "http" && isLoopbackHost(parsed.Hostname())) {
 		return nil, invalid("endpoint must use HTTPS")
 	}
 	if parsed.Hostname() == "" {
@@ -154,6 +155,15 @@ func ValidateEndpoint(raw string, allowHTTP bool) (*url.URL, error) {
 		return nil, invalid("endpoint fragment is not allowed")
 	}
 	return parsed, nil
+}
+
+func isLoopbackHost(host string) bool {
+	host = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
+	if host == "localhost" {
+		return true
+	}
+	address, err := netip.ParseAddr(host)
+	return err == nil && address.Unmap().IsLoopback()
 }
 
 func EndpointSummary(raw string) string {

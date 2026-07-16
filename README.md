@@ -368,6 +368,10 @@ go run ./cmd/windforce-lite control-plane `
 go run ./cmd/windforce-lite worker `
   --state-backend postgres `
   --database-url $env:WINDFORCE_DATABASE_URL
+
+go run ./cmd/windforce-lite webhook-dispatcher `
+  --state-backend postgres `
+  --database-url $env:WINDFORCE_DATABASE_URL
 ```
 
 API token checks are optional for local development. `--admin-token-env` gates
@@ -396,6 +400,20 @@ values cannot be overridden by the request. Setting values are encrypted at
 rest and are merged by the worker after it decrypts the persisted job input, so
 configured values are not copied into Run or Job records.
 
+Release publication stores a CloudEvents event and matching Webhook deliveries
+in the same state transaction as the active release. The separate
+`webhook-dispatcher` process claims those deliveries and sends signed HTTP
+requests after the release transaction commits. Delivery uses
+`X-Windforce-Event`, `X-Windforce-Delivery`, `X-Windforce-Timestamp`, and
+`X-Windforce-Signature` headers. The signature is
+`v1=<hex HMAC-SHA256(secret, timestamp + "." + rawBody)>`.
+
+Webhook endpoints use HTTPS by default. DNS results are checked again for each
+attempt, private addresses require an explicit host or CIDR allowlist, and
+redirects are not followed. A host-run local receiver may use HTTP loopback only
+when `WINDFORCE_LITE_WEBHOOK_ALLOW_INSECURE_LOOPBACK=true`. Endpoint paths,
+queries, signing secrets, and response bodies are not written to delivery logs.
+
 ## Runtime architecture
 
 Windforce Lite has three explicit planes:
@@ -418,6 +436,7 @@ Process roles are separated:
 - `windforce-lite control-plane`: source, release, configuration, audit, and Web UI APIs
 - `windforce-lite execution-api`: run admission and job-scoped runtime callbacks
 - `windforce-lite worker`: job polling and action execution
+- `windforce-lite webhook-dispatcher`: signed Control Plane event delivery and retry
 - `windforce-lite standalone`: local/dev combined mode
 
 Protocol adapters adapt routes, request terms, environment variables, and

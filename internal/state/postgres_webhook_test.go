@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -282,5 +283,138 @@ func TestPostgresReleaseOutboxMatchesHundredSubscriptions(t *testing.T) {
 	}
 	if count != 100 {
 		t.Fatalf("delivery count = %d, want 100", count)
+	}
+}
+
+func TestPostgresWebhookConcurrentClaimHasSingleOwner(t *testing.T) {
+	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("WINDFORCE_LITE_POSTGRES_TEST_DSN is not set")
+	}
+	ctx := context.Background()
+	store := openIsolatedPostgresCatalogStore(t, dsn)
+	store.ConfigureInputCrypto("postgres-test-secret-key", "")
+	if _, err := store.CreateSubscription(ctx, webhook.Subscription{
+		WorkspaceID:   "workspace-a",
+		Name:          "Operations",
+		Endpoint:      "https://hooks.example.test/releases",
+		SigningSecret: "signing-secret-0123456789",
+		EventTypes:    []string{controlevent.ReleasePublishedType},
+		Enabled:       true,
+		CreatedBy:     "operator@example.test",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.PublishRelease(ctx, releaseCatalogDeployment("workspace-a", "source-a", "echo", "commit-a"), time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+
+	const contenders = 12
+	start := make(chan struct{})
+	results := make(chan error, contenders)
+	claimed := make(chan *webhook.ClaimedDelivery, contenders)
+	var wait sync.WaitGroup
+	for index := 0; index < contenders; index++ {
+		wait.Add(1)
+		go func(index int) {
+			defer wait.Done()
+			<-start
+			delivery, err := store.ClaimDelivery(ctx, fmt.Sprintf("dispatcher-%02d", index), time.Minute)
+			if err == nil {
+				claimed <- delivery
+			}
+			results <- err
+		}(index)
+	}
+	close(start)
+	wait.Wait()
+	close(results)
+	close(claimed)
+
+	successes := 0
+	for err := range results {
+		if err == nil {
+			successes++
+			continue
+		}
+		if !errors.Is(err, webhook.ErrNoPendingDelivery) {
+			t.Fatalf("concurrent claim error = %v", err)
+		}
+	}
+	if successes != 1 {
+		t.Fatalf("successful claims = %d, want 1", successes)
+	}
+	owned := <-claimed
+	if owned == nil || owned.Lease.WorkerID == "" {
+		t.Fatalf("claimed delivery = %#v", owned)
+	}
+}
+
+func TestPostgresWebhookConcurrentClaimsDoNotRequireGlobalDeliveryOrder(t *testing.T) {
+	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("WINDFORCE_LITE_POSTGRES_TEST_DSN is not set")
+	}
+	ctx := context.Background()
+	store := openIsolatedPostgresCatalogStore(t, dsn)
+	store.ConfigureInputCrypto("postgres-test-secret-key", "")
+	if _, err := store.CreateSubscription(ctx, webhook.Subscription{
+		WorkspaceID:   "workspace-a",
+		Name:          "Operations",
+		Endpoint:      "https://hooks.example.test/releases",
+		SigningSecret: "signing-secret-0123456789",
+		EventTypes:    []string{controlevent.ReleasePublishedType},
+		Enabled:       true,
+		CreatedBy:     "operator@example.test",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateSubscription(ctx, webhook.Subscription{
+		WorkspaceID:   "workspace-a",
+		Name:          "Security",
+		Endpoint:      "https://security-hooks.example.test/releases",
+		SigningSecret: "signing-secret-9876543210",
+		EventTypes:    []string{controlevent.ReleasePublishedType},
+		Enabled:       true,
+		CreatedBy:     "operator@example.test",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.PublishRelease(ctx, releaseCatalogDeployment("workspace-a", "source-a", "echo", "commit-a"), time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+
+	start := make(chan struct{})
+	claims := make(chan *webhook.ClaimedDelivery, 2)
+	errorsFound := make(chan error, 2)
+	var wait sync.WaitGroup
+	for index := 0; index < 2; index++ {
+		wait.Add(1)
+		go func(index int) {
+			defer wait.Done()
+			<-start
+			claimed, err := store.ClaimDelivery(ctx, fmt.Sprintf("dispatcher-%d", index), time.Minute)
+			claims <- claimed
+			errorsFound <- err
+		}(index)
+	}
+	close(start)
+	wait.Wait()
+	close(claims)
+	close(errorsFound)
+	for err := range errorsFound {
+		if err != nil {
+			t.Fatalf("concurrent claim error = %v", err)
+		}
+	}
+	ids := map[string]struct{}{}
+	for claimed := range claims {
+		if claimed == nil {
+			t.Fatal("nil concurrent claim")
+		}
+		ids[claimed.Delivery.ID] = struct{}{}
+	}
+	if len(ids) != 2 {
+		t.Fatalf("distinct claimed deliveries = %#v", ids)
 	}
 }
