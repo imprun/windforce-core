@@ -10,27 +10,7 @@ import (
 	"testing"
 
 	"github.com/imprun/windforce-lite/internal/bundle"
-	catalogpkg "github.com/imprun/windforce-lite/internal/catalog"
-	"github.com/imprun/windforce-lite/internal/contract"
 )
-
-type checkingCatalog struct {
-	t      *testing.T
-	store  bundle.Store
-	called bool
-}
-
-func (c *checkingCatalog) UpsertDeployment(ctx context.Context, deployment contract.Deployment) error {
-	exists, err := c.store.Exists(ctx, deployment.SourceWorkspace(), deployment.SourceGitSourceID(), deployment.Commit)
-	if err != nil {
-		c.t.Fatalf("store.Exists returned error: %v", err)
-	}
-	if !exists {
-		c.t.Fatalf("catalog updated before bundle materialized")
-	}
-	c.called = true
-	return nil
-}
 
 type failingMaterializeStore struct {
 	err error
@@ -46,15 +26,6 @@ func (s *failingMaterializeStore) Materialize(context.Context, string, string, s
 
 func (s *failingMaterializeStore) FetchTo(context.Context, string, string, string, string) error {
 	return errors.New("unexpected FetchTo")
-}
-
-type recordingCatalog struct {
-	called bool
-}
-
-func (c *recordingCatalog) UpsertDeployment(context.Context, contract.Deployment) error {
-	c.called = true
-	return nil
 }
 
 func TestCheckLockfileAllowsSourcesWithoutDeclaredDependencies(t *testing.T) {
@@ -119,7 +90,7 @@ func TestCheckLockfileRejectsMalformedPackageJSON(t *testing.T) {
 	}
 }
 
-func TestSyncMaterializesBeforeCatalogUpdate(t *testing.T) {
+func TestSyncMaterializesSourceBundle(t *testing.T) {
 	tempDir := t.TempDir()
 	sourceDir := filepath.Join(tempDir, "source")
 	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
@@ -150,8 +121,7 @@ func TestSyncMaterializesBeforeCatalogUpdate(t *testing.T) {
 	}
 
 	store := bundle.NewLocalStore(filepath.Join(tempDir, "store"))
-	catalog := &checkingCatalog{t: t, store: store}
-	syncer := Syncer{Store: store, Catalog: catalog}
+	syncer := Syncer{Store: store}
 
 	deployment, err := syncer.Sync(context.Background(), Source{
 		Workspace:   "workspace-a",
@@ -163,8 +133,12 @@ func TestSyncMaterializesBeforeCatalogUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Sync returned error: %v", err)
 	}
-	if !catalog.called {
-		t.Fatalf("catalog was not updated")
+	exists, err := store.Exists(context.Background(), deployment.SourceWorkspace(), deployment.SourceGitSourceID(), deployment.Commit)
+	if err != nil {
+		t.Fatalf("store.Exists returned error: %v", err)
+	}
+	if !exists {
+		t.Fatal("source bundle was not materialized")
 	}
 	if deployment.ObjectURI != "bundle://workspace-a/source-a/commit-a" {
 		t.Fatalf("object URI = %q", deployment.ObjectURI)
@@ -212,7 +186,7 @@ func TestSyncPreservesUnwiredScriptLangForRuntimeDispatch(t *testing.T) {
 	}
 
 	store := bundle.NewLocalStore(filepath.Join(tempDir, "store"))
-	syncer := Syncer{Store: store, Catalog: &recordingCatalog{}}
+	syncer := Syncer{Store: store}
 
 	deployment, err := syncer.Sync(context.Background(), Source{
 		Workspace:   "workspace-a",
@@ -229,7 +203,7 @@ func TestSyncPreservesUnwiredScriptLangForRuntimeDispatch(t *testing.T) {
 	}
 }
 
-func TestSyncWrapsMaterializeErrorBeforeCatalogUpdate(t *testing.T) {
+func TestSyncWrapsMaterializeError(t *testing.T) {
 	tempDir := t.TempDir()
 	sourceDir := filepath.Join(tempDir, "source")
 	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
@@ -244,8 +218,7 @@ func TestSyncWrapsMaterializeErrorBeforeCatalogUpdate(t *testing.T) {
 	}
 
 	store := &failingMaterializeStore{err: errors.New("copy failed")}
-	catalog := &recordingCatalog{}
-	syncer := Syncer{Store: store, Catalog: catalog}
+	syncer := Syncer{Store: store}
 
 	_, err := syncer.Sync(context.Background(), Source{
 		Workspace:   "workspace-a",
@@ -257,12 +230,9 @@ func TestSyncWrapsMaterializeErrorBeforeCatalogUpdate(t *testing.T) {
 	if err == nil || err.Error() != "materialize: copy failed" {
 		t.Fatalf("Sync error = %v, want materialize wrapper", err)
 	}
-	if catalog.called {
-		t.Fatalf("catalog updated after materialize failure")
-	}
 }
 
-func TestSyncCapturesGitCommitMessageInHistory(t *testing.T) {
+func TestSyncCapturesGitCommitMessageOnDeployment(t *testing.T) {
 	tempDir := t.TempDir()
 	repoDir := filepath.Join(tempDir, "repo")
 	if err := os.MkdirAll(repoDir, 0o755); err != nil {
@@ -286,8 +256,7 @@ func TestSyncCapturesGitCommitMessageInHistory(t *testing.T) {
 	runSyncerTestGit(t, repoDir, "commit", "-m", "Add echo app")
 
 	store := bundle.NewLocalStore(filepath.Join(tempDir, "store"))
-	catalog := catalogpkg.NewFileCatalog(filepath.Join(tempDir, "catalog.json"))
-	syncer := Syncer{Store: store, Catalog: catalog, CloneRoot: filepath.Join(tempDir, "clones")}
+	syncer := Syncer{Store: store, CloneRoot: filepath.Join(tempDir, "clones")}
 
 	deployment, err := syncer.Sync(context.Background(), Source{
 		Workspace:   "workspace-a",
@@ -301,13 +270,6 @@ func TestSyncCapturesGitCommitMessageInHistory(t *testing.T) {
 	}
 	if deployment.Message == nil || *deployment.Message != "Add echo app" {
 		t.Fatalf("deployment message = %v, want Add echo app", deployment.Message)
-	}
-	snapshot, err := catalog.Load(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(snapshot.History) != 1 || snapshot.History[0].Message == nil || *snapshot.History[0].Message != "Add echo app" {
-		t.Fatalf("history message = %#v", snapshot.History)
 	}
 }
 
@@ -336,8 +298,7 @@ func TestSyncCapturesGitCommitMessageForSubpathSource(t *testing.T) {
 	runSyncerTestGit(t, repoDir, "commit", "-m", "Add nested echo app")
 
 	store := bundle.NewLocalStore(filepath.Join(tempDir, "store"))
-	catalog := catalogpkg.NewFileCatalog(filepath.Join(tempDir, "catalog.json"))
-	syncer := Syncer{Store: store, Catalog: catalog, CloneRoot: filepath.Join(tempDir, "clones")}
+	syncer := Syncer{Store: store, CloneRoot: filepath.Join(tempDir, "clones")}
 
 	deployment, err := syncer.Sync(context.Background(), Source{
 		Workspace:   "workspace-a",
@@ -352,13 +313,6 @@ func TestSyncCapturesGitCommitMessageForSubpathSource(t *testing.T) {
 	}
 	if deployment.Message == nil || *deployment.Message != "Add nested echo app" {
 		t.Fatalf("deployment message = %v, want Add nested echo app", deployment.Message)
-	}
-	snapshot, err := catalog.Load(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(snapshot.History) != 1 || snapshot.History[0].Message == nil || *snapshot.History[0].Message != "Add nested echo app" {
-		t.Fatalf("history message = %#v", snapshot.History)
 	}
 }
 

@@ -21,7 +21,7 @@ in scope.
 - App: the deployable source bundle
 - Action: one executable unit inside an app
 - Deployment: the selected app commit/digest and its action metadata
-- Catalog: the active deployment index
+- Catalog: the active deployment index stored in the selected state backend
 - Bundle store: source-only object cache keyed by workspace/git-source/commit
 - Deployment history: an audit trail of source syncs and deployment changes
 
@@ -41,10 +41,16 @@ that already calls it.
 4. Load `windforce.json`.
 5. Materialize the source tree into the bundle store under
    `{workspace}/{gitSourceId}/{commit}`.
-6. Write the catalog entry after the bundle is complete.
+6. Publish the active release, release history, source release marker, and audit
+   record in one state-store transaction after the bundle is complete.
 
 The ordering is intentional: a catalog entry must not point at a bundle that a
 worker cannot fetch.
+
+The state backend is the source of truth for the active release catalog. Local
+mode stores it in the state JSON file; PostgreSQL mode stores it in control-plane
+tables. `--catalog` names an optional catalog snapshot that is imported
+idempotently at startup.
 
 The Docker Compose control plane maps its API to `127.0.0.1:18091`. The
 execution API is a separate service mapped to `127.0.0.1:18092`. The local Web UI is a Vite development server
@@ -147,7 +153,6 @@ Run the combined local control-plane and worker:
 go run ./cmd/windforce-lite standalone `
   --addr 127.0.0.1:8080 `
   --store .tmp/store `
-  --catalog .tmp/catalog.json `
   --state .tmp/state.json
 ```
 
@@ -172,7 +177,6 @@ The runtime process model is available through local file-backed state:
 go run ./cmd/windforce-lite standalone `
   --addr :8080 `
   --store .tmp/store `
-  --catalog .tmp/catalog.json `
   --state .tmp/state.json
 ```
 

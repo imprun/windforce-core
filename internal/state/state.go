@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/imprun/windforce-lite/internal/catalog"
 	"github.com/imprun/windforce-lite/internal/contract"
 )
 
@@ -370,6 +371,7 @@ type Snapshot struct {
 	InputConfigAudits  map[string][]InputConfigAudit         `json:"inputConfigAudits"`
 	LegacyClients      map[string]map[string]Client          `json:"apiClients,omitempty"`
 	LegacyClientAudits map[string][]ClientAudit              `json:"apiClientAudits,omitempty"`
+	ReleaseCatalog     catalog.Snapshot                      `json:"releaseCatalog"`
 }
 
 type Store interface {

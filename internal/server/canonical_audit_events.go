@@ -113,11 +113,27 @@ func (h *Handler) handleCanonicalAuditEvents(w http.ResponseWriter, r *http.Requ
 
 func catalogAuditEvents(snapshot catalog.Snapshot, workspaceID string) []canonicalAuditEvent {
 	events := make([]canonicalAuditEvent, 0, len(snapshot.Audit)+len(snapshot.History))
+	releaseAuditIDs := make(map[string]struct{})
 	for _, record := range snapshot.Audit {
 		if contract.NormalizeWorkspace(record.Workspace) != workspaceID {
 			continue
 		}
 		sourceID, _ := strconv.ParseInt(record.GitSourceID, 10, 64)
+		if record.Kind == "release_published" {
+			releaseAuditIDs[record.ID] = struct{}{}
+			events = append(events, canonicalAuditEvent{
+				ID:          "release:" + record.ID,
+				Category:    "release",
+				Kind:        record.Kind,
+				Summary:     canonicalAuditSummary("release", record.Kind),
+				Detail:      record.Detail,
+				AppKey:      record.App,
+				GitSourceID: sourceID,
+				Actor:       firstNonEmpty(record.Actor, "system"),
+				CreatedAt:   record.CreatedAt,
+			})
+			continue
+		}
 		events = append(events, canonicalAuditEvent{
 			ID:          "repository:" + record.ID,
 			Category:    "repository",
@@ -132,6 +148,9 @@ func catalogAuditEvents(snapshot catalog.Snapshot, workspaceID string) []canonic
 	}
 	for _, record := range snapshot.History {
 		if contract.NormalizeWorkspace(record.Workspace) != workspaceID {
+			continue
+		}
+		if _, ok := releaseAuditIDs[record.ID]; ok {
 			continue
 		}
 		sourceID, _ := strconv.ParseInt(record.GitSourceID, 10, 64)

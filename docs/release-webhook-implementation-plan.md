@@ -2,7 +2,7 @@
 
 ## 문서 상태
 
-- 상태: Planned
+- 상태: In progress
 - 결정 문서: [ADR 0008](adr/0008-control-plane-event-webhooks.md)
 - 구현 소유: `windforce-lite` Control Plane
 - 제품별 메시지 소유: 별도 notifier connector
@@ -65,6 +65,8 @@ web/src              Webhook settings and delivery history UI
 ```
 
 ## 0단계: 릴리즈 catalog를 Transactional Store로 통합
+
+- 상태: In progress ([transactional store #69](https://github.com/imprun/windforce-lite/issues/69))
 
 현재 release path는 source를 materialize한 뒤 file catalog를 갱신하고 repository source marker를 별도 저장한다. 이 경계에서는 active release, audit와 outbox를 하나의 PostgreSQL transaction으로 묶을 수 없다. Webhook 구현 전에 release publication의 저장 경계를 통합한다.
 

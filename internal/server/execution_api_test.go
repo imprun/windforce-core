@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/imprun/windforce-lite/internal/catalog"
 	"github.com/imprun/windforce-lite/internal/contract"
@@ -17,7 +18,6 @@ import (
 func TestExecutionAPICreatesPinnedRunAndReplaysIdempotencyKey(t *testing.T) {
 	tempDir := t.TempDir()
 	store := state.NewLocalStore(filepath.Join(tempDir, "state.json"))
-	fileCatalog := catalog.NewFileCatalog(filepath.Join(tempDir, "catalog.json"))
 	deployment := contract.Deployment{
 		Workspace:   "ws-a",
 		GitSourceID: "source-a",
@@ -32,10 +32,10 @@ func TestExecutionAPICreatesPinnedRunAndReplaysIdempotencyKey(t *testing.T) {
 			},
 		},
 	}
-	if err := fileCatalog.UpsertDeployment(context.Background(), deployment); err != nil {
+	if _, err := store.PublishRelease(context.Background(), deployment, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
-	httpServer := httptest.NewServer(New(Config{Store: store, Catalog: fileCatalog, EnableAPI: true}))
+	httpServer := httptest.NewServer(New(Config{Store: store, Catalog: store, EnableAPI: true}))
 	defer httpServer.Close()
 
 	body := []byte(`{"app":"echo","action":"run","input":{"message":"hello"},"adapter":"queue","correlation_id":"request-a","idempotency_key":"message-a","env":["TRACE=value"]}`)

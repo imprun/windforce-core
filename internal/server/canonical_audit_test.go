@@ -168,13 +168,20 @@ func TestCanonicalAuditEventsAggregateAndFilter(t *testing.T) {
 
 	all := get("/api/w/ws-a/audit-events")
 	categories := map[string]bool{}
+	releaseEvents := 0
 	for _, event := range all {
 		categories[event.Category] = true
+		if event.Category == "release" {
+			releaseEvents++
+		}
 	}
 	for _, category := range []string{"repository", "release", "client", "input_settings"} {
 		if !categories[category] {
 			t.Fatalf("missing category %q in %#v", category, all)
 		}
+	}
+	if releaseEvents != 1 {
+		t.Fatalf("release audit events = %d, want 1: %#v", releaseEvents, all)
 	}
 	appEvents := get("/api/w/ws-a/audit-events?app_key=shop&git_source_id=3")
 	for _, event := range appEvents {

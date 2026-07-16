@@ -527,13 +527,17 @@ func (h *Handler) syncGitSource(w http.ResponseWriter, r *http.Request, workspac
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return contract.Deployment{}, false
 	}
-	if marker, ok := h.gitSources.(interface {
-		MarkSynced(context.Context, string, string, string, time.Time) (gitsourcepkg.Source, error)
-	}); ok {
-		if _, err := marker.MarkSynced(r.Context(), workspaceID, source.ID, deployment.Commit, time.Now().UTC()); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return contract.Deployment{}, false
-		}
+	publisher, ok := h.catalog.(interface {
+		PublishRelease(context.Context, contract.Deployment, time.Time) (contract.Deployment, error)
+	})
+	if !ok {
+		writeError(w, http.StatusServiceUnavailable, "transactional release catalog is not configured")
+		return contract.Deployment{}, false
+	}
+	deployment, err = publisher.PublishRelease(r.Context(), deployment, time.Now().UTC())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return contract.Deployment{}, false
 	}
 	return deployment, true
 }

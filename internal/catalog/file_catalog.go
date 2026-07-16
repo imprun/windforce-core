@@ -22,10 +22,33 @@ type FileCatalog struct {
 }
 
 type Snapshot struct {
-	Deployments map[string]contract.Deployment `json:"deployments"`
-	History     []DeploymentHistory            `json:"history,omitempty"`
-	Audit       []AuditRecord                  `json:"audit,omitempty"`
+	Deployments   map[string]contract.Deployment `json:"deployments"`
+	History       []DeploymentHistory            `json:"history,omitempty"`
+	Audit         []AuditRecord                  `json:"audit,omitempty"`
+	SourceMarkers map[string]SourceReleaseMarker `json:"sourceReleaseMarkers,omitempty"`
 }
+
+type SourceReleaseMarker struct {
+	Workspace   string    `json:"workspace"`
+	GitSourceID string    `json:"gitSourceId"`
+	Commit      string    `json:"commit"`
+	ReleasedAt  time.Time `json:"releasedAt"`
+}
+
+type Store interface {
+	GetDeployment(ctx context.Context, app string) (contract.Deployment, error)
+	GetDeploymentForWorkspace(ctx context.Context, workspace string, app string) (contract.Deployment, error)
+	LoadCatalog(ctx context.Context) (Snapshot, error)
+	PublishRelease(ctx context.Context, deployment contract.Deployment, releasedAt time.Time) (contract.Deployment, error)
+	AppendAudit(ctx context.Context, record AuditRecord) error
+	AuditTrail(ctx context.Context, workspace string, gitSourceID string) ([]AuditRecord, error)
+	SetAppTagOverride(ctx context.Context, workspace string, app string, tagOverride *string) (contract.Deployment, error)
+	SetActionTagOverride(ctx context.Context, workspace string, app string, actionKey string, tagOverride *string) (contract.Action, error)
+	ListSourceReleaseMarkers(ctx context.Context) (map[string]SourceReleaseMarker, error)
+	ImportCatalog(ctx context.Context, snapshot Snapshot) error
+}
+
+var _ Store = (*FileCatalog)(nil)
 
 // AuditRecord captures a non-release state change (repository settings,
 // deletions, route tag overrides) for the audit trail. Releases live in
@@ -63,21 +86,33 @@ func NewFileCatalog(path string) *FileCatalog {
 }
 
 func (c *FileCatalog) UpsertDeployment(ctx context.Context, deployment contract.Deployment) error {
+	_, err := c.PublishRelease(ctx, deployment, time.Now().UTC())
+	return err
+}
+
+func (c *FileCatalog) PublishRelease(ctx context.Context, deployment contract.Deployment, releasedAt time.Time) (contract.Deployment, error) {
 	if err := ctx.Err(); err != nil {
-		return err
+		return contract.Deployment{}, err
 	}
 	snapshot, err := c.Load(ctx)
 	if err != nil {
-		return err
+		return contract.Deployment{}, err
 	}
-	if snapshot.Deployments == nil {
-		snapshot.Deployments = map[string]contract.Deployment{}
+	deployment, history, audit := PreparePublication(deployment, releasedAt)
+	snapshot.Deployments[DeploymentKey(deployment.SourceWorkspace(), deployment.App)] = deployment
+	snapshot.History = append(snapshot.History, history)
+	snapshot.Audit = append(snapshot.Audit, audit)
+	marker := SourceReleaseMarker{
+		Workspace:   deployment.SourceWorkspace(),
+		GitSourceID: deployment.SourceGitSourceID(),
+		Commit:      deployment.Commit,
+		ReleasedAt:  history.CreatedAt,
 	}
-	deployment = normalizeDeploymentDefaults(deployment)
-	deployment = ensureDeploymentUpdatedAt(deployment, time.Now().UTC())
-	snapshot.Deployments[deploymentKey(deployment.SourceWorkspace(), deployment.App)] = deployment
-	snapshot.History = append(snapshot.History, newDeploymentHistory(deployment))
-	return c.write(snapshot)
+	snapshot.SourceMarkers[SourceReleaseKey(marker.Workspace, marker.GitSourceID)] = marker
+	if err := c.write(snapshot); err != nil {
+		return contract.Deployment{}, err
+	}
+	return deployment, nil
 }
 
 func (c *FileCatalog) AppendAudit(ctx context.Context, record AuditRecord) error {
@@ -88,12 +123,7 @@ func (c *FileCatalog) AppendAudit(ctx context.Context, record AuditRecord) error
 	if err != nil {
 		return err
 	}
-	if record.CreatedAt.IsZero() {
-		record.CreatedAt = time.Now().UTC()
-	}
-	if record.ID == "" {
-		record.ID = newAppVersionID(record.CreatedAt)
-	}
+	record = PrepareAuditRecord(record, time.Now().UTC())
 	snapshot.Audit = append(snapshot.Audit, record)
 	return c.write(snapshot)
 }
@@ -121,7 +151,7 @@ func (c *FileCatalog) GetDeploymentForWorkspace(ctx context.Context, workspace s
 	if err != nil {
 		return contract.Deployment{}, err
 	}
-	deployment, ok := snapshot.Deployments[deploymentKey(workspace, app)]
+	deployment, ok := snapshot.Deployments[DeploymentKey(workspace, app)]
 	if !ok {
 		return contract.Deployment{}, ErrDeploymentNotFound
 	}
@@ -136,7 +166,7 @@ func (c *FileCatalog) SetAppTagOverride(ctx context.Context, workspace string, a
 	if err != nil {
 		return contract.Deployment{}, err
 	}
-	key := deploymentKey(workspace, app)
+	key := DeploymentKey(workspace, app)
 	deployment, ok := snapshot.Deployments[key]
 	if !ok {
 		return contract.Deployment{}, ErrDeploymentNotFound
@@ -158,7 +188,7 @@ func (c *FileCatalog) SetActionTagOverride(ctx context.Context, workspace string
 	if err != nil {
 		return contract.Action{}, err
 	}
-	key := deploymentKey(workspace, app)
+	key := DeploymentKey(workspace, app)
 	deployment, ok := snapshot.Deployments[key]
 	if !ok {
 		return contract.Action{}, ErrDeploymentNotFound
@@ -183,7 +213,7 @@ func (c *FileCatalog) Load(ctx context.Context) (Snapshot, error) {
 	}
 	data, err := os.ReadFile(c.Path)
 	if errors.Is(err, os.ErrNotExist) {
-		return Snapshot{Deployments: map[string]contract.Deployment{}}, nil
+		return NewSnapshot(), nil
 	}
 	if err != nil {
 		return Snapshot{}, err
@@ -192,14 +222,36 @@ func (c *FileCatalog) Load(ctx context.Context) (Snapshot, error) {
 	if err := json.Unmarshal(data, &snapshot); err != nil {
 		return Snapshot{}, err
 	}
-	if snapshot.Deployments == nil {
-		snapshot.Deployments = map[string]contract.Deployment{}
-	}
-	snapshot.Deployments = normalizeDeploymentMap(snapshot.Deployments)
-	if snapshot.History == nil {
-		snapshot.History = []DeploymentHistory{}
-	}
+	NormalizeSnapshot(&snapshot)
 	return snapshot, nil
+}
+
+func (c *FileCatalog) LoadCatalog(ctx context.Context) (Snapshot, error) {
+	return c.Load(ctx)
+}
+
+func (c *FileCatalog) ListSourceReleaseMarkers(ctx context.Context) (map[string]SourceReleaseMarker, error) {
+	snapshot, err := c.Load(ctx)
+	if err != nil {
+		return nil, err
+	}
+	markers := make(map[string]SourceReleaseMarker, len(snapshot.SourceMarkers))
+	for key, marker := range snapshot.SourceMarkers {
+		markers[key] = marker
+	}
+	return markers, nil
+}
+
+func (c *FileCatalog) ImportCatalog(ctx context.Context, imported Snapshot) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	snapshot, err := c.Load(ctx)
+	if err != nil {
+		return err
+	}
+	MergeSnapshot(&snapshot, imported)
+	return c.write(snapshot)
 }
 
 func (c *FileCatalog) write(snapshot Snapshot) error {
@@ -219,7 +271,7 @@ func (c *FileCatalog) write(snapshot Snapshot) error {
 	return os.Rename(tmpPath, c.Path)
 }
 
-func ensureDeploymentUpdatedAt(deployment contract.Deployment, updatedAt time.Time) contract.Deployment {
+func EnsureDeploymentUpdatedAt(deployment contract.Deployment, updatedAt time.Time) contract.Deployment {
 	if deployment.UpdatedAt == nil {
 		deployment.UpdatedAt = timePtr(updatedAt)
 	}
@@ -232,7 +284,7 @@ func ensureDeploymentUpdatedAt(deployment contract.Deployment, updatedAt time.Ti
 	return deployment
 }
 
-func normalizeDeploymentDefaults(deployment contract.Deployment) contract.Deployment {
+func NormalizeDeploymentDefaults(deployment contract.Deployment) contract.Deployment {
 	if deployment.Tag == "" {
 		deployment.Tag = contract.DefaultRouteTag
 	}
@@ -248,8 +300,8 @@ func normalizeDeploymentDefaults(deployment contract.Deployment) contract.Deploy
 func normalizeDeploymentMap(deployments map[string]contract.Deployment) map[string]contract.Deployment {
 	normalized := make(map[string]contract.Deployment, len(deployments))
 	for key, deployment := range deployments {
-		deployment = normalizeDeploymentDefaults(deployment)
-		normalizedKey := deploymentKey(deployment.SourceWorkspace(), deployment.App)
+		deployment = NormalizeDeploymentDefaults(deployment)
+		normalizedKey := DeploymentKey(deployment.SourceWorkspace(), deployment.App)
 		if deployment.App == "" {
 			normalizedKey = key
 		}
@@ -258,16 +310,29 @@ func normalizeDeploymentMap(deployments map[string]contract.Deployment) map[stri
 	return normalized
 }
 
-func deploymentKey(workspace string, app string) string {
+func DeploymentKey(workspace string, app string) string {
 	return contract.NormalizeWorkspace(workspace) + "/" + app
+}
+
+func SourceReleaseKey(workspace string, gitSourceID string) string {
+	return contract.NormalizeWorkspace(workspace) + "/" + gitSourceID
 }
 
 func timePtr(value time.Time) *time.Time {
 	return &value
 }
 
-func newDeploymentHistory(deployment contract.Deployment) DeploymentHistory {
-	createdAt := time.Now().UTC()
+func PreparePublication(deployment contract.Deployment, releasedAt time.Time) (contract.Deployment, DeploymentHistory, AuditRecord) {
+	if releasedAt.IsZero() {
+		releasedAt = time.Now().UTC()
+	}
+	deployment = NormalizeDeploymentDefaults(deployment)
+	deployment = EnsureDeploymentUpdatedAt(deployment, releasedAt)
+	history := NewDeploymentHistory(deployment, releasedAt)
+	return deployment, history, NewReleaseAudit(history)
+}
+
+func NewDeploymentHistory(deployment contract.Deployment, createdAt time.Time) DeploymentHistory {
 	workspace := deployment.SourceWorkspace()
 	gitSourceID := deployment.SourceGitSourceID()
 	source := strings.TrimSpace(deployment.Source)
@@ -289,6 +354,97 @@ func newDeploymentHistory(deployment contract.Deployment) DeploymentHistory {
 		ObjectURI:    deployment.ObjectURI,
 		Deployment:   deployment,
 		CreatedAt:    createdAt,
+	}
+}
+
+func NewReleaseAudit(history DeploymentHistory) AuditRecord {
+	detail := "commit " + history.Commit
+	if history.Message != nil && strings.TrimSpace(*history.Message) != "" {
+		detail = strings.TrimSpace(*history.Message)
+	}
+	actor := "system"
+	if history.CreatedBy != nil && strings.TrimSpace(*history.CreatedBy) != "" {
+		actor = strings.TrimSpace(*history.CreatedBy)
+	}
+	return AuditRecord{
+		ID:          history.ID,
+		Workspace:   history.Workspace,
+		GitSourceID: history.GitSourceID,
+		App:         history.App,
+		Kind:        "release_published",
+		Detail:      detail,
+		Actor:       actor,
+		CreatedAt:   history.CreatedAt,
+	}
+}
+
+func NewSnapshot() Snapshot {
+	return Snapshot{
+		Deployments:   map[string]contract.Deployment{},
+		History:       []DeploymentHistory{},
+		Audit:         []AuditRecord{},
+		SourceMarkers: map[string]SourceReleaseMarker{},
+	}
+}
+
+func PrepareAuditRecord(record AuditRecord, createdAt time.Time) AuditRecord {
+	if record.CreatedAt.IsZero() {
+		record.CreatedAt = createdAt
+	}
+	if record.ID == "" {
+		record.ID = newAppVersionID(record.CreatedAt)
+	}
+	return record
+}
+
+func NormalizeSnapshot(snapshot *Snapshot) {
+	if snapshot.Deployments == nil {
+		snapshot.Deployments = map[string]contract.Deployment{}
+	}
+	snapshot.Deployments = normalizeDeploymentMap(snapshot.Deployments)
+	if snapshot.History == nil {
+		snapshot.History = []DeploymentHistory{}
+	}
+	if snapshot.Audit == nil {
+		snapshot.Audit = []AuditRecord{}
+	}
+	if snapshot.SourceMarkers == nil {
+		snapshot.SourceMarkers = map[string]SourceReleaseMarker{}
+	}
+}
+
+func MergeSnapshot(target *Snapshot, imported Snapshot) {
+	NormalizeSnapshot(target)
+	NormalizeSnapshot(&imported)
+	for key, deployment := range imported.Deployments {
+		if _, exists := target.Deployments[key]; !exists {
+			target.Deployments[key] = deployment
+		}
+	}
+	historyIDs := make(map[string]struct{}, len(target.History))
+	for _, record := range target.History {
+		historyIDs[record.ID] = struct{}{}
+	}
+	for _, record := range imported.History {
+		if _, exists := historyIDs[record.ID]; !exists {
+			target.History = append(target.History, record)
+			historyIDs[record.ID] = struct{}{}
+		}
+	}
+	auditIDs := make(map[string]struct{}, len(target.Audit))
+	for _, record := range target.Audit {
+		auditIDs[record.ID] = struct{}{}
+	}
+	for _, record := range imported.Audit {
+		if _, exists := auditIDs[record.ID]; !exists {
+			target.Audit = append(target.Audit, record)
+			auditIDs[record.ID] = struct{}{}
+		}
+	}
+	for key, marker := range imported.SourceMarkers {
+		if _, exists := target.SourceMarkers[key]; !exists {
+			target.SourceMarkers[key] = marker
+		}
 	}
 }
 

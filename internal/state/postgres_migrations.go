@@ -182,6 +182,43 @@ CREATE TABLE IF NOT EXISTS input_config_audit (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS control_release_history (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL,
+    git_source_id TEXT NOT NULL,
+    app_key TEXT NOT NULL,
+    commit_sha TEXT NOT NULL,
+    record JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS control_active_release (
+    workspace_id TEXT NOT NULL,
+    app_key TEXT NOT NULL,
+    history_id TEXT,
+    deployment JSONB NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (workspace_id, app_key)
+);
+
+CREATE TABLE IF NOT EXISTS control_audit (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL,
+    git_source_id TEXT NOT NULL,
+    app_key TEXT NOT NULL DEFAULT '',
+    kind TEXT NOT NULL,
+    record JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS control_source_release_marker (
+    workspace_id TEXT NOT NULL,
+    git_source_id TEXT NOT NULL,
+    commit_sha TEXT NOT NULL,
+    released_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (workspace_id, git_source_id)
+);
+
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS result JSONB;
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS correlation_id TEXT;
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS env JSONB;
@@ -216,6 +253,15 @@ CREATE INDEX IF NOT EXISTS input_config_lookup_idx
 
 CREATE INDEX IF NOT EXISTS input_config_audit_lookup_idx
     ON input_config_audit (workspace_id, app_key, client_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS control_release_history_source_idx
+    ON control_release_history (workspace_id, git_source_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS control_release_history_app_idx
+    ON control_release_history (workspace_id, app_key, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS control_audit_source_idx
+    ON control_audit (workspace_id, git_source_id, created_at DESC);
 `)
 	return err
 }

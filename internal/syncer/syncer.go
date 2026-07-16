@@ -17,10 +17,6 @@ import (
 	"github.com/imprun/windforce-lite/internal/source"
 )
 
-type Catalog interface {
-	UpsertDeployment(ctx context.Context, deployment contract.Deployment) error
-}
-
 type Source struct {
 	Workspace    string
 	GitSourceID  string
@@ -46,7 +42,6 @@ type GitClient interface {
 
 type Syncer struct {
 	Store     bundle.Store
-	Catalog   Catalog
 	CloneRoot string
 	Git       GitClient
 }
@@ -93,12 +88,6 @@ func (s *Syncer) Sync(ctx context.Context, src Source) (contract.Deployment, err
 		}
 	}
 
-	// Catalog is updated only after the source bundle is fully materialized.
-	if s.Catalog != nil {
-		if err := s.Catalog.UpsertDeployment(ctx, deployment); err != nil {
-			return contract.Deployment{}, err
-		}
-	}
 	return deployment, nil
 }
 

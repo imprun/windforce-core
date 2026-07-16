@@ -1897,7 +1897,7 @@ func TestLegacyV1ControlPlaneRoutesAreNotExposed(t *testing.T) {
 	server := httptest.NewServer(New(Config{
 		Store:      state.NewLocalStore(filepath.Join(tempDir, "state.json")),
 		Catalog:    fileCatalog,
-		Syncer:     &syncer.Syncer{Store: bundle.NewLocalStore(filepath.Join(tempDir, "store")), Catalog: fileCatalog},
+		Syncer:     &syncer.Syncer{Store: bundle.NewLocalStore(filepath.Join(tempDir, "store"))},
 		GitSources: gitsource.NewFileRegistry(filepath.Join(tempDir, "git-sources.json")),
 		EnableAPI:  true,
 	}))
@@ -2246,7 +2246,7 @@ func TestCanonicalSampleGitSourceRegistersAndSyncs(t *testing.T) {
 	handler := New(Config{
 		Store:      state.NewLocalStore(filepath.Join(tempDir, "state.json")),
 		Catalog:    fileCatalog,
-		Syncer:     &syncer.Syncer{Store: store, Catalog: fileCatalog, CloneRoot: tempDir},
+		Syncer:     &syncer.Syncer{Store: store, CloneRoot: tempDir},
 		GitSources: gitsource.NewFileRegistry(filepath.Join(tempDir, "git-sources.json")),
 		EnableAPI:  true,
 		SampleRoot: filepath.Join(tempDir, "samples"),
@@ -2678,7 +2678,7 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 	handler := New(Config{
 		Store:      stateStore,
 		Catalog:    fileCatalog,
-		Syncer:     &syncer.Syncer{Store: bundle.NewLocalStore(filepath.Join(tempDir, "store")), Catalog: fileCatalog, CloneRoot: tempDir},
+		Syncer:     &syncer.Syncer{Store: bundle.NewLocalStore(filepath.Join(tempDir, "store")), CloneRoot: tempDir},
 		GitSources: gitsource.NewFileRegistry(filepath.Join(tempDir, "git-sources.json")),
 		EnableAPI:  true,
 	})
@@ -4355,7 +4355,7 @@ func TestControlPlaneRegistersGitSourcePathAndSyncsIt(t *testing.T) {
 	handler := New(Config{
 		Store:      state.NewLocalStore(filepath.Join(tempDir, "state.json")),
 		Catalog:    fileCatalog,
-		Syncer:     &syncer.Syncer{Store: store, Catalog: fileCatalog, CloneRoot: tempDir},
+		Syncer:     &syncer.Syncer{Store: store, CloneRoot: tempDir},
 		GitSources: gitsource.NewFileRegistry(filepath.Join(tempDir, "git-sources.json")),
 		EnableAPI:  true,
 	})

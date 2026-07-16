@@ -15,6 +15,7 @@ import (
 
 	"github.com/imprun/windforce-lite/internal/bundle"
 	"github.com/imprun/windforce-lite/internal/catalog"
+	"github.com/imprun/windforce-lite/internal/contract"
 	"github.com/imprun/windforce-lite/internal/gitsource"
 	"github.com/imprun/windforce-lite/internal/runner"
 	"github.com/imprun/windforce-lite/internal/runtime"
@@ -76,7 +77,7 @@ func runServer(args []string, mode string) int {
 	secretKeyPreviousEnv := flags.String("secret-key-previous-env", "SECRET_KEY_PREVIOUS", "environment variable that contains the previous instance secret during rotation")
 	baseURL := flags.String("base-url", "", "public API base URL injected into job ctx helpers")
 	storeDir := flags.String("store", defaultStoreDir(), "bundle store directory")
-	catalogPath := flags.String("catalog", defaultCatalogPath(), "catalog JSON path")
+	catalogPath := flags.String("catalog", defaultCatalogPath(), "catalog JSON import path")
 	gitSourcesPath := flags.String("git-sources", defaultGitSourcesPath(), "registered git sources JSON path")
 	cacheRoot := flags.String("cache", defaultCacheDir(), "runtime cache directory")
 	bunPath := flags.String("bun-path", "", "bun executable path")
@@ -106,8 +107,16 @@ func runServer(args []string, mode string) int {
 		return 1
 	}
 	defer closeState()
-	fileCatalog := catalog.NewFileCatalog(*catalogPath)
+	releaseCatalog, ok := stateStore.(catalog.Store)
+	if !ok {
+		fmt.Fprintf(os.Stderr, "%s state backend does not provide a release catalog\n", mode)
+		return 1
+	}
 	gitSources := gitsource.NewFileRegistry(*gitSourcesPath)
+	if err := importReleaseCatalog(context.Background(), releaseCatalog, *catalogPath, gitSources); err != nil {
+		fmt.Fprintf(os.Stderr, "%s release catalog import: %v\n", mode, err)
+		return 1
+	}
 	adminToken := tokenFromEnv(*adminTokenEnv)
 	jobTokenSecret := firstNonEmpty(tokenFromEnv(*jobTokenSecretEnv), adminToken)
 	secretKey := effectiveSecretKey(tokenFromEnv(*secretKeyEnv))
@@ -120,8 +129,8 @@ func runServer(args []string, mode string) int {
 	combinedMode := mode == "standalone"
 	handler := server.New(server.Config{
 		Store:              stateStore,
-		Catalog:            fileCatalog,
-		Syncer:             &syncer.Syncer{Store: bundle.NewLocalStore(*storeDir), Catalog: fileCatalog},
+		Catalog:            releaseCatalog,
+		Syncer:             &syncer.Syncer{Store: bundle.NewLocalStore(*storeDir)},
 		GitSources:         gitSources,
 		EnableControlAPI:   mode == "control-plane" || combinedMode,
 		EnableExecutionAPI: mode == "execution-api" || combinedMode,
@@ -364,6 +373,31 @@ func openStateStore(ctx context.Context, backend string, path string, databaseUR
 	default:
 		return nil, func() {}, fmt.Errorf("unsupported state backend %q", backend)
 	}
+}
+
+func importReleaseCatalog(ctx context.Context, target catalog.Store, catalogPath string, sources *gitsource.FileRegistry) error {
+	imported, err := catalog.NewFileCatalog(catalogPath).Load(ctx)
+	if err != nil {
+		return err
+	}
+	sourceSnapshot, err := sources.Load(ctx)
+	if err != nil {
+		return err
+	}
+	catalog.NormalizeSnapshot(&imported)
+	for _, source := range sourceSnapshot.Sources {
+		if source.LastSyncedCommit == nil || source.LastSyncedAt == nil {
+			continue
+		}
+		marker := catalog.SourceReleaseMarker{
+			Workspace:   contract.NormalizeWorkspace(source.Workspace),
+			GitSourceID: source.ID,
+			Commit:      *source.LastSyncedCommit,
+			ReleasedAt:  source.LastSyncedAt.UTC(),
+		}
+		imported.SourceMarkers[catalog.SourceReleaseKey(marker.Workspace, marker.GitSourceID)] = marker
+	}
+	return target.ImportCatalog(ctx, imported)
 }
 
 func tokenFromEnv(name string) string {

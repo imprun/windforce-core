@@ -29,6 +29,12 @@ Publishing a release materializes the source bundle and action schemas before
 the catalog points at that release. Workers and protocol adapters never clone a
 repository or read repository credentials.
 
+The selected state backend owns the active release catalog. A publication writes
+the active release, immutable release history, source release marker, and audit
+record in one transaction. Local mode persists the catalog in its state JSON
+file; PostgreSQL mode persists it in control-plane tables shared by the Control
+Plane and Execution API.
+
 ## Trigger Plane
 
 The Trigger Plane is a set of protocol adapters. A protocol adapter owns only

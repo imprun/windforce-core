@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/imprun/windforce-lite/internal/catalog"
 	"github.com/imprun/windforce-lite/internal/contract"
 )
 
@@ -950,6 +951,7 @@ func newSnapshot() Snapshot {
 }
 
 func ensureSnapshot(snapshot *Snapshot) {
+	catalog.NormalizeSnapshot(&snapshot.ReleaseCatalog)
 	if snapshot.Runs == nil {
 		snapshot.Runs = map[string]Run{}
 	}
