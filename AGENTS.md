@@ -50,6 +50,9 @@ Engine contract decisions are recorded as public ADRs in
 worker protocol. General docs describe the current contract only; history and
 rationale live in ADRs.
 
+Do not hard-wrap markdown prose: one paragraph per line, soft wrap. Convert
+existing files only when touching them — no bulk reformatting.
+
 ## Workflow
 
 - Every commit is signed off under the DCO: `git commit -s`. See
