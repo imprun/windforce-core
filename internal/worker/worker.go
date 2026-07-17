@@ -29,6 +29,7 @@ type Processor struct {
 	LogFlushInterval  time.Duration
 	LogCapBytes       int
 	LogJobPayloads    bool
+	RuntimeBindings   RuntimeBindings
 }
 
 // workerID resolves a stable identity for both the claim path and the
@@ -106,6 +107,21 @@ func (p *Processor) ProcessOne(ctx context.Context) (bool, error) {
 		return completeProcessed(p.Store.CompleteJobFailed(ctx, lease, result))
 	}
 	logJobInput(p.LogJobPayloads, job.ID, job.Payload.App, job.Payload.Action, input)
+	input = state.StripReservedRuntimeInput(input)
+	input, err = p.RuntimeBindings.Apply(input)
+	if err != nil {
+		outcome = "failed"
+		jobError = "could not apply runtime bindings"
+		result := contract.JobResult{
+			JobID:    job.ID,
+			App:      job.Payload.App,
+			Action:   job.Payload.Action,
+			Output:   actionruntime.ErrorResult("RuntimeBindingError", "could not apply runtime bindings"),
+			ExitCode: -1,
+			Error:    "could not apply runtime bindings",
+		}
+		return completeProcessed(p.Store.CompleteJobFailed(ctx, lease, result))
+	}
 	jobToken := ""
 	if provider, ok := p.Store.(JobTokenProvider); ok {
 		jobToken = provider.JobTokenFor(job.ID)

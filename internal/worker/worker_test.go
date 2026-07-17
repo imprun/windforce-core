@@ -135,6 +135,58 @@ func TestProcessorAppliesInputConfigBeforeExecution(t *testing.T) {
 	}
 }
 
+func TestProcessorOwnsRuntimeBindings(t *testing.T) {
+	processor, stateStore, run := newProcessorTestHarness(t, "echo")
+	processor.RuntimeBindings = RuntimeBindings{
+		AuthSession: AuthSessionBinding{
+			ServiceURL: "http://auth-session:8005",
+			JWT:        "worker-token",
+			Timeout:    12 * time.Second,
+		},
+	}
+	if _, err := stateStore.SetInputConfig(context.Background(), state.InputConfig{
+		WorkspaceID: "workspace-a", AppKey: "echo", ActionKey: "echo",
+		Config: json.RawMessage(`{
+			"_SCRAPING_RUNTIME":{"authSession":{"serviceUrl":"http://stale","jwt":"stale","timeoutMs":1}},
+			"region":"kr"
+		}`),
+	}, "operator"); err != nil {
+		t.Fatal(err)
+	}
+	processed, err := processor.ProcessOne(context.Background())
+	if err != nil || !processed {
+		t.Fatalf("ProcessOne = %v, %v", processed, err)
+	}
+	completed, err := stateStore.GetRun(context.Background(), run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output struct {
+		Input map[string]json.RawMessage `json:"input"`
+	}
+	if err := json.Unmarshal(completed.Output, &output); err != nil {
+		t.Fatal(err)
+	}
+	if string(output.Input["region"]) != `"kr"` {
+		t.Fatalf("business input setting missing: %s", completed.Output)
+	}
+	var runtimePayload struct {
+		AuthSession struct {
+			ServiceURL string `json:"serviceUrl"`
+			JWT        string `json:"jwt"`
+			TimeoutMs  int64  `json:"timeoutMs"`
+		} `json:"authSession"`
+	}
+	if err := json.Unmarshal(output.Input["_SCRAPING_RUNTIME"], &runtimePayload); err != nil {
+		t.Fatalf("runtime payload missing: %v: %s", err, completed.Output)
+	}
+	if runtimePayload.AuthSession.ServiceURL != "http://auth-session:8005" ||
+		runtimePayload.AuthSession.JWT != "worker-token" ||
+		runtimePayload.AuthSession.TimeoutMs != 12000 {
+		t.Fatalf("runtime payload = %#v", runtimePayload.AuthSession)
+	}
+}
+
 func TestProcessorRejectsLockedInputConfig(t *testing.T) {
 	processor, stateStore, run := newProcessorTestHarness(t, "echo")
 	if _, err := stateStore.SetInputConfig(context.Background(), state.InputConfig{

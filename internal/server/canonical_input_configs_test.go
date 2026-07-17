@@ -69,6 +69,7 @@ func TestCanonicalInputConfigLifecycleAndExecutionAdmission(t *testing.T) {
 	var client state.Client
 	do(http.MethodPost, "/api/w/ws-a/clients", `{"name":"Client A","external_key":"external-a"}`, http.StatusCreated, &client)
 	do(http.MethodPut, "/api/w/ws-a/apps/shop/input-configs", `{"config":{"region":"kr"},"locked_keys":[]}`, http.StatusOK, nil)
+	do(http.MethodPut, "/api/w/ws-a/apps/shop/input-configs", `{"config":{"_SCRAPING_RUNTIME":{"authSession":{"serviceUrl":"http://example.invalid"}}},"locked_keys":[]}`, http.StatusBadRequest, nil)
 	do(http.MethodPut, "/api/w/ws-a/apps/shop/input-configs", `{"action_key":"orders","client_id":"`+client.ID+`","config":{"tenant":"server-only"},"locked_keys":["tenant"]}`, http.StatusOK, nil)
 	do(http.MethodPut, "/api/w/ws-a/apps/shop/input-configs", `{"config":{},"locked_keys":["missing"]}`, http.StatusBadRequest, nil)
 

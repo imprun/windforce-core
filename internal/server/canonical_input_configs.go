@@ -73,6 +73,10 @@ func (h *Handler) handleCanonicalSetInputConfig(w http.ResponseWriter, r *http.R
 	if request.Config == nil {
 		request.Config = map[string]json.RawMessage{}
 	}
+	if state.ContainsReservedRuntimeInput(request.Config) {
+		writeError(w, http.StatusBadRequest, "_SCRAPING_RUNTIME is worker-owned runtime metadata")
+		return
+	}
 	configJSON, err := json.Marshal(request.Config)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "config must be a JSON object")

@@ -436,7 +436,16 @@ app, client action, then request input. Each layer performs a shallow top-level
 merge. Locked keys are the union of all applied layers, and their configured
 values cannot be overridden by the request. Setting values are encrypted at
 rest and are merged by the worker after it decrypts the persisted job input, so
-configured values are not copied into Run or Job records.
+configured values are not copied into Run or Job records. Keys under
+`_SCRAPING_RUNTIME` are reserved for worker-owned runtime service metadata and
+cannot be stored as app input settings.
+
+Runtime service bindings are worker configuration. For example, an
+auth-session-capable worker is started with `--auth-session-url` plus either
+`--auth-session-token-file` or `--auth-session-token-env`. The worker injects
+that binding into the action input immediately before execution. Run and Job
+records keep only the caller input and the pinned release; platform service
+tokens are not part of app configuration.
 
 Release publication stores a CloudEvents event and matching Webhook deliveries
 in the same state transaction as the active release. The separate

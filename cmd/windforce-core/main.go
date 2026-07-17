@@ -100,6 +100,10 @@ func runServer(args []string, mode string) int {
 	workerID := flags.String("worker-id", "", "worker identity for standalone processing")
 	workerGroup := flags.String("worker-group", "default", "worker group name exposed to action ctx")
 	egressProxy := flags.String("egress-proxy", "", "host:port of a co-located egress proxy sidecar")
+	authSessionURL := flags.String("auth-session-url", strings.TrimSpace(os.Getenv("WINDFORCE_AUTH_SESSION_URL")), "auth-session service URL injected by the worker")
+	authSessionTokenEnv := flags.String("auth-session-token-env", "WINDFORCE_AUTH_SESSION_TOKEN", "environment variable that contains the auth-session worker token")
+	authSessionTokenFile := flags.String("auth-session-token-file", strings.TrimSpace(os.Getenv("WINDFORCE_AUTH_SESSION_TOKEN_FILE")), "file containing the auth-session worker token")
+	authSessionTimeout := flags.Duration("auth-session-timeout", envDuration("WINDFORCE_AUTH_SESSION_TIMEOUT_MS", time.Millisecond, 15*time.Second), "auth-session request timeout injected into action runtime context")
 	workerTags := flags.String("tags", "", "comma-separated route tags this worker claims")
 	workerLabels := flags.String("labels", "", "comma-separated capability labels this worker offers; sys/ labels are operator-granted")
 	jobSuccessRetention := flags.Duration("job-success-retention", envDays("WINDFORCE_LITE_JOB_SUCCESS_RETENTION_DAYS", defaultJobSuccessRetention), "how long succeeded job records are kept; 0 keeps them forever")
@@ -195,6 +199,11 @@ func runServer(args []string, mode string) int {
 	}
 
 	if mode == "standalone" {
+		runtimeBindings, err := worker.NewRuntimeBindings(*authSessionURL, *authSessionTokenEnv, *authSessionTokenFile, *authSessionTimeout)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "standalone runtime bindings: %v\n", err)
+			return 1
+		}
 		dispatcher, err := newWebhookDispatcher(stateStore, webhookDispatcherFlags, webhookMetrics)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "standalone webhook dispatcher: %v\n", err)
@@ -217,6 +226,7 @@ func runServer(args []string, mode string) int {
 			LogFlushInterval: *logFlushInterval,
 			LogCapBytes:      *logCapBytes,
 			LogJobPayloads:   *logJobPayloads,
+			RuntimeBindings:  runtimeBindings,
 		}
 		go func() {
 			if err := processor.RunLoop(context.Background(), *poll); err != nil {
@@ -269,11 +279,20 @@ func runWorker(args []string) int {
 	workerID := flags.String("worker-id", "", "worker identity")
 	workerGroup := flags.String("worker-group", "default", "worker group name exposed to action ctx")
 	egressProxy := flags.String("egress-proxy", "", "host:port of a co-located egress proxy sidecar")
+	authSessionURL := flags.String("auth-session-url", strings.TrimSpace(os.Getenv("WINDFORCE_AUTH_SESSION_URL")), "auth-session service URL injected by the worker")
+	authSessionTokenEnv := flags.String("auth-session-token-env", "WINDFORCE_AUTH_SESSION_TOKEN", "environment variable that contains the auth-session worker token")
+	authSessionTokenFile := flags.String("auth-session-token-file", strings.TrimSpace(os.Getenv("WINDFORCE_AUTH_SESSION_TOKEN_FILE")), "file containing the auth-session worker token")
+	authSessionTimeout := flags.Duration("auth-session-timeout", envDuration("WINDFORCE_AUTH_SESSION_TIMEOUT_MS", time.Millisecond, 15*time.Second), "auth-session request timeout injected into action runtime context")
 	workerTags := flags.String("tags", "", "comma-separated route tags this worker claims")
 	workerLabels := flags.String("labels", "", "comma-separated capability labels this worker offers; sys/ labels are operator-granted")
 	once := flags.Bool("once", false, "process at most one queued job and exit")
 	if err := flags.Parse(args); err != nil {
 		return 2
+	}
+	runtimeBindings, err := worker.NewRuntimeBindings(*authSessionURL, *authSessionTokenEnv, *authSessionTokenFile, *authSessionTimeout)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "worker runtime bindings: %v\n", err)
+		return 1
 	}
 
 	stateStore, closeState, err := openStateStore(context.Background(), *stateBackend, *statePath, *databaseURL, *migrate)
@@ -310,6 +329,7 @@ func runWorker(args []string) int {
 			LogFlushInterval: *logFlushInterval,
 			LogCapBytes:      *logCapBytes,
 			LogJobPayloads:   *logJobPayloads,
+			RuntimeBindings:  runtimeBindings,
 		}
 		if *once {
 			processed, err := processor.ProcessOne(context.Background())
@@ -356,6 +376,7 @@ func runWorker(args []string) int {
 		LogFlushInterval: *logFlushInterval,
 		LogCapBytes:      *logCapBytes,
 		LogJobPayloads:   *logJobPayloads,
+		RuntimeBindings:  runtimeBindings,
 	}
 	if *once {
 		processed, err := processor.ProcessOne(context.Background())
@@ -681,8 +702,8 @@ func printUsage(file *os.File) {
 	fmt.Fprintln(file, "  windforce-core version")
 	fmt.Fprintln(file, "  windforce-core control-plane [--addr :8080] [--state-backend local|postgres] [--git-sources <path>]")
 	fmt.Fprintln(file, "  windforce-core execution-api [--addr :8080] [--state-backend local|postgres]")
-	fmt.Fprintln(file, "  windforce-core worker [--state-backend local|postgres] [--worker-group default] [--egress-proxy host:port] [--bun-path <path>] [--python-path <path>] [--go-path <path>] [--prepare-timeout 5m] [--once]")
+	fmt.Fprintln(file, "  windforce-core worker [--state-backend local|postgres] [--worker-group default] [--egress-proxy host:port] [--auth-session-url <url>] [--bun-path <path>] [--python-path <path>] [--go-path <path>] [--prepare-timeout 5m] [--once]")
 	fmt.Fprintln(file, "  windforce-core webhook-dispatcher [--state-backend local|postgres] [--database-url <url>] [--once]")
-	fmt.Fprintln(file, "  windforce-core standalone [--addr :8080] [--state-backend local|postgres] [--worker-group default] [--egress-proxy host:port] [--git-sources <path>] [--bun-path <path>] [--python-path <path>] [--go-path <path>] [--prepare-timeout 5m]")
+	fmt.Fprintln(file, "  windforce-core standalone [--addr :8080] [--state-backend local|postgres] [--worker-group default] [--egress-proxy host:port] [--auth-session-url <url>] [--git-sources <path>] [--bun-path <path>] [--python-path <path>] [--go-path <path>] [--prepare-timeout 5m]")
 	fmt.Fprintln(file, "  windforce-core run-json [flags] -- <command> [args...]")
 }
