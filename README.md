@@ -1,14 +1,17 @@
 # windforce-core
 
-`windforce-core` is a small source-sync runtime for Windforce-style apps.
+`windforce-core` is the Windforce Lite control plane and execution runtime for
+apps described by `windforce.json`.
 
 It keeps the useful core of Windforce:
 
-- register or point at a source tree
-- materialize a source-only bundle by workspace, git source id, and commit
-- publish an active app/action deployment in a catalog
+- register a repository source
+- materialize an exact source snapshot by workspace, git source id, and commit
+- prepare and publish a content-addressed execution bundle
+- select an active app release in a catalog
 - track deployment history
-- fetch the bundle before execution
+- pin the active release into each Run and Job
+- fetch the pinned execution bundle before execution
 - run the app entrypoint with `main(ctx)` and dispatch by action
 
 It intentionally does not include the full Windforce product surface:
@@ -18,13 +21,21 @@ in scope.
 
 ## Concepts
 
-- App: the deployable source bundle
+- Repository source: the Git location, branch, subpath, and credential reference
+- App: the stable executable identity declared in `windforce.json`
 - Action: one executable unit inside an app
-- Deployment: the selected app commit/digest and its action metadata
+- Synchronized revision: an exact validated source commit available for release
+- Deployment: the app, commit, bundle digest, and executable action metadata
+- Release: an immutable published deployment; one release is active for new Runs
 - Catalog: the active deployment index stored in the selected state backend
-- Bundle store: source-only object cache keyed by workspace/git-source/commit
-- Synchronized source: an immutable, validated source revision available for deployment
+- Source Store: source-only object cache keyed by workspace/git-source/commit
+- Execution Artifact Store: prepared immutable bundles keyed by SHA-256 digest
+- Worker-local cache: a disposable fetched copy of a pinned execution bundle
 - Deployment history: an audit trail of published releases
+
+Read [Core concepts](docs/concepts/core-concepts.md) for the exact storage,
+fingerprint, marker, Run, and Job definitions. The complete state flow is in
+[Release and execution lifecycle](docs/concepts/release-lifecycle.md).
 
 ## Deploy
 
@@ -99,9 +110,10 @@ A run request is admitted and executed as follows:
 1. Resolve the active app deployment and requested action.
 2. Pin the deployment, action schemas, routing, and execution settings into a
    Run and Job in one state-store transaction.
-3. Fetch the deployment source by the pinned
-   workspace/git-source/commit into a local runtime cache.
-4. Execute the app-level entrypoint from the fetched source directory.
+3. Fetch the pinned execution bundle digest from the Execution Artifact Store
+   into the worker-local bundle cache.
+4. Verify the bundle digest and preparation fingerprint, then execute the
+   app-level entrypoint from the fetched bundle.
 5. Build the Windforce `ctx` object from `input.json` and `WF_*` environment.
 6. Store stdout/stderr as job logs and expose the action output through the
    job result API.
@@ -143,10 +155,10 @@ stores the complete prepared tree under its SHA-256 digest. TypeScript uses
 code into `.windforce/bin`.
 
 Release publication only activates a synchronized revision whose execution
-bundle was prepared successfully and matches its digest. A worker fetches that immutable
-bundle, verifies that its prepared runtime fingerprint matches the worker, and
-executes it. Job processing does not clone Git repositories, install packages,
-or compile app source.
+bundle was prepared successfully and matches its digest. A worker fetches that
+immutable bundle, verifies that its preparation fingerprint is compatible with
+the worker, and executes it. Job processing does not clone Git repositories,
+install packages, or compile app source.
 
 ## Entrypoint contract
 
@@ -476,13 +488,21 @@ Windforce Core has three explicit planes:
 - Execution Plane admits Runs, owns the PostgreSQL queue, and runs Jobs.
 
 Run admission resolves and pins the active release before a Job is enqueued.
-Workers poll the queue, prepare that pinned source, and execute it. HITL pauses a
-Run in `WAITING_HUMAN`; a resume operation enqueues its next Job.
+Workers poll the queue, fetch the pinned execution bundle, validate its
+preparation fingerprint, and execute it. HITL pauses a Run in `WAITING_HUMAN`;
+a resume operation enqueues its next Job.
 
-Prepared source is cached by workspace/git-source/commit under the worker cache
-root. A `.ready` marker is written only after fetch, dependency install, and SDK
-injection complete, so a failed prepare is retried from a fresh source copy on
-the next job.
+Release publication prepares source by workspace/git-source/commit, installs
+dependencies, injects the matching SDK, and compiles when required. A `.ready`
+marker records the preparation fingerprint before the complete tree is
+published to the Execution Artifact Store under its SHA-256 digest.
+
+Each worker keeps a disposable cache by execution bundle digest. The
+`.windforce-execution-ready` marker is written only after that worker has
+fetched the artifact and accepted its preparation fingerprint. Workers do not
+install dependencies, compile source, or contact Git while processing a Job.
+See [Core concepts](docs/concepts/core-concepts.md) for the distinction between
+the two markers.
 
 Process roles are separated:
 

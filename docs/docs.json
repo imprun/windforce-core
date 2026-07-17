@@ -1,0 +1,26 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "Windforce Lite",
+  "colors": {
+    "primary": "#0F766E",
+    "light": "#14B8A6",
+    "dark": "#115E59"
+  },
+  "navigation": {
+    "groups": [
+      {
+        "group": "Getting started",
+        "pages": ["index"]
+      },
+      {
+        "group": "Concepts",
+        "pages": [
+          "concepts/core-concepts",
+          "concepts/release-lifecycle",
+          "architecture"
+        ]
+      }
+    ]
+  }
+}

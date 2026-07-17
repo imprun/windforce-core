@@ -1,4 +1,7 @@
-# Architecture
+---
+title: Architecture
+description: Control, Trigger, and Execution Plane ownership in Windforce Lite.
+---
 
 Windforce Core separates deployment management, protocol ingress, and action
 execution into three planes. Compose runs the Control Plane, Execution API,
@@ -9,20 +12,25 @@ combines them for single-process development without changing their contracts.
 operators / CI / Web UI
           |
           v
-    Control Plane ------> source bundles + active release catalog
-          |                       |
-          v                       |
- event + delivery outbox          |
-          |                       |
-          v                       |
- Webhook Dispatcher ---> signed HTTPS endpoint
-                                  |
-HTTP / queue / scheduler          |
-protocol adapters                 v
-          +------------> Execution API ----> PostgreSQL queue
-                                  |                 |
-                                  |                 v
-                                  +-----------> runtime workers
+    Control Plane ---> Source Store ---> Execution Artifact Store
+          |                 |                       |
+          |                 +-- Publish Release ----+
+          v                                         |
+ active release catalog                             |
+          |                                         |
+          v                                         |
+ event + delivery outbox                            |
+          |                                         |
+          v                                         |
+ Webhook Dispatcher ---> signed HTTPS endpoint      |
+                                                    |
+HTTP / queue / scheduler                            |
+protocol adapters                                   |
+          |                                         |
+          v                                         v
+    Execution API ----> PostgreSQL queue ----> runtime workers
+          |                                         |
+          +-- pins active release into Job          +-- local bundle cache
 ```
 
 ## Control Plane
@@ -42,6 +50,16 @@ changing the active catalog. Publishing prepares the latest synchronized
 revision as a worker-ready execution bundle before the catalog points at that
 release. Workers and protocol adapters never clone a repository or read
 repository credentials.
+
+The Source Store contains exact source snapshots keyed by workspace, repository
+source ID, and commit. The Execution Artifact Store contains complete prepared
+trees keyed by SHA-256 digest. A worker keeps only a disposable local copy of a
+pinned execution bundle. The current filesystem-backed deployment requires the
+release builder and workers to access the same persistent artifact root. See
+[Core concepts](concepts/core-concepts.md) for the store, cache, fingerprint,
+and marker definitions, and
+[Release and execution lifecycle](concepts/release-lifecycle.md) for the state
+transitions.
 
 The selected state backend owns the active release catalog. A publication writes
 the active release, immutable release history, source release marker, and audit
