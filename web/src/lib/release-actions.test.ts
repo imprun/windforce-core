@@ -20,6 +20,17 @@ describe("releaseActionState", () => {
     });
   });
 
+  test("re-enables publication after rollback leaves a newer synchronized revision", () => {
+    const rolledBackCommit = "stable-commit";
+    const latestSynchronizedCommit = "newer-commit";
+    expect(releaseActionState(rolledBackCommit, latestSynchronizedCommit, true, true)).toEqual({
+      syncLabel: "Source current",
+      syncDisabled: true,
+      publishLabel: "Publish Release",
+      publishDisabled: false,
+    });
+  });
+
   test("prevents an accidental duplicate release", () => {
     expect(releaseActionState("same", "same", true, true)).toEqual({
       syncLabel: "Source current",

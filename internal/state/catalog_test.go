@@ -151,6 +151,58 @@ func TestPostgresReleaseCatalogContract(t *testing.T) {
 	}
 }
 
+func TestPostgresReleaseRollbackMovesActiveHistoryPointer(t *testing.T) {
+	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("WINDFORCE_LITE_POSTGRES_TEST_DSN is not set")
+	}
+	ctx := context.Background()
+	store := openIsolatedPostgresCatalogStore(t, dsn)
+	first := releaseCatalogDeployment("workspace-a", "source-a", "echo", "commit-a")
+	first.BundleDigest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	second := releaseCatalogDeployment("workspace-a", "source-a", "echo", "commit-b")
+	second.BundleDigest = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	if _, err := store.PublishRelease(ctx, first, time.Date(2026, 7, 18, 3, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SaveReleaseCandidate(ctx, second, time.Date(2026, 7, 18, 3, 1, 0, 0, time.UTC)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.PublishRelease(ctx, second, time.Date(2026, 7, 18, 3, 2, 0, 0, time.UTC)); err != nil {
+		t.Fatal(err)
+	}
+	before, err := store.LoadCatalog(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := store.RollbackRelease(ctx, catalog.ReleaseRollbackRequest{
+		Workspace: "workspace-a", App: "echo", ReleaseID: before.History[0].ID,
+		Actor: "operator", Reason: "restore stable release",
+		RolledBackAt: time.Date(2026, 7, 18, 3, 3, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := store.LoadCatalog(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := catalog.DeploymentKey("workspace-a", "echo")
+	if after.ActiveHistoryIDs[key] != before.History[0].ID || after.Deployments[key].Commit != "commit-a" {
+		t.Fatalf("active release = id %q deployment %#v", after.ActiveHistoryIDs[key], after.Deployments[key])
+	}
+	if len(after.History) != 2 || len(after.Audit) != 3 {
+		t.Fatalf("rollback counts = history:%d audit:%d", len(after.History), len(after.Audit))
+	}
+	latest, err := store.GetLatestReleaseCandidate(ctx, "workspace-a", "source-a")
+	if err != nil || latest.Deployment.Commit != "commit-b" {
+		t.Fatalf("latest candidate = %#v err=%v", latest, err)
+	}
+	if result.PreviousReleaseID != before.History[1].ID || result.Audit.Kind != "release_rolled_back" {
+		t.Fatalf("rollback result = %#v", result)
+	}
+}
+
 func TestPostgresReleaseCandidateAndSourceOperationLeaseContract(t *testing.T) {
 	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
 	if dsn == "" {

@@ -169,7 +169,7 @@ func ValidateSubscription(subscription Subscription) error {
 		return invalid("at least one event type is required")
 	}
 	for _, eventType := range subscription.EventTypes {
-		if eventType != controlevent.ReleasePublishedType {
+		if eventType != controlevent.ReleasePublishedType && eventType != controlevent.ReleaseRolledBackType {
 			return invalid("unsupported event type %q", eventType)
 		}
 	}

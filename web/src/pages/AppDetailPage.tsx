@@ -1,3 +1,4 @@
+import { RotateCcw } from "lucide-react";
 import { useState } from "react";
 import { Layout } from "../components/Layout";
 import { ReleaseMarkdown } from "../components/ReleaseMarkdown";
@@ -12,6 +13,7 @@ import {
 } from "../components/ui";
 import { StatTile, WindowSelector, windowLabel } from "../components/stats";
 import { PublishReleaseDialog } from "../features/PublishReleaseDialog";
+import { RollbackReleaseDialog } from "../features/RollbackReleaseDialog";
 import { SourceReleaseActions } from "../features/SourceReleaseActions";
 import { RepositorySettings } from "../features/RepositorySettings";
 import { AppInputSettings } from "../features/AppInputSettings";
@@ -23,6 +25,7 @@ import {
   type AppDocumentation,
   type AppSummary,
   type GitSource,
+  type HistoryItem,
 } from "../lib/api";
 import { actionDisplayName } from "../lib/action-label";
 import { useApp, useAsync } from "../lib/app-context";
@@ -187,6 +190,11 @@ export function AppDetailPage({
           released={Boolean(app)}
           repoURL={source?.repo_url || ""}
           refreshRevision={releaseHistoryRevision}
+          onRolledBack={() => {
+            setReleaseHistoryRevision((current) => current + 1);
+            setActionRevision((current) => current + 1);
+            state.reload();
+          }}
         />
       ) : null}
       {activeTab === "audit" ? <AuditTab sourceID={sourceID} appKey={app?.app_key || source?.name || ""} /> : null}
@@ -315,19 +323,23 @@ function ReleasesTab({
   released,
   repoURL,
   refreshRevision,
+  onRolledBack,
 }: {
   appKey: string;
   released: boolean;
   repoURL: string;
   refreshRevision: number;
+  onRolledBack: () => void;
 }) {
   const { api } = useApp();
+  const [rollbackTarget, setRollbackTarget] = useState<HistoryItem | null>(null);
   const state = useAsync(async () => (released ? api.appHistory(appKey) : Promise.resolve([])), [
     api,
     appKey,
     released,
     refreshRevision,
   ]);
+  const activeRelease = state.data?.find((item) => item.active) || null;
 
   return (
     <Panel title="Release history" subtitle="Who published which worker-visible contract, and why. Configuration changes are on the Audit tab.">
@@ -341,17 +353,30 @@ function ReleasesTab({
           <table className="table" id="releaseHistory">
             <thead>
               <tr>
+                <th>Status</th>
                 <th>When</th>
                 <th>Actor</th>
                 <th>Commit</th>
                 <th>Source</th>
-                <th title="Unique identifier for this publish operation">Publish ID</th>
+                <th title="Immutable identifier used for active release selection and rollback">Release ID</th>
                 <th>Note</th>
+                <th>Action</th>
               </tr>
             </thead>
             <tbody>
               {state.data.map((item) => (
-                <tr key={item.id}>
+                <tr key={item.id} className={item.active ? "activeReleaseRow" : undefined}>
+                  <td>
+                    {item.active ? (
+                      <span className={`badge ${item.bundle_status === "ready" ? "badge-good" : "badge-warning"}`}>
+                        {item.bundle_status === "ready" ? "Active" : "Active · bundle missing"}
+                      </span>
+                    ) : item.bundle_status === "ready" ? (
+                      <span className="badge badge-neutral">Historical</span>
+                    ) : (
+                      <span className="badge badge-warning">Bundle missing</span>
+                    )}
+                  </td>
                   <td>
                     <span className="cellTitle">{formatRelative(item.created_at)}</span>
                     <span className="cellSub">{formatTime(item.created_at)}</span>
@@ -362,20 +387,39 @@ function ReleasesTab({
                   </td>
                   <td>{item.source}</td>
                   <td className="mono">
-                    {item.deployment_id ? (
-                      <span title={item.deployment_id} aria-label={`Publish ID ${item.deployment_id}`}>
-                        {shortSHA(item.deployment_id, 12)}
-                      </span>
-                    ) : (
-                      "—"
-                    )}
+                    <span title={item.id} aria-label={`Release ID ${item.id}`}>
+                      {shortSHA(item.id, 12)}
+                    </span>
                   </td>
                   <td>{item.message || "—"}</td>
+                  <td>
+                    {!item.active && item.bundle_status === "ready" ? (
+                      <button className="button small" type="button" onClick={() => setRollbackTarget(item)}>
+                        <RotateCcw size={15} aria-hidden="true" />
+                        Rollback
+                      </button>
+                    ) : (
+                      <span className="cellSub">—</span>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+      ) : null}
+      {rollbackTarget ? (
+        <RollbackReleaseDialog
+          appKey={appKey}
+          target={rollbackTarget}
+          active={activeRelease}
+          onClose={() => setRollbackTarget(null)}
+          onRolledBack={() => {
+            setRollbackTarget(null);
+            state.reload();
+            onRolledBack();
+          }}
+        />
       ) : null}
     </Panel>
   );

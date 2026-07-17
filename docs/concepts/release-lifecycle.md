@@ -130,14 +130,16 @@ install dependencies, inject an SDK, or compile application source.
 | Register | Access probe only | No | No | No | No |
 | Sync | Yes | Yes | No | No | No |
 | Publish Release | No | Reads only | Yes | Yes, after validation | No |
+| Rollback Release | No | No | Validates only | Yes, after validation | No |
 | Run admission | No | No | No | No | Yes |
 | Worker execution | No | No | Reads only | No | Claims the pinned Job |
 
-## Publishing corrected source
+## Roll back to a historical release
 
-The current publication API activates the latest synchronized candidate; it
-does not expose historical release selection as a rollback operation. To
-recover using an earlier implementation, restore that implementation in Git,
-Sync the resulting commit, and Publish Release. Existing queued Jobs remain
-pinned to their original releases, while newly admitted Runs use the corrected
-active release.
+Rollback selects an immutable historical Release ID, validates that its stored execution bundle is still available, and atomically moves the Control Plane Active Release Pointer to that release. It does not synchronize Git, install dependencies, rebuild source, create another release-history record, or change the latest synchronized candidate.
+
+Existing Runs and Jobs keep the release snapshot pinned at admission. New Runs pin the selected historical release. The rollback actor and reason are recorded in the app audit trail and emitted as a `windforce.release.rolled_back` control-plane event.
+
+After rollback, a newer synchronized candidate remains available. Publish Release is enabled whenever that candidate commit differs from the active historical release, so operators can return to the newer release through the normal publish flow.
+
+The Control Plane Active Release Pointer identifies which immutable release is used for new Runs. The worker-local `.windforce-execution-ready` file only proves that a specific execution bundle digest is prepared in that worker cache; it does not select the active release.

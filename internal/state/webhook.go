@@ -168,6 +168,19 @@ func prepareReleaseEvent(history catalog.DeploymentHistory, previous *catalog.De
 	return controlevent.NewReleasePublished(NewID("evt"), history.CreatedAt, data)
 }
 
+func prepareReleaseRollbackEvent(result catalog.ReleaseRollbackResult) (controlevent.Envelope, error) {
+	return controlevent.NewReleaseRolledBack(NewID("evt"), result.RolledBackAt, controlevent.ReleaseRolledBackData{
+		Workspace:         result.Target.Workspace,
+		AppKey:            result.Target.App,
+		ReleaseID:         result.Target.ID,
+		Commit:            result.Target.Commit,
+		PreviousReleaseID: result.PreviousReleaseID,
+		PreviousCommit:    result.PreviousCommit,
+		Actor:             result.Audit.Actor,
+		Reason:            result.Reason,
+	})
+}
+
 func latestReleaseHistory(snapshot catalog.Snapshot, workspaceID string, appKey string) *catalog.DeploymentHistory {
 	for index := len(snapshot.History) - 1; index >= 0; index-- {
 		history := snapshot.History[index]

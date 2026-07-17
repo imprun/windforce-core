@@ -10,6 +10,7 @@ import (
 
 	"github.com/imprun/windforce-core/internal/catalog"
 	"github.com/imprun/windforce-core/internal/contract"
+	"github.com/imprun/windforce-core/internal/event"
 	"github.com/imprun/windforce-core/internal/webhook"
 )
 
@@ -91,48 +92,140 @@ VALUES ($1, $2, $3, $4, $5, $6)
 `, releaseEvent.ID, history.Workspace, releaseEvent.Type, releaseEvent.Subject, eventJSON, releaseEvent.Time); err != nil {
 			return err
 		}
-		rows, err := tx.Query(ctx, `
+		return postgresEnqueueEventDeliveries(ctx, tx, releaseEvent, history.Workspace, history.App, time.Now().UTC())
+	})
+	return deployment, err
+}
+
+func (s *PostgresStore) RollbackRelease(ctx context.Context, request catalog.ReleaseRollbackRequest) (catalog.ReleaseRollbackResult, error) {
+	request, err := catalog.PrepareReleaseRollbackRequest(request)
+	if err != nil {
+		return catalog.ReleaseRollbackResult{}, err
+	}
+	var result catalog.ReleaseRollbackResult
+	err = s.withTx(ctx, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, request.Workspace+"/"+request.App); err != nil {
+			return err
+		}
+		var historyJSON []byte
+		err := tx.QueryRow(ctx, `
+SELECT record
+FROM control_release_history
+WHERE id = $1 AND workspace_id = $2 AND app_key = $3
+FOR SHARE
+`, request.ReleaseID, request.Workspace, request.App).Scan(&historyJSON)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return catalog.ErrReleaseNotFound
+		}
+		if err != nil {
+			return err
+		}
+		var target catalog.DeploymentHistory
+		if err := json.Unmarshal(historyJSON, &target); err != nil {
+			return err
+		}
+		previous, err := postgresPreviousRelease(ctx, tx, request.Workspace, request.App)
+		if err != nil {
+			return err
+		}
+		if previous == nil {
+			return catalog.ErrDeploymentNotFound
+		}
+		if previous.ID == "" {
+			return errors.New("active release history id is unavailable")
+		}
+		if previous.ID == target.ID {
+			return catalog.ErrReleaseAlreadyActive
+		}
+		result = catalog.NewReleaseRollbackResult(target, previous.ID, previous.Commit, request)
+		deploymentJSON, err := json.Marshal(target.Deployment)
+		if err != nil {
+			return err
+		}
+		auditJSON, err := json.Marshal(result.Audit)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `
+UPDATE control_active_release
+SET history_id = $3, deployment = $4, updated_at = $5
+WHERE workspace_id = $1 AND app_key = $2
+`, request.Workspace, request.App, target.ID, deploymentJSON, request.RolledBackAt); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `
+INSERT INTO control_source_release_marker (workspace_id, git_source_id, commit_sha, released_at)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (workspace_id, git_source_id) DO UPDATE SET
+    commit_sha = EXCLUDED.commit_sha,
+    released_at = EXCLUDED.released_at
+`, request.Workspace, catalog.ReleaseGitSourceID(target), target.Commit, request.RolledBackAt); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `
+INSERT INTO control_audit (id, workspace_id, git_source_id, app_key, kind, record, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+`, result.Audit.ID, result.Audit.Workspace, result.Audit.GitSourceID, result.Audit.App, result.Audit.Kind, auditJSON, result.Audit.CreatedAt); err != nil {
+			return err
+		}
+		rollbackEvent, err := prepareReleaseRollbackEvent(result)
+		if err != nil {
+			return err
+		}
+		eventJSON, err := json.Marshal(rollbackEvent)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `
+INSERT INTO control_plane_event (id, workspace_id, event_type, subject, body, created_at)
+VALUES ($1, $2, $3, $4, $5, $6)
+`, rollbackEvent.ID, request.Workspace, rollbackEvent.Type, rollbackEvent.Subject, eventJSON, rollbackEvent.Time); err != nil {
+			return err
+		}
+		return postgresEnqueueEventDeliveries(ctx, tx, rollbackEvent, request.Workspace, request.App, request.RolledBackAt)
+	})
+	return result, err
+}
+
+func postgresEnqueueEventDeliveries(ctx context.Context, tx pgx.Tx, event event.Envelope, workspaceID string, appKey string, now time.Time) error {
+	rows, err := tx.Query(ctx, `
 SELECT `+webhookSubscriptionColumns+`
 FROM webhook_subscription
 WHERE workspace_id = $1 AND enabled = true AND deleted_at IS NULL
 FOR SHARE
-`, history.Workspace)
+`, workspaceID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	subscriptions := make([]WebhookSubscriptionRecord, 0)
+	for rows.Next() {
+		record, err := scanWebhookSubscription(rows)
 		if err != nil {
 			return err
 		}
-		subscriptions := make([]WebhookSubscriptionRecord, 0)
-		for rows.Next() {
-			record, err := scanWebhookSubscription(rows)
-			if err != nil {
-				rows.Close()
-				return err
-			}
-			subscriptions = append(subscriptions, record)
+		subscriptions = append(subscriptions, record)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	rows.Close()
+	for _, record := range subscriptions {
+		candidate := subscriptionFromRecord(record, "", "")
+		if !webhook.Matches(candidate, event.Type, appKey) {
+			continue
 		}
-		if err := rows.Err(); err != nil {
-			rows.Close()
-			return err
-		}
-		rows.Close()
-		outboxAt := time.Now().UTC()
-		for _, record := range subscriptions {
-			candidate := subscriptionFromRecord(record, "", "")
-			if !webhook.Matches(candidate, releaseEvent.Type, history.App) {
-				continue
-			}
-			delivery := newWebhookDelivery(releaseEvent, history.Workspace, record.ID, outboxAt)
-			if _, err := tx.Exec(ctx, `
+		delivery := newWebhookDelivery(event, workspaceID, record.ID, now)
+		if _, err := tx.Exec(ctx, `
 INSERT INTO webhook_delivery (
     id, workspace_id, event_id, subscription_id, state, attempt, next_attempt_at,
     created_at, updated_at
 ) VALUES ($1, $2, $3, $4, $5, 0, $6, $6, $6)
 `, delivery.ID, delivery.WorkspaceID, delivery.EventID, delivery.SubscriptionID, delivery.State, delivery.NextAttemptAt); err != nil {
-				return err
-			}
+			return err
 		}
-		return nil
-	})
-	return deployment, err
+	}
+	return nil
 }
 
 func postgresPreviousRelease(ctx context.Context, tx pgx.Tx, workspaceID string, appKey string) (*catalog.DeploymentHistory, error) {
@@ -161,6 +254,35 @@ FOR UPDATE
 	}
 	if historyID != nil {
 		previous.ID = *historyID
+	}
+	if previous.ID == "" {
+		rows, err := tx.Query(ctx, `
+SELECT record
+FROM control_release_history
+WHERE workspace_id = $1 AND app_key = $2
+ORDER BY created_at DESC, id DESC
+`, contract.NormalizeWorkspace(workspaceID), appKey)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var raw []byte
+			if err := rows.Scan(&raw); err != nil {
+				return nil, err
+			}
+			var history catalog.DeploymentHistory
+			if err := json.Unmarshal(raw, &history); err != nil {
+				return nil, err
+			}
+			if catalog.MatchesPublishedDeployment(deployment, history) {
+				previous.ID = history.ID
+				break
+			}
+		}
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
 	}
 	return previous, nil
 }
@@ -191,15 +313,16 @@ WHERE workspace_id = $1 AND app_key = $2
 
 func (s *PostgresStore) LoadCatalog(ctx context.Context) (catalog.Snapshot, error) {
 	snapshot := catalog.NewSnapshot()
-	rows, err := s.pool.Query(ctx, `SELECT workspace_id, app_key, deployment FROM control_active_release`)
+	rows, err := s.pool.Query(ctx, `SELECT workspace_id, app_key, history_id, deployment FROM control_active_release`)
 	if err != nil {
 		return catalog.Snapshot{}, err
 	}
 	for rows.Next() {
 		var workspace string
 		var app string
+		var historyID *string
 		var raw []byte
-		if err := rows.Scan(&workspace, &app, &raw); err != nil {
+		if err := rows.Scan(&workspace, &app, &historyID, &raw); err != nil {
 			rows.Close()
 			return catalog.Snapshot{}, err
 		}
@@ -208,7 +331,11 @@ func (s *PostgresStore) LoadCatalog(ctx context.Context) (catalog.Snapshot, erro
 			rows.Close()
 			return catalog.Snapshot{}, err
 		}
-		snapshot.Deployments[catalog.DeploymentKey(workspace, app)] = deployment
+		key := catalog.DeploymentKey(workspace, app)
+		snapshot.Deployments[key] = deployment
+		if historyID != nil {
+			snapshot.ActiveHistoryIDs[key] = *historyID
+		}
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
@@ -267,6 +394,7 @@ func (s *PostgresStore) LoadCatalog(ctx context.Context) (catalog.Snapshot, erro
 		return catalog.Snapshot{}, err
 	}
 	snapshot.SourceMarkers = markers
+	catalog.NormalizeSnapshot(&snapshot)
 	return snapshot, nil
 }
 
@@ -391,7 +519,10 @@ ON CONFLICT (id) DO NOTHING
 			if err != nil {
 				return err
 			}
-			historyID := importedHistoryID(imported.History, deployment)
+			historyID := imported.ActiveHistoryIDs[catalog.DeploymentKey(deployment.SourceWorkspace(), deployment.App)]
+			if historyID == "" {
+				historyID = importedHistoryID(imported.History, deployment)
+			}
 			updatedAt := deploymentUpdatedAt(deployment)
 			if _, err := tx.Exec(ctx, `
 INSERT INTO control_active_release (workspace_id, app_key, history_id, deployment, updated_at)

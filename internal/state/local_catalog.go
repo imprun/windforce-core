@@ -22,7 +22,9 @@ func (s *LocalStore) PublishRelease(ctx context.Context, deployment contract.Dep
 		releaseCatalog := &snapshot.ReleaseCatalog
 		catalog.NormalizeSnapshot(releaseCatalog)
 		previous := latestReleaseHistory(*releaseCatalog, published.SourceWorkspace(), published.App)
-		releaseCatalog.Deployments[catalog.DeploymentKey(published.SourceWorkspace(), published.App)] = published
+		deploymentKey := catalog.DeploymentKey(published.SourceWorkspace(), published.App)
+		releaseCatalog.Deployments[deploymentKey] = published
+		releaseCatalog.ActiveHistoryIDs[deploymentKey] = history.ID
 		releaseCatalog.History = append(releaseCatalog.History, history)
 		releaseCatalog.Audit = append(releaseCatalog.Audit, audit)
 		marker := catalog.SourceReleaseMarker{
@@ -44,6 +46,31 @@ func (s *LocalStore) PublishRelease(ctx context.Context, deployment contract.Dep
 		return nil
 	})
 	return published, err
+}
+
+func (s *LocalStore) RollbackRelease(ctx context.Context, request catalog.ReleaseRollbackRequest) (catalog.ReleaseRollbackResult, error) {
+	var result catalog.ReleaseRollbackResult
+	err := s.update(ctx, func(snapshot *Snapshot, now time.Time) error {
+		if request.RolledBackAt.IsZero() {
+			request.RolledBackAt = now
+		}
+		var err error
+		result, err = catalog.ApplyReleaseRollback(&snapshot.ReleaseCatalog, request)
+		if err != nil {
+			return err
+		}
+		rollbackEvent, err := prepareReleaseRollbackEvent(result)
+		if err != nil {
+			return err
+		}
+		snapshot.ControlPlaneEvents[rollbackEvent.ID] = rollbackEvent
+		for _, subscription := range matchingSubscriptions(snapshot.WebhookSubscriptions, result.Target.Workspace, rollbackEvent.Type, result.Target.App) {
+			delivery := newWebhookDelivery(rollbackEvent, result.Target.Workspace, subscription.ID, now)
+			snapshot.WebhookDeliveries[delivery.ID] = delivery
+		}
+		return nil
+	})
+	return result, err
 }
 
 func (s *LocalStore) GetDeployment(ctx context.Context, app string) (contract.Deployment, error) {

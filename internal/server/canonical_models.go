@@ -245,6 +245,8 @@ type canonicalAppHistoryItem struct {
 	CommitSha    string    `json:"commit_sha"`
 	Entrypoint   string    `json:"entrypoint"`
 	Source       string    `json:"source"`
+	Active       bool      `json:"active"`
+	BundleStatus string    `json:"bundle_status"`
 	DeploymentID *string   `json:"deployment_id,omitempty"`
 	Message      *string   `json:"message,omitempty"`
 	CreatedBy    *string   `json:"created_by,omitempty"`
@@ -315,12 +317,18 @@ func newCanonicalAppSummaryView(deployment contract.Deployment) canonicalAppSumm
 	}
 }
 
-func newCanonicalAppHistoryItem(item catalogpkg.DeploymentHistory) canonicalAppHistoryItem {
+func newCanonicalAppHistoryItem(item catalogpkg.DeploymentHistory, active bool) canonicalAppHistoryItem {
+	bundleStatus := "missing"
+	if item.Deployment.BundleDigest != "" {
+		bundleStatus = "ready"
+	}
 	return canonicalAppHistoryItem{
 		ID:           item.ID,
 		CommitSha:    item.Commit,
 		Entrypoint:   item.Entrypoint,
 		Source:       firstNonEmpty(item.Source, "external_sync"),
+		Active:       active,
+		BundleStatus: bundleStatus,
 		DeploymentID: cloneStringPtr(item.DeploymentID),
 		Message:      item.Message,
 		CreatedBy:    cloneStringPtr(item.CreatedBy),

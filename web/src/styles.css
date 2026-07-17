@@ -514,6 +514,10 @@ textarea {
   border-bottom: none;
 }
 
+.table tbody tr.activeReleaseRow td {
+  background: var(--status-good-bg);
+}
+
 .tableRow.clickable {
   cursor: pointer;
 }

@@ -65,6 +65,34 @@ describe("WindforceApi release flow", () => {
       globalThis.fetch = originalFetch;
     }
   });
+
+  test("rolls back by release ID with an explicit reason", async () => {
+    const requests: Array<{ url: string; method: string; headers: Headers; body: string }> = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input, init) => {
+      requests.push({
+        url: String(input),
+        method: init?.method || "GET",
+        headers: new Headers(init?.headers),
+        body: String(init?.body || ""),
+      });
+      return new Response(JSON.stringify({ active_release_id: "release-a", commit: "commit-a" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch;
+    try {
+      const api = new WindforceApi({ workspace: "default", token: "", actor: "operator" });
+      await api.rollbackAppRelease("echo", "release/a", "Restore stable release");
+      expect(requests).toHaveLength(1);
+      expect(requests[0].url).toBe("/api/w/default/apps/echo/releases/release%2Fa/rollback");
+      expect(requests[0].method).toBe("POST");
+      expect(requests[0].headers.get("x-windforce-actor")).toBe("operator");
+      expect(JSON.parse(requests[0].body)).toEqual({ confirm: true, reason: "Restore stable release" });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });
 
 describe("WindforceApi webhooks", () => {

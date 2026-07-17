@@ -29,12 +29,12 @@ Use a constant-time signature comparison and reject timestamps outside a short r
 - The same event can be delivered more than once. Persist the event `id` as the side-effect idempotency key.
 - Do not use the delivery ID for business idempotency; it identifies Windforce delivery records and retries.
 
-`control-plane-event.schema.json` is the v1 schema. The release and test fixtures contain non-sensitive example values.
+`control-plane-event.schema.json` is the v1 schema. Publish, rollback, and test fixtures contain non-sensitive example values.
 Receivers may reject unknown fields. A breaking payload change therefore requires a new contract directory and event type instead of changing v1 in place.
 
 ## Connector boundary
 
-A messenger connector verifies this contract, deduplicates event IDs durably, maps `windforce.release.published` fields into its message format, and owns messenger credentials, rate limits, templates, and delivery state. Windforce Core does not store Slack or Telegram credentials and does not render provider-specific payloads.
+A messenger connector verifies this contract, deduplicates event IDs durably, maps release publish and rollback events into its message format, and owns messenger credentials, rate limits, templates, and delivery state. Windforce Core does not store Slack or Telegram credentials and does not render provider-specific payloads.
 
 For local contract checks, run the generic receiver from the repository root:
 

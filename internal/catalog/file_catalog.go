@@ -22,11 +22,12 @@ type FileCatalog struct {
 }
 
 type Snapshot struct {
-	Deployments   map[string]contract.Deployment `json:"deployments"`
-	Candidates    map[string]ReleaseCandidate    `json:"releaseCandidates,omitempty"`
-	History       []DeploymentHistory            `json:"history,omitempty"`
-	Audit         []AuditRecord                  `json:"audit,omitempty"`
-	SourceMarkers map[string]SourceReleaseMarker `json:"sourceReleaseMarkers,omitempty"`
+	Deployments      map[string]contract.Deployment `json:"deployments"`
+	ActiveHistoryIDs map[string]string              `json:"activeHistoryIds,omitempty"`
+	Candidates       map[string]ReleaseCandidate    `json:"releaseCandidates,omitempty"`
+	History          []DeploymentHistory            `json:"history,omitempty"`
+	Audit            []AuditRecord                  `json:"audit,omitempty"`
+	SourceMarkers    map[string]SourceReleaseMarker `json:"sourceReleaseMarkers,omitempty"`
 }
 
 type SourceReleaseMarker struct {
@@ -100,7 +101,9 @@ func (c *FileCatalog) PublishRelease(ctx context.Context, deployment contract.De
 		return contract.Deployment{}, err
 	}
 	deployment, history, audit := PreparePublication(deployment, releasedAt)
-	snapshot.Deployments[DeploymentKey(deployment.SourceWorkspace(), deployment.App)] = deployment
+	deploymentKey := DeploymentKey(deployment.SourceWorkspace(), deployment.App)
+	snapshot.Deployments[deploymentKey] = deployment
+	snapshot.ActiveHistoryIDs[deploymentKey] = history.ID
 	snapshot.History = append(snapshot.History, history)
 	snapshot.Audit = append(snapshot.Audit, audit)
 	marker := SourceReleaseMarker{
@@ -114,6 +117,24 @@ func (c *FileCatalog) PublishRelease(ctx context.Context, deployment contract.De
 		return contract.Deployment{}, err
 	}
 	return deployment, nil
+}
+
+func (c *FileCatalog) RollbackRelease(ctx context.Context, request ReleaseRollbackRequest) (ReleaseRollbackResult, error) {
+	if err := ctx.Err(); err != nil {
+		return ReleaseRollbackResult{}, err
+	}
+	snapshot, err := c.Load(ctx)
+	if err != nil {
+		return ReleaseRollbackResult{}, err
+	}
+	result, err := ApplyReleaseRollback(&snapshot, request)
+	if err != nil {
+		return ReleaseRollbackResult{}, err
+	}
+	if err := c.write(snapshot); err != nil {
+		return ReleaseRollbackResult{}, err
+	}
+	return result, nil
 }
 
 func (c *FileCatalog) AppendAudit(ctx context.Context, record AuditRecord) error {
@@ -381,11 +402,12 @@ func NewReleaseAudit(history DeploymentHistory) AuditRecord {
 
 func NewSnapshot() Snapshot {
 	return Snapshot{
-		Deployments:   map[string]contract.Deployment{},
-		Candidates:    map[string]ReleaseCandidate{},
-		History:       []DeploymentHistory{},
-		Audit:         []AuditRecord{},
-		SourceMarkers: map[string]SourceReleaseMarker{},
+		Deployments:      map[string]contract.Deployment{},
+		ActiveHistoryIDs: map[string]string{},
+		Candidates:       map[string]ReleaseCandidate{},
+		History:          []DeploymentHistory{},
+		Audit:            []AuditRecord{},
+		SourceMarkers:    map[string]SourceReleaseMarker{},
 	}
 }
 
@@ -404,6 +426,9 @@ func NormalizeSnapshot(snapshot *Snapshot) {
 		snapshot.Deployments = map[string]contract.Deployment{}
 	}
 	snapshot.Deployments = normalizeDeploymentMap(snapshot.Deployments)
+	if snapshot.ActiveHistoryIDs == nil {
+		snapshot.ActiveHistoryIDs = map[string]string{}
+	}
 	if snapshot.Candidates == nil {
 		snapshot.Candidates = map[string]ReleaseCandidate{}
 	}
@@ -416,6 +441,7 @@ func NormalizeSnapshot(snapshot *Snapshot) {
 	if snapshot.SourceMarkers == nil {
 		snapshot.SourceMarkers = map[string]SourceReleaseMarker{}
 	}
+	backfillActiveHistoryIDs(snapshot)
 }
 
 func MergeSnapshot(target *Snapshot, imported Snapshot) {
@@ -424,6 +450,11 @@ func MergeSnapshot(target *Snapshot, imported Snapshot) {
 	for key, deployment := range imported.Deployments {
 		if _, exists := target.Deployments[key]; !exists {
 			target.Deployments[key] = deployment
+		}
+	}
+	for key, historyID := range imported.ActiveHistoryIDs {
+		if _, exists := target.ActiveHistoryIDs[key]; !exists {
+			target.ActiveHistoryIDs[key] = historyID
 		}
 	}
 	for key, candidate := range imported.Candidates {

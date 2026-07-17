@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -101,6 +102,60 @@ func TestFileCatalogReleaseCandidatesAreImmutable(t *testing.T) {
 	}
 	if latest.Deployment.Commit != "commit-b" || latest.Deployment.Entrypoint != "next.py" || !latest.SyncedAt.Equal(secondSyncedAt) {
 		t.Fatalf("latest candidate = %#v", latest)
+	}
+}
+
+func TestFileCatalogRollbackSwitchesActiveReleaseWithoutChangingHistoryOrCandidate(t *testing.T) {
+	store := NewFileCatalog(filepath.Join(t.TempDir(), "catalog.json"))
+	ctx := context.Background()
+	first := contract.Deployment{
+		Workspace: "ws-a", GitSourceID: "source-a", App: "echo", Commit: "commit-a",
+		BundleDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		Actions:      map[string]contract.Action{"run": {Action: "run"}},
+	}
+	second := first
+	second.Commit = "commit-b"
+	second.BundleDigest = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	if _, err := store.PublishRelease(ctx, first, time.Date(2026, 7, 18, 2, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SaveReleaseCandidate(ctx, second, time.Date(2026, 7, 18, 2, 1, 0, 0, time.UTC)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.PublishRelease(ctx, second, time.Date(2026, 7, 18, 2, 2, 0, 0, time.UTC)); err != nil {
+		t.Fatal(err)
+	}
+	before, err := store.Load(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := store.RollbackRelease(ctx, ReleaseRollbackRequest{
+		Workspace: "ws-a", App: "echo", ReleaseID: before.History[0].ID,
+		Actor: "operator", Reason: "restore stable release",
+		RolledBackAt: time.Date(2026, 7, 18, 2, 3, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := store.Load(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := DeploymentKey("ws-a", "echo")
+	if after.Deployments[key].Commit != "commit-a" || after.ActiveHistoryIDs[key] != before.History[0].ID {
+		t.Fatalf("active release = deployment %#v id %q", after.Deployments[key], after.ActiveHistoryIDs[key])
+	}
+	if len(after.History) != 2 || len(after.Candidates) != 1 {
+		t.Fatalf("rollback changed immutable records: history=%d candidates=%d", len(after.History), len(after.Candidates))
+	}
+	if result.PreviousReleaseID != before.History[1].ID || result.Audit.Kind != "release_rolled_back" {
+		t.Fatalf("rollback result = %#v", result)
+	}
+	if _, err := store.RollbackRelease(ctx, ReleaseRollbackRequest{
+		Workspace: "ws-a", App: "echo", ReleaseID: before.History[0].ID,
+		Actor: "operator", Reason: "duplicate",
+	}); !errors.Is(err, ErrReleaseAlreadyActive) {
+		t.Fatalf("already-active rollback error = %v", err)
 	}
 }
 

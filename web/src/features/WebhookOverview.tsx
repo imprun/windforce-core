@@ -6,7 +6,7 @@ import { errorMessage, webhookAppKeys } from "../lib/api";
 import { useApp } from "../lib/app-context";
 import { formatTime } from "../lib/format";
 import { WebhookSecretDialog } from "./WebhookSecretDialog";
-import { WebhookSubscriptionStatus } from "./WebhookStatus";
+import { webhookEventLabel, WebhookSubscriptionStatus } from "./WebhookStatus";
 
 type Props = {
   subscription: WebhookSubscription;
@@ -149,9 +149,9 @@ export function WebhookOverview({ subscription, apps, onUpdated, onDeleted }: Pr
             <span className="fieldHint">The URL path is never returned by the API.</span>
           </div>
           <div>
-            <span className="fieldLabel">Event</span>
-            <strong>Release published</strong>
-            <span className="fieldHint mono">windforce.release.published</span>
+            <span className="fieldLabel">Events</span>
+            <strong>{(subscription.event_types || []).map(webhookEventLabel).join(", ")}</strong>
+            <span className="fieldHint mono">{(subscription.event_types || []).join(", ")}</span>
           </div>
           <div>
             <span className="fieldLabel">Last updated</span>

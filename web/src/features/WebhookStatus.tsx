@@ -22,6 +22,7 @@ export function WebhookDeliveryStatus({ state }: { state: WebhookDeliveryState }
 
 export function webhookEventLabel(type: string): string {
   if (type === "windforce.release.published") return "Release published";
+  if (type === "windforce.release.rolled_back") return "Release rolled back";
   if (type === "windforce.webhook.test") return "Test delivery";
   return type;
 }

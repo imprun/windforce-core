@@ -56,3 +56,15 @@ func TestValidateSubscriptionAllowsLoopbackHTTPForOptInDevelopmentDispatch(t *te
 		t.Fatal(err)
 	}
 }
+
+func TestValidateSubscriptionAllowsReleaseRollbackEvents(t *testing.T) {
+	subscription := Subscription{
+		Name:          "release activity",
+		Endpoint:      "https://hooks.example.test/releases",
+		SigningSecret: "0123456789abcdef",
+		EventTypes:    []string{controlevent.ReleasePublishedType, controlevent.ReleaseRolledBackType},
+	}
+	if err := ValidateSubscription(subscription); err != nil {
+		t.Fatal(err)
+	}
+}

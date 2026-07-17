@@ -271,6 +271,22 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 				}, "400", "401", "403", "404"),
 			},
 		},
+		"/api/w/{workspace}/apps/{app}/releases/{releaseId}/rollback": map[string]any{
+			"post": map[string]any{
+				"operationId": "rollbackAppRelease",
+				"summary":     "Activate a historical app release",
+				"description": "Validates the stored execution bundle and atomically moves the active release pointer. It does not synchronize Git or rebuild the execution bundle.",
+				"parameters": []any{
+					oapiWorkspaceParam(workspaceID),
+					oapiPathParam("app", "App key."),
+					oapiPathParam("releaseId", "Historical release ID."),
+				},
+				"requestBody": oapiJSONBody(oapiSchemaRef("ReleaseRollbackRequest"), true),
+				"responses": withErrors(map[string]any{
+					"200": oapiResponse("The historical release is active.", oapiSchemaRef("ReleaseRollbackResponse")),
+				}, "400", "401", "403", "404", "409", "422", "503"),
+			},
+		},
 		"/api/w/{workspace}/apps/{app}/openapi.json": map[string]any{
 			"get": map[string]any{
 				"operationId": "getAppInvocationOpenAPI",
@@ -1011,11 +1027,35 @@ func controlPlaneSchemas() map[string]any {
 				"commit_sha":    oapiStringSchema(),
 				"entrypoint":    oapiStringSchema(),
 				"source":        oapiStringSchema(),
+				"active":        map[string]any{"type": "boolean"},
+				"bundle_status": map[string]any{"type": "string", "enum": []any{"ready", "missing"}},
 				"deployment_id": nullableString,
 				"message":       nullableString,
 				"created_by":    nullableString,
 				"created_at":    oapiDateTimeSchema(),
 			},
+		},
+		"ReleaseRollbackRequest": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"confirm": map[string]any{"type": "boolean"},
+				"reason":  oapiStringSchema(),
+			},
+			"required": []any{"confirm", "reason"},
+		},
+		"ReleaseRollbackResponse": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"app":                 oapiStringSchema(),
+				"active_release_id":   oapiStringSchema(),
+				"previous_release_id": oapiStringSchema(),
+				"commit":              oapiStringSchema(),
+				"bundle_digest":       oapiStringSchema(),
+				"actor":               oapiStringSchema(),
+				"reason":              oapiStringSchema(),
+				"rolled_back_at":      oapiDateTimeSchema(),
+			},
+			"required": []any{"app", "active_release_id", "previous_release_id", "commit", "bundle_digest", "actor", "reason", "rolled_back_at"},
 		},
 		"RequeueResponse": map[string]any{
 			"type":       "object",

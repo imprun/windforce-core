@@ -188,10 +188,23 @@ export type HistoryItem = {
   commit_sha: string;
   entrypoint: string;
   source: string;
+  active: boolean;
+  bundle_status: "ready" | "missing";
   deployment_id?: string;
   message?: string;
   created_by?: string;
   created_at: string;
+};
+
+export type ReleaseRollbackResult = {
+  app: string;
+  active_release_id: string;
+  previous_release_id: string;
+  commit: string;
+  bundle_digest: string;
+  actor: string;
+  reason: string;
+  rolled_back_at: string;
 };
 
 export type JobStatusCounts = {
@@ -521,6 +534,13 @@ export class WindforceApi {
 
   appHistory(appKey: string): Promise<HistoryItem[]> {
     return this.request(`/apps/${encodeURIComponent(appKey)}/history`);
+  }
+
+  rollbackAppRelease(appKey: string, releaseID: string, reason: string): Promise<ReleaseRollbackResult> {
+    return this.request(
+      `/apps/${encodeURIComponent(appKey)}/releases/${encodeURIComponent(releaseID)}/rollback`,
+      { method: "POST", body: { confirm: true, reason } },
+    );
   }
 
   actionSchemas(appKey: string, actionKey: string): Promise<ActionSchemas> {

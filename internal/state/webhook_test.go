@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/imprun/windforce-core/internal/catalog"
 	controlevent "github.com/imprun/windforce-core/internal/event"
 	"github.com/imprun/windforce-core/internal/webhook"
 )
@@ -201,6 +202,66 @@ func TestLocalReleasePublicationCreatesMatchingWebhookOutbox(t *testing.T) {
 	if got := snapshot.WebhookDeliveries[inFlight.Delivery.ID].State; got != webhook.DeliveryCanceled {
 		t.Fatalf("deleted subscription in-flight state = %q, want canceled", got)
 	}
+}
+
+func TestLocalReleaseRollbackCreatesMatchingWebhookOutbox(t *testing.T) {
+	store := NewLocalStore(filepath.Join(t.TempDir(), "state.json"))
+	store.ConfigureInputCrypto("local-test-secret-key", "")
+	ctx := context.Background()
+	if _, err := store.CreateSubscription(ctx, webhook.Subscription{
+		WorkspaceID:   "workspace-a",
+		Name:          "Rollback notifications",
+		Endpoint:      "https://hooks.example.test/rollback",
+		SigningSecret: "signing-secret-0123456789",
+		EventTypes:    []string{controlevent.ReleaseRolledBackType},
+		AppKeys:       []string{"checkout"},
+		Enabled:       true,
+		CreatedBy:     "operator@example.test",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	first := releaseCatalogDeployment("workspace-a", "source-a", "checkout", "commit-a")
+	first.BundleDigest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	second := releaseCatalogDeployment("workspace-a", "source-a", "checkout", "commit-b")
+	second.BundleDigest = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	if _, err := store.PublishRelease(ctx, first, time.Date(2026, 7, 18, 5, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.PublishRelease(ctx, second, time.Date(2026, 7, 18, 5, 1, 0, 0, time.UTC)); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := store.Load(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RollbackRelease(ctx, catalog.ReleaseRollbackRequest{
+		Workspace: "workspace-a", App: "checkout", ReleaseID: snapshot.ReleaseCatalog.History[0].ID,
+		Actor: "operator@example.test", Reason: "restore stable release",
+		RolledBackAt: time.Date(2026, 7, 18, 5, 2, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err = store.Load(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.WebhookDeliveries) != 1 {
+		t.Fatalf("rollback delivery count = %d, want 1", len(snapshot.WebhookDeliveries))
+	}
+	for _, value := range snapshot.ControlPlaneEvents {
+		if value.Type != controlevent.ReleaseRolledBackType {
+			continue
+		}
+		data, err := controlevent.ReleaseRolledBack(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if data.ReleaseID != snapshot.ReleaseCatalog.History[0].ID || data.PreviousReleaseID != snapshot.ReleaseCatalog.History[1].ID || data.Reason != "restore stable release" {
+			t.Fatalf("rollback event data = %#v", data)
+		}
+		return
+	}
+	t.Fatal("rollback event not found")
 }
 
 func TestLocalExpiredDeliveryLeaseIsReclaimed(t *testing.T) {

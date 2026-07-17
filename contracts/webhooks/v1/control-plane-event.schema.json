@@ -25,6 +25,7 @@
     "type": {
       "enum": [
         "windforce.release.published",
+        "windforce.release.rolled_back",
         "windforce.webhook.test"
       ]
     },
@@ -48,6 +49,19 @@
     }
   },
   "oneOf": [
+    {
+      "properties": {
+        "type": {
+          "const": "windforce.release.rolled_back"
+        },
+        "subject": {
+          "pattern": "^apps/[^/]+/releases/[^/]+$"
+        },
+        "data": {
+          "$ref": "#/$defs/releaseRolledBackData"
+        }
+      }
+    },
     {
       "properties": {
         "type": {
@@ -116,6 +130,54 @@
           "minLength": 1
         },
         "note": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "releaseRolledBackData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "workspace",
+        "app_key",
+        "release_id",
+        "commit",
+        "previous_release_id",
+        "previous_commit",
+        "actor",
+        "reason"
+      ],
+      "properties": {
+        "workspace": {
+          "type": "string",
+          "minLength": 1
+        },
+        "app_key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "release_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "commit": {
+          "type": "string",
+          "minLength": 1
+        },
+        "previous_release_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "previous_commit": {
+          "type": "string",
+          "minLength": 1
+        },
+        "actor": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
           "type": "string",
           "minLength": 1
         }

@@ -51,7 +51,7 @@ export function WebhookCreatePage() {
       const result = await api.createWebhookSubscription({
         name: normalizedName,
         endpoint: normalizedEndpoint,
-        event_types: ["windforce.release.published"],
+        event_types: ["windforce.release.published", "windforce.release.rolled_back"],
         app_keys: scope === "all" ? [] : selectedApps,
         enabled: true,
       });
@@ -107,8 +107,8 @@ export function WebhookCreatePage() {
           <div className="webhookEventSummary">
             <span className="webhookEventIcon" aria-hidden="true"><Check size={15} /></span>
             <div>
-              <strong>Release published</strong>
-              <p>Triggered after a worker-visible release is committed. Delivery failures do not roll back the release.</p>
+              <strong>Release activity</strong>
+              <p>Triggered after a worker-visible release is published or a historical release is activated.</p>
             </div>
           </div>
         </Panel>

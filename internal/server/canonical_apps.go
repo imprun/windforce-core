@@ -113,12 +113,13 @@ func (h *Handler) handleCanonicalAppHistory(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	workspaceID = contract.NormalizeWorkspace(workspaceID)
+	activeReleaseID := snapshot.ActiveHistoryIDs[catalogpkg.DeploymentKey(workspaceID, app)]
 	items := make([]canonicalAppHistoryItem, 0, len(snapshot.History))
 	for _, item := range snapshot.History {
 		if contract.NormalizeWorkspace(item.Workspace) != workspaceID || item.App != app {
 			continue
 		}
-		items = append(items, newCanonicalAppHistoryItem(item))
+		items = append(items, newCanonicalAppHistoryItem(item, item.ID == activeReleaseID))
 	}
 	sort.Slice(items, func(i, j int) bool {
 		if items[i].CreatedAt.Equal(items[j].CreatedAt) {

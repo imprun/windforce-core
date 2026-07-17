@@ -328,6 +328,10 @@ func (h *Handler) handleAPI(w http.ResponseWriter, r *http.Request) bool {
 		h.handleCanonicalAppHistory(w, r, parts[2], parts[4])
 		return true
 	}
+	if len(parts) == 8 && parts[0] == "api" && parts[1] == "w" && parts[3] == "apps" && parts[5] == "releases" && parts[7] == "rollback" && r.Method == http.MethodPost {
+		h.handleCanonicalReleaseRollback(w, r, parts[2], parts[4], parts[6])
+		return true
+	}
 	if len(parts) == 6 && parts[0] == "api" && parts[1] == "w" && parts[3] == "apps" && parts[5] == "openapi.json" && r.Method == http.MethodGet {
 		h.handleCanonicalAppOpenAPI(w, r, parts[2], parts[4])
 		return true

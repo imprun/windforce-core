@@ -16,6 +16,7 @@ const (
 	CloudEventsSpecVersion = "1.0"
 	JSONContentType        = "application/json"
 	ReleasePublishedType   = "windforce.release.published"
+	ReleaseRolledBackType  = "windforce.release.rolled_back"
 	WebhookTestType        = "windforce.webhook.test"
 )
 
@@ -41,6 +42,17 @@ type ReleasePublishedData struct {
 	PreviousCommit    *string `json:"previous_commit,omitempty"`
 	Actor             string  `json:"actor"`
 	Note              *string `json:"note,omitempty"`
+}
+
+type ReleaseRolledBackData struct {
+	Workspace         string `json:"workspace"`
+	AppKey            string `json:"app_key"`
+	ReleaseID         string `json:"release_id"`
+	Commit            string `json:"commit"`
+	PreviousReleaseID string `json:"previous_release_id"`
+	PreviousCommit    string `json:"previous_commit"`
+	Actor             string `json:"actor"`
+	Reason            string `json:"reason"`
 }
 
 type WebhookTestData struct {
@@ -71,6 +83,30 @@ func NewReleasePublished(id string, occurredAt time.Time, data ReleasePublishedD
 		SpecVersion:     CloudEventsSpecVersion,
 		ID:              strings.TrimSpace(id),
 		Type:            ReleasePublishedType,
+		Source:          "/workspaces/" + data.Workspace + "/control-plane",
+		Subject:         "apps/" + data.AppKey + "/releases/" + data.ReleaseID,
+		Time:            occurredAt.UTC(),
+		DataContentType: JSONContentType,
+		Data:            raw,
+	}
+	if err := Validate(event); err != nil {
+		return Envelope{}, err
+	}
+	return event, nil
+}
+
+func NewReleaseRolledBack(id string, occurredAt time.Time, data ReleaseRolledBackData) (Envelope, error) {
+	data.Workspace = contract.NormalizeWorkspace(data.Workspace)
+	data.Actor = strings.TrimSpace(data.Actor)
+	data.Reason = strings.TrimSpace(data.Reason)
+	raw, err := json.Marshal(data)
+	if err != nil {
+		return Envelope{}, err
+	}
+	event := Envelope{
+		SpecVersion:     CloudEventsSpecVersion,
+		ID:              strings.TrimSpace(id),
+		Type:            ReleaseRolledBackType,
 		Source:          "/workspaces/" + data.Workspace + "/control-plane",
 		Subject:         "apps/" + data.AppKey + "/releases/" + data.ReleaseID,
 		Time:            occurredAt.UTC(),
@@ -129,11 +165,30 @@ func Validate(value Envelope) error {
 	switch value.Type {
 	case ReleasePublishedType:
 		return validateReleasePublished(value)
+	case ReleaseRolledBackType:
+		return validateReleaseRolledBack(value)
 	case WebhookTestType:
 		return validateWebhookTest(value)
 	default:
 		return invalid("unsupported event type %q", value.Type)
 	}
+}
+
+func ReleaseRolledBack(value Envelope) (ReleaseRolledBackData, error) {
+	if value.Type != ReleaseRolledBackType {
+		return ReleaseRolledBackData{}, invalid("event type is %q", value.Type)
+	}
+	var data ReleaseRolledBackData
+	decoder := json.NewDecoder(bytes.NewReader(value.Data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&data); err != nil {
+		return ReleaseRolledBackData{}, invalid("rollback data: %v", err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return ReleaseRolledBackData{}, invalid("rollback data has trailing values")
+	}
+	return data, nil
 }
 
 func WebhookTest(value Envelope) (WebhookTestData, error) {
@@ -187,6 +242,44 @@ func validateReleasePublished(value Envelope) error {
 	}
 	if strings.TrimSpace(data.Actor) == "" {
 		return invalid("data.actor is required")
+	}
+	wantSource := "/workspaces/" + data.Workspace + "/control-plane"
+	if value.Source != wantSource {
+		return invalid("source must be %q", wantSource)
+	}
+	wantSubject := "apps/" + data.AppKey + "/releases/" + data.ReleaseID
+	if value.Subject != wantSubject {
+		return invalid("subject must be %q", wantSubject)
+	}
+	return nil
+}
+
+func validateReleaseRolledBack(value Envelope) error {
+	data, err := ReleaseRolledBack(value)
+	if err != nil {
+		return err
+	}
+	data.Workspace = contract.NormalizeWorkspace(data.Workspace)
+	if strings.TrimSpace(data.AppKey) == "" {
+		return invalid("data.app_key is required")
+	}
+	if strings.TrimSpace(data.ReleaseID) == "" {
+		return invalid("data.release_id is required")
+	}
+	if strings.TrimSpace(data.Commit) == "" {
+		return invalid("data.commit is required")
+	}
+	if strings.TrimSpace(data.PreviousReleaseID) == "" {
+		return invalid("data.previous_release_id is required")
+	}
+	if strings.TrimSpace(data.PreviousCommit) == "" {
+		return invalid("data.previous_commit is required")
+	}
+	if strings.TrimSpace(data.Actor) == "" {
+		return invalid("data.actor is required")
+	}
+	if strings.TrimSpace(data.Reason) == "" {
+		return invalid("data.reason is required")
 	}
 	wantSource := "/workspaces/" + data.Workspace + "/control-plane"
 	if value.Source != wantSource {

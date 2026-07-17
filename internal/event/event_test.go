@@ -60,6 +60,34 @@ func TestPublicWebhookTestFixture(t *testing.T) {
 	}
 }
 
+func TestReleaseRolledBackGolden(t *testing.T) {
+	value, err := NewReleaseRolledBack("evt_rollbackexample", time.Date(2026, 7, 18, 4, 0, 0, 0, time.UTC), ReleaseRolledBackData{
+		Workspace:         "default",
+		AppKey:            "checkout",
+		ReleaseID:         "rel_stable",
+		Commit:            "commit-stable",
+		PreviousReleaseID: "rel_current",
+		PreviousCommit:    "commit-current",
+		Actor:             "operator@example.test",
+		Reason:            "Restore the stable release",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got = append(got, '\n')
+	want, err := os.ReadFile(filepath.Join("..", "..", "contracts", "webhooks", "v1", "release-rolled-back.example.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("rollback event mismatch\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+}
+
 func TestValidateRejectsUnknownTypeAndFields(t *testing.T) {
 	base := Envelope{
 		SpecVersion:     CloudEventsSpecVersion,

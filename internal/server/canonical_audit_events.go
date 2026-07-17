@@ -132,8 +132,10 @@ func catalogAuditEvents(snapshot catalog.Snapshot, workspaceID string) []canonic
 			continue
 		}
 		sourceID, _ := strconv.ParseInt(record.GitSourceID, 10, 64)
-		if record.Kind == "release_published" {
-			releaseAuditIDs[record.ID] = struct{}{}
+		if record.Kind == "release_published" || record.Kind == "release_rolled_back" {
+			if record.Kind == "release_published" {
+				releaseAuditIDs[record.ID] = struct{}{}
+			}
 			events = append(events, canonicalAuditEvent{
 				ID:          "release:" + record.ID,
 				Category:    "release",
@@ -342,6 +344,7 @@ func canonicalAuditSummary(category string, kind string) string {
 		"source_deleted":                "Repository source removed",
 		"route_tag_override":            "Route tag changed",
 		"release_published":             "Release published",
+		"release_rolled_back":           "Release rolled back",
 		"created":                       "Client registered",
 		"updated":                       "Client updated",
 		"deleted":                       "Client removed",
