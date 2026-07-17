@@ -18,14 +18,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/imprun/windforce-lite/internal/bundle"
-	"github.com/imprun/windforce-lite/internal/catalog"
-	"github.com/imprun/windforce-lite/internal/contract"
-	litecrypto "github.com/imprun/windforce-lite/internal/crypto"
-	"github.com/imprun/windforce-lite/internal/gitsource"
-	"github.com/imprun/windforce-lite/internal/state"
-	"github.com/imprun/windforce-lite/internal/syncer"
-	"github.com/imprun/windforce-lite/internal/token"
+	"github.com/imprun/windforce-core/internal/bundle"
+	"github.com/imprun/windforce-core/internal/catalog"
+	"github.com/imprun/windforce-core/internal/contract"
+	litecrypto "github.com/imprun/windforce-core/internal/crypto"
+	"github.com/imprun/windforce-core/internal/gitsource"
+	"github.com/imprun/windforce-core/internal/state"
+	"github.com/imprun/windforce-core/internal/syncer"
+	"github.com/imprun/windforce-core/internal/token"
 )
 
 func decodeCatalogSchema(t *testing.T, raw json.RawMessage) []byte {

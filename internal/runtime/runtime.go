@@ -10,11 +10,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/imprun/windforce-lite/internal/bundle"
-	"github.com/imprun/windforce-lite/internal/contract"
-	"github.com/imprun/windforce-lite/internal/executor"
-	"github.com/imprun/windforce-lite/internal/runner"
-	"github.com/imprun/windforce-lite/internal/token"
+	"github.com/imprun/windforce-core/internal/bundle"
+	"github.com/imprun/windforce-core/internal/contract"
+	"github.com/imprun/windforce-core/internal/executor"
+	"github.com/imprun/windforce-core/internal/runner"
+	"github.com/imprun/windforce-core/internal/token"
 )
 
 type Runner struct {
@@ -102,7 +102,7 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (contract.JobResult, e
 		return r.runEntrypoint(ctx, req, sourceDir, action)
 	}
 
-	jobDir, err := os.MkdirTemp("", "windforce-lite-job-")
+	jobDir, err := os.MkdirTemp("", "windforce-core-job-")
 	if err != nil {
 		return contract.JobResult{}, err
 	}

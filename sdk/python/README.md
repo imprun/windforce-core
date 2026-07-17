@@ -8,7 +8,7 @@ catalog files.
 from windforce_execution import WindforceExecutionClient
 
 client = WindforceExecutionClient(
-    "http://windforce-lite:8080",
+    "http://windforce-core:8080",
     workspace="default",
     token="...",
 )

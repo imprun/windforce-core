@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/imprun/windforce-lite/internal/contract"
+	"github.com/imprun/windforce-core/internal/contract"
 )
 
 // BundleStore materializes a source bundle pinned by workspace, source, and commit.
@@ -78,7 +78,7 @@ func (r *SchemaReader) EnsureSourceDir() (string, error) {
 	if r.sourceDir != "" {
 		return r.sourceDir, nil
 	}
-	sourceDir, err := os.MkdirTemp("", "windforce-lite-schema-")
+	sourceDir, err := os.MkdirTemp("", "windforce-core-schema-")
 	if err != nil {
 		r.err = err
 		return "", err

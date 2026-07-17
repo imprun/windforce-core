@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/imprun/windforce-lite/internal/contract"
-	controlevent "github.com/imprun/windforce-lite/internal/event"
-	"github.com/imprun/windforce-lite/internal/state"
-	internalwebhook "github.com/imprun/windforce-lite/internal/webhook"
-	webhookcontract "github.com/imprun/windforce-lite/pkg/webhook"
+	"github.com/imprun/windforce-core/internal/contract"
+	controlevent "github.com/imprun/windforce-core/internal/event"
+	"github.com/imprun/windforce-core/internal/state"
+	internalwebhook "github.com/imprun/windforce-core/internal/webhook"
+	webhookcontract "github.com/imprun/windforce-core/pkg/webhook"
 )
 
 const receiverTestSecret = "0123456789abcdef0123456789abcdef"

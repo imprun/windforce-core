@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	controlevent "github.com/imprun/windforce-lite/internal/event"
-	"github.com/imprun/windforce-lite/internal/webhook"
+	controlevent "github.com/imprun/windforce-core/internal/event"
+	"github.com/imprun/windforce-core/internal/webhook"
 )
 
 func TestPostgresWebhookStoreContract(t *testing.T) {

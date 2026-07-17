@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/imprun/windforce-lite/internal/bundle"
-	"github.com/imprun/windforce-lite/internal/contract"
-	"github.com/imprun/windforce-lite/internal/token"
+	"github.com/imprun/windforce-core/internal/bundle"
+	"github.com/imprun/windforce-core/internal/contract"
+	"github.com/imprun/windforce-core/internal/token"
 )
 
 func TestRunnerFetchesBundleAndRunsAction(t *testing.T) {
@@ -546,7 +546,7 @@ func TestRunnerDoesNotMarkFailedPrepareReady(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(sourceDir, "main.py"), []byte(`def main(ctx): return ctx.input`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(sourceDir, "requirements.txt"), []byte("definitely-missing-package-for-windforce-lite-test==0\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(sourceDir, "requirements.txt"), []byte("definitely-missing-package-for-windforce-core-test==0\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	store := bundle.NewLocalStore(filepath.Join(tempDir, "store"))
@@ -591,7 +591,7 @@ func TestPreparePythonPyprojectInstallsProject(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(sourceDir, "pyproject.toml"), []byte(`[project]
-name = "windforce-lite-pyproject-test"
+name = "windforce-core-pyproject-test"
 version = "0.0.0"
 dependencies = []
 `), 0o644); err != nil {

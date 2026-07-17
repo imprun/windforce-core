@@ -8,7 +8,7 @@ const external = process.env.WINDFORCE_LITE_UI_GUIDE_EXTERNAL === "true";
 const baseDir = path.resolve(".tmp/ui-guide");
 const binary = path.resolve(
   baseDir,
-  process.platform === "win32" ? "windforce-lite.exe" : "windforce-lite",
+  process.platform === "win32" ? "windforce-core.exe" : "windforce-core",
 );
 
 let server = null;
@@ -24,7 +24,7 @@ function stopServer() {
 }
 
 export default {
-  name: "windforce-lite",
+  name: "windforce-core",
   baseUrl: process.env.WINDFORCE_LITE_UI_URL || `http://127.0.0.1:${port}/ui/`,
   apiBaseUrl: process.env.WINDFORCE_LITE_API_URL || `http://127.0.0.1:${port}/api/w/default`,
   guidePath: "docs/user-guide/web-ui.md",
@@ -45,7 +45,7 @@ export default {
     await rm(baseDir, { recursive: true, force: true });
     await mkdir(baseDir, { recursive: true });
     await exec("make", ["web-embed"]);
-    await exec("go", ["build", "-o", binary, "./cmd/windforce-lite"]);
+    await exec("go", ["build", "-o", binary, "./cmd/windforce-core"]);
     receiver = createHttpServer((request, response) => {
       const signature = request.headers["x-windforce-signature"];
       const eventID = request.headers["x-windforce-event"];
@@ -83,7 +83,7 @@ export default {
     process.on("exit", stopServer);
     await waitForHttp(`http://127.0.0.1:${port}/readyz`, { timeoutMs: 30000 });
     if (!server || server.exitCode !== null) {
-      throw new Error(`windforce-lite standalone exited early; is port ${port} already in use?`);
+      throw new Error(`windforce-core standalone exited early; is port ${port} already in use?`);
     }
   },
 

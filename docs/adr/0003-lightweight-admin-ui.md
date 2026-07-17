@@ -6,10 +6,10 @@ Accepted
 
 ## Context
 
-`windforce-lite` needs a small operator-facing UI for source and deployment
+`windforce-core` needs a small operator-facing UI for source and deployment
 operations. This is different from rebuilding the full Windforce console.
 
-The UI belongs in the core repository when it manages Windforce-lite-owned
+The UI belongs in the core repository when it manages windforce-core-owned
 concepts: git source registration, source sync, app/action deployment, active
 catalog state, deployment history, and run status.
 

@@ -13,9 +13,9 @@ import (
 	"sync"
 	"time"
 
-	windforcegoclient "github.com/imprun/windforce-lite/internal/sdk/go"
-	windforcepyclient "github.com/imprun/windforce-lite/internal/sdk/python"
-	windforceclient "github.com/imprun/windforce-lite/internal/sdk/typescript"
+	windforcegoclient "github.com/imprun/windforce-core/internal/sdk/go"
+	windforcepyclient "github.com/imprun/windforce-core/internal/sdk/python"
+	windforceclient "github.com/imprun/windforce-core/internal/sdk/typescript"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -31,7 +31,7 @@ var resolvedDefaultPython string
 func (r *Runner) ensureSource(ctx context.Context, workspace string, gitSourceID string, commit string, scriptLang string, entrypoint string) (string, error) {
 	cacheRoot := r.CacheRoot
 	if cacheRoot == "" {
-		cacheRoot = filepath.Join(os.TempDir(), "windforce-lite-cache")
+		cacheRoot = filepath.Join(os.TempDir(), "windforce-core-cache")
 	}
 	sourceDir := filepath.Join(cacheRoot, "src", safePath(workspace), safePath(gitSourceID), safePath(commit))
 	key := sourceDir

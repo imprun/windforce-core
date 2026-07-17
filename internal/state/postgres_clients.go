@@ -8,7 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/imprun/windforce-lite/internal/contract"
+	"github.com/imprun/windforce-core/internal/contract"
 )
 
 func (s *PostgresStore) ListClients(ctx context.Context, workspaceID string) ([]Client, error) {

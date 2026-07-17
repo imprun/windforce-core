@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/imprun/windforce-lite/internal/bundle"
-	"github.com/imprun/windforce-lite/internal/contract"
-	actionruntime "github.com/imprun/windforce-lite/internal/runtime"
-	"github.com/imprun/windforce-lite/internal/state"
+	"github.com/imprun/windforce-core/internal/bundle"
+	"github.com/imprun/windforce-core/internal/contract"
+	actionruntime "github.com/imprun/windforce-core/internal/runtime"
+	"github.com/imprun/windforce-core/internal/state"
 )
 
 func TestDevelopmentPayloadLogsIncludeCompleteValues(t *testing.T) {

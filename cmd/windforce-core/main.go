@@ -13,17 +13,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/imprun/windforce-lite/internal/bundle"
-	"github.com/imprun/windforce-lite/internal/catalog"
-	"github.com/imprun/windforce-lite/internal/contract"
-	"github.com/imprun/windforce-lite/internal/gitsource"
-	"github.com/imprun/windforce-lite/internal/runner"
-	"github.com/imprun/windforce-lite/internal/runtime"
-	"github.com/imprun/windforce-lite/internal/server"
-	"github.com/imprun/windforce-lite/internal/state"
-	"github.com/imprun/windforce-lite/internal/syncer"
-	"github.com/imprun/windforce-lite/internal/webhook"
-	"github.com/imprun/windforce-lite/internal/worker"
+	"github.com/imprun/windforce-core/internal/bundle"
+	"github.com/imprun/windforce-core/internal/catalog"
+	"github.com/imprun/windforce-core/internal/contract"
+	"github.com/imprun/windforce-core/internal/gitsource"
+	"github.com/imprun/windforce-core/internal/runner"
+	"github.com/imprun/windforce-core/internal/runtime"
+	"github.com/imprun/windforce-core/internal/server"
+	"github.com/imprun/windforce-core/internal/state"
+	"github.com/imprun/windforce-core/internal/syncer"
+	"github.com/imprun/windforce-core/internal/webhook"
+	"github.com/imprun/windforce-core/internal/worker"
 )
 
 var version = "dev"
@@ -214,7 +214,7 @@ func runServer(args []string, mode string) int {
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "windforce-lite %s listening on %s\n", mode, *addr)
+	fmt.Fprintf(os.Stderr, "windforce-core %s listening on %s\n", mode, *addr)
 	if err := http.ListenAndServe(*addr, handler); err != nil {
 		fmt.Fprintf(os.Stderr, "%s: %v\n", mode, err)
 		return 1
@@ -555,32 +555,32 @@ func writeJSON(file *os.File, value any) error {
 }
 
 func defaultStoreDir() string {
-	return filepath.Join(".windforce-lite", "store")
+	return filepath.Join(".windforce-core", "store")
 }
 
 func defaultCatalogPath() string {
-	return filepath.Join(".windforce-lite", "catalog.json")
+	return filepath.Join(".windforce-core", "catalog.json")
 }
 
 func defaultGitSourcesPath() string {
-	return filepath.Join(".windforce-lite", "git-sources.json")
+	return filepath.Join(".windforce-core", "git-sources.json")
 }
 
 func defaultCacheDir() string {
-	return filepath.Join(".windforce-lite", "cache")
+	return filepath.Join(".windforce-core", "cache")
 }
 
 func defaultStatePath() string {
-	return filepath.Join(".windforce-lite", "state.json")
+	return filepath.Join(".windforce-core", "state.json")
 }
 
 func printUsage(file *os.File) {
 	fmt.Fprintln(file, "usage:")
-	fmt.Fprintln(file, "  windforce-lite version")
-	fmt.Fprintln(file, "  windforce-lite control-plane [--addr :8080] [--state-backend local|postgres] [--git-sources <path>]")
-	fmt.Fprintln(file, "  windforce-lite execution-api [--addr :8080] [--state-backend local|postgres]")
-	fmt.Fprintln(file, "  windforce-lite worker [--state-backend local|postgres] [--worker-group default] [--egress-proxy host:port] [--bun-path <path>] [--python-path <path>] [--go-path <path>] [--prepare-timeout 5m] [--once]")
-	fmt.Fprintln(file, "  windforce-lite webhook-dispatcher [--state-backend local|postgres] [--database-url <url>] [--once]")
-	fmt.Fprintln(file, "  windforce-lite standalone [--addr :8080] [--state-backend local|postgres] [--worker-group default] [--egress-proxy host:port] [--git-sources <path>] [--bun-path <path>] [--python-path <path>] [--go-path <path>] [--prepare-timeout 5m]")
-	fmt.Fprintln(file, "  windforce-lite run-json [flags] -- <command> [args...]")
+	fmt.Fprintln(file, "  windforce-core version")
+	fmt.Fprintln(file, "  windforce-core control-plane [--addr :8080] [--state-backend local|postgres] [--git-sources <path>]")
+	fmt.Fprintln(file, "  windforce-core execution-api [--addr :8080] [--state-backend local|postgres]")
+	fmt.Fprintln(file, "  windforce-core worker [--state-backend local|postgres] [--worker-group default] [--egress-proxy host:port] [--bun-path <path>] [--python-path <path>] [--go-path <path>] [--prepare-timeout 5m] [--once]")
+	fmt.Fprintln(file, "  windforce-core webhook-dispatcher [--state-backend local|postgres] [--database-url <url>] [--once]")
+	fmt.Fprintln(file, "  windforce-core standalone [--addr :8080] [--state-backend local|postgres] [--worker-group default] [--egress-proxy host:port] [--git-sources <path>] [--bun-path <path>] [--python-path <path>] [--go-path <path>] [--prepare-timeout 5m]")
+	fmt.Fprintln(file, "  windforce-core run-json [flags] -- <command> [args...]")
 }

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/imprun/windforce-lite/internal/catalog"
-	gitsourcepkg "github.com/imprun/windforce-lite/internal/gitsource"
+	"github.com/imprun/windforce-core/internal/catalog"
+	gitsourcepkg "github.com/imprun/windforce-core/internal/gitsource"
 )
 
 // The audit trail records non-release state changes (repository settings,

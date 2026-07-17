@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/imprun/windforce-lite/internal/state"
-	"github.com/imprun/windforce-lite/internal/webhook"
+	"github.com/imprun/windforce-core/internal/state"
+	"github.com/imprun/windforce-core/internal/webhook"
 )
 
 func TestCanonicalWebhookLifecycle(t *testing.T) {

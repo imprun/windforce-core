@@ -50,7 +50,7 @@ func NewHTTPSender(config SenderConfig) *HTTPSender {
 		config.ResponseBodyLimit = defaultResponseBodyLimit
 	}
 	if strings.TrimSpace(config.UserAgent) == "" {
-		config.UserAgent = "windforce-lite-webhook/dev"
+		config.UserAgent = "windforce-core-webhook/dev"
 	}
 	if config.Now == nil {
 		config.Now = time.Now

@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "@windforce-lite/web",
+      "name": "@windforce-core/web",
       "dependencies": {
         "lucide-react": "^1.24.0",
         "react": "19.2.7",

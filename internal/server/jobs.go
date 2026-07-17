@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/imprun/windforce-lite/internal/contract"
-	executionpkg "github.com/imprun/windforce-lite/internal/execution"
-	"github.com/imprun/windforce-lite/internal/state"
+	"github.com/imprun/windforce-core/internal/contract"
+	executionpkg "github.com/imprun/windforce-core/internal/execution"
+	"github.com/imprun/windforce-core/internal/state"
 )
 
 func (h *Handler) handleJobList(w http.ResponseWriter, r *http.Request, workspaceID string) {

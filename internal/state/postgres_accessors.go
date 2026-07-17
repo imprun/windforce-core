@@ -7,7 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/imprun/windforce-lite/internal/contract"
+	"github.com/imprun/windforce-core/internal/contract"
 )
 
 func (s *PostgresStore) AppendLogs(ctx context.Context, jobID string, workspaceID string, chunk string) error {

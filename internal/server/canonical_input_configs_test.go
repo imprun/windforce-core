@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/imprun/windforce-lite/internal/catalog"
-	"github.com/imprun/windforce-lite/internal/contract"
-	"github.com/imprun/windforce-lite/internal/state"
+	"github.com/imprun/windforce-core/internal/catalog"
+	"github.com/imprun/windforce-core/internal/contract"
+	"github.com/imprun/windforce-core/internal/state"
 )
 
 type inputConfigTestCatalog struct {

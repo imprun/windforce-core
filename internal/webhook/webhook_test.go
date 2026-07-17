@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	controlevent "github.com/imprun/windforce-lite/internal/event"
+	controlevent "github.com/imprun/windforce-core/internal/event"
 )
 
 func TestValidateAndMatchSubscription(t *testing.T) {

@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/imprun/windforce-lite/internal/contract"
-	wfcrypto "github.com/imprun/windforce-lite/internal/crypto"
+	"github.com/imprun/windforce-core/internal/contract"
+	wfcrypto "github.com/imprun/windforce-core/internal/crypto"
 )
 
 var canonicalUUIDPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)

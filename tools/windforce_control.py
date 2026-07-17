@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Small CLI for the windforce-lite control-plane API.
+"""Small CLI for the windforce-core control-plane API.
 
 The server owns the contract. This tool only calls the `/api/w/{workspace}/...`
 control-plane endpoints so local development follows the real flow:
@@ -25,7 +25,7 @@ DEFAULT_WORKSPACE = "default"
 
 def main(argv: list[str] | None = None) -> int:
     configure_stdio()
-    parser = argparse.ArgumentParser(description="windforce-lite control-plane API client")
+    parser = argparse.ArgumentParser(description="windforce-core control-plane API client")
     parser.add_argument(
         "--api-url",
         default=os.environ.get("WINDFORCE_LITE_API_URL", DEFAULT_API_URL),

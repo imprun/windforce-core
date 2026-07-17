@@ -1,6 +1,6 @@
 services:
   control-plane:
-    image: ${WINDFORCE_LITE_DEV_IMAGE:-imprun/windforce-lite-dev:local}
+    image: ${WINDFORCE_LITE_DEV_IMAGE:-imprun/windforce-core-dev:local}
     build:
       context: .
       dockerfile: Dockerfile.dev
@@ -12,7 +12,7 @@ services:
     environment:
       GOCACHE: /home/windforce/.cache/go-build
       GOMODCACHE: /go/pkg/mod
-      WINDFORCE_LITE_DATABASE_URL: ${WINDFORCE_LITE_DATABASE_URL:-postgres://postgres@postgres:5432/windforce_lite?sslmode=disable}
+      WINDFORCE_LITE_DATABASE_URL: ${WINDFORCE_LITE_DATABASE_URL:-postgres://postgres@postgres:5432/windforce_core?sslmode=disable}
     volumes:
       - .:/src
       - windforce-data:/data
@@ -20,7 +20,7 @@ services:
       - go-build-cache:/home/windforce/.cache/go-build
 
   execution-api:
-    image: ${WINDFORCE_LITE_DEV_IMAGE:-imprun/windforce-lite-dev:local}
+    image: ${WINDFORCE_LITE_DEV_IMAGE:-imprun/windforce-core-dev:local}
     build:
       context: .
       dockerfile: Dockerfile.dev
@@ -32,7 +32,7 @@ services:
     environment:
       GOCACHE: /home/windforce/.cache/go-build
       GOMODCACHE: /go/pkg/mod
-      WINDFORCE_LITE_DATABASE_URL: ${WINDFORCE_LITE_DATABASE_URL:-postgres://postgres@postgres:5432/windforce_lite?sslmode=disable}
+      WINDFORCE_LITE_DATABASE_URL: ${WINDFORCE_LITE_DATABASE_URL:-postgres://postgres@postgres:5432/windforce_core?sslmode=disable}
     volumes:
       - .:/src
       - windforce-data:/data
@@ -40,7 +40,7 @@ services:
       - go-build-cache:/home/windforce/.cache/go-build
 
   worker:
-    image: ${WINDFORCE_LITE_DEV_IMAGE:-imprun/windforce-lite-dev:local}
+    image: ${WINDFORCE_LITE_DEV_IMAGE:-imprun/windforce-core-dev:local}
     build:
       context: .
       dockerfile: Dockerfile.dev
@@ -52,7 +52,7 @@ services:
     environment:
       GOCACHE: /home/windforce/.cache/go-build
       GOMODCACHE: /go/pkg/mod
-      WINDFORCE_LITE_DATABASE_URL: ${WINDFORCE_LITE_DATABASE_URL:-postgres://postgres@postgres:5432/windforce_lite?sslmode=disable}
+      WINDFORCE_LITE_DATABASE_URL: ${WINDFORCE_LITE_DATABASE_URL:-postgres://postgres@postgres:5432/windforce_core?sslmode=disable}
     volumes:
       - .:/src
       - windforce-data:/data
@@ -60,7 +60,7 @@ services:
       - go-build-cache:/home/windforce/.cache/go-build
 
   webhook-dispatcher:
-    image: ${WINDFORCE_LITE_DEV_IMAGE:-imprun/windforce-lite-dev:local}
+    image: ${WINDFORCE_LITE_DEV_IMAGE:-imprun/windforce-core-dev:local}
     build:
       context: .
       dockerfile: Dockerfile.dev
@@ -72,7 +72,7 @@ services:
     environment:
       GOCACHE: /home/windforce/.cache/go-build
       GOMODCACHE: /go/pkg/mod
-      WINDFORCE_LITE_DATABASE_URL: ${WINDFORCE_LITE_DATABASE_URL:-postgres://postgres@postgres:5432/windforce_lite?sslmode=disable}
+      WINDFORCE_LITE_DATABASE_URL: ${WINDFORCE_LITE_DATABASE_URL:-postgres://postgres@postgres:5432/windforce_core?sslmode=disable}
     volumes:
       - .:/src
       - go-mod-cache:/go/pkg/mod

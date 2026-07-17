@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	webhookcontract "github.com/imprun/windforce-lite/pkg/webhook"
+	webhookcontract "github.com/imprun/windforce-core/pkg/webhook"
 )
 
 const maxWebhookBodyBytes = 1 << 20

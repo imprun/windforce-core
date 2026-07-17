@@ -9,7 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/imprun/windforce-lite/internal/contract"
+	"github.com/imprun/windforce-core/internal/contract"
 )
 
 type inputConfigScanner interface {

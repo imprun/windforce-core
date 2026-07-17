@@ -6,7 +6,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/imprun/windforce-lite/internal/contract"
+	"github.com/imprun/windforce-core/internal/contract"
 )
 
 func (s *LocalStore) ListClients(ctx context.Context, workspaceID string) ([]Client, error) {

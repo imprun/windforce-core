@@ -1,6 +1,6 @@
 # Architecture
 
-Windforce Lite separates deployment management, protocol ingress, and action
+Windforce Core separates deployment management, protocol ingress, and action
 execution into three planes. Compose runs the Control Plane, Execution API,
 workers, and Webhook Dispatcher as distinct processes. The `standalone` command
 combines them for single-process development without changing their contracts.
@@ -124,4 +124,4 @@ documentation without mounting the Windforce catalog.
 The Python package under `sdk/python` is the reference execution client. It
 provides create, status, wait, result, cancel, and app-description operations.
 SDK implementations are HTTP clients only. PostgreSQL schemas, bundle paths,
-and catalog storage are private implementation details of Windforce Lite.
+and catalog storage are private implementation details of Windforce Core.

@@ -1,18 +1,18 @@
 root = "."
-tmp_dir = "/tmp/windforce-lite-air-webhook-dispatcher"
+tmp_dir = "/tmp/windforce-core-air-webhook-dispatcher"
 
 [build]
 cmd = '''
-go build -buildvcs=false -o /tmp/windforce-lite-air-webhook-dispatcher/windforce-lite ./cmd/windforce-lite
-cat > /tmp/windforce-lite-air-webhook-dispatcher/run <<'EOF'
+go build -buildvcs=false -o /tmp/windforce-core-air-webhook-dispatcher/windforce-core ./cmd/windforce-core
+cat > /tmp/windforce-core-air-webhook-dispatcher/run <<'EOF'
 #!/bin/sh
-exec /tmp/windforce-lite-air-webhook-dispatcher/windforce-lite webhook-dispatcher --state-backend postgres --database-url "$WINDFORCE_LITE_DATABASE_URL" --migrate
+exec /tmp/windforce-core-air-webhook-dispatcher/windforce-core webhook-dispatcher --state-backend postgres --database-url "$WINDFORCE_LITE_DATABASE_URL" --migrate
 EOF
-chmod +x /tmp/windforce-lite-air-webhook-dispatcher/run
+chmod +x /tmp/windforce-core-air-webhook-dispatcher/run
 '''
-entrypoint = "/tmp/windforce-lite-air-webhook-dispatcher/run"
+entrypoint = "/tmp/windforce-core-air-webhook-dispatcher/run"
 include_ext = ["go", "mod", "sum"]
-exclude_dir = [".git", ".claude", ".serena", ".tmp", ".windforce-lite", "tmp", "web"]
+exclude_dir = [".git", ".claude", ".serena", ".tmp", ".windforce-core", "tmp", "web"]
 exclude_regex = ["_test\\.go"]
 delay = 1000
 poll = true

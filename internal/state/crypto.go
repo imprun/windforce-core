@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/imprun/windforce-lite/internal/contract"
-	wfcrypto "github.com/imprun/windforce-lite/internal/crypto"
+	"github.com/imprun/windforce-core/internal/contract"
+	wfcrypto "github.com/imprun/windforce-core/internal/crypto"
 )
 
 type inputCryptoConfig struct {

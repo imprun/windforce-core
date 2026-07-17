@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	controlevent "github.com/imprun/windforce-lite/internal/event"
-	"github.com/imprun/windforce-lite/internal/webhook"
+	controlevent "github.com/imprun/windforce-core/internal/event"
+	"github.com/imprun/windforce-core/internal/webhook"
 )
 
 type canonicalWebhookSubscription struct {

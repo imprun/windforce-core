@@ -1,4 +1,4 @@
-# ADR 0001: windforce-lite scope
+# ADR 0001: windforce-core scope
 
 ## Status
 
@@ -10,7 +10,7 @@ Full Windforce includes a broad product surface: API, worker orchestration,
 console UI, source synchronization, object cache, catalog, scheduling, policy,
 and language runtimes.
 
-`windforce-lite` keeps only the source deployment and JSON execution path. It is
+`windforce-core` keeps only the source deployment and JSON execution path. It is
 meant to be small enough to embed, fork, or adapt without adopting the full
 platform.
 

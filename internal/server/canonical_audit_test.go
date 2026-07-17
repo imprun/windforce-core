@@ -9,11 +9,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/imprun/windforce-lite/internal/catalog"
-	"github.com/imprun/windforce-lite/internal/contract"
-	"github.com/imprun/windforce-lite/internal/gitsource"
-	"github.com/imprun/windforce-lite/internal/state"
-	"github.com/imprun/windforce-lite/internal/syncer"
+	"github.com/imprun/windforce-core/internal/catalog"
+	"github.com/imprun/windforce-core/internal/contract"
+	"github.com/imprun/windforce-core/internal/gitsource"
+	"github.com/imprun/windforce-core/internal/state"
+	"github.com/imprun/windforce-core/internal/syncer"
 )
 
 func TestCanonicalGitSourceAuditTrail(t *testing.T) {

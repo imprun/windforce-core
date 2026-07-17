@@ -14,9 +14,9 @@ import (
 	"strings"
 	"sync"
 
-	windforcegoclient "github.com/imprun/windforce-lite/internal/sdk/go"
-	windforcepyclient "github.com/imprun/windforce-lite/internal/sdk/python"
-	windforceclient "github.com/imprun/windforce-lite/internal/sdk/typescript"
+	windforcegoclient "github.com/imprun/windforce-core/internal/sdk/go"
+	windforcepyclient "github.com/imprun/windforce-core/internal/sdk/python"
+	windforceclient "github.com/imprun/windforce-core/internal/sdk/typescript"
 )
 
 const sourcePrepareVersion = "prepare-v3"

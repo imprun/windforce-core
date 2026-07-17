@@ -47,11 +47,11 @@ export function Layout({
     <div className={collapsed ? "appShell sidebarCollapsed" : "appShell"}>
       <aside className="sidebar">
         <div className="sidebarHeader">
-          <Link className="brand" to="/" title="windforce-lite">
+          <Link className="brand" to="/" title="windforce-core">
             <span className="brandMark" aria-hidden="true">
               <Wind size={17} strokeWidth={2.2} />
             </span>
-            <span className="brandName">windforce-lite</span>
+            <span className="brandName">windforce-core</span>
           </Link>
           <button
             id="sidebarToggle"

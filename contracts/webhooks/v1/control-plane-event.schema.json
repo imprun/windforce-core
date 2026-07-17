@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/imprun/windforce-lite/main/contracts/webhooks/v1/control-plane-event.schema.json",
-  "title": "Windforce Lite control plane webhook event",
+  "$id": "https://raw.githubusercontent.com/imprun/windforce-core/main/contracts/webhooks/v1/control-plane-event.schema.json",
+  "title": "Windforce Core control plane webhook event",
   "type": "object",
   "additionalProperties": false,
   "required": [

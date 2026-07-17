@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/imprun/windforce-lite/internal/contract"
+	"github.com/imprun/windforce-core/internal/contract"
 )
 
 const FileName = "windforce.json"
@@ -37,7 +37,7 @@ func Parse(data []byte) (contract.App, error) {
 		return contract.App{}, fmt.Errorf("invalid app key %q in %s", app.App, FileName)
 	}
 	if len(parsed.Flows) > 0 {
-		return contract.App{}, fmt.Errorf("app %s declares flows in %s, but windforce-lite does not support flows", app.App, FileName)
+		return contract.App{}, fmt.Errorf("app %s declares flows in %s, but windforce-core does not support flows", app.App, FileName)
 	}
 	app.Runtime = ""
 	if len(app.Actions) == 0 {

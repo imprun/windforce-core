@@ -1,10 +1,10 @@
-# Contributing to windforce-lite
+# Contributing to windforce-core
 
 Thanks for your interest in contributing.
 
 ## License
 
-windforce-lite is licensed under the [Apache License, Version 2.0](LICENSE).
+windforce-core is licensed under the [Apache License, Version 2.0](LICENSE).
 By contributing, you agree that your contributions are licensed under the same
 license.
 

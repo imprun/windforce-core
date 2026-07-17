@@ -12,7 +12,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/imprun/windforce-lite/internal/contract"
+	"github.com/imprun/windforce-core/internal/contract"
 )
 
 var credentialPattern = regexp.MustCompile(`(https?://)[^@/\s]+@`)

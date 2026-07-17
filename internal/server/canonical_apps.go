@@ -8,10 +8,10 @@ import (
 	"sort"
 	"strings"
 
-	catalogpkg "github.com/imprun/windforce-lite/internal/catalog"
-	"github.com/imprun/windforce-lite/internal/contract"
-	gitsourcepkg "github.com/imprun/windforce-lite/internal/gitsource"
-	"github.com/imprun/windforce-lite/internal/state"
+	catalogpkg "github.com/imprun/windforce-core/internal/catalog"
+	"github.com/imprun/windforce-core/internal/contract"
+	gitsourcepkg "github.com/imprun/windforce-core/internal/gitsource"
+	"github.com/imprun/windforce-core/internal/state"
 )
 
 func (h *Handler) handleCanonicalApps(w http.ResponseWriter, r *http.Request, workspaceID string) {
@@ -79,7 +79,7 @@ func (h *Handler) handleCanonicalAppSource(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusNotFound, "source commit is not materialized \u2014 re-sync the app")
 		return
 	}
-	sourceDir, err := os.MkdirTemp("", "windforce-lite-app-source-")
+	sourceDir, err := os.MkdirTemp("", "windforce-core-app-source-")
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

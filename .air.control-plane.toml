@@ -1,18 +1,18 @@
 root = "."
-tmp_dir = "/tmp/windforce-lite-air-control-plane"
+tmp_dir = "/tmp/windforce-core-air-control-plane"
 
 [build]
 cmd = '''
-go build -buildvcs=false -o /tmp/windforce-lite-air-control-plane/windforce-lite ./cmd/windforce-lite
-cat > /tmp/windforce-lite-air-control-plane/run <<'EOF'
+go build -buildvcs=false -o /tmp/windforce-core-air-control-plane/windforce-core ./cmd/windforce-core
+cat > /tmp/windforce-core-air-control-plane/run <<'EOF'
 #!/bin/sh
-exec /tmp/windforce-lite-air-control-plane/windforce-lite control-plane --addr :8080 --state-backend postgres --database-url "$WINDFORCE_LITE_DATABASE_URL" --migrate --store /data/store --catalog /data/catalog.json --git-sources /data/git-sources.json
+exec /tmp/windforce-core-air-control-plane/windforce-core control-plane --addr :8080 --state-backend postgres --database-url "$WINDFORCE_LITE_DATABASE_URL" --migrate --store /data/store --catalog /data/catalog.json --git-sources /data/git-sources.json
 EOF
-chmod +x /tmp/windforce-lite-air-control-plane/run
+chmod +x /tmp/windforce-core-air-control-plane/run
 '''
-entrypoint = "/tmp/windforce-lite-air-control-plane/run"
+entrypoint = "/tmp/windforce-core-air-control-plane/run"
 include_ext = ["go", "mod", "sum"]
-exclude_dir = [".git", ".claude", ".serena", ".tmp", ".windforce-lite", "tmp", "web"]
+exclude_dir = [".git", ".claude", ".serena", ".tmp", ".windforce-core", "tmp", "web"]
 exclude_regex = ["_test\\.go"]
 delay = 1000
 poll = true

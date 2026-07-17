@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/imprun/windforce-lite/internal/webhook"
+	"github.com/imprun/windforce-core/internal/webhook"
 )
 
 type webhookRetentionTestStore struct {

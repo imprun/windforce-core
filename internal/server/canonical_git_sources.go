@@ -11,12 +11,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/imprun/windforce-lite/internal/catalog"
-	"github.com/imprun/windforce-lite/internal/contract"
-	gitsourcepkg "github.com/imprun/windforce-lite/internal/gitsource"
-	"github.com/imprun/windforce-lite/internal/sampleapp"
-	sourcepkg "github.com/imprun/windforce-lite/internal/source"
-	"github.com/imprun/windforce-lite/internal/syncer"
+	"github.com/imprun/windforce-core/internal/catalog"
+	"github.com/imprun/windforce-core/internal/contract"
+	gitsourcepkg "github.com/imprun/windforce-core/internal/gitsource"
+	"github.com/imprun/windforce-core/internal/sampleapp"
+	sourcepkg "github.com/imprun/windforce-core/internal/source"
+	"github.com/imprun/windforce-core/internal/syncer"
 )
 
 type gitCredentialRequest struct {

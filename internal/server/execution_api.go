@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/imprun/windforce-lite/internal/contract"
-	executionpkg "github.com/imprun/windforce-lite/internal/execution"
-	"github.com/imprun/windforce-lite/internal/state"
+	"github.com/imprun/windforce-core/internal/contract"
+	executionpkg "github.com/imprun/windforce-core/internal/execution"
+	"github.com/imprun/windforce-core/internal/state"
 )
 
 type executionCreateRunRequest struct {

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/imprun/windforce-lite/internal/contract"
+	"github.com/imprun/windforce-core/internal/contract"
 )
 
 var ErrGitSourceNotFound = errors.New("git source not found")

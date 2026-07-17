@@ -1,7 +1,7 @@
-name: windforce-lite
+name: windforce-core
 
-x-windforce-lite-database-url: &windforce-lite-database-url "${WINDFORCE_LITE_DATABASE_URL:-postgres://postgres@postgres:5432/windforce_lite?sslmode=disable}"
-x-windforce-lite-secret-env: &windforce-lite-secret-env
+x-windforce-core-database-url: &windforce-core-database-url "${WINDFORCE_LITE_DATABASE_URL:-postgres://postgres@postgres:5432/windforce_core?sslmode=disable}"
+x-windforce-core-secret-env: &windforce-core-secret-env
   SECRET_KEY: ${SECRET_KEY:-}
   SECRET_KEY_PREVIOUS: ${SECRET_KEY_PREVIOUS:-}
 
@@ -23,7 +23,7 @@ services:
     ports:
       - "127.0.0.1:${WINDFORCE_POSTGRES_PORT:-5432}:5432"
     environment:
-      POSTGRES_DB: ${WINDFORCE_POSTGRES_DB:-windforce_lite}
+      POSTGRES_DB: ${WINDFORCE_POSTGRES_DB:-windforce_core}
       POSTGRES_USER: ${WINDFORCE_POSTGRES_USER:-postgres}
       POSTGRES_HOST_AUTH_METHOD: trust
     healthcheck:
@@ -38,7 +38,7 @@ services:
     profiles:
       - backend
       - standalone
-    image: ${WINDFORCE_LITE_IMAGE:-imprun/windforce-lite:local}
+    image: ${WINDFORCE_LITE_IMAGE:-imprun/windforce-core:local}
     build:
       context: .
     restart: unless-stopped
@@ -50,7 +50,7 @@ services:
     ports:
       - "127.0.0.1:${WINDFORCE_LITE_API_PORT:-18091}:8080"
     environment:
-      <<: *windforce-lite-secret-env
+      <<: *windforce-core-secret-env
     command:
       - control-plane
       - --addr
@@ -58,7 +58,7 @@ services:
       - --state-backend
       - postgres
       - --database-url
-      - *windforce-lite-database-url
+      - *windforce-core-database-url
       - --migrate
       - --store
       - /data/store
@@ -74,7 +74,7 @@ services:
       - backend
       - worker
       - standalone
-    image: ${WINDFORCE_LITE_IMAGE:-imprun/windforce-lite:local}
+    image: ${WINDFORCE_LITE_IMAGE:-imprun/windforce-core:local}
     build:
       context: .
     restart: unless-stopped
@@ -86,7 +86,7 @@ services:
     ports:
       - "127.0.0.1:${WINDFORCE_LITE_EXECUTION_API_PORT:-18092}:8080"
     environment:
-      <<: *windforce-lite-secret-env
+      <<: *windforce-core-secret-env
     command:
       - execution-api
       - --addr
@@ -94,7 +94,7 @@ services:
       - --state-backend
       - postgres
       - --database-url
-      - *windforce-lite-database-url
+      - *windforce-core-database-url
       - --migrate
       - --store
       - /data/store
@@ -130,7 +130,7 @@ services:
     profiles:
       - worker
       - standalone
-    image: ${WINDFORCE_LITE_IMAGE:-imprun/windforce-lite:local}
+    image: ${WINDFORCE_LITE_IMAGE:-imprun/windforce-core:local}
     build:
       context: .
     restart: unless-stopped
@@ -146,7 +146,7 @@ services:
       - --state-backend
       - postgres
       - --database-url
-      - *windforce-lite-database-url
+      - *windforce-core-database-url
       - --migrate
       - --store
       - /data/store
@@ -155,7 +155,7 @@ services:
       - --base-url
       - http://execution-api:8080
     environment:
-      <<: *windforce-lite-secret-env
+      <<: *windforce-core-secret-env
       PIP_INDEX_URL: ${PIP_INDEX_URL:-}
       PIP_EXTRA_INDEX_URL: ${PIP_EXTRA_INDEX_URL:-}
       PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
@@ -170,7 +170,7 @@ services:
     profiles:
       - backend
       - standalone
-    image: ${WINDFORCE_LITE_IMAGE:-imprun/windforce-lite:local}
+    image: ${WINDFORCE_LITE_IMAGE:-imprun/windforce-core:local}
     build:
       context: .
     restart: unless-stopped
@@ -184,10 +184,10 @@ services:
       - --state-backend
       - postgres
       - --database-url
-      - *windforce-lite-database-url
+      - *windforce-core-database-url
       - --migrate
     environment:
-      <<: *windforce-lite-secret-env
+      <<: *windforce-core-secret-env
       WINDFORCE_LITE_WEBHOOK_DISPATCH_INTERVAL: ${WINDFORCE_LITE_WEBHOOK_DISPATCH_INTERVAL:-500ms}
       WINDFORCE_LITE_WEBHOOK_REQUEST_TIMEOUT: ${WINDFORCE_LITE_WEBHOOK_REQUEST_TIMEOUT:-10s}
       WINDFORCE_LITE_WEBHOOK_MAX_ATTEMPTS: ${WINDFORCE_LITE_WEBHOOK_MAX_ATTEMPTS:-8}
@@ -204,13 +204,13 @@ services:
 
 volumes:
   postgres-data:
-    name: ${WINDFORCE_LITE_POSTGRES_VOLUME:-windforce-lite_postgres-data}
+    name: ${WINDFORCE_LITE_POSTGRES_VOLUME:-windforce-core_postgres-data}
     external: ${WINDFORCE_LITE_POSTGRES_VOLUME_EXTERNAL:-false}
   windforce-data:
-    name: ${WINDFORCE_LITE_DATA_VOLUME:-windforce-lite_windforce-data}
+    name: ${WINDFORCE_LITE_DATA_VOLUME:-windforce-core_windforce-data}
     external: ${WINDFORCE_LITE_DATA_VOLUME_EXTERNAL:-false}
   web-node-modules:
 
 networks:
   default:
-    name: ${WINDFORCE_LITE_NETWORK:-windforce-lite}
+    name: ${WINDFORCE_LITE_NETWORK:-windforce-core}

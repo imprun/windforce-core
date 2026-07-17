@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	controlevent "github.com/imprun/windforce-lite/internal/event"
+	controlevent "github.com/imprun/windforce-core/internal/event"
 )
 
 func TestHTTPSenderSignsStableCloudEventAndClassifiesResponse(t *testing.T) {
@@ -73,7 +73,7 @@ func TestHTTPSenderSignsStableCloudEventAndClassifiesResponse(t *testing.T) {
 		if !VerifySignature(claimed.Subscription.SigningSecret, timestamp, bodies[index], header.Get(HeaderSignature)) {
 			t.Fatalf("request %d signature did not verify", index)
 		}
-		if header.Get("Content-Type") != "application/cloudevents+json" || header.Get("User-Agent") != "windforce-lite-webhook/dev" {
+		if header.Get("Content-Type") != "application/cloudevents+json" || header.Get("User-Agent") != "windforce-core-webhook/dev" {
 			t.Fatalf("request %d content headers = %#v", index, header)
 		}
 	}

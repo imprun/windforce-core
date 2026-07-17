@@ -11,8 +11,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/imprun/windforce-lite/internal/state"
-	"github.com/imprun/windforce-lite/internal/webhook"
+	"github.com/imprun/windforce-core/internal/state"
+	"github.com/imprun/windforce-core/internal/webhook"
 )
 
 const (
@@ -151,7 +151,7 @@ func newWebhookDispatcher(stateStore state.Store, flags webhookDispatcherFlags, 
 	sender := webhook.NewHTTPSender(webhook.SenderConfig{
 		Policy:         policy,
 		RequestTimeout: *flags.requestTimeout,
-		UserAgent:      "windforce-lite-webhook/" + version,
+		UserAgent:      "windforce-core-webhook/" + version,
 	})
 	return &webhook.Dispatcher{
 		Store:       webhookStore,

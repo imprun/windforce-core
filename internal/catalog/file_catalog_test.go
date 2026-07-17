@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/imprun/windforce-lite/internal/contract"
+	"github.com/imprun/windforce-core/internal/contract"
 )
 
 func TestFileCatalogUpsertAndGet(t *testing.T) {

@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/imprun/windforce-lite/internal/contract"
-	"github.com/imprun/windforce-lite/internal/state"
+	"github.com/imprun/windforce-core/internal/contract"
+	"github.com/imprun/windforce-core/internal/state"
 )
 
 type Catalog interface {

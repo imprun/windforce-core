@@ -2,7 +2,7 @@
 /dist/
 /tmp/
 /.tmp/
-/.windforce-lite/
+/.windforce-core/
 /.serena/
 /web/node_modules/
 /web/dist/

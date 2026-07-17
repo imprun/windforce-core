@@ -1,4 +1,4 @@
-module github.com/imprun/windforce-lite
+module github.com/imprun/windforce-core
 
 go 1.23.0
 

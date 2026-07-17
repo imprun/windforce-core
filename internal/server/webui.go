@@ -6,7 +6,7 @@ import (
 	"path"
 	"strings"
 
-	"github.com/imprun/windforce-lite/internal/webui"
+	"github.com/imprun/windforce-core/internal/webui"
 )
 
 var (

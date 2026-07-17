@@ -1,6 +1,6 @@
-# Windforce Lite webhook contract v1
+# Windforce Core webhook contract v1
 
-Windforce Lite sends structured CloudEvents to a registered webhook endpoint after a release transaction commits. Receivers must verify the signature against the raw request body before decoding JSON.
+Windforce Core sends structured CloudEvents to a registered webhook endpoint after a release transaction commits. Receivers must verify the signature against the raw request body before decoding JSON.
 
 ## Request
 
@@ -19,7 +19,7 @@ The signed bytes are:
 X-Windforce-Timestamp + "." + raw_request_body
 ```
 
-Use a constant-time signature comparison and reject timestamps outside a short replay window. The public Go verifier is available at `github.com/imprun/windforce-lite/pkg/webhook`. The fixed cross-language input and expected digest are in `signature.example.json`.
+Use a constant-time signature comparison and reject timestamps outside a short replay window. The public Go verifier is available at `github.com/imprun/windforce-core/pkg/webhook`. The fixed cross-language input and expected digest are in `signature.example.json`.
 
 ## Delivery behavior
 
@@ -34,7 +34,7 @@ Receivers may reject unknown fields. A breaking payload change therefore require
 
 ## Connector boundary
 
-A messenger connector verifies this contract, deduplicates event IDs durably, maps `windforce.release.published` fields into its message format, and owns messenger credentials, rate limits, templates, and delivery state. Windforce Lite does not store Slack or Telegram credentials and does not render provider-specific payloads.
+A messenger connector verifies this contract, deduplicates event IDs durably, maps `windforce.release.published` fields into its message format, and owns messenger credentials, rate limits, templates, and delivery state. Windforce Core does not store Slack or Telegram credentials and does not render provider-specific payloads.
 
 For local contract checks, run the generic receiver from the repository root:
 

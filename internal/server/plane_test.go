@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/imprun/windforce-lite/internal/state"
+	"github.com/imprun/windforce-core/internal/state"
 )
 
 func TestControlPlaneOnlyServesControlRoutesAndWebUI(t *testing.T) {

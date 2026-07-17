@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/imprun/windforce-lite/internal/catalog"
-	"github.com/imprun/windforce-lite/internal/contract"
+	"github.com/imprun/windforce-core/internal/catalog"
+	"github.com/imprun/windforce-core/internal/contract"
 )
 
 func (s *LocalStore) SaveReleaseCandidate(ctx context.Context, deployment contract.Deployment, syncedAt time.Time) (catalog.ReleaseCandidate, error) {

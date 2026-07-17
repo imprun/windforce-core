@@ -15,7 +15,7 @@ RUN go mod download
 COPY . .
 RUN rm -rf internal/webui/assets
 COPY --from=web-build /src/web/dist ./internal/webui/assets
-RUN CGO_ENABLED=0 GOOS=linux go build -o /out/windforce-lite ./cmd/windforce-lite
+RUN CGO_ENABLED=0 GOOS=linux go build -o /out/windforce-core ./cmd/windforce-core
 
 FROM python:3.14.6-slim-bookworm
 
@@ -27,11 +27,11 @@ RUN useradd --system --uid 10001 --create-home windforce \
     && mkdir -p /data/store /data/cache \
     && chown -R windforce:windforce /data
 
-COPY --from=build /out/windforce-lite /usr/local/bin/windforce-lite
+COPY --from=build /out/windforce-core /usr/local/bin/windforce-core
 
 USER windforce
 WORKDIR /data
 EXPOSE 8080
 
-ENTRYPOINT ["windforce-lite"]
+ENTRYPOINT ["windforce-core"]
 CMD ["api", "--addr", ":8080", "--store", "/data/store", "--catalog", "/data/catalog.json", "--git-sources", "/data/git-sources.json"]

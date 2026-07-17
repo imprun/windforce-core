@@ -1,6 +1,6 @@
-# windforce-lite
+# windforce-core
 
-`windforce-lite` is a small source-sync runtime for Windforce-style apps.
+`windforce-core` is a small source-sync runtime for Windforce-style apps.
 
 It keeps the useful core of Windforce:
 
@@ -82,7 +82,7 @@ docker compose --profile worker up -d worker
 
 `standalone` starts PostgreSQL, backend, and worker together. External protocol
 adapters join the Compose network and call the backend's versioned Execution
-API. PostgreSQL and the active catalog remain private to Windforce Lite. The
+API. PostgreSQL and the active catalog remain private to Windforce Core. The
 compose `volume-init` service fixes the mounted data volume ownership before the
 control-plane or worker starts.
 
@@ -124,12 +124,12 @@ manifest shape. `entrypoint` and `scriptLang` are app-level; actions branch
 inside that entrypoint. `timeout` is the app default and an action may override
 it with its own `timeout` in seconds. Source manifests do not declare action
 commands or adapters; integration adapters live outside the app source contract.
-The lite executor currently wires canonical `typescript`, `python`, and `go`
+The core executor currently wires canonical `typescript`, `python`, and `go`
 entrypoints. Other `scriptLang` values are still accepted and pinned during sync
 so the manifest contract stays canonical; an unwired language fails at runtime
 with the executor's unsupported-language error.
 
-For TypeScript, Python, and Go entrypoints, the lite worker prepares the fetched
+For TypeScript, Python, and Go entrypoints, the core worker prepares the fetched
 source like the canonical worker subset. TypeScript apps run
 `bun install --frozen-lockfile --no-progress` when `package.json` is present and
 receive the vendored `windforce-client` package in `node_modules`. Python apps
@@ -152,7 +152,7 @@ not as a runner infrastructure error.
 Run the combined local control-plane and worker:
 
 ```powershell
-go run ./cmd/windforce-lite standalone `
+go run ./cmd/windforce-core standalone `
   --addr 127.0.0.1:8080 `
   --store .tmp/store `
   --state .tmp/state.json
@@ -176,7 +176,7 @@ Invoke-RestMethod `
 The runtime process model is available through local file-backed state:
 
 ```powershell
-go run ./cmd/windforce-lite standalone `
+go run ./cmd/windforce-core standalone `
   --addr :8080 `
   --store .tmp/store `
   --state .tmp/state.json
@@ -195,9 +195,9 @@ Invoke-RestMethod `
 Separated local processes use the same state file:
 
 ```powershell
-go run ./cmd/windforce-lite control-plane --addr :8081 --state .tmp/state.json
-go run ./cmd/windforce-lite execution-api --addr :8082 --state .tmp/state.json
-go run ./cmd/windforce-lite worker --state .tmp/state.json --store .tmp/store
+go run ./cmd/windforce-core control-plane --addr :8081 --state .tmp/state.json
+go run ./cmd/windforce-core execution-api --addr :8082 --state .tmp/state.json
+go run ./cmd/windforce-core worker --state .tmp/state.json --store .tmp/store
 ```
 
 `worker --once` claims at most one queued job and exits, which is useful in
@@ -267,22 +267,22 @@ value identifies a Client Registry record and selects client-scoped input
 settings; it is not an API credential. Run admission rejects unknown client
 keys and caller-supplied values for locked input keys.
 
-The lite script context exposes the implemented basic helpers:
+The core script context exposes the implemented basic helpers:
 `ctx.variables`, `ctx.resources`, `ctx.state`, `ctx.http`, `ctx.logger`,
 and the run identity fields. Full Windforce flow approval URL minting
 (`ctx.approval.getResumeUrls` / `POST /flow/resume-urls`) depends on the full
-flow-run/step model and is intentionally not part of the lite basic control
+flow-run/step model and is intentionally not part of the core basic control
 plane. Lite HITL uses the `WAITING_HUMAN` human-task resume API instead.
 
 `git_sources` responses follow the canonical control-plane shape: `id` is the
 numeric source identifier used by `{gitSourceId}` routes, and `name` is the
-human-readable source name. Control-plane integrations, including the lite CLI,
+human-readable source name. Control-plane integrations, including the core CLI,
 must store and call the returned numeric `id`.
 
 `creds_ref` is a workspace-shared variable path for the git access token, not an
 environment variable name. Register the token through the control-plane
 variables API with an empty `app_key`, then pass that path as `creds_ref`. The
-lite CLI reads secret values from an environment variable so the token is not
+core CLI reads secret values from an environment variable so the token is not
 placed in shell history:
 
 ```powershell
@@ -307,7 +307,7 @@ control plane and used by `make windforce-sync`. `WF_GIT_CREDS_REF` defaults to
 For local development without the Web UI, `tools/windforce_control.py` calls
 the same control-plane API. The examples below target the Docker Compose and
 Makefile default API URL, `http://127.0.0.1:18091`. Use a custom URL only when
-running `go run ./cmd/windforce-lite standalone --addr <addr>` directly.
+running `go run ./cmd/windforce-core standalone --addr <addr>` directly.
 
 ```powershell
 python tools/windforce_control.py --api-url http://127.0.0.1:18091 register `
@@ -353,8 +353,8 @@ protocol adapters through
 ingress and response envelopes while Windforce keeps release and schema
 selection authoritative. The canonical app invocation schema endpoint is
 `GET /api/w/{workspace}/apps/{app}/openapi.json`.
-`windforce-lite` additionally exposes `GET /api/w/{workspace}/openapi.json`
-only as generated documentation for the supported lite control-plane subset.
+`windforce-core` additionally exposes `GET /api/w/{workspace}/openapi.json`
+only as generated documentation for the supported core control-plane subset.
 The workspace `control-openapi` command reads that documentation endpoint,
 while the app `openapi` command returns invocation OpenAPI generated from the
 decoded action schemas.
@@ -362,12 +362,12 @@ Lite deployment/source sync history is exposed through
 `GET /api/w/{workspace}/apps/{app}/history`. The full Windforce draft
 deployment status route, `GET /api/w/{workspace}/deployments/{deploymentID}`,
 depends on the full deploy control-plane state table and is not part of the
-lite basic control plane.
+core basic control plane.
 
 The full Windforce control plane derives job actor provenance from the
 authenticated principal. Lite keeps the same response fields without
 implementing the full user/session principal model: local control-plane clients
-may provide `X-Windforce-Actor` directly or use the lite CLI's global `--actor`
+may provide `X-Windforce-Actor` directly or use the core CLI's global `--actor`
 option / `WINDFORCE_LITE_ACTOR` environment variable. `created_by`,
 `permissioned_as`, and `canceled_by` fall back to `system` only when no actor is
 present.
@@ -376,18 +376,18 @@ PostgreSQL is the production state backend. All runtime modes accept
 `--state-backend postgres`, `--database-url`, and `--migrate`:
 
 ```powershell
-$env:WINDFORCE_DATABASE_URL = "postgres://user:pass@host:5432/windforce_lite?sslmode=disable"
+$env:WINDFORCE_DATABASE_URL = "postgres://user:pass@host:5432/windforce_core?sslmode=disable"
 
-go run ./cmd/windforce-lite control-plane `
+go run ./cmd/windforce-core control-plane `
   --state-backend postgres `
   --database-url $env:WINDFORCE_DATABASE_URL `
   --migrate
 
-go run ./cmd/windforce-lite worker `
+go run ./cmd/windforce-core worker `
   --state-backend postgres `
   --database-url $env:WINDFORCE_DATABASE_URL
 
-go run ./cmd/windforce-lite webhook-dispatcher `
+go run ./cmd/windforce-core webhook-dispatcher `
   --state-backend postgres `
   --database-url $env:WINDFORCE_DATABASE_URL
 ```
@@ -399,14 +399,14 @@ the admin token value is reused as the local signing secret so the raw admin
 token is not injected into scripts:
 
 ```powershell
-go run ./cmd/windforce-lite control-plane `
+go run ./cmd/windforce-core control-plane `
   --admin-token-env WINDFORCE_ADMIN_TOKEN `
   --job-token-secret-env WINDFORCE_JOB_TOKEN_SECRET
 ```
 
 Job input and job result output are stored with the same Windforce
 `{"__wf_enc":1,"ct":"..."}` envelope used by the canonical worker when
-`SECRET_KEY` is configured. The lite API and worker must use the same
+`SECRET_KEY` is configured. The core API and worker must use the same
 `--secret-key-env` / `--secret-key-previous-env` values; when omitted, both use
 the local development default so standalone and compose runs continue to work
 without extra setup.
@@ -461,7 +461,7 @@ forever. `WINDFORCE_LITE_WEBHOOK_RETENTION_INTERVAL`,
 
 ## Runtime architecture
 
-Windforce Lite has three explicit planes:
+Windforce Core has three explicit planes:
 
 - Control Plane manages sources, releases, configuration, and audit history.
 - Trigger Plane contains protocol adapters that call the Execution API.
@@ -478,11 +478,11 @@ the next job.
 
 Process roles are separated:
 
-- `windforce-lite control-plane`: source, release, configuration, audit, and Web UI APIs
-- `windforce-lite execution-api`: run admission and job-scoped runtime callbacks
-- `windforce-lite worker`: job polling and action execution
-- `windforce-lite webhook-dispatcher`: signed Control Plane event delivery and retry
-- `windforce-lite standalone`: local/dev combined mode
+- `windforce-core control-plane`: source, release, configuration, audit, and Web UI APIs
+- `windforce-core execution-api`: run admission and job-scoped runtime callbacks
+- `windforce-core worker`: job polling and action execution
+- `windforce-core webhook-dispatcher`: signed Control Plane event delivery and retry
+- `windforce-core standalone`: local/dev combined mode
 
 Protocol adapters adapt routes, request terms, environment variables, and
 response envelopes at the edge. They call the Execution API through an SDK and
@@ -530,4 +530,4 @@ event, and HITL state. Redis is optional for notification/cache only. See
 
 ## License
 
-windforce-lite is licensed under the [Apache License, Version 2.0](LICENSE).
+windforce-core is licensed under the [Apache License, Version 2.0](LICENSE).

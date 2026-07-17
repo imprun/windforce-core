@@ -40,7 +40,7 @@ failure rate is moving, per app and per route tag.
   control plane stores.
 - Time-series/metrics infrastructure. The dashboard reads the existing
   summary endpoint; exporting metrics to a real monitoring stack stays out of
-  scope for the lite UI.
+  scope for the core UI.
 
 ## Consequences
 

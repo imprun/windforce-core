@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/imprun/windforce-lite/internal/state"
+	"github.com/imprun/windforce-core/internal/state"
 )
 
 func TestCanonicalClientLifecycle(t *testing.T) {

@@ -1,5 +1,5 @@
 // Package executor runs a single job via the Windforce ctx-first runtime
-// contract. This is the lite direct-exec subset of vendor/windforce's executor:
+// contract. This is the direct-exec subset of the full Windforce executor:
 // no sandbox/cgroup prep, but the per-job IO, wrapper ctx shape, result file,
 // timeout cancellation, and log streaming follow the canonical implementation.
 package executor

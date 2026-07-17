@@ -23,7 +23,7 @@ Control Plane은 릴리즈 발행, 활성 릴리즈 선택, 감사 이력의 소
 
 ### 1. Control Plane은 범용 Webhook만 소유한다
 
-Windforce Lite core는 도메인 이벤트, Webhook 구독, 전달 상태와 재시도를 소유한다. Slack, Telegram 등 메신저별 인증과 메시지 렌더링은 별도 notifier connector가 소유한다.
+Windforce Core core는 도메인 이벤트, Webhook 구독, 전달 상태와 재시도를 소유한다. Slack, Telegram 등 메신저별 인증과 메시지 렌더링은 별도 notifier connector가 소유한다.
 
 ```mermaid
 flowchart TD
@@ -128,8 +128,8 @@ Webhook Dispatcher는 PostgreSQL에서 delivery를 lease로 claim하고 HTTP 요
 운영 환경은 Control Plane API와 Webhook Dispatcher를 별도 프로세스로 실행한다.
 
 ```text
-windforce-lite control-plane
-windforce-lite webhook-dispatcher
+windforce-core control-plane
+windforce-core webhook-dispatcher
 ```
 
 두 프로세스는 같은 PostgreSQL state를 사용한다. Dispatcher는 inbound public API를 노출하지 않는다. `standalone`은 개발과 smoke test를 위해 Dispatcher loop를 같은 프로세스에서 실행할 수 있다.

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/imprun/windforce-lite/internal/contract"
+	"github.com/imprun/windforce-core/internal/contract"
 )
 
 var ErrReleaseCandidateNotFound = errors.New("release candidate not found")

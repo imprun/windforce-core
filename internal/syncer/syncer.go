@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/imprun/windforce-lite/internal/bundle"
-	"github.com/imprun/windforce-lite/internal/contract"
-	"github.com/imprun/windforce-lite/internal/manifest"
-	"github.com/imprun/windforce-lite/internal/source"
+	"github.com/imprun/windforce-core/internal/bundle"
+	"github.com/imprun/windforce-core/internal/contract"
+	"github.com/imprun/windforce-core/internal/manifest"
+	"github.com/imprun/windforce-core/internal/source"
 )
 
 type Source struct {
@@ -207,7 +207,7 @@ func (s *Syncer) prepareSource(ctx context.Context, src Source, commit string) (
 	if err := os.MkdirAll(cloneRoot, 0o755); err != nil {
 		return "", "", nil, err
 	}
-	cloneDir, err := os.MkdirTemp(cloneRoot, "windforce-lite-clone-")
+	cloneDir, err := os.MkdirTemp(cloneRoot, "windforce-core-clone-")
 	if err != nil {
 		return "", "", nil, err
 	}

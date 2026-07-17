@@ -116,7 +116,7 @@ func PinExecutionDeployment(deployment Deployment, actionKey string) Deployment 
 	return pinned
 }
 
-// JobRequest is the runtime request passed into windforce-lite.
+// JobRequest is the runtime request passed into windforce-core.
 type JobRequest struct {
 	JobID      string          `json:"jobId"`
 	App        string          `json:"app"`

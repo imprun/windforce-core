@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	controlevent "github.com/imprun/windforce-lite/internal/event"
+	controlevent "github.com/imprun/windforce-core/internal/event"
 )
 
 type DeliveryState string

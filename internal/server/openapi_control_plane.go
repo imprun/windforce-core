@@ -601,7 +601,7 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 	return map[string]any{
 		"openapi": "3.1.0",
 		"info": map[string]any{
-			"title":       "Windforce Lite Control Plane API",
+			"title":       "Windforce Core Control Plane API",
 			"version":     "current",
 			"description": "Workspace control-plane API for registering git sources, materializing immutable release candidates, publishing active app releases, inspecting app/action metadata, and discovering action input/output schemas.",
 		},

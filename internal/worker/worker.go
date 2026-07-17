@@ -8,9 +8,9 @@ import (
 	"log"
 	"time"
 
-	"github.com/imprun/windforce-lite/internal/contract"
-	actionruntime "github.com/imprun/windforce-lite/internal/runtime"
-	"github.com/imprun/windforce-lite/internal/state"
+	"github.com/imprun/windforce-core/internal/contract"
+	actionruntime "github.com/imprun/windforce-core/internal/runtime"
+	"github.com/imprun/windforce-core/internal/state"
 )
 
 type Processor struct {

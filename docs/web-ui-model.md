@@ -1,6 +1,6 @@
-# windforce-lite Web UI 정보 모델과 화면 기획
+# windforce-core Web UI 정보 모델과 화면 기획
 
-이 문서는 windforce-lite Web UI가 노출하는 개념, 화면 구조, 라우트, 문구 규칙을
+이 문서는 windforce-core Web UI가 노출하는 개념, 화면 구조, 라우트, 문구 규칙을
 정의한다. UI 구현과 문구는 이 문서를 기준으로 맞춘다. 기술 스택과 빌드 파이프라인
 결정은 [ADR 0004](adr/0004-web-ui-rewrite.md)에 있다.
 
@@ -138,6 +138,6 @@ UI는 `local-dev`를 기본 actor로 사용한다.
 - 집계 화면(메뉴)은 `Monitoring`으로 부른다. API 대상과 데이터 항목은
   `Job`으로 부르고, 문장 안에서 실행 사건을 가리킬 때는 run을 쓴다. UI 문구는 개별 record가 아니라 집계를 가리키게
   쓴다: `job activity`, `failure rate`.
-- `FCode`는 windforce-lite UI 용어로 쓰지 않는다.
+- `FCode`는 windforce-core UI 용어로 쓰지 않는다.
 - `Actor`는 audit subject로 설명한다. Git credential이나 API token과 섞어
   설명하지 않는다.

@@ -5,7 +5,7 @@ description = "Python client for the Windforce Execution API"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
-authors = [{ name = "Windforce Lite contributors" }]
+authors = [{ name = "Windforce Core contributors" }]
 dependencies = []
 
 [build-system]

@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/imprun/windforce-lite/internal/webhook"
+	"github.com/imprun/windforce-core/internal/webhook"
 )
 
 type webhookRetentionPolicy struct {

@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
-	catalogpkg "github.com/imprun/windforce-lite/internal/catalog"
-	"github.com/imprun/windforce-lite/internal/contract"
-	executionpkg "github.com/imprun/windforce-lite/internal/execution"
-	gitsourcepkg "github.com/imprun/windforce-lite/internal/gitsource"
+	catalogpkg "github.com/imprun/windforce-core/internal/catalog"
+	"github.com/imprun/windforce-core/internal/contract"
+	executionpkg "github.com/imprun/windforce-core/internal/execution"
+	gitsourcepkg "github.com/imprun/windforce-core/internal/gitsource"
 )
 
 type canonicalGitSourceView struct {

@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/imprun/windforce-lite/internal/contract"
-	"github.com/imprun/windforce-lite/internal/state"
+	"github.com/imprun/windforce-core/internal/contract"
+	"github.com/imprun/windforce-core/internal/state"
 )
 
 type canonicalInputConfigRequest struct {

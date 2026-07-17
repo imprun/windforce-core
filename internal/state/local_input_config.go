@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/imprun/windforce-lite/internal/contract"
+	"github.com/imprun/windforce-core/internal/contract"
 )
 
 func (s *LocalStore) ListInputConfigsForApp(ctx context.Context, workspaceID string, appKey string) ([]InputConfig, error) {

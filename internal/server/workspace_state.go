@@ -6,8 +6,8 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/imprun/windforce-lite/internal/crypto"
-	"github.com/imprun/windforce-lite/internal/state"
+	"github.com/imprun/windforce-core/internal/crypto"
+	"github.com/imprun/windforce-core/internal/state"
 )
 
 func (h *Handler) handleGetState(w http.ResponseWriter, r *http.Request, workspaceID string) {

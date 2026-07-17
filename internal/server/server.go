@@ -15,12 +15,12 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/imprun/windforce-lite/internal/contract"
-	executionpkg "github.com/imprun/windforce-lite/internal/execution"
-	gitsourcepkg "github.com/imprun/windforce-lite/internal/gitsource"
-	"github.com/imprun/windforce-lite/internal/state"
-	"github.com/imprun/windforce-lite/internal/syncer"
-	"github.com/imprun/windforce-lite/internal/token"
+	"github.com/imprun/windforce-core/internal/contract"
+	executionpkg "github.com/imprun/windforce-core/internal/execution"
+	gitsourcepkg "github.com/imprun/windforce-core/internal/gitsource"
+	"github.com/imprun/windforce-core/internal/state"
+	"github.com/imprun/windforce-core/internal/syncer"
+	"github.com/imprun/windforce-core/internal/token"
 )
 
 type Catalog interface {

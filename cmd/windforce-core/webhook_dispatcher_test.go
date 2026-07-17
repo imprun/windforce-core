@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/imprun/windforce-lite/internal/contract"
-	controlevent "github.com/imprun/windforce-lite/internal/event"
-	"github.com/imprun/windforce-lite/internal/state"
-	"github.com/imprun/windforce-lite/internal/webhook"
+	"github.com/imprun/windforce-core/internal/contract"
+	controlevent "github.com/imprun/windforce-core/internal/event"
+	"github.com/imprun/windforce-core/internal/state"
+	"github.com/imprun/windforce-core/internal/webhook"
 )
 
 func TestRunWebhookDispatcherOnceDeliversPersistedEvent(t *testing.T) {

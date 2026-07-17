@@ -7,8 +7,8 @@
 	windforce-run windforce-run-wait windforce-jobs windforce-job windforce-job-result windforce-job-logs windforce-job-cancel \
 	ui-guide ui-guide-verify
 
-APP := windforce-lite
-CMD := ./cmd/windforce-lite
+APP := windforce-core
+CMD := ./cmd/windforce-core
 
 LOCAL_GO_WIN := .tmp/tools/go/bin/go.exe
 LOCAL_GO_UNIX := .tmp/tools/go/bin/go
@@ -58,7 +58,7 @@ WF_GIT_SOURCE_NAME ?= $(WF_APP)
 WF_GIT_SOURCE_ID ?= 1
 WF_COMMIT ?=
 WF_ACTOR ?= local-dev
-WF_REPO_URL ?= https://github.com/imprun/windforce-lite.git
+WF_REPO_URL ?= https://github.com/imprun/windforce-core.git
 WF_BRANCH ?= main
 WF_SUBPATH ?= examples/echo
 WF_GIT_CREDS_REF ?=
@@ -71,7 +71,7 @@ WF_VARIABLE_VALUE_ENV ?= $(WF_GIT_TOKEN_ENV)
 WF_VARIABLE_APP ?=
 WF_VARIABLE_DESCRIPTION ?=
 
-WINDFORCE_POSTGRES_DB ?= windforce_lite
+WINDFORCE_POSTGRES_DB ?= windforce_core
 WINDFORCE_POSTGRES_USER ?= postgres
 WINDFORCE_POSTGRES_PORT ?= 5432
 ifneq ($(strip $(WINDFORCE_LITE_DATABASE_URL)),)

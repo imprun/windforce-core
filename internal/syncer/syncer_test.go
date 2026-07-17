@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/imprun/windforce-lite/internal/bundle"
+	"github.com/imprun/windforce-core/internal/bundle"
 )
 
 type failingMaterializeStore struct {

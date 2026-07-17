@@ -25,7 +25,7 @@ func TestWebUIServedWithoutAPIAuth(t *testing.T) {
 	if page.Code != http.StatusOK {
 		t.Fatalf("ui status = %d, want %d", page.Code, http.StatusOK)
 	}
-	if !strings.Contains(page.Body.String(), "windforce-lite") {
+	if !strings.Contains(page.Body.String(), "windforce-core") {
 		t.Fatalf("ui page did not contain product name")
 	}
 
@@ -45,7 +45,7 @@ func TestWebUIServedWithoutAPIAuth(t *testing.T) {
 	if deepLink.Code != http.StatusOK {
 		t.Fatalf("ui deep link status = %d, want %d", deepLink.Code, http.StatusOK)
 	}
-	if !strings.Contains(deepLink.Body.String(), "windforce-lite") {
+	if !strings.Contains(deepLink.Body.String(), "windforce-core") {
 		t.Fatalf("ui deep link did not serve the SPA index page")
 	}
 
