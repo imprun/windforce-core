@@ -77,6 +77,7 @@ func runServer(args []string, mode string) int {
 	databaseURL := flags.String("database-url", "", "PostgreSQL database URL for --state-backend postgres")
 	migrate := flags.Bool("migrate", false, "run state backend schema migration before starting")
 	adminTokenEnv := flags.String("admin-token-env", "", "environment variable that contains the admin/API bearer token")
+	workerTokenEnv := flags.String("worker-token-env", "", "environment variable that contains the remote worker plane bearer token; defaults to the admin token")
 	devMode := flags.Bool("dev", false, "development mode: allow starting without an admin token and with the built-in insecure secret key")
 	jobTokenSecretEnv := flags.String("job-token-secret-env", "", "environment variable that contains the WF_TOKEN signing secret; defaults to admin token")
 	secretKeyEnv := flags.String("secret-key-env", "SECRET_KEY", "environment variable that contains the instance secret used for secret variables")
@@ -174,6 +175,8 @@ func runServer(args []string, mode string) int {
 		EnableExecutionAPI: mode == "execution-api" || combinedMode,
 		EnableWebUI:        mode == "control-plane" || combinedMode,
 		AdminToken:         adminToken,
+		WorkerToken:        firstNonEmpty(tokenFromEnv(*workerTokenEnv), adminToken),
+		ArtifactStore:      executionBundleStore,
 		JobTokenSecret:     jobTokenSecret,
 		SecretKey:          secretKey,
 		SecretKeyPrevious:  secretKeyPrevious,
