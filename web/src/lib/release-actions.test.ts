@@ -3,7 +3,7 @@ import { releaseActionState } from "./release-actions";
 
 describe("releaseActionState", () => {
   test("requires synchronization before the first release", () => {
-    expect(releaseActionState(undefined, undefined, false)).toEqual({
+    expect(releaseActionState(undefined, undefined, false, false)).toEqual({
       syncLabel: "Sync source",
       syncDisabled: false,
       publishLabel: "Sync required",
@@ -12,7 +12,7 @@ describe("releaseActionState", () => {
   });
 
   test("enables publication when synchronized source differs from active release", () => {
-    expect(releaseActionState("active", "latest", true)).toEqual({
+    expect(releaseActionState("active", "latest", true, true)).toEqual({
       syncLabel: "Source current",
       syncDisabled: true,
       publishLabel: "Publish Release",
@@ -21,11 +21,20 @@ describe("releaseActionState", () => {
   });
 
   test("prevents an accidental duplicate release", () => {
-    expect(releaseActionState("same", "same", true)).toEqual({
+    expect(releaseActionState("same", "same", true, true)).toEqual({
       syncLabel: "Source current",
       syncDisabled: true,
       publishLabel: "Up to date",
       publishDisabled: true,
+    });
+  });
+
+  test("enables republishing when the active release has no execution bundle", () => {
+    expect(releaseActionState("same", "same", true, false)).toEqual({
+      syncLabel: "Source current",
+      syncDisabled: true,
+      publishLabel: "Republish required",
+      publishDisabled: false,
     });
   });
 });

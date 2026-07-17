@@ -136,7 +136,7 @@ export function AppsPage() {
                         </span>
                       </td>
                       <td>
-                        <ReleaseStateBadge released={Boolean(app)} />
+                        <ReleaseStateBadge released={Boolean(app)} bundleReady={app?.bundle_status === "ready"} />
                       </td>
                       <td>
                         {source ? (
@@ -165,6 +165,7 @@ export function AppsPage() {
                             compact
                             source={source}
                             activeCommit={app?.commit_sha}
+                            activeBundleReady={app?.bundle_status === "ready"}
                             onSynced={() => state.reload()}
                             onPublish={setPublishing}
                           />

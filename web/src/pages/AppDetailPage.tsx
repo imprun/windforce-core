@@ -121,7 +121,7 @@ export function AppDetailPage({
       }
       actions={
         <>
-          <ReleaseStateBadge released={Boolean(app)} />
+          <ReleaseStateBadge released={Boolean(app)} bundleReady={app?.bundle_status === "ready"} />
           <button
             className="button"
             type="button"
@@ -137,6 +137,7 @@ export function AppDetailPage({
               key={`${source.id}:${actionRevision}`}
               source={source}
               activeCommit={app?.commit_sha}
+              activeBundleReady={app?.bundle_status === "ready"}
               syncButtonID="syncSourceButton"
               publishButtonID="publishReleaseButton"
               onSynced={() => state.reload()}

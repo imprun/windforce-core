@@ -130,6 +130,12 @@ func (s *Service) CreateRun(ctx context.Context, request CreateRunRequest) (Admi
 	if !ok {
 		return Admission{}, &Fault{Kind: FaultActionNotFound, Message: "action not found: " + request.App + "/" + request.Action}
 	}
+	if strings.TrimSpace(deployment.BundleDigest) == "" {
+		return Admission{}, &Fault{
+			Kind:    FaultUnavailable,
+			Message: "active release has no execution bundle; publish the synchronized source again",
+		}
+	}
 	effectiveCapabilities := contract.EffectiveCapabilities(deployment.RequiredCapabilities, actionSpec.Capabilities)
 	conflict, err := contract.CapabilityTagConflict(deployment.Tag, deployment.TagOverride, actionSpec.Tag, actionSpec.TagOverride, effectiveCapabilities)
 	if err != nil {

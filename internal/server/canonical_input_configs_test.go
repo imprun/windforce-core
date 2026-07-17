@@ -29,7 +29,8 @@ func TestCanonicalInputConfigLifecycleAndExecutionAdmission(t *testing.T) {
 	store := state.NewLocalStore(filepath.Join(t.TempDir(), "state.json"))
 	deployment := contract.Deployment{
 		Workspace: "ws-a", App: "shop", Commit: "abc123", Entrypoint: "main.py",
-		Actions: map[string]contract.Action{"orders": {}},
+		BundleDigest: testExecutionBundleDigest,
+		Actions:      map[string]contract.Action{"orders": {}},
 	}
 	server := httptest.NewServer(New(Config{
 		Store: store, Catalog: inputConfigTestCatalog{deployment: deployment},

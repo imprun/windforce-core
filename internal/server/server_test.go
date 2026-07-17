@@ -187,10 +187,11 @@ func TestCanonicalJobListDoesNotLeakResultOrLogs(t *testing.T) {
 	store := state.NewLocalStore(filepath.Join(tempDir, "state.json"))
 	fileCatalog := catalog.NewFileCatalog(filepath.Join(tempDir, "catalog.json"))
 	if err := fileCatalog.UpsertDeployment(context.Background(), contract.Deployment{
-		Workspace:   "ws-a",
-		GitSourceID: "1",
-		App:         "echo",
-		Commit:      "commit-a",
+		Workspace:    "ws-a",
+		GitSourceID:  "1",
+		App:          "echo",
+		Commit:       "commit-a",
+		BundleDigest: testExecutionBundleDigest,
 		Actions: map[string]contract.Action{
 			"echo": {Action: "echo", Entrypoint: "main.ts"},
 		},
@@ -937,10 +938,11 @@ func TestCanonicalJobRunStatusAndResultAPI(t *testing.T) {
 	store := state.NewLocalStore(filepath.Join(tempDir, "state.json"))
 	fileCatalog := catalog.NewFileCatalog(filepath.Join(tempDir, "catalog.json"))
 	if err := fileCatalog.UpsertDeployment(context.Background(), contract.Deployment{
-		Workspace:   "ws-a",
-		GitSourceID: "1",
-		App:         "echo",
-		Commit:      "commit-a",
+		Workspace:    "ws-a",
+		GitSourceID:  "1",
+		App:          "echo",
+		Commit:       "commit-a",
+		BundleDigest: testExecutionBundleDigest,
 		Actions: map[string]contract.Action{
 			"echo": {Action: "echo", Entrypoint: "main.ts", Command: []string{"helper"}, TimeoutMs: 45000},
 		},
@@ -1215,10 +1217,11 @@ func TestCanonicalJobWebhookAPI(t *testing.T) {
 	store := state.NewLocalStore(filepath.Join(tempDir, "state.json"))
 	fileCatalog := catalog.NewFileCatalog(filepath.Join(tempDir, "catalog.json"))
 	if err := fileCatalog.UpsertDeployment(context.Background(), contract.Deployment{
-		Workspace:   "ws-a",
-		GitSourceID: "source-a",
-		App:         "echo",
-		Commit:      "commit-a",
+		Workspace:    "ws-a",
+		GitSourceID:  "source-a",
+		App:          "echo",
+		Commit:       "commit-a",
+		BundleDigest: testExecutionBundleDigest,
 		Actions: map[string]contract.Action{
 			"echo": {Action: "echo", Command: []string{"helper"}},
 		},
@@ -1323,9 +1326,10 @@ func TestCanonicalJobRunBodyValidationMatchesCanonicalAPI(t *testing.T) {
 	store := state.NewLocalStore(filepath.Join(tempDir, "state.json"))
 	fileCatalog := catalog.NewFileCatalog(filepath.Join(tempDir, "catalog.json"))
 	if err := fileCatalog.UpsertDeployment(context.Background(), contract.Deployment{
-		Workspace: "ws-a",
-		App:       "echo",
-		Commit:    "commit-a",
+		Workspace:    "ws-a",
+		App:          "echo",
+		Commit:       "commit-a",
+		BundleDigest: testExecutionBundleDigest,
 		Actions: map[string]contract.Action{
 			"echo": {Action: "echo", Command: []string{"helper"}},
 		},
@@ -1404,10 +1408,11 @@ func TestCanonicalJobCancelAPI(t *testing.T) {
 	store := state.NewLocalStore(filepath.Join(tempDir, "state.json"))
 	fileCatalog := catalog.NewFileCatalog(filepath.Join(tempDir, "catalog.json"))
 	if err := fileCatalog.UpsertDeployment(context.Background(), contract.Deployment{
-		Workspace:   "ws-a",
-		GitSourceID: "source-a",
-		App:         "echo",
-		Commit:      "commit-a",
+		Workspace:    "ws-a",
+		GitSourceID:  "source-a",
+		App:          "echo",
+		Commit:       "commit-a",
+		BundleDigest: testExecutionBundleDigest,
 		Actions: map[string]contract.Action{
 			"echo": {Action: "echo", Command: []string{"helper"}},
 		},
@@ -2133,11 +2138,12 @@ func TestCanonicalControlPlaneUsesMaterializedActionSchemas(t *testing.T) {
 	outputSchema := json.RawMessage(`{"type":"object","properties":{"ok":{"type":"boolean"}}}`)
 	operatorSettingsSchema := json.RawMessage(`{"type":"object","properties":{"REGION":{"type":"string","enum":["kr","us"]}}}`)
 	if err := fileCatalog.UpsertDeployment(context.Background(), contract.Deployment{
-		Workspace:   "ws-a",
-		GitSourceID: "1",
-		App:         "echo",
-		Commit:      "commit-a",
-		Entrypoint:  "main.ts",
+		Workspace:    "ws-a",
+		GitSourceID:  "1",
+		App:          "echo",
+		Commit:       "commit-a",
+		Entrypoint:   "main.ts",
+		BundleDigest: testExecutionBundleDigest,
 		Actions: map[string]contract.Action{
 			"echo": {
 				Action:                     "echo",
@@ -4159,6 +4165,7 @@ func TestCanonicalJobRunRejectsCapabilityTagOverrideConflict(t *testing.T) {
 		App:                  "echo",
 		Tag:                  contract.DefaultRouteTag,
 		Commit:               "commit-a",
+		BundleDigest:         testExecutionBundleDigest,
 		RequiredCapabilities: []string{"browser"},
 		Actions: map[string]contract.Action{
 			"echo": {Action: "echo", Command: []string{"helper"}},
@@ -4229,10 +4236,11 @@ func TestCanonicalJobRunPinsTagAndRequeueUsesCurrentEffectiveTag(t *testing.T) {
 	tempDir := t.TempDir()
 	fileCatalog := catalog.NewFileCatalog(filepath.Join(tempDir, "catalog.json"))
 	if err := fileCatalog.UpsertDeployment(context.Background(), contract.Deployment{
-		Workspace: "ws-a",
-		App:       "echo",
-		Tag:       "app-main",
-		Commit:    "commit-a",
+		Workspace:    "ws-a",
+		App:          "echo",
+		Tag:          "app-main",
+		Commit:       "commit-a",
+		BundleDigest: testExecutionBundleDigest,
 		Actions: map[string]contract.Action{
 			"echo": {Action: "echo", Command: []string{"helper"}},
 		},

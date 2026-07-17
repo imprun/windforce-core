@@ -7,22 +7,27 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/imprun/windforce-core/internal/catalog"
 	"github.com/imprun/windforce-core/internal/contract"
+	executionpkg "github.com/imprun/windforce-core/internal/execution"
 	"github.com/imprun/windforce-core/internal/state"
 )
+
+const testExecutionBundleDigest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 func TestExecutionAPICreatesPinnedRunAndReplaysIdempotencyKey(t *testing.T) {
 	tempDir := t.TempDir()
 	store := state.NewLocalStore(filepath.Join(tempDir, "state.json"))
 	deployment := contract.Deployment{
-		Workspace:   "ws-a",
-		GitSourceID: "source-a",
-		App:         "echo",
-		Commit:      "commit-a",
+		Workspace:    "ws-a",
+		GitSourceID:  "source-a",
+		App:          "echo",
+		Commit:       "commit-a",
+		BundleDigest: testExecutionBundleDigest,
 		Actions: map[string]contract.Action{
 			"run": {
 				Action:           "run",
@@ -96,6 +101,55 @@ func TestExecutionAPICreatesPinnedRunAndReplaysIdempotencyKey(t *testing.T) {
 	defer foreign.Body.Close()
 	if foreign.StatusCode != http.StatusNotFound {
 		t.Fatalf("foreign workspace status = %d, want %d", foreign.StatusCode, http.StatusNotFound)
+	}
+}
+
+func TestExecutionAPIRejectsReleaseWithoutExecutionBundleBeforeEnqueue(t *testing.T) {
+	store := state.NewLocalStore(filepath.Join(t.TempDir(), "state.json"))
+	deployment := contract.Deployment{
+		Workspace: "ws-a",
+		App:       "echo",
+		Commit:    "commit-a",
+		Actions: map[string]contract.Action{
+			"run": {Action: "run"},
+		},
+	}
+	if _, err := store.PublishRelease(context.Background(), deployment, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	httpServer := httptest.NewServer(New(Config{Store: store, Catalog: store, EnableAPI: true}))
+	defer httpServer.Close()
+
+	response, err := http.Post(
+		httpServer.URL+"/execution/v1/workspaces/ws-a/runs",
+		"application/json",
+		bytes.NewBufferString(`{"app":"echo","action":"run","input":{}}`),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("create status = %d, want %d", response.StatusCode, http.StatusServiceUnavailable)
+	}
+	var fault struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&fault); err != nil {
+		t.Fatal(err)
+	}
+	if fault.Error.Code != string(executionpkg.FaultUnavailable) || !strings.Contains(fault.Error.Message, "publish") {
+		t.Fatalf("fault = %#v", fault.Error)
+	}
+	jobs, err := store.ListJobs(context.Background(), state.JobListQuery{WorkspaceID: "ws-a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(jobs) != 0 {
+		t.Fatalf("jobs = %d, want 0", len(jobs))
 	}
 }
 

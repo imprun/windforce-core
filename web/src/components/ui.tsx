@@ -3,7 +3,17 @@ import { X } from "lucide-react";
 import type { ProbeResult } from "../lib/api";
 import { formatJSON } from "../lib/format";
 
-export function ReleaseStateBadge({ released }: { released: boolean }) {
+export function ReleaseStateBadge({ released, bundleReady = true }: { released: boolean; bundleReady?: boolean }) {
+  if (released && !bundleReady) {
+    return (
+      <span className="badge badge-warning">
+        <span aria-hidden="true" className="badgeIcon">
+          !
+        </span>
+        repair required
+      </span>
+    );
+  }
   return released ? (
     <span className="badge badge-good">
       <span aria-hidden="true" className="badgeIcon">
