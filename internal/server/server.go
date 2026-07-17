@@ -372,6 +372,10 @@ func (h *Handler) handleAPI(w http.ResponseWriter, r *http.Request) bool {
 		h.handleCanonicalRequeueApp(w, r, parts[2], parts[4])
 		return true
 	}
+	if len(parts) == 4 && parts[0] == "api" && parts[1] == "w" && parts[3] == "workers" && r.Method == http.MethodGet {
+		h.handleCanonicalListWorkers(w, r)
+		return true
+	}
 	if len(parts) == 4 && parts[0] == "api" && parts[1] == "w" && parts[3] == "worker-tags" && r.Method == http.MethodGet {
 		h.handleCanonicalWorkerTags(w, r, parts[2])
 		return true

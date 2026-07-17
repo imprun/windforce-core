@@ -1280,3 +1280,35 @@ func TestClaimHonorsLegacyCapabilityJobs(t *testing.T) {
 		t.Fatalf("claimed %q", claimed.Payload.App)
 	}
 }
+
+func TestWorkerRegistryLifecycle(t *testing.T) {
+	store := NewLocalStore(t.TempDir() + "/state.json")
+	ctx := context.Background()
+	if err := store.RegisterWorker(ctx, WorkerRecord{ID: "w-1", Group: "default", Labels: []string{"browser"}, Tags: []string{"default"}}); err != nil {
+		t.Fatal(err)
+	}
+	workers, err := store.ListWorkers(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(workers) != 1 || workers[0].ID != "w-1" || workers[0].Slots != 1 ||
+		!workers[0].Live(time.Now()) {
+		t.Fatalf("workers = %#v", workers)
+	}
+	if err := store.HeartbeatWorker(ctx, "w-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.HeartbeatWorker(ctx, "ghost"); err == nil {
+		t.Fatal("heartbeat for unknown worker must fail")
+	}
+	if err := store.DeregisterWorker(ctx, "w-1"); err != nil {
+		t.Fatal(err)
+	}
+	workers, err = store.ListWorkers(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(workers) != 0 {
+		t.Fatalf("workers after deregister = %#v", workers)
+	}
+}

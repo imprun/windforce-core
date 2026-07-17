@@ -393,6 +393,7 @@ type Snapshot struct {
 	ControlPlaneEvents   map[string]controlevent.Envelope      `json:"controlPlaneEvents"`
 	WebhookDeliveries    map[string]webhook.Delivery           `json:"webhookDeliveries"`
 	WebhookAudits        map[string][]webhook.Audit            `json:"webhookAudits"`
+	Workers              map[string]WorkerRecord               `json:"workers,omitempty"`
 }
 
 type Store interface {
@@ -430,6 +431,10 @@ type Store interface {
 	DecryptInput(ctx context.Context, workspaceID string, input json.RawMessage) (json.RawMessage, error)
 	ClaimJob(ctx context.Context, workerID string, leaseTTL time.Duration) (Job, Lease, error)
 	ClaimJobForWorker(ctx context.Context, workerID string, tags []string, labels []string, leaseTTL time.Duration) (Job, Lease, error)
+	RegisterWorker(ctx context.Context, record WorkerRecord) error
+	HeartbeatWorker(ctx context.Context, workerID string) error
+	DeregisterWorker(ctx context.Context, workerID string) error
+	ListWorkers(ctx context.Context) ([]WorkerRecord, error)
 	HeartbeatJob(ctx context.Context, lease Lease, leaseTTL time.Duration) (HeartbeatResult, error)
 	CompleteJobSucceeded(ctx context.Context, lease Lease, result contract.JobResult) error
 	CompleteJobFailed(ctx context.Context, lease Lease, result contract.JobResult) error

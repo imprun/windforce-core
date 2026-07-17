@@ -4639,3 +4639,41 @@ func createTestGitSourceRepo(t *testing.T, parent string, name string, subpath s
 	runTestGit(t, repoDir, "commit", "-m", "initial")
 	return repoDir
 }
+
+func TestCanonicalWorkersEndpointServesRegistry(t *testing.T) {
+	tempDir := t.TempDir()
+	store := state.NewLocalStore(filepath.Join(tempDir, "state.json"))
+	if err := store.RegisterWorker(context.Background(), state.WorkerRecord{
+		ID: "w-live", Group: "default", Labels: []string{"browser", "kr"}, Slots: 4,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(New(Config{
+		Store:     store,
+		Catalog:   catalog.NewFileCatalog(filepath.Join(tempDir, "catalog.json")),
+		EnableAPI: true,
+	}))
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/api/w/ws-a/workers")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var body struct {
+		Workers []struct {
+			ID     string   `json:"id"`
+			Labels []string `json:"labels"`
+			Slots  int      `json:"slots"`
+			Live   bool     `json:"live"`
+		} `json:"workers"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Workers) != 1 || body.Workers[0].ID != "w-live" ||
+		!reflect.DeepEqual(body.Workers[0].Labels, []string{"browser", "kr"}) ||
+		body.Workers[0].Slots != 4 || !body.Workers[0].Live {
+		t.Fatalf("workers body = %#v", body)
+	}
+}

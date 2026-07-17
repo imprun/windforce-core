@@ -1001,3 +1001,70 @@ WHERE id IN (SELECT id FROM stuck_runs)
 	}
 	return expired, nil
 }
+
+func (s *PostgresStore) RegisterWorker(ctx context.Context, record WorkerRecord) error {
+	if record.Slots <= 0 {
+		record.Slots = 1
+	}
+	tags, err := json.Marshal(append([]string{}, record.Tags...))
+	if err != nil {
+		return err
+	}
+	labels, err := json.Marshal(append([]string{}, record.Labels...))
+	if err != nil {
+		return err
+	}
+	_, err = s.pool.Exec(ctx, `
+INSERT INTO worker_registry (id, worker_group, tags, labels, slots, started_at, last_heartbeat_at)
+VALUES ($1, $2, $3, $4, $5, now(), now())
+ON CONFLICT (id) DO UPDATE SET
+    worker_group = EXCLUDED.worker_group,
+    tags = EXCLUDED.tags,
+    labels = EXCLUDED.labels,
+    slots = EXCLUDED.slots,
+    last_heartbeat_at = now()`,
+		record.ID, record.Group, tags, labels, record.Slots)
+	return err
+}
+
+func (s *PostgresStore) HeartbeatWorker(ctx context.Context, workerID string) error {
+	tag, err := s.pool.Exec(ctx, `UPDATE worker_registry SET last_heartbeat_at = now() WHERE id = $1`, workerID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("%w: worker %q", ErrNotFound, workerID)
+	}
+	return nil
+}
+
+func (s *PostgresStore) DeregisterWorker(ctx context.Context, workerID string) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM worker_registry WHERE id = $1`, workerID)
+	return err
+}
+
+func (s *PostgresStore) ListWorkers(ctx context.Context) ([]WorkerRecord, error) {
+	rows, err := s.pool.Query(ctx, `
+SELECT id, worker_group, tags, labels, slots, started_at, last_heartbeat_at
+FROM worker_registry ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []WorkerRecord{}
+	for rows.Next() {
+		var record WorkerRecord
+		var tags, labels []byte
+		if err := rows.Scan(&record.ID, &record.Group, &tags, &labels, &record.Slots, &record.StartedAt, &record.LastHeartbeatAt); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(tags, &record.Tags); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(labels, &record.Labels); err != nil {
+			return nil, err
+		}
+		out = append(out, record)
+	}
+	return out, rows.Err()
+}

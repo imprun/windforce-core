@@ -1203,3 +1203,52 @@ func (s *LocalStore) ExpireStuckJobs(ctx context.Context, stuckBefore time.Time)
 	}
 	return expired, nil
 }
+
+func (s *LocalStore) RegisterWorker(ctx context.Context, record WorkerRecord) error {
+	return s.update(ctx, func(snapshot *Snapshot, now time.Time) error {
+		if snapshot.Workers == nil {
+			snapshot.Workers = map[string]WorkerRecord{}
+		}
+		if record.Slots <= 0 {
+			record.Slots = 1
+		}
+		if record.StartedAt.IsZero() {
+			record.StartedAt = now
+		}
+		record.LastHeartbeatAt = now
+		snapshot.Workers[record.ID] = record
+		return nil
+	})
+}
+
+func (s *LocalStore) HeartbeatWorker(ctx context.Context, workerID string) error {
+	return s.update(ctx, func(snapshot *Snapshot, now time.Time) error {
+		record, ok := snapshot.Workers[workerID]
+		if !ok {
+			return fmt.Errorf("%w: worker %q", ErrNotFound, workerID)
+		}
+		record.LastHeartbeatAt = now
+		snapshot.Workers[workerID] = record
+		return nil
+	})
+}
+
+func (s *LocalStore) DeregisterWorker(ctx context.Context, workerID string) error {
+	return s.update(ctx, func(snapshot *Snapshot, now time.Time) error {
+		delete(snapshot.Workers, workerID)
+		return nil
+	})
+}
+
+func (s *LocalStore) ListWorkers(ctx context.Context) ([]WorkerRecord, error) {
+	snapshot, err := s.Load(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]WorkerRecord, 0, len(snapshot.Workers))
+	for _, record := range snapshot.Workers {
+		out = append(out, record)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out, nil
+}
