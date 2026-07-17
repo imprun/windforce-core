@@ -13,7 +13,7 @@ import (
 var ErrReleaseCandidateNotFound = errors.New("release candidate not found")
 
 // ReleaseCandidate is an immutable, materialized source revision that can be
-// published without reading Git again.
+// prepared and published without reading Git again.
 type ReleaseCandidate struct {
 	Deployment contract.Deployment `json:"deployment"`
 	SyncedAt   time.Time           `json:"syncedAt"`

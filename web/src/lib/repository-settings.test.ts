@@ -20,7 +20,7 @@ const source: GitSource = {
 };
 
 describe("repository settings policy", () => {
-  test("locks repository location after the first release", () => {
+  test("locks repository location after the first synchronization", () => {
     expect(repositoryLocationLocked(source)).toBe(false);
     expect(repositoryLocationLocked({ ...source, last_synced_commit: "abc123" })).toBe(true);
   });

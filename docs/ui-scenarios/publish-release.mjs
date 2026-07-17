@@ -3,13 +3,13 @@ export default {
   id: "publish-release",
   title: "Publish a release",
   description:
-    "Publish Release validates the repository source at HEAD and publishes it as the worker-visible contract, recorded with the audit actor.",
+    "Publish Release prepares the latest synchronized source and publishes it as the worker-visible contract, recorded with the audit actor.",
   screenshot: "docs/assets/ui/publish-release.png",
   guide: [
     "Open an app and click Publish Release.",
-    "Confirm the repository, branch, subpath, and current release commit.",
+    "Compare Active release with Latest synchronized.",
     "Add a release note for the audit trail.",
-    "Publish; the release history records the actor, commit, and note.",
+    "Publish the latest synchronized revision; the release history records the actor, commit, and note.",
   ],
   async run({ page, capture }) {
     await page.goto();

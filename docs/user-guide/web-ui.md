@@ -37,16 +37,26 @@ The app detail Overview tab shows the active release and readiness signals for w
 3. Follow the source code link to browse the repository at the pinned release commit on GitHub/GitLab.
 4. Use the tabs for repository settings, release history, and action schemas.
 
+## Synchronize source
+
+Sync source fetches the tracked branch, validates the source contract, and stores the exact revision without changing the active release.
+
+![Synchronize source](../assets/ui/sync-source.png)
+
+1. Open an app and switch to the Repository tab.
+2. Click Sync source.
+3. Confirm that Latest synchronized source shows the fetched commit.
+
 ## Publish a release
 
-Publish Release validates the repository source at HEAD and publishes it as the worker-visible contract, recorded with the audit actor.
+Publish Release prepares the latest synchronized source and publishes it as the worker-visible contract, recorded with the audit actor.
 
 ![Publish a release](../assets/ui/publish-release.png)
 
 1. Open an app and click Publish Release.
-2. Confirm the repository, branch, subpath, and current release commit.
+2. Compare Active release with Latest synchronized.
 3. Add a release note for the audit trail.
-4. Publish; the release history records the actor, commit, and note.
+4. Publish the latest synchronized revision; the release history records the actor, commit, and note.
 
 ## Review release history
 

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { errorMessage, type GitSource, type SyncResult } from "../lib/api";
+import { errorMessage, type DeployResult, type GitSource } from "../lib/api";
 import { useApp } from "../lib/app-context";
 import { shortSHA } from "../lib/format";
 import { DefinitionList, Field, Modal } from "../components/ui";
@@ -8,57 +8,43 @@ import { Link } from "../lib/router";
 export function PublishReleaseDialog({
   source,
   appKey,
+  activeCommit,
   onClose,
   onPublished,
 }: {
   source: GitSource;
   appKey?: string;
+  activeCommit?: string;
   onClose: () => void;
-  onPublished: (result: SyncResult) => void;
+  onPublished: (result: DeployResult) => void;
 }) {
   const { api, settings, notify } = useApp();
   const [message, setMessage] = useState("");
-  const [candidate, setCandidate] = useState<SyncResult | null>(null);
-  const [operation, setOperation] = useState<"" | "sync" | "publish">("");
+  const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState("");
 
-  async function handleSync() {
-    setOperation("sync");
-    setError("");
-    try {
-      const result = await api.syncGitSource(source.id);
-      setCandidate(result);
-      notify("ok", `Prepared ${result.app} at ${shortSHA(result.commit, 12)} for release.`);
-    } catch (cause) {
-      setCandidate(null);
-      setError(errorMessage(cause));
-    } finally {
-      setOperation("");
-    }
-  }
-
   async function handlePublish() {
-    if (!candidate) return;
-    setOperation("publish");
+    if (!source.last_synced_commit) return;
+    setPublishing(true);
     setError("");
     try {
-      const result = await api.deployGitSource(source.id, candidate.commit, message.trim());
+      const result = await api.deployGitSource(source.id, message.trim());
       notify("ok", `Published ${result.app} at ${shortSHA(result.commit, 12)}.`);
       onPublished(result);
     } catch (cause) {
       setError(errorMessage(cause));
     } finally {
-      setOperation("");
+      setPublishing(false);
     }
   }
 
-  const busy = operation !== "";
+  const latestSyncedCommit = source.last_synced_commit || "";
 
   return (
     <Modal
       id="publishReleaseDialog"
       title={`Publish Release — ${appKey || source.name}`}
-      subtitle="Prepare an immutable execution bundle, then publish that exact candidate to workers."
+      subtitle="Prepare and publish the latest synchronized source revision to workers."
       onClose={onClose}
     >
       <DefinitionList
@@ -67,27 +53,19 @@ export function PublishReleaseDialog({
           ["Repository", source.repo_url],
           ["Branch", source.branch || "main"],
           ["Subpath", source.subpath || "(repo root)"],
-          ["Last synchronized", source.last_synced_commit ? shortSHA(source.last_synced_commit, 12) : "not synchronized yet"],
+          ["Active release", activeCommit ? <code>{shortSHA(activeCommit, 12)}</code> : "not published yet"],
+          ["Latest synchronized", latestSyncedCommit ? <code>{shortSHA(latestSyncedCommit, 12)}</code> : "not synchronized yet"],
           ["Actor", settings.actor || "(not set)"],
         ]}
       />
-      {candidate ? (
-        <div className="inlineNotice success">
-          <strong>Execution bundle ready</strong>
-          <DefinitionList
-            items={[
-              ["App", candidate.app],
-              ["Commit", <code>{shortSHA(candidate.commit, 12)}</code>],
-              ["Runtime", candidate.runtime],
-              ["Bundle", <code>{shortBundleDigest(candidate.bundle_digest)}</code>],
-              ["Validated", candidate.validation_checks.map(validationCheckLabel).join(" · ")],
-              ["Actions", `${candidate.actions.length}`],
-            ]}
-          />
+      {latestSyncedCommit ? (
+        <div className="inlineNotice">
+          Publishing installs locked dependencies, validates the entrypoint, stores a worker-ready execution bundle,
+          and activates commit <code>{shortSHA(latestSyncedCommit, 12)}</code>. The active release stays unchanged if preparation fails.
         </div>
       ) : (
-        <div className="inlineNotice">
-          Sync pins the repository commit, resolves dependencies, validates the entrypoint, and stores the worker-ready bundle. The active release does not change.
+        <div className="inlineNotice error">
+          No synchronized source is available. <Link to={`/apps/${source.id}/repository`}>Sync the repository source</Link> before publishing.
         </div>
       )}
       {!settings.actor ? (
@@ -107,31 +85,19 @@ export function PublishReleaseDialog({
       <footer className="dialogFooter">
         <span />
         <div className="dialogFooterActions">
-          <button className="button" type="button" onClick={onClose} disabled={busy}>
+          <button className="button" type="button" onClick={onClose} disabled={publishing}>
             Cancel
-          </button>
-          <button className="button" type="button" onClick={handleSync} disabled={busy}>
-            {operation === "sync" ? "Preparing…" : candidate ? "Prepare again" : "Sync & validate"}
           </button>
           <button
             className="button primary"
             type="button"
             onClick={handlePublish}
-            disabled={busy || !settings.actor || !candidate || candidate.bundle_status !== "ready"}
+            disabled={publishing || !settings.actor || !latestSyncedCommit}
           >
-            {operation === "publish" ? "Publishing…" : "Publish candidate"}
+            {publishing ? "Publishing…" : "Publish latest synchronized"}
           </button>
         </div>
       </footer>
     </Modal>
   );
-}
-
-function shortBundleDigest(digest: string): string {
-  const value = digest.includes(":") ? digest.split(":", 2)[1] : digest;
-  return value ? value.slice(0, 12) : "—";
-}
-
-function validationCheckLabel(check: string): string {
-  return check.replaceAll("_", " ");
 }

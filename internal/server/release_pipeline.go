@@ -30,7 +30,7 @@ type ExecutionBundleManager interface {
 	ValidateExecutionBundle(ctx context.Context, deployment contract.Deployment) error
 }
 
-func (h *Handler) stageGitSourceCandidate(w http.ResponseWriter, r *http.Request, workspaceID string, source gitsourcepkg.Source) (catalog.ReleaseCandidate, bool) {
+func (h *Handler) syncGitSourceRevision(w http.ResponseWriter, r *http.Request, workspaceID string, source gitsourcepkg.Source) (catalog.ReleaseCandidate, bool) {
 	operationCtx, release, err := h.acquireGitSourceOperation(r.Context(), workspaceID, source)
 	if err != nil {
 		writeSourceOperationError(w, err)
@@ -56,18 +56,9 @@ func (h *Handler) stageGitSourceCandidate(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return catalog.ReleaseCandidate{}, false
 	}
-	if h.executionBundles == nil {
-		writeError(w, http.StatusServiceUnavailable, "execution bundle manager is not configured")
-		return catalog.ReleaseCandidate{}, false
-	}
-	deployment, err = h.executionBundles.BuildExecutionBundle(operationCtx, deployment)
-	if err != nil {
-		writeError(w, http.StatusUnprocessableEntity, "execution bundle build failed: "+err.Error())
-		return catalog.ReleaseCandidate{}, false
-	}
 	candidateStore, ok := h.catalog.(catalog.ReleaseCandidateStore)
 	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "release candidate store is not configured")
+		writeError(w, http.StatusServiceUnavailable, "synchronized source store is not configured")
 		return catalog.ReleaseCandidate{}, false
 	}
 	candidate, err := candidateStore.SaveReleaseCandidate(operationCtx, deployment, time.Now().UTC())
@@ -86,26 +77,44 @@ func (h *Handler) stageGitSourceCandidate(w http.ResponseWriter, r *http.Request
 	return candidate, true
 }
 
-func (h *Handler) publishGitSourceCandidate(w http.ResponseWriter, r *http.Request, workspaceID string, source gitsourcepkg.Source, candidate catalog.ReleaseCandidate, audit gitSourceOperationAudit) (contract.Deployment, bool) {
+func (h *Handler) deployLatestGitSourceRevision(w http.ResponseWriter, r *http.Request, workspaceID string, source gitsourcepkg.Source, audit gitSourceOperationAudit) (contract.Deployment, bool) {
 	operationCtx, release, err := h.acquireGitSourceOperation(r.Context(), workspaceID, source)
 	if err != nil {
 		writeSourceOperationError(w, err)
 		return contract.Deployment{}, false
 	}
 	defer release()
+	candidateStore, ok := h.catalog.(catalog.ReleaseCandidateStore)
+	if !ok {
+		writeError(w, http.StatusServiceUnavailable, "synchronized source store is not configured")
+		return contract.Deployment{}, false
+	}
+	candidate, err := candidateStore.GetLatestReleaseCandidate(operationCtx, workspaceID, source.ID)
+	if err != nil {
+		if errors.Is(err, catalog.ErrReleaseCandidateNotFound) {
+			writeError(w, http.StatusConflict, "sync source before publishing a release")
+			return contract.Deployment{}, false
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return contract.Deployment{}, false
+	}
 	if err := catalog.ValidateReleaseCandidate(candidate, workspaceID, source.ID, candidate.Deployment.Commit); err != nil {
 		writeError(w, http.StatusConflict, err.Error())
 		return contract.Deployment{}, false
 	}
 	if h.executionBundles == nil {
-		writeError(w, http.StatusServiceUnavailable, "execution bundle validator is not configured")
+		writeError(w, http.StatusServiceUnavailable, "execution bundle manager is not configured")
 		return contract.Deployment{}, false
 	}
-	if err := h.executionBundles.ValidateExecutionBundle(operationCtx, candidate.Deployment); err != nil {
-		writeError(w, http.StatusConflict, "release candidate is not ready: "+err.Error())
+	deployment, err := h.executionBundles.BuildExecutionBundle(operationCtx, candidate.Deployment)
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "execution bundle build failed: "+err.Error())
 		return contract.Deployment{}, false
 	}
-	deployment := candidate.Deployment
+	if err := h.executionBundles.ValidateExecutionBundle(operationCtx, deployment); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "execution bundle validation failed: "+err.Error())
+		return contract.Deployment{}, false
+	}
 	deployment.Source = strings.TrimSpace(audit.Source)
 	deployment.DeploymentID = cloneStringPtr(audit.DeploymentID)
 	deployment.CreatedBy = cloneStringPtr(audit.CreatedBy)

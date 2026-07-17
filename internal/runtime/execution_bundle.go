@@ -42,7 +42,7 @@ func (r *Runner) ValidateExecutionBundle(ctx context.Context, deployment contrac
 		return errors.New("execution bundle store is required")
 	}
 	if strings.TrimSpace(deployment.BundleDigest) == "" {
-		return errors.New("release candidate has no execution bundle; sync the source again")
+		return errors.New("deployment has no execution bundle; deploy the synchronized source again")
 	}
 	descriptor, err := r.ArtifactStore.Verify(ctx, deployment.BundleDigest)
 	if err != nil {
@@ -59,7 +59,7 @@ func (r *Runner) openExecutionBundle(ctx context.Context, deployment contract.De
 		return "", errors.New("execution bundle store is required")
 	}
 	if strings.TrimSpace(deployment.BundleDigest) == "" {
-		return "", errors.New("deployment has no execution bundle; sync and publish the app before running jobs")
+		return "", errors.New("deployment has no execution bundle; deploy the app before running jobs")
 	}
 	cacheRoot := r.CacheRoot
 	if cacheRoot == "" {

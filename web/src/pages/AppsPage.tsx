@@ -127,7 +127,7 @@ export function AppsPage() {
                         </span>
                       </td>
                       <td>
-                        <ReleaseStateBadge released={Boolean(app || source?.last_synced_commit)} />
+                        <ReleaseStateBadge released={Boolean(app)} />
                       </td>
                       <td>
                         {source ? (
@@ -136,6 +136,7 @@ export function AppsPage() {
                             <span className="cellSub mono">
                               {source.branch || "main"}
                               {source.subpath ? ` · ${source.subpath}` : ""}
+                              {source.last_synced_commit ? ` · synced ${shortSHA(source.last_synced_commit, 8)}` : " · not synced"}
                             </span>
                           </>
                         ) : (
@@ -143,8 +144,8 @@ export function AppsPage() {
                         )}
                       </td>
                       <td>
-                        <span className="cellTitle mono">{shortSHA(app?.commit_sha || source?.last_synced_commit)}</span>
-                        <span className="cellSub">{formatRelative(app?.updated_at || source?.last_synced_at)}</span>
+                        <span className="cellTitle mono">{shortSHA(app?.commit_sha)}</span>
+                        <span className="cellSub">{formatRelative(app?.updated_at)}</span>
                       </td>
                       <td>{app ? app.actions_count : "—"}</td>
                       <td>{app ? <span className="mono">{app.effective_route_tag}</span> : "—"}</td>
@@ -181,6 +182,7 @@ export function AppsPage() {
       {publishing ? (
         <PublishReleaseDialog
           source={publishing}
+          activeCommit={state.data?.apps.find((app) => app.git_source_id === publishing.id)?.commit_sha}
           onClose={() => setPublishing(null)}
           onPublished={() => {
             const id = publishing.id;

@@ -119,7 +119,7 @@ export function AppDetailPage({
       }
       actions={
         <>
-          <ReleaseStateBadge released={Boolean(app || source?.last_synced_commit)} />
+          <ReleaseStateBadge released={Boolean(app)} />
           <button className="button" type="button" onClick={() => state.reload()}>
             Refresh
           </button>
@@ -178,6 +178,7 @@ export function AppDetailPage({
         <PublishReleaseDialog
           source={source}
           appKey={app?.app_key}
+          activeCommit={app?.commit_sha}
           onClose={() => setPublishing(false)}
           onPublished={() => {
             setPublishing(false);
@@ -212,8 +213,8 @@ function OverviewTab({
       <Panel title="Active contract" subtitle="What workers can execute right now.">
         <EmptyState title="No release published yet.">
           <p>
-            This repository source is registered but has no worker-visible contract. Publish a release to validate the
-            source at HEAD and expose its actions to workers.
+            This repository source is registered but has no worker-visible contract. Sync the source on the Repository
+            tab, then publish the synchronized revision to workers.
           </p>
           <button className="button primary" type="button" onClick={onPublish}>
             Publish Release
@@ -282,9 +283,13 @@ function OverviewTab({
             ["Worker artifact", app.bundle_status === "ready" ? "Ready" : "Not ready"],
             [
               "Last release",
-              source?.last_synced_at
-                ? `${formatTime(source.last_synced_at)} (${formatRelative(source.last_synced_at)})`
-                : `${formatTime(app.updated_at)} (${formatRelative(app.updated_at)})`,
+              `${formatTime(app.updated_at)} (${formatRelative(app.updated_at)})`,
+            ],
+            [
+              "Latest synchronized source",
+              source?.last_synced_commit
+                ? `${shortSHA(source.last_synced_commit, 12)} · ${formatRelative(source.last_synced_at)}`
+                : "Not synchronized",
             ],
             [`Jobs on route tag ${routeTag}`, tagActivity],
           ]}

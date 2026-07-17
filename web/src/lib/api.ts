@@ -98,7 +98,17 @@ export type ProbeResult = {
   error?: string;
 };
 
-export type SyncResult = {
+export type SourceSyncResult = {
+	commit: string;
+	app: string;
+	actions: string[];
+	runtime: string;
+	sync_status: "synced";
+	synced_at: string;
+	validation_checks: string[];
+};
+
+export type DeployResult = {
   commit: string;
   app: string;
   actions: string[];
@@ -479,7 +489,7 @@ export class WindforceApi {
     return this.request("/variables", { method: "POST", body: payload });
   }
 
-  createSample(appKey: string): Promise<{ source: GitSource; sync_result: SyncResult }> {
+  createSample(appKey: string): Promise<{ source: GitSource; sync_result: DeployResult }> {
     return this.request("/git_sources/sample", { method: "POST", body: { app_key: appKey } });
   }
 
@@ -491,12 +501,12 @@ export class WindforceApi {
     await this.request(`/git_sources/${id}`, { method: "DELETE" });
   }
 
-  syncGitSource(id: number): Promise<SyncResult> {
+  syncGitSource(id: number): Promise<SourceSyncResult> {
     return this.request(`/git_sources/${id}/sync`, { method: "POST" });
   }
 
-  deployGitSource(id: number, commit: string, message: string): Promise<SyncResult> {
-    const body: Record<string, unknown> = { confirm: true, commit };
+  deployGitSource(id: number, message: string): Promise<DeployResult> {
+    const body: Record<string, unknown> = { confirm: true };
     if (message) body.message = message;
     return this.request(`/git_sources/${id}/deploy`, { method: "POST", body });
   }

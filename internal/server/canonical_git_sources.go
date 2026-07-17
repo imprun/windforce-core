@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/imprun/windforce-core/internal/catalog"
 	"github.com/imprun/windforce-core/internal/contract"
 	gitsourcepkg "github.com/imprun/windforce-core/internal/gitsource"
 	"github.com/imprun/windforce-core/internal/sampleapp"
@@ -273,11 +272,11 @@ func (h *Handler) handleCanonicalSampleGitSource(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	candidate, ok := h.stageGitSourceCandidate(w, r, workspaceID, source)
+	_, ok := h.syncGitSourceRevision(w, r, workspaceID, source)
 	if !ok {
 		return
 	}
-	deployment, ok := h.publishGitSourceCandidate(w, r, workspaceID, source, candidate, gitSourceOperationAudit{
+	deployment, ok := h.deployLatestGitSourceRevision(w, r, workspaceID, source, gitSourceOperationAudit{
 		Source: "external_sync",
 	})
 	if !ok {
@@ -285,7 +284,7 @@ func (h *Handler) handleCanonicalSampleGitSource(w http.ResponseWriter, r *http.
 	}
 	writeJSON(w, status, map[string]any{
 		"source":      newCanonicalGitSourceView(source),
-		"sync_result": newCanonicalSyncResult(deployment),
+		"sync_result": newCanonicalDeployResult(deployment),
 	})
 }
 
@@ -438,11 +437,11 @@ func (h *Handler) handleCanonicalGitSourceSync(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	candidate, ok := h.stageGitSourceCandidate(w, r, workspaceID, source)
+	candidate, ok := h.syncGitSourceRevision(w, r, workspaceID, source)
 	if !ok {
 		return
 	}
-	writeJSON(w, http.StatusOK, newCanonicalSyncResult(candidate.Deployment))
+	writeJSON(w, http.StatusOK, newCanonicalSourceSyncResult(candidate))
 }
 
 func (h *Handler) handleCanonicalGitSourceDeploy(w http.ResponseWriter, r *http.Request, workspaceID string, sourceID string) {
@@ -458,6 +457,10 @@ func (h *Handler) handleCanonicalGitSourceDeploy(w http.ResponseWriter, r *http.
 	}
 	if !deployRequestConfirmed(request) {
 		writeError(w, http.StatusBadRequest, "deploy confirmation is required")
+		return
+	}
+	if firstNonEmpty(strings.TrimSpace(request.Commit), strings.TrimSpace(request.CommitCamel)) != "" {
+		writeError(w, http.StatusBadRequest, "deploy always uses the latest synchronized revision; omit commit")
 		return
 	}
 	actor := strings.TrimSpace(requestActorSubject(r))
@@ -480,27 +483,7 @@ func (h *Handler) handleCanonicalGitSourceDeploy(w http.ResponseWriter, r *http.
 	}
 	deploymentID := newDeploymentOperationID()
 	message := deployRequestMessage(request)
-	candidateStore, ok := h.catalog.(catalog.ReleaseCandidateStore)
-	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "release candidate store is not configured")
-		return
-	}
-	commit := firstNonEmpty(strings.TrimSpace(request.Commit), strings.TrimSpace(request.CommitCamel))
-	var candidate catalog.ReleaseCandidate
-	if commit != "" {
-		candidate, err = candidateStore.GetReleaseCandidate(r.Context(), workspaceID, source.ID, commit)
-	} else {
-		candidate, err = candidateStore.GetLatestReleaseCandidate(r.Context(), workspaceID, source.ID)
-	}
-	if err != nil {
-		if errors.Is(err, catalog.ErrReleaseCandidateNotFound) {
-			writeError(w, http.StatusConflict, "sync source before publishing a release")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	deployment, ok := h.publishGitSourceCandidate(w, r, workspaceID, source, candidate, gitSourceOperationAudit{
+	deployment, ok := h.deployLatestGitSourceRevision(w, r, workspaceID, source, gitSourceOperationAudit{
 		Source:       "deploy",
 		DeploymentID: &deploymentID,
 		Message:      message,
@@ -509,7 +492,7 @@ func (h *Handler) handleCanonicalGitSourceDeploy(w http.ResponseWriter, r *http.
 	if !ok {
 		return
 	}
-	writeJSON(w, http.StatusOK, newCanonicalSyncResult(deployment))
+	writeJSON(w, http.StatusOK, newCanonicalDeployResult(deployment))
 }
 
 func deployRequestConfirmed(request canonicalGitSourceDeployRequest) bool {

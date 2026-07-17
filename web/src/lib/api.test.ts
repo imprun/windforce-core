@@ -30,7 +30,7 @@ describe("setActorHeaders", () => {
 });
 
 describe("WindforceApi release flow", () => {
-  test("syncs without publishing and publishes the exact candidate commit", async () => {
+  test("syncs without publishing and deploys the latest synchronized source", async () => {
     const requests: Array<{ url: string; method: string; body: string }> = [];
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (input, init) => {
@@ -47,7 +47,7 @@ describe("WindforceApi release flow", () => {
     try {
       const api = new WindforceApi({ workspace: "default", token: "", actor: "operator" });
       await api.syncGitSource(7);
-      await api.deployGitSource(7, "commit-a", "Release note");
+      await api.deployGitSource(7, "Release note");
 
       expect(requests).toEqual([
         {
@@ -58,7 +58,7 @@ describe("WindforceApi release flow", () => {
         {
           url: "/api/w/default/git_sources/7/deploy",
           method: "POST",
-          body: JSON.stringify({ confirm: true, commit: "commit-a", message: "Release note" }),
+          body: JSON.stringify({ confirm: true, message: "Release note" }),
         },
       ]);
     } finally {

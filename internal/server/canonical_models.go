@@ -142,7 +142,17 @@ func stringSliceContains(values []string, target string) bool {
 	return false
 }
 
-type canonicalSyncResult struct {
+type canonicalSourceSyncResult struct {
+	Commit           string    `json:"commit"`
+	App              string    `json:"app"`
+	Actions          []string  `json:"actions"`
+	Runtime          string    `json:"runtime"`
+	SyncStatus       string    `json:"sync_status"`
+	SyncedAt         time.Time `json:"synced_at"`
+	ValidationChecks []string  `json:"validation_checks"`
+}
+
+type canonicalDeployResult struct {
 	Commit           string   `json:"commit"`
 	App              string   `json:"app"`
 	Actions          []string `json:"actions"`
@@ -158,13 +168,23 @@ type canonicalSyncResult struct {
 	ValidationChecks []string `json:"validation_checks"`
 }
 
-func newCanonicalSyncResult(deployment contract.Deployment) canonicalSyncResult {
-	actions := make([]string, 0, len(deployment.Actions))
-	for key := range deployment.Actions {
-		actions = append(actions, deployment.App+"."+key)
+func newCanonicalSourceSyncResult(candidate catalogpkg.ReleaseCandidate) canonicalSourceSyncResult {
+	deployment := candidate.Deployment
+	actions := canonicalDeploymentActions(deployment)
+	return canonicalSourceSyncResult{
+		Commit:           deployment.Commit,
+		App:              deployment.App,
+		Actions:          actions,
+		Runtime:          canonicalDeploymentScriptLang(deployment),
+		SyncStatus:       "synced",
+		SyncedAt:         candidate.SyncedAt,
+		ValidationChecks: []string{"manifest_validated", "schemas_materialized", "lockfile_validated", "source_snapshot_stored"},
 	}
-	sort.Strings(actions)
-	return canonicalSyncResult{
+}
+
+func newCanonicalDeployResult(deployment contract.Deployment) canonicalDeployResult {
+	actions := canonicalDeploymentActions(deployment)
+	return canonicalDeployResult{
 		Commit:           deployment.Commit,
 		App:              deployment.App,
 		Actions:          actions,
@@ -178,6 +198,15 @@ func newCanonicalSyncResult(deployment contract.Deployment) canonicalSyncResult 
 		Runtime:          canonicalDeploymentScriptLang(deployment),
 		ValidationChecks: []string{"dependencies_prepared", "entrypoint_validated", "artifact_stored"},
 	}
+}
+
+func canonicalDeploymentActions(deployment contract.Deployment) []string {
+	actions := make([]string, 0, len(deployment.Actions))
+	for key := range deployment.Actions {
+		actions = append(actions, deployment.App+"."+key)
+	}
+	sort.Strings(actions)
+	return actions
 }
 
 type canonicalAppModel struct {

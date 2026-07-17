@@ -37,9 +37,11 @@ bundle storage, and the encryption root are instance-wide. Operators who need
 isolation between mutually untrusting tenants should run one engine instance
 per tenant.
 
-Publishing a release materializes the source bundle and action schemas before
-the catalog points at that release. Workers and protocol adapters never clone a
-repository or read repository credentials.
+Synchronization materializes the source revision and action schemas without
+changing the active catalog. Publishing prepares the latest synchronized
+revision as a worker-ready execution bundle before the catalog points at that
+release. Workers and protocol adapters never clone a repository or read
+repository credentials.
 
 The selected state backend owns the active release catalog. A publication writes
 the active release, immutable release history, source release marker, and audit

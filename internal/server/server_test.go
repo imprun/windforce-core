@@ -1763,6 +1763,9 @@ func TestCanonicalControlPlaneOpenAPIExposesSchemaDiscovery(t *testing.T) {
 			t.Fatalf("deploy request schema missing %s: %#v", field, deployRequest)
 		}
 	}
+	if deployRequest["commit"] != nil {
+		t.Fatalf("deploy request must always use the latest synchronized revision: %#v", deployRequest)
+	}
 	sampleSyncResponse := schemas["SampleSyncResponse"].(map[string]any)
 	sampleSyncProperties := sampleSyncResponse["properties"].(map[string]any)
 	if sampleSyncProperties["source"] == nil || sampleSyncProperties["sync_result"] == nil {
@@ -1770,15 +1773,20 @@ func TestCanonicalControlPlaneOpenAPIExposesSchemaDiscovery(t *testing.T) {
 	}
 	syncResultProperties := schemas["GitSourceSyncResult"].(map[string]any)["properties"].(map[string]any)
 	for _, field := range []string{
-		"flows", "source", "deployment_id", "created_by", "message", "bundle_status", "bundle_digest",
-		"bundle_uri", "runtime", "validation_checks",
+		"commit", "app", "actions", "runtime", "sync_status", "synced_at", "validation_checks",
 	} {
 		if syncResultProperties[field] == nil {
 			t.Fatalf("sync result schema missing %s: %#v", field, syncResultProperties)
 		}
 	}
-	if syncResultProperties["flows"] == nil {
-		t.Fatalf("sync result schema must preserve canonical optional flows field: %#v", syncResultProperties)
+	if syncResultProperties["bundle_status"] != nil || syncResultProperties["bundle_digest"] != nil {
+		t.Fatalf("sync result must not expose a deployment artifact: %#v", syncResultProperties)
+	}
+	deployResultProperties := schemas["GitSourceDeployResult"].(map[string]any)["properties"].(map[string]any)
+	for _, field := range []string{"bundle_status", "bundle_digest", "bundle_uri", "runtime", "validation_checks"} {
+		if deployResultProperties[field] == nil {
+			t.Fatalf("deploy result schema missing %s: %#v", field, deployResultProperties)
+		}
 	}
 	appSummary := schemas["AppSummary"].(map[string]any)["properties"].(map[string]any)
 	for _, field := range []string{
@@ -2879,6 +2887,25 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 		t.Fatalf("unconfirmed deploy error = %#v", unconfirmedBody)
 	}
 
+	commitSelectionResp, err := http.Post(server.URL+"/api/w/ws-a/git_sources/"+registeredID+"/deploy", "application/json", bytes.NewBufferString(`{"confirm":true,"commit":"stale-commit"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer commitSelectionResp.Body.Close()
+	if commitSelectionResp.StatusCode != http.StatusBadRequest {
+		body, _ := io.ReadAll(commitSelectionResp.Body)
+		t.Fatalf("commit-selecting deploy status = %d, want %d: %s", commitSelectionResp.StatusCode, http.StatusBadRequest, body)
+	}
+	var pinnedBody struct {
+		Error string `json:"error"`
+	}
+	if err := json.NewDecoder(commitSelectionResp.Body).Decode(&pinnedBody); err != nil {
+		t.Fatal(err)
+	}
+	if pinnedBody.Error != "deploy always uses the latest synchronized revision; omit commit" {
+		t.Fatalf("commit-selecting deploy error = %#v", pinnedBody)
+	}
+
 	missingActorResp, err := http.Post(server.URL+"/api/w/ws-a/git_sources/"+registeredID+"/deploy", "application/json", bytes.NewBufferString(`{"confirm":true}`))
 	if err != nil {
 		t.Fatal(err)
@@ -2923,13 +2950,13 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 		t.Fatalf("sync status = %d, want %d: %s", stageResp.StatusCode, http.StatusOK, body)
 	}
 	var staged struct {
-		Commit           string   `json:"commit"`
-		App              string   `json:"app"`
-		Actions          []string `json:"actions"`
-		BundleStatus     string   `json:"bundle_status"`
-		BundleDigest     string   `json:"bundle_digest"`
-		Runtime          string   `json:"runtime"`
-		ValidationChecks []string `json:"validation_checks"`
+		Commit           string    `json:"commit"`
+		App              string    `json:"app"`
+		Actions          []string  `json:"actions"`
+		Runtime          string    `json:"runtime"`
+		SyncStatus       string    `json:"sync_status"`
+		SyncedAt         time.Time `json:"synced_at"`
+		ValidationChecks []string  `json:"validation_checks"`
 	}
 	if err := json.NewDecoder(stageResp.Body).Decode(&staged); err != nil {
 		t.Fatal(err)
@@ -2937,17 +2964,17 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 	if staged.Commit == "" || staged.App != "echo" || len(staged.Actions) != 1 || staged.Actions[0] != "echo.echo" {
 		t.Fatalf("staged candidate = %#v", staged)
 	}
-	if staged.BundleStatus != "ready" || staged.BundleDigest == "" || staged.Runtime != "typescript" || len(staged.ValidationChecks) != 3 {
-		t.Fatalf("staged execution bundle = %#v", staged)
+	if staged.SyncStatus != "synced" || staged.SyncedAt.IsZero() || staged.Runtime != "typescript" || len(staged.ValidationChecks) != 4 {
+		t.Fatalf("synchronized source = %#v", staged)
 	}
 	if _, err := fileCatalog.GetDeploymentForWorkspace(context.Background(), "ws-a", "echo"); !errors.Is(err, catalog.ErrDeploymentNotFound) {
 		t.Fatalf("sync activated deployment: %v", err)
 	}
-	if candidate, err := fileCatalog.GetReleaseCandidate(context.Background(), "ws-a", registeredID, staged.Commit); err != nil || candidate.Deployment.Commit != staged.Commit {
+	if candidate, err := fileCatalog.GetReleaseCandidate(context.Background(), "ws-a", registeredID, staged.Commit); err != nil || candidate.Deployment.Commit != staged.Commit || candidate.Deployment.BundleDigest != "" {
 		t.Fatalf("staged candidate lookup = %#v, err=%v", candidate, err)
 	}
 
-	deployBody := bytes.NewBufferString(`{"confirm":true,"message":"audit note","commit":"` + staged.Commit + `"}`)
+	deployBody := bytes.NewBufferString(`{"confirm":true,"message":"audit note"}`)
 	deployReq, err := http.NewRequest(http.MethodPost, server.URL+"/api/w/ws-a/git_sources/"+registeredID+"/deploy", deployBody)
 	if err != nil {
 		t.Fatal(err)
@@ -2970,6 +2997,8 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 		DeploymentID *string  `json:"deployment_id"`
 		CreatedBy    *string  `json:"created_by"`
 		Message      *string  `json:"message"`
+		BundleStatus string   `json:"bundle_status"`
+		BundleDigest string   `json:"bundle_digest"`
 	}
 	if err := json.NewDecoder(syncResp.Body).Decode(&syncBody); err != nil {
 		t.Fatal(err)
@@ -2979,7 +3008,8 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 	}
 	if syncBody.Source != "deploy" || syncBody.DeploymentID == nil || *syncBody.DeploymentID == "" ||
 		syncBody.CreatedBy == nil || *syncBody.CreatedBy != "deployer@example.test" ||
-		syncBody.Message == nil || *syncBody.Message != "audit note" {
+		syncBody.Message == nil || *syncBody.Message != "audit note" ||
+		syncBody.BundleStatus != "ready" || syncBody.BundleDigest == "" {
 		t.Fatalf("deploy audit body = %#v", syncBody)
 	}
 

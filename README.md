@@ -23,35 +23,37 @@ in scope.
 - Deployment: the selected app commit/digest and its action metadata
 - Catalog: the active deployment index stored in the selected state backend
 - Bundle store: source-only object cache keyed by workspace/git-source/commit
-- Release candidate: an immutable, validated, materialized source revision
+- Synchronized source: an immutable, validated source revision available for deployment
 - Deployment history: an audit trail of published releases
 
 ## Deploy
 
-`sync` creates an immutable release candidate. `deploy` publishes a candidate
-as the active release used by new jobs.
+`sync` stores the latest valid source revision. `deploy` prepares that revision
+for the worker runtime and publishes it as the active release used by new jobs.
 
 1. Register a git source through the control-plane API. Registration validates
    repository access, branch existence, subpath containment, `windforce.json`,
    action schemas, and lockfile reproducibility before saving the source.
-2. Sync the source to resolve an exact commit.
+2. Sync the source to resolve an exact commit and validate its manifest,
+   schemas, and lockfile.
 3. If the git source has a `subpath`, use that repo directory as the app root
    and try sparse checkout before falling back to a full clone.
-4. Load `windforce.json`.
-5. Materialize the source tree into the bundle store under
+4. Materialize the source tree into the bundle store under
    `{workspace}/{gitSourceId}/{commit}`.
-6. Prepare the exact source with the runtime contract used by workers. Python
-   dependencies, Bun lockfiles, and Go builds must resolve before Sync succeeds.
-   A matching worker reuses the fingerprinted prepared-source cache.
-7. Save the validated deployment metadata and prepared bundle as an immutable
-   release candidate. This does not change the active release.
-8. Publish the selected candidate. The active release, release history, source
-   release marker, audit record, Control Plane event, and matching Webhook
-   deliveries are written in one state-store transaction.
+5. Record the source as the latest synchronized revision. This does not install
+   dependencies or change the active release.
+6. Deploy pins the latest synchronized revision while holding the source
+   operation lock.
+7. Prepare the exact source with the runtime contract used by workers. Python
+   dependencies, Bun lockfiles, Go builds, and the entrypoint must validate.
+   Store the result as a content-addressed execution bundle.
+8. Publish only the validated execution bundle. The active release, release
+   history, audit record, Control Plane event, and matching Webhook deliveries
+   are written in one state-store transaction.
 
-The ordering is intentional: a release candidate must not point at a bundle
-that the configured runtime cannot prepare. Webhook HTTP requests are not made
-in this transaction.
+The ordering is intentional: synchronization can succeed independently of the
+runtime toolchain, while a failed deployment leaves the active release
+unchanged. Webhook HTTP requests are not made in the publication transaction.
 
 The state backend is the source of truth for the active release catalog. Local
 mode stores it in the state JSON file; PostgreSQL mode stores it in control-plane
@@ -130,18 +132,18 @@ it with its own `timeout` in seconds. Source manifests do not declare action
 commands or adapters; integration adapters live outside the app source contract.
 The execution bundle builder supports canonical `typescript`, `python`, and
 `go` entrypoints. Other `scriptLang` values use the Bun preparation path and
-must pass entrypoint validation before a release candidate is created.
+must pass entrypoint validation before a release is published.
 
-Source sync prepares a content-addressed execution bundle for TypeScript,
-Python, and Go entrypoints. It pins the repository commit, installs declared
+Deployment prepares a content-addressed execution bundle for TypeScript,
+Python, and Go entrypoints. It pins the latest synchronized commit, installs declared
 dependencies, injects the matching Windforce SDK, validates the entrypoint, and
 stores the complete prepared tree under its SHA-256 digest. TypeScript uses
 `bun install --frozen-lockfile --no-progress`, Python installs into
 `.windforce/site-packages`, and Go compiles the generated wrapper plus author
 code into `.windforce/bin`.
 
-Release publication only activates a synchronized candidate whose execution
-bundle still exists and matches its digest. A worker fetches that immutable
+Release publication only activates a synchronized revision whose execution
+bundle was prepared successfully and matches its digest. A worker fetches that immutable
 bundle, verifies that its prepared runtime fingerprint matches the worker, and
 executes it. Job processing does not clone Git repositories, install packages,
 or compile app source.
