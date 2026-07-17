@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"net"
@@ -76,6 +77,7 @@ func runServer(args []string, mode string) int {
 	databaseURL := flags.String("database-url", "", "PostgreSQL database URL for --state-backend postgres")
 	migrate := flags.Bool("migrate", false, "run state backend schema migration before starting")
 	adminTokenEnv := flags.String("admin-token-env", "", "environment variable that contains the admin/API bearer token")
+	devMode := flags.Bool("dev", false, "development mode: allow starting without an admin token and with the built-in insecure secret key")
 	jobTokenSecretEnv := flags.String("job-token-secret-env", "", "environment variable that contains the WF_TOKEN signing secret; defaults to admin token")
 	secretKeyEnv := flags.String("secret-key-env", "SECRET_KEY", "environment variable that contains the instance secret used for secret variables")
 	secretKeyPreviousEnv := flags.String("secret-key-previous-env", "SECRET_KEY_PREVIOUS", "environment variable that contains the previous instance secret during rotation")
@@ -123,8 +125,13 @@ func runServer(args []string, mode string) int {
 		return 1
 	}
 	adminToken := tokenFromEnv(*adminTokenEnv)
+	rawSecretKey := tokenFromEnv(*secretKeyEnv)
+	if err := requireProductionSecrets(*devMode, true, adminToken, rawSecretKey); err != nil {
+		fmt.Fprintf(os.Stderr, "%s: %v\n", mode, err)
+		return 1
+	}
 	jobTokenSecret := firstNonEmpty(tokenFromEnv(*jobTokenSecretEnv), adminToken)
-	secretKey := effectiveSecretKey(tokenFromEnv(*secretKeyEnv))
+	secretKey := effectiveSecretKey(rawSecretKey)
 	secretKeyPrevious := tokenFromEnv(*secretKeyPreviousEnv)
 	configureInputCrypto(stateStore, secretKey, secretKeyPrevious)
 	runtimeBaseURL := strings.TrimSpace(*baseURL)
@@ -245,6 +252,7 @@ func runWorker(args []string) int {
 	apiTokenEnv := flags.String("api-token-env", "", "deprecated fallback for --job-token-secret-env")
 	jobTokenSecretEnv := flags.String("job-token-secret-env", "", "environment variable that contains the WF_TOKEN signing secret")
 	secretKeyEnv := flags.String("secret-key-env", "SECRET_KEY", "environment variable that contains the instance secret used for input encryption")
+	devMode := flags.Bool("dev", false, "development mode: allow starting with the built-in insecure secret key")
 	secretKeyPreviousEnv := flags.String("secret-key-previous-env", "SECRET_KEY_PREVIOUS", "environment variable that contains the previous instance secret during rotation")
 	poll := flags.Duration("poll", 500*time.Millisecond, "job poll interval")
 	leaseTTL := flags.Duration("lease", 30*time.Second, "job lease TTL")
@@ -266,8 +274,13 @@ func runWorker(args []string) int {
 		return 1
 	}
 	defer closeState()
+	rawSecretKey := tokenFromEnv(*secretKeyEnv)
+	if err := requireProductionSecrets(*devMode, false, "", rawSecretKey); err != nil {
+		fmt.Fprintf(os.Stderr, "worker: %v\n", err)
+		return 1
+	}
 	jobTokenSecret := firstNonEmpty(tokenFromEnv(*jobTokenSecretEnv), tokenFromEnv(*apiTokenEnv))
-	secretKey := effectiveSecretKey(tokenFromEnv(*secretKeyEnv))
+	secretKey := effectiveSecretKey(rawSecretKey)
 	secretKeyPrevious := tokenFromEnv(*secretKeyPreviousEnv)
 	configureInputCrypto(stateStore, secretKey, secretKeyPrevious)
 	processor := worker.Processor{
@@ -464,6 +477,23 @@ func configureInputCrypto(store state.Store, secretKey string, previous string) 
 	if configurable, ok := store.(inputCryptoConfigurer); ok {
 		configurable.ConfigureInputCrypto(secretKey, previous)
 	}
+}
+
+// requireProductionSecrets enforces the fail-closed startup posture:
+// outside explicit dev mode a running instance must have a real admin
+// token (server modes) and a real secret key — never the built-in
+// default-open/default-key fallbacks.
+func requireProductionSecrets(dev bool, needAdminToken bool, adminToken, secretKeyValue string) error {
+	if dev {
+		return nil
+	}
+	if needAdminToken && strings.TrimSpace(adminToken) == "" {
+		return errors.New("an admin token is required: set --admin-token-env and its environment variable, or pass --dev")
+	}
+	if strings.TrimSpace(secretKeyValue) == "" {
+		return errors.New("a secret key is required: set the --secret-key-env environment variable, or pass --dev")
+	}
+	return nil
 }
 
 func effectiveSecretKey(value string) string {
