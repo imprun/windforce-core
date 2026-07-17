@@ -19,6 +19,7 @@ import (
 	"github.com/imprun/windforce-core/internal/contract"
 	"github.com/imprun/windforce-core/internal/executionbundle"
 	"github.com/imprun/windforce-core/internal/gitsource"
+	"github.com/imprun/windforce-core/internal/remoteworker"
 	"github.com/imprun/windforce-core/internal/runner"
 	"github.com/imprun/windforce-core/internal/runtime"
 	"github.com/imprun/windforce-core/internal/server"
@@ -256,6 +257,7 @@ func runWorker(args []string) int {
 	baseURL := flags.String("base-url", "", "public API base URL injected into job ctx helpers")
 	apiTokenEnv := flags.String("api-token-env", "", "deprecated fallback for --job-token-secret-env")
 	jobTokenSecretEnv := flags.String("job-token-secret-env", "", "environment variable that contains the WF_TOKEN signing secret")
+	apiURL := flags.String("api-url", "", "remote worker plane base URL; when set the worker uses /worker/v1 instead of a direct state store")
 	secretKeyEnv := flags.String("secret-key-env", "SECRET_KEY", "environment variable that contains the instance secret used for input encryption")
 	devMode := flags.Bool("dev", false, "development mode: allow starting with the built-in insecure secret key")
 	secretKeyPreviousEnv := flags.String("secret-key-previous-env", "SECRET_KEY_PREVIOUS", "environment variable that contains the previous instance secret during rotation")
@@ -280,6 +282,50 @@ func runWorker(args []string) int {
 		return 1
 	}
 	defer closeState()
+	if remoteURL := strings.TrimSpace(*apiURL); remoteURL != "" {
+		apiToken := tokenFromEnv(*apiTokenEnv)
+		if apiToken == "" && !*devMode {
+			fmt.Fprintln(os.Stderr, "worker: --api-token-env and its environment variable are required with --api-url, or pass --dev")
+			return 1
+		}
+		backend := remoteworker.New(remoteURL, apiToken)
+		processor := worker.Processor{
+			Store: backend,
+			Runner: runtime.Runner{
+				ArtifactStore:  remoteworker.ArtifactStore{Client: backend},
+				CacheRoot:      *cacheRoot,
+				BaseURL:        firstNonEmpty(strings.TrimSpace(*baseURL), remoteURL),
+				APIToken:       apiToken,
+				BunPath:        *bunPath,
+				PythonPath:     *pythonPath,
+				GoPath:         *goPath,
+				PrepareTimeout: *prepareTimeout,
+			},
+			WorkerID:         *workerID,
+			Group:            *workerGroup,
+			Tags:             parseTags(*workerTags),
+			Labels:           parseLabels(*workerLabels),
+			EgressProxyAddr:  strings.TrimSpace(*egressProxy),
+			LeaseTTL:         *leaseTTL,
+			LogFlushInterval: *logFlushInterval,
+			LogCapBytes:      *logCapBytes,
+			LogJobPayloads:   *logJobPayloads,
+		}
+		if *once {
+			processed, err := processor.ProcessOne(context.Background())
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "worker: %v\n", err)
+				return 1
+			}
+			_ = writeJSON(os.Stdout, map[string]bool{"processed": processed})
+			return 0
+		}
+		if err := processor.RunLoop(context.Background(), *poll); err != nil {
+			fmt.Fprintf(os.Stderr, "worker: %v\n", err)
+			return 1
+		}
+		return 0
+	}
 	rawSecretKey := tokenFromEnv(*secretKeyEnv)
 	if err := requireProductionSecrets(*devMode, false, "", rawSecretKey); err != nil {
 		fmt.Fprintf(os.Stderr, "worker: %v\n", err)

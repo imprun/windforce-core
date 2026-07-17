@@ -14,6 +14,7 @@ import (
 
 	"github.com/imprun/windforce-core/internal/contract"
 	"github.com/imprun/windforce-core/internal/state"
+	"github.com/imprun/windforce-core/internal/token"
 )
 
 // The remote worker plane (ADR 0010): the HTTP surface a worker outside the
@@ -190,9 +191,23 @@ func (h *Handler) workerPlaneClaim(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	job.Payload.Input = prepared
+	jobToken := ""
+	if secret := strings.TrimSpace(h.jobTokenSecret); secret != "" {
+		ttl := time.Duration(job.Payload.TimeoutS)*time.Second + time.Minute
+		if ttl <= time.Minute {
+			ttl = time.Hour
+		}
+		jobToken = token.MintJob(secret, token.JobClaims{
+			Workspace: workspaceID,
+			JobID:     job.ID,
+			Subject:   job.Payload.PermissionedAs,
+			Exp:       time.Now().Add(ttl).Unix(),
+		})
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"job":   job,
-		"lease": leaseToWire(lease),
+		"job":       job,
+		"lease":     leaseToWire(lease),
+		"job_token": jobToken,
 	})
 }
 

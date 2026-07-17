@@ -51,6 +51,9 @@ type RunRequest struct {
 	LogSink          func([]byte)
 	LogFlushInterval time.Duration
 	LogCapBytes      int
+	// JobToken, when set, is a pre-minted SDK callback token (remote
+	// workers receive it from the claim; the signing secret stays engine-side).
+	JobToken string
 }
 
 const actionAdapterProtocolVersion = "windforce.action-adapter/v1"
@@ -367,6 +370,9 @@ func (r *Runner) jobEnv(req RunRequest, action contract.Action) []string {
 }
 
 func (r *Runner) jobToken(req RunRequest, action contract.Action, workspace string, permissionedAs string) string {
+	if pre := strings.TrimSpace(req.JobToken); pre != "" {
+		return pre
+	}
 	secret := strings.TrimSpace(firstNonEmpty(r.JobTokenSecret, r.APIToken))
 	if secret == "" || req.JobID == "" {
 		return strings.TrimSpace(r.APIToken)

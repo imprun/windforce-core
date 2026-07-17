@@ -14,7 +14,7 @@ import (
 )
 
 type Processor struct {
-	Store    state.Store
+	Store    Backend
 	Runner   actionruntime.Runner
 	WorkerID string
 	Group    string
@@ -106,6 +106,10 @@ func (p *Processor) ProcessOne(ctx context.Context) (bool, error) {
 		return completeProcessed(p.Store.CompleteJobFailed(ctx, lease, result))
 	}
 	logJobInput(p.LogJobPayloads, job.ID, job.Payload.App, job.Payload.Action, input)
+	jobToken := ""
+	if provider, ok := p.Store.(JobTokenProvider); ok {
+		jobToken = provider.JobTokenFor(job.ID)
+	}
 	result, runErr := p.Runner.Run(runCtx, actionruntime.RunRequest{
 		JobID:           job.ID,
 		WorkspaceID:     workspaceID,
@@ -117,6 +121,7 @@ func (p *Processor) ProcessOne(ctx context.Context) (bool, error) {
 		Tag:             job.Payload.Tag,
 		CreatedBy:       job.Payload.CreatedBy,
 		PermissionedAs:  job.Payload.PermissionedAs,
+		JobToken:        jobToken,
 		WorkerGroup:     p.Group,
 		EgressProxyAddr: p.EgressProxyAddr,
 		LogSink: func(chunk []byte) {
