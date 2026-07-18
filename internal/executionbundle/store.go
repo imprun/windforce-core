@@ -417,7 +417,10 @@ func copyFile(source string, destination string, mode os.FileMode) error {
 	if copyErr != nil {
 		return copyErr
 	}
-	return closeErr
+	if closeErr != nil {
+		return closeErr
+	}
+	return os.Chmod(destination, mode)
 }
 
 func writeDescriptor(path string, descriptor Descriptor) error {

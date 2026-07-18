@@ -97,6 +97,41 @@ func TestLocalStoreDetectsStoredBundleMutation(t *testing.T) {
 	}
 }
 
+func TestLocalStorePublishPreservesWritableFileMode(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "prepared")
+	if err := os.MkdirAll(filepath.Join(sourceDir, "node_modules", "dep"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sourceFile := filepath.Join(sourceDir, "node_modules", "dep", "index.js")
+	if err := os.WriteFile(sourceFile, []byte("export const value = 1\n"), 0o666); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(sourceFile, 0o666); err != nil {
+		t.Fatal(err)
+	}
+
+	store := NewLocalStore(filepath.Join(tempDir, "store"))
+	descriptor, err := store.Publish(context.Background(), sourceDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Verify(context.Background(), descriptor.Digest); err != nil {
+		t.Fatalf("Verify returned error: %v", err)
+	}
+	bundleDir, err := store.bundleDir(descriptor.Digest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	copiedInfo, err := os.Stat(filepath.Join(bundleDir, "node_modules", "dep", "index.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := copiedInfo.Mode().Perm(); got != 0o666 {
+		t.Fatalf("copied file mode = %v, want 0666", got)
+	}
+}
+
 func TestLocalStoreRejectsUnknownDigest(t *testing.T) {
 	store := NewLocalStore(t.TempDir())
 	if _, err := store.Verify(context.Background(), "sha256:"+strings.Repeat("0", 64)); !errors.Is(err, ErrNotFound) {
