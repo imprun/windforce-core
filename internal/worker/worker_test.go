@@ -60,6 +60,41 @@ func TestPayloadLogsAreDisabledByDefault(t *testing.T) {
 	}
 }
 
+func TestTeeJobLogsWritesCapturedChunksToProcessLog(t *testing.T) {
+	var output bytes.Buffer
+	previous := log.Writer()
+	log.SetOutput(&output)
+	defer log.SetOutput(previous)
+
+	processor, stateStore, run := newProcessorTestHarness(t, "echo")
+	processor.TeeJobLogs = true
+
+	processed, err := processor.ProcessOne(context.Background())
+	if err != nil {
+		t.Fatalf("ProcessOne returned error: %v", err)
+	}
+	if !processed {
+		t.Fatalf("ProcessOne processed no job")
+	}
+	completed, err := stateStore.GetRun(context.Background(), run.ID)
+	if err != nil {
+		t.Fatalf("GetRun returned error: %v", err)
+	}
+	logs, exists, err := stateStore.GetLogs(context.Background(), "workspace-a", completed.Result.JobID)
+	if err != nil {
+		t.Fatalf("GetLogs returned error: %v", err)
+	}
+	if !exists || !strings.Contains(logs, "worker stdout") || !strings.Contains(logs, "worker stderr") {
+		t.Fatalf("stored logs = %q, exists = %v", logs, exists)
+	}
+	processLogs := output.String()
+	if !strings.Contains(processLogs, "worker job log") ||
+		!strings.Contains(processLogs, "worker stdout") ||
+		!strings.Contains(processLogs, "worker stderr") {
+		t.Fatalf("process logs = %q", processLogs)
+	}
+}
+
 func TestProcessorCompletesQueuedRun(t *testing.T) {
 	processor, stateStore, run := newProcessorTestHarness(t, "echo")
 

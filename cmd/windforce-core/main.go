@@ -97,6 +97,7 @@ func runServer(args []string, mode string) int {
 	logFlushInterval := flags.Duration("log-flush-interval", defaultLogFlushInterval, "worker log flush interval")
 	logCapBytes := flags.Int("log-cap-bytes", defaultLogCapBytes, "per-job log size cap in bytes; 0 disables the cap")
 	logJobPayloads := flags.Bool("log-job-payloads", false, "log complete decrypted job input and execution output")
+	teeJobLogs := flags.Bool("tee-job-logs", false, "also write captured job stdout/stderr chunks to the worker process log")
 	workerID := flags.String("worker-id", "", "worker identity for standalone processing")
 	workerGroup := flags.String("worker-group", "default", "worker group name exposed to action ctx")
 	egressProxy := flags.String("egress-proxy", "", "host:port of a co-located egress proxy sidecar")
@@ -226,6 +227,7 @@ func runServer(args []string, mode string) int {
 			LogFlushInterval: *logFlushInterval,
 			LogCapBytes:      *logCapBytes,
 			LogJobPayloads:   *logJobPayloads,
+			TeeJobLogs:       *teeJobLogs,
 			RuntimeBindings:  runtimeBindings,
 		}
 		go func() {
@@ -276,6 +278,7 @@ func runWorker(args []string) int {
 	logFlushInterval := flags.Duration("log-flush-interval", defaultLogFlushInterval, "worker log flush interval")
 	logCapBytes := flags.Int("log-cap-bytes", defaultLogCapBytes, "per-job log size cap in bytes; 0 disables the cap")
 	logJobPayloads := flags.Bool("log-job-payloads", false, "log complete decrypted job input and execution output")
+	teeJobLogs := flags.Bool("tee-job-logs", false, "also write captured job stdout/stderr chunks to the worker process log")
 	workerID := flags.String("worker-id", "", "worker identity")
 	workerGroup := flags.String("worker-group", "default", "worker group name exposed to action ctx")
 	egressProxy := flags.String("egress-proxy", "", "host:port of a co-located egress proxy sidecar")
@@ -329,6 +332,7 @@ func runWorker(args []string) int {
 			LogFlushInterval: *logFlushInterval,
 			LogCapBytes:      *logCapBytes,
 			LogJobPayloads:   *logJobPayloads,
+			TeeJobLogs:       *teeJobLogs,
 			RuntimeBindings:  runtimeBindings,
 		}
 		if *once {
@@ -376,6 +380,7 @@ func runWorker(args []string) int {
 		LogFlushInterval: *logFlushInterval,
 		LogCapBytes:      *logCapBytes,
 		LogJobPayloads:   *logJobPayloads,
+		TeeJobLogs:       *teeJobLogs,
 		RuntimeBindings:  runtimeBindings,
 	}
 	if *once {

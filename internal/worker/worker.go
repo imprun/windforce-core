@@ -29,6 +29,7 @@ type Processor struct {
 	LogFlushInterval  time.Duration
 	LogCapBytes       int
 	LogJobPayloads    bool
+	TeeJobLogs        bool
 	RuntimeBindings   RuntimeBindings
 }
 
@@ -142,6 +143,9 @@ func (p *Processor) ProcessOne(ctx context.Context) (bool, error) {
 		EgressProxyAddr: p.EgressProxyAddr,
 		LogSink: func(chunk []byte) {
 			_ = p.Store.AppendLogs(context.Background(), job.ID, workspaceID, string(chunk))
+			if p.TeeJobLogs {
+				log.Printf("worker job log job=%s app=%s action=%s chunk=%q", job.ID, job.Payload.App, job.Payload.Action, string(chunk))
+			}
 		},
 		LogFlushInterval: p.LogFlushInterval,
 		LogCapBytes:      p.LogCapBytes,
