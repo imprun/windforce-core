@@ -1009,6 +1009,13 @@ func ensureSnapshot(snapshot *Snapshot) {
 	if snapshot.WebhookAudits == nil {
 		snapshot.WebhookAudits = map[string][]webhook.Audit{}
 	}
+	if snapshot.Workspaces == nil {
+		snapshot.Workspaces = map[string]Workspace{}
+	}
+	if snapshot.WorkspaceAudits == nil {
+		snapshot.WorkspaceAudits = []WorkspaceAudit{}
+	}
+	ensureLocalWorkspaces(snapshot)
 	snapshot.LegacyClients = nil
 	snapshot.LegacyClientAudits = nil
 }

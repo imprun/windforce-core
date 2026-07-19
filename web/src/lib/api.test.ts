@@ -262,3 +262,34 @@ describe("WindforceApi system info", () => {
     }
   });
 });
+
+describe("WindforceApi workspaces", () => {
+  test("uses global management routes and preserves admin headers", async () => {
+    const requests: Array<{ url: string; method: string; headers: Headers; body: string }> = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input, init) => {
+      requests.push({
+        url: String(input),
+        method: init?.method || "GET",
+        headers: new Headers(init?.headers),
+        body: String(init?.body || ""),
+      });
+      return new Response(JSON.stringify({ items: [] }), { status: 200 });
+    }) as typeof fetch;
+    try {
+      const api = new WindforceApi({ workspace: "default", token: "admin-token", actor: "operator" });
+      await api.workspaces();
+      await api.createWorkspace("team-a", "Team A");
+
+      expect(requests.map((request) => [request.url, request.method])).toEqual([
+        ["/api/workspaces", "GET"],
+        ["/api/workspaces", "POST"],
+      ]);
+      expect(requests[0].headers.get("authorization")).toBe("Bearer admin-token");
+      expect(requests[1].headers.get("x-windforce-actor")).toBe("operator");
+      expect(JSON.parse(requests[1].body)).toEqual({ id: "team-a", name: "Team A" });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});

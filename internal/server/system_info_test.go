@@ -23,10 +23,11 @@ func TestSystemInfoExposesSafeServiceConfiguration(t *testing.T) {
 		JobTokenSecret:     "secret-job-token",
 		SecretKey:          "secret-key-value",
 		Wait:               250 * time.Millisecond,
+		ManagedWorkspaces:  true,
 	}))
 	defer server.Close()
 
-	req, err := http.NewRequest(http.MethodGet, server.URL+"/api/w/ws-a/system/info", nil)
+	req, err := http.NewRequest(http.MethodGet, server.URL+"/api/w/default/system/info", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,13 +48,14 @@ func TestSystemInfoExposesSafeServiceConfiguration(t *testing.T) {
 		Backends      map[string]bool `json:"backends"`
 		Auth          map[string]bool `json:"auth"`
 		RuntimeConfig struct {
-			WaitMS float64 `json:"wait_ms"`
+			WaitMS            float64 `json:"wait_ms"`
+			ManagedWorkspaces bool    `json:"managed_workspaces"`
 		} `json:"runtime_config"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatal(err)
 	}
-	if body.Service != "windforce-lite" || body.Workspace != "ws-a" || !body.Ready {
+	if body.Service != "windforce-lite" || body.Workspace != "default" || !body.Ready {
 		t.Fatalf("body identity = %#v", body)
 	}
 	if !body.Planes["control_api"] || !body.Planes["execution_api"] || !body.Planes["web_ui"] {
@@ -67,5 +69,8 @@ func TestSystemInfoExposesSafeServiceConfiguration(t *testing.T) {
 	}
 	if body.RuntimeConfig.WaitMS != 250 {
 		t.Fatalf("wait_ms = %#v", body.RuntimeConfig.WaitMS)
+	}
+	if !body.RuntimeConfig.ManagedWorkspaces {
+		t.Fatal("managed_workspaces = false, want true")
 	}
 }

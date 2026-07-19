@@ -271,6 +271,28 @@ p {
   white-space: nowrap;
 }
 
+.workspaceSwitcher {
+  display: grid;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.workspaceSwitcher select {
+  width: 100%;
+  min-width: 0;
+  padding: 5px 26px 5px 8px;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+}
+
+.mobileWorkspaceContext {
+  display: none;
+}
+
 .mainArea {
   flex: 1;
   min-width: 0;
@@ -2047,6 +2069,86 @@ textarea {
   gap: 8px;
 }
 
+.dialogForm {
+  display: grid;
+  gap: 14px;
+}
+
+.workspaceTable th:last-child,
+.workspaceTable td:last-child {
+  width: 96px;
+  text-align: right;
+}
+
+.workspaceAccessSection,
+.dangerZone {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 0;
+  border-top: 1px solid var(--border);
+}
+
+.workspaceAccessSection h3,
+.workspaceAuditSection h3,
+.dangerZone h3 {
+  font-size: 14px;
+  margin-bottom: 3px;
+}
+
+.workspaceAccessSection p,
+.dangerZone p {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.oneTimeToken {
+  display: grid;
+  gap: 7px;
+  padding: 12px;
+  border: 1px solid var(--status-warning);
+  border-radius: var(--radius-small);
+  background: var(--status-warning-bg);
+}
+
+.copyField {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  gap: 8px;
+  align-items: center;
+}
+
+.copyField code {
+  overflow: hidden;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--surface-1);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspaceAuditSection {
+  display: grid;
+  gap: 8px;
+  padding: 16px 0;
+  border-top: 1px solid var(--border);
+}
+
+.workspaceAuditRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.workspaceAuditRow:last-child {
+  border-bottom: 0;
+}
+
 /* ---------- toasts ---------- */
 
 .toastStack {
@@ -2117,6 +2219,12 @@ textarea {
   .sidebarFooter,
   .sidebarToggle {
     display: none;
+  }
+
+  .mobileWorkspaceContext {
+    display: block;
+    width: min(280px, 100%);
+    margin-top: 10px;
   }
 
   .sidebarCollapsed .brand {
@@ -2221,6 +2329,32 @@ textarea {
 }
 
 @media (max-width: 640px) {
+	.workspaceTable {
+		min-width: 0;
+	}
+
+	.workspaceTable th:nth-child(3),
+	.workspaceTable td:nth-child(3),
+	.workspaceTable th:nth-child(4),
+	.workspaceTable td:nth-child(4) {
+		display: none;
+	}
+
+	.workspaceTable th:first-child,
+	.workspaceTable td:first-child {
+		width: 56%;
+	}
+
+	.workspaceTable th:nth-child(2),
+	.workspaceTable td:nth-child(2) {
+		width: 24%;
+	}
+
+	.workspaceTable th:last-child,
+	.workspaceTable td:last-child {
+		width: 20%;
+	}
+
   .sidebar {
     padding-left: 12px;
     padding-right: 12px;

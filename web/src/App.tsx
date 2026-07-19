@@ -11,6 +11,7 @@ import { AuditPage } from "./pages/AuditPage";
 import { WebhookCreatePage } from "./pages/WebhookCreatePage";
 import { WebhookDetailPage } from "./pages/WebhookDetailPage";
 import { WebhookSettingsPage } from "./pages/WebhookSettingsPage";
+import { WorkspacesPage } from "./pages/WorkspacesPage";
 
 export function App() {
   const { path } = useRouter();
@@ -47,6 +48,7 @@ export function App() {
     return <WebhookDetailPage subscriptionID={webhookDetail.id} tab={webhookDetail.tab || "overview"} />;
   }
   if (matchRoute("/settings/webhooks", path)) return <WebhookSettingsPage />;
+  if (matchRoute("/settings/workspaces", path)) return <WorkspacesPage />;
   if (matchRoute("/settings/info", path)) return <SettingsInfoPage />;
   if (matchRoute("/settings/provisioning", path)) return <ProvisioningPage />;
   if (matchRoute("/provisioning", path)) return <ProvisioningPage />;

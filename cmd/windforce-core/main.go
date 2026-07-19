@@ -205,6 +205,7 @@ func runServer(args []string, mode string) int {
 		EnableControlAPI:   mode == "control-plane" || combinedMode,
 		EnableExecutionAPI: mode == "execution-api" || combinedMode,
 		EnableWebUI:        mode == "control-plane" || combinedMode,
+		ManagedWorkspaces:  true,
 		AdminToken:         adminToken,
 		WorkerToken:        firstNonEmpty(tokenFromEnv(*workerTokenEnv), adminToken),
 		ArtifactStore:      executionBundleStore,

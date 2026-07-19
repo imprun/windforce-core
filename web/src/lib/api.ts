@@ -363,6 +363,31 @@ export type SystemInfo = {
   runtime_config: Record<string, unknown>;
 };
 
+export type Workspace = {
+  id: string;
+  name: string;
+  status: "active" | "archived";
+  has_token: boolean;
+  created_by: string;
+  updated_by: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type WorkspaceAudit = {
+  id: string;
+  workspace_id: string;
+  kind: string;
+  detail?: string;
+  actor: string;
+  created_at: string;
+};
+
+export type WorkspaceTokenResult = {
+  workspace: Workspace;
+  api_token: string;
+};
+
 export type WebhookDeliveryQuery = {
   state?: WebhookDeliveryState | "";
   limit?: number;
@@ -658,7 +683,39 @@ export class WindforceApi {
     return this.request("/system/info");
   }
 
+  workspaces(): Promise<{ items: Workspace[] }> {
+    return this.globalRequest("/api/workspaces");
+  }
+
+  createWorkspace(id: string, name: string): Promise<WorkspaceTokenResult> {
+    return this.globalRequest("/api/workspaces", { method: "POST", body: { id, name } });
+  }
+
+  updateWorkspace(id: string, name: string): Promise<Workspace> {
+    return this.globalRequest(`/api/workspaces/${encodeURIComponent(id)}`, { method: "PATCH", body: { name } });
+  }
+
+  archiveWorkspace(id: string): Promise<Workspace> {
+    return this.globalRequest(`/api/workspaces/${encodeURIComponent(id)}/archive`, { method: "POST" });
+  }
+
+  rotateWorkspaceToken(id: string): Promise<WorkspaceTokenResult> {
+    return this.globalRequest(`/api/workspaces/${encodeURIComponent(id)}/token`, { method: "POST" });
+  }
+
+  workspaceAudit(id: string): Promise<{ items: WorkspaceAudit[] }> {
+    return this.globalRequest(`/api/workspaces/${encodeURIComponent(id)}/audit`);
+  }
+
   private async request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+    return this.requestURL(this.workspaceURL(path), options);
+  }
+
+  private async globalRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+    return this.requestURL(path, options);
+  }
+
+  private async requestURL<T>(url: string, options: RequestOptions = {}): Promise<T> {
     const headers = new Headers();
     headers.set("accept", "application/json");
     if (this.settings.token) headers.set("authorization", `Bearer ${this.settings.token}`);
@@ -668,7 +725,7 @@ export class WindforceApi {
       headers.set("content-type", "application/json");
       body = JSON.stringify(options.body);
     }
-    const response = await fetch(this.workspaceURL(path), {
+    const response = await fetch(url, {
       method: options.method || "GET",
       headers,
       body,

@@ -115,6 +115,26 @@ CREATE TABLE IF NOT EXISTS workspace_key (
     kek_version INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS workspace_registry (
+    id TEXT PRIMARY KEY,
+    display_name TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'archived')),
+    token_hash TEXT NOT NULL DEFAULT '',
+    created_by TEXT NOT NULL DEFAULT 'system',
+    updated_by TEXT NOT NULL DEFAULT 'system',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS workspace_audit (
+    id BIGSERIAL PRIMARY KEY,
+    workspace_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    detail TEXT NOT NULL DEFAULT '',
+    actor TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 DO $$
 BEGIN
     IF to_regclass('client_registry') IS NULL AND to_regclass('api_client') IS NOT NULL THEN
@@ -383,6 +403,28 @@ CREATE TABLE IF NOT EXISTS worker_registry (
 
 CREATE INDEX IF NOT EXISTS webhook_audit_workspace_idx
     ON webhook_audit (workspace_id, created_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS workspace_audit_lookup_idx
+    ON workspace_audit (workspace_id, created_at DESC, id DESC);
+
+INSERT INTO workspace_registry (id, display_name, status, created_by, updated_by)
+VALUES ('default', 'Default', 'active', 'system', 'system')
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO workspace_registry (id, display_name, status, created_by, updated_by)
+SELECT workspace_id, workspace_id, 'active', 'system', 'system'
+FROM (
+    SELECT workspace_id FROM job_state
+    UNION SELECT workspace_id FROM variable
+    UNION SELECT workspace_id FROM resource
+    UNION SELECT workspace_id FROM client_registry
+    UNION SELECT workspace_id FROM input_config
+    UNION SELECT workspace_id FROM control_release_history
+    UNION SELECT workspace_id FROM webhook_subscription
+    UNION SELECT COALESCE(NULLIF(payload->>'workspace', ''), 'default') FROM jobs
+) discovered
+WHERE workspace_id <> ''
+ON CONFLICT (id) DO NOTHING;
 `); err != nil {
 		return err
 	}

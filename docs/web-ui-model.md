@@ -117,10 +117,11 @@ workload 집계 대시보드. 개별 job 레코드는 다루지 않는다.
 
 ### Settings
 
-workspace, API token, actor를 설정한다. 브라우저 localStorage에 저장한다.
-actor는 인증 수단이 아니라 audit subject다. 실제 인증이 연결된 환경에서는
-요청의 인증 주체에서 actor가 정해진다. 로컬 개발처럼 인증 주체가 없는 Web
-UI는 `local-dev`를 기본 actor로 사용한다.
+General에서 API token과 actor를 설정하고 브라우저 localStorage에 저장한다.
+현재 workspace는 사이드바의 등록 목록에서 선택한다. Workspaces에서는
+instance admin이 workspace 생성, 표시 이름 수정, token 회전, archive와 lifecycle
+audit 조회를 수행한다. actor는 인증 수단이 아니라 로컬 audit subject다.
+workspace token으로 인증하면 audit subject는 해당 workspace principal로 고정된다.
 
 ## 문구 규칙
 

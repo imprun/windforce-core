@@ -340,6 +340,26 @@ type InputConfigAudit struct {
 	CreatedAt   time.Time `json:"created_at"`
 }
 
+type Workspace struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Status    string    `json:"status"`
+	TokenHash string    `json:"token_hash,omitempty"`
+	CreatedBy string    `json:"created_by"`
+	UpdatedBy string    `json:"updated_by"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type WorkspaceAudit struct {
+	ID          string    `json:"id"`
+	WorkspaceID string    `json:"workspace_id"`
+	Kind        string    `json:"kind"`
+	Detail      string    `json:"detail,omitempty"`
+	Actor       string    `json:"actor"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
 func (record *ClientAudit) UnmarshalJSON(data []byte) error {
 	type auditAlias ClientAudit
 	if err := json.Unmarshal(data, (*auditAlias)(record)); err != nil {
@@ -394,9 +414,18 @@ type Snapshot struct {
 	WebhookDeliveries    map[string]webhook.Delivery           `json:"webhookDeliveries"`
 	WebhookAudits        map[string][]webhook.Audit            `json:"webhookAudits"`
 	Workers              map[string]WorkerRecord               `json:"workers,omitempty"`
+	Workspaces           map[string]Workspace                  `json:"workspaces"`
+	WorkspaceAudits      []WorkspaceAudit                      `json:"workspaceAudits"`
 }
 
 type Store interface {
+	ListWorkspaces(ctx context.Context) ([]Workspace, error)
+	GetWorkspace(ctx context.Context, workspaceID string) (Workspace, error)
+	CreateWorkspace(ctx context.Context, workspaceID string, name string, tokenHash string, actor string) (Workspace, error)
+	UpdateWorkspace(ctx context.Context, workspaceID string, name string, actor string) (Workspace, error)
+	ArchiveWorkspace(ctx context.Context, workspaceID string, actor string) (Workspace, error)
+	RotateWorkspaceToken(ctx context.Context, workspaceID string, tokenHash string, actor string) (Workspace, error)
+	ListWorkspaceAudit(ctx context.Context, workspaceID string) ([]WorkspaceAudit, error)
 	CreateRunAndEnqueue(ctx context.Context, run Run, job Job) error
 	GetRun(ctx context.Context, runID string) (Run, error)
 	GetJob(ctx context.Context, workspaceID string, jobID string) (Job, Run, bool, error)

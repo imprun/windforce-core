@@ -39,11 +39,11 @@ The Control Plane owns repository registration, source validation, release
 publication, active release selection, configuration, and audit history. Its
 API is rooted at `/api/w/{workspace}`.
 
-A workspace is an organizational scoping partition inside one engine instance
-— it is **not** a tenant isolation boundary. Authentication, the worker pool,
-bundle storage, and the encryption root are instance-wide. Operators who need
-isolation between mutually untrusting tenants should run one engine instance
-per tenant.
+A workspace is a registered organizational and authorization partition inside
+one engine instance. Workspace tokens cannot cross workspace paths. The worker
+pool, bundle storage, database, and encryption root remain instance-wide, so
+mutually untrusting tenants require separate engine instances. Workspace
+lifecycle and access rules are defined in [Workspaces](concepts/workspaces.md).
 
 Synchronization materializes the source revision and action schemas without
 changing the active catalog. Publishing prepares the latest synchronized

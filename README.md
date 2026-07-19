@@ -242,6 +242,11 @@ default of incremental job log flushing with a 20 MiB per-job cap; set
 
 Implemented control-plane endpoints:
 
+- `GET|POST /api/workspaces` (instance-admin workspace registry)
+- `GET|PATCH /api/workspaces/{workspaceId}`
+- `POST /api/workspaces/{workspaceId}/archive`
+- `POST /api/workspaces/{workspaceId}/token` (returns a new token once)
+- `GET /api/workspaces/{workspaceId}/audit`
 - `GET /api/w/{workspace}/openapi.json` (workspace control-plane OpenAPI)
 - `GET /api/w/{workspace}/git_sources`
 - `POST /api/w/{workspace}/git_sources`
@@ -424,11 +429,17 @@ go run ./cmd/windforce-core webhook-dispatcher `
   --database-url $env:WINDFORCE_DATABASE_URL
 ```
 
-API token checks are optional for local development. `--admin-token-env` gates
-the control-plane API. Worker scripts receive `WF_TOKEN` as a short-lived
-job token signed with `--job-token-secret-env`; when that flag is omitted,
-the admin token value is reused as the local signing secret so the raw admin
-token is not injected into scripts:
+API token checks are optional for local development. `--admin-token-env` sets
+the instance-admin token used for global workspace lifecycle operations and
+cross-workspace administration. Creating a workspace returns its scoped API
+token once; only its SHA-256 hash is stored. A workspace token can access only
+that workspace and cannot call `/api/workspaces`. Rotate it from the Workspaces
+settings page or `POST /api/workspaces/{workspaceId}/token`.
+
+Worker scripts receive `WF_TOKEN` as a short-lived job token signed with
+`--job-token-secret-env`; when that flag is omitted, the admin token value is
+reused as the local signing secret so the raw admin token is not injected into
+scripts:
 
 ```powershell
 go run ./cmd/windforce-core control-plane `

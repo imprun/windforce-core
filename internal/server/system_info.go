@@ -47,8 +47,9 @@ func (h *Handler) handleSystemInfo(w http.ResponseWriter, _ *http.Request, works
 			"previous_secret_key":     h.secretKeyPrevious != "",
 		},
 		RuntimeConfig: map[string]interface{}{
-			"wait_ms":     waitMilliseconds,
-			"sample_root": h.sampleRoot != "",
+			"wait_ms":            waitMilliseconds,
+			"sample_root":        h.sampleRoot != "",
+			"managed_workspaces": h.managedWorkspaces,
 		},
 	})
 }

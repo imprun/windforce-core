@@ -17,6 +17,7 @@
         "group": "Concepts",
         "pages": [
           "concepts/core-concepts",
+          "concepts/workspaces",
           "concepts/release-lifecycle",
           "concepts/provisioning",
           "architecture"

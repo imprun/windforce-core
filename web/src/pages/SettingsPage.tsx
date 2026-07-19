@@ -6,13 +6,11 @@ import { useApp } from "../lib/app-context";
 
 export function SettingsPage() {
   const { settings, updateSettings, api, notify } = useApp();
-  const [workspace, setWorkspace] = useState(settings.workspace);
   const [token, setToken] = useState(settings.token);
   const [actor, setActor] = useState(settings.actor);
   const [health, setHealth] = useState<string>("checking…");
 
   useEffect(() => {
-    setWorkspace(settings.workspace);
     setToken(settings.token);
     setActor(settings.actor);
   }, [settings]);
@@ -32,11 +30,11 @@ export function SettingsPage() {
     };
   }, [api]);
 
-  const dirty = workspace !== settings.workspace || token !== settings.token || actor !== settings.actor;
+  const dirty = token !== settings.token || actor !== settings.actor;
 
   function handleSave() {
     updateSettings({
-      workspace: workspace.trim() || "default",
+      workspace: settings.workspace,
       token: token.trim(),
       actor: actor.trim(),
     });
@@ -46,7 +44,7 @@ export function SettingsPage() {
   return (
     <Layout
       title="Settings"
-      subtitle="Control-plane context used by every Web UI request. Stored in this browser only."
+      subtitle="Authentication and audit context stored in this browser."
       actions={
         <button className="button primary" type="button" id="saveSettings" disabled={!dirty} onClick={handleSave}>
           Save settings
@@ -54,11 +52,8 @@ export function SettingsPage() {
       }
     >
       <SettingsNav />
-      <Panel title="Control plane" subtitle="Workspace and API token for control-plane requests.">
+      <Panel title="API access" subtitle="Credential used for control-plane requests in the active workspace.">
         <div className="formGrid">
-          <Field label="Workspace">
-            <input id="settingsWorkspace" value={workspace} onChange={(event) => setWorkspace(event.target.value)} />
-          </Field>
           <Field label="API token" hint="Sent as Authorization: Bearer. Leave empty when the control plane runs without --admin-token-env.">
             <input
               id="settingsToken"
@@ -69,7 +64,7 @@ export function SettingsPage() {
             />
           </Field>
         </div>
-        <DefinitionList items={[["Status", health]]} />
+        <DefinitionList items={[["Active workspace", settings.workspace], ["Status", health]]} />
       </Panel>
 
       <Panel

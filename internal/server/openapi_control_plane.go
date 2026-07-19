@@ -2,6 +2,72 @@ package server
 
 func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any {
 	paths := map[string]any{
+		"/api/workspaces": map[string]any{
+			"get": map[string]any{
+				"operationId": "listWorkspaces",
+				"summary":     "List managed workspaces",
+				"responses": withErrors(map[string]any{
+					"200": oapiResponse("Managed workspace registry.", oapiSchemaRef("WorkspaceListResponse")),
+				}, "401", "403"),
+			},
+			"post": map[string]any{
+				"operationId": "createWorkspace",
+				"summary":     "Create a managed workspace",
+				"requestBody": oapiJSONBody(oapiSchemaRef("CreateWorkspaceRequest"), true),
+				"responses": withErrors(map[string]any{
+					"201": oapiResponse("Created workspace and its one-time API token.", oapiSchemaRef("WorkspaceTokenResult")),
+				}, "400", "401", "403", "409"),
+			},
+		},
+		"/api/workspaces/{workspace_id}": map[string]any{
+			"get": map[string]any{
+				"operationId": "getWorkspace",
+				"summary":     "Get a managed workspace",
+				"parameters":  []any{oapiPathParam("workspace_id", "Immutable workspace id.")},
+				"responses": withErrors(map[string]any{
+					"200": oapiResponse("Managed workspace.", oapiSchemaRef("Workspace")),
+				}, "401", "403", "404"),
+			},
+			"patch": map[string]any{
+				"operationId": "updateWorkspace",
+				"summary":     "Update a workspace display name",
+				"parameters":  []any{oapiPathParam("workspace_id", "Immutable workspace id.")},
+				"requestBody": oapiJSONBody(oapiSchemaRef("UpdateWorkspaceRequest"), true),
+				"responses": withErrors(map[string]any{
+					"200": oapiResponse("Updated workspace.", oapiSchemaRef("Workspace")),
+				}, "400", "401", "403", "404", "409"),
+			},
+		},
+		"/api/workspaces/{workspace_id}/archive": map[string]any{
+			"post": map[string]any{
+				"operationId": "archiveWorkspace",
+				"summary":     "Archive a managed workspace",
+				"parameters":  []any{oapiPathParam("workspace_id", "Immutable workspace id.")},
+				"responses": withErrors(map[string]any{
+					"200": oapiResponse("Archived workspace.", oapiSchemaRef("Workspace")),
+				}, "400", "401", "403", "404", "409"),
+			},
+		},
+		"/api/workspaces/{workspace_id}/token": map[string]any{
+			"post": map[string]any{
+				"operationId": "rotateWorkspaceToken",
+				"summary":     "Rotate a workspace API token",
+				"parameters":  []any{oapiPathParam("workspace_id", "Immutable workspace id.")},
+				"responses": withErrors(map[string]any{
+					"200": oapiResponse("Workspace and its new one-time API token.", oapiSchemaRef("WorkspaceTokenResult")),
+				}, "401", "403", "404", "409"),
+			},
+		},
+		"/api/workspaces/{workspace_id}/audit": map[string]any{
+			"get": map[string]any{
+				"operationId": "listWorkspaceAudit",
+				"summary":     "List workspace lifecycle audit records",
+				"parameters":  []any{oapiPathParam("workspace_id", "Immutable workspace id.")},
+				"responses": withErrors(map[string]any{
+					"200": oapiResponse("Workspace lifecycle audit trail.", map[string]any{"type": "array", "items": oapiSchemaRef("WorkspaceAudit")}),
+				}, "401", "403", "404"),
+			},
+		},
 		"/api/w/{workspace}/openapi.json": map[string]any{
 			"get": map[string]any{
 				"operationId": "getControlPlaneOpenAPI",
@@ -706,6 +772,58 @@ func controlPlaneSchemas() map[string]any {
 	appActionProperties["effective_route_tag"] = oapiStringSchema()
 
 	return map[string]any{
+		"Workspace": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"id":         oapiStringSchema(),
+				"name":       oapiStringSchema(),
+				"status":     map[string]any{"type": "string", "enum": []any{"active", "archived"}},
+				"has_token":  oapiBooleanSchema(),
+				"created_by": oapiStringSchema(),
+				"created_at": oapiDateTimeSchema(),
+				"updated_by": oapiStringSchema(),
+				"updated_at": oapiDateTimeSchema(),
+			},
+			"required": []any{"id", "name", "status", "has_token", "created_by", "created_at", "updated_by", "updated_at"},
+		},
+		"CreateWorkspaceRequest": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"id":   map[string]any{"type": "string", "pattern": "^[a-z][a-z0-9-]{0,46}[a-z0-9]$"},
+				"name": oapiStringSchema(),
+			},
+			"required": []any{"id", "name"},
+		},
+		"WorkspaceListResponse": map[string]any{
+			"type":       "object",
+			"properties": map[string]any{"items": map[string]any{"type": "array", "items": oapiSchemaRef("Workspace")}},
+			"required":   []any{"items"},
+		},
+		"UpdateWorkspaceRequest": map[string]any{
+			"type":       "object",
+			"properties": map[string]any{"name": oapiStringSchema()},
+			"required":   []any{"name"},
+		},
+		"WorkspaceTokenResult": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"workspace": oapiSchemaRef("Workspace"),
+				"api_token": map[string]any{"type": "string", "writeOnly": true, "description": "One-time workspace API token."},
+			},
+			"required": []any{"workspace", "api_token"},
+		},
+		"WorkspaceAudit": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"id":           oapiStringSchema(),
+				"workspace_id": oapiStringSchema(),
+				"kind":         oapiStringSchema(),
+				"actor":        oapiStringSchema(),
+				"detail":       oapiStringSchema(),
+				"created_at":   oapiDateTimeSchema(),
+			},
+			"required": []any{"id", "workspace_id", "kind", "actor", "created_at"},
+		},
 		"JSONSchema": map[string]any{
 			"type":                 "object",
 			"description":          "Materialized action input/output JSON Schema document. An empty object means unconstrained JSON.",

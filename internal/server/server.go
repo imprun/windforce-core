@@ -49,6 +49,7 @@ type Config struct {
 	EnableControlAPI   bool
 	EnableExecutionAPI bool
 	EnableWebUI        bool
+	ManagedWorkspaces  bool
 	AdminToken         string
 	WorkerToken        string
 	JobTokenSecret     string
@@ -69,6 +70,7 @@ type Handler struct {
 	enableControlAPI   bool
 	enableExecutionAPI bool
 	enableWebUI        bool
+	managedWorkspaces  bool
 	adminToken         string
 	workerToken        string
 	artifactStore      ArtifactStore
@@ -90,8 +92,21 @@ type jobPrincipal struct {
 
 type principalContextKey struct{}
 
+type workspacePrincipal struct {
+	Workspace string
+	Subject   string
+	Admin     bool
+}
+
+type workspacePrincipalContextKey struct{}
+
 func jobPrincipalFrom(ctx context.Context) *jobPrincipal {
 	principal, _ := ctx.Value(principalContextKey{}).(*jobPrincipal)
+	return principal
+}
+
+func workspacePrincipalFrom(ctx context.Context) *workspacePrincipal {
+	principal, _ := ctx.Value(workspacePrincipalContextKey{}).(*workspacePrincipal)
 	return principal
 }
 
@@ -100,6 +115,9 @@ func requestActorSubject(r *http.Request) string {
 		if subject := strings.TrimSpace(principal.Subject); subject != "" {
 			return subject
 		}
+	}
+	if principal := workspacePrincipalFrom(r.Context()); principal != nil && !principal.Admin {
+		return principal.Subject
 	}
 	if subject := requestActorSubjectUTF8(r); subject != "" {
 		return subject
@@ -140,6 +158,7 @@ func New(config Config) http.Handler {
 		enableControlAPI:   enableControlAPI,
 		enableExecutionAPI: enableExecutionAPI,
 		enableWebUI:        enableWebUI,
+		managedWorkspaces:  config.ManagedWorkspaces,
 		adminToken:         config.AdminToken,
 		workerToken:        config.WorkerToken,
 		artifactStore:      config.ArtifactStore,
@@ -212,6 +231,9 @@ func (h *Handler) handleRuntimeAPI(w http.ResponseWriter, r *http.Request) bool 
 
 func (h *Handler) handleAPI(w http.ResponseWriter, r *http.Request) bool {
 	parts := splitPath(r.URL.Path)
+	if h.handleWorkspaceAPI(w, r, parts) {
+		return true
+	}
 	if h.handleCanonicalWebhookAPI(w, r, parts) {
 		return true
 	}
@@ -648,10 +670,49 @@ func (h *Handler) authorizeAPIRequest(r *http.Request) (*http.Request, int, stri
 		}
 		return r.WithContext(context.WithValue(r.Context(), principalContextKey{}, principal)), 0, ""
 	}
-	if !authorized(r, h.adminToken) {
+	workspaceID := workspaceFromRequestPath(r.URL.Path)
+	if authorized(r, h.adminToken) {
+		if workspaceID != "" && h.managedWorkspaces {
+			if status, message := h.validateWorkspaceRequest(r, workspaceID); status != 0 {
+				return r, status, message
+			}
+		}
+		principal := &workspacePrincipal{Workspace: workspaceID, Admin: true}
+		return r.WithContext(context.WithValue(r.Context(), workspacePrincipalContextKey{}, principal)), 0, ""
+	}
+	if workspaceID == "" || h.store == nil {
 		return r, http.StatusUnauthorized, "unauthorized"
 	}
-	return r, 0, ""
+	workspace, err := h.store.GetWorkspace(r.Context(), workspaceID)
+	if err != nil || !state.WorkspaceTokenMatches(workspace, bearerToken) {
+		return r, http.StatusUnauthorized, "unauthorized"
+	}
+	if workspace.Status == state.WorkspaceArchived && workspaceRequestChangesState(r) {
+		return r, http.StatusConflict, "workspace is archived"
+	}
+	principal := &workspacePrincipal{Workspace: workspaceID, Subject: "workspace:" + workspaceID}
+	return r.WithContext(context.WithValue(r.Context(), workspacePrincipalContextKey{}, principal)), 0, ""
+}
+
+func (h *Handler) validateWorkspaceRequest(r *http.Request, workspaceID string) (int, string) {
+	if h.store == nil {
+		return http.StatusServiceUnavailable, "state store is not configured"
+	}
+	workspace, err := h.store.GetWorkspace(r.Context(), workspaceID)
+	if workspaceNotFound(err) {
+		return http.StatusNotFound, "workspace not found"
+	}
+	if err != nil {
+		return http.StatusInternalServerError, err.Error()
+	}
+	if workspace.Status == state.WorkspaceArchived && workspaceRequestChangesState(r) {
+		return http.StatusConflict, "workspace is archived"
+	}
+	return 0, ""
+}
+
+func workspaceRequestChangesState(r *http.Request) bool {
+	return r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions && !isJobSDKCallback(r)
 }
 
 func bearer(r *http.Request) string {
@@ -683,6 +744,17 @@ func workspaceFromAPIPath(path string) string {
 	parts := splitPath(path)
 	if len(parts) >= 3 && parts[0] == "api" && parts[1] == "w" {
 		return parts[2]
+	}
+	return ""
+}
+
+func workspaceFromRequestPath(path string) string {
+	if workspace := workspaceFromAPIPath(path); workspace != "" {
+		return workspace
+	}
+	parts := splitPath(path)
+	if len(parts) >= 4 && parts[0] == "execution" && parts[1] == "v1" && parts[2] == "workspaces" {
+		return parts[3]
 	}
 	return ""
 }

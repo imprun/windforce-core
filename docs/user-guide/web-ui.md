@@ -110,14 +110,24 @@ The Monitoring view aggregates job activity for the whole workspace: totals, per
 3. Switch the window between 1h, 24h, and 7d.
 4. Use the by-app and by-route-tag tables to find where the failure rate is moving; app names link to the app detail.
 
-## Set the control-plane context
+## Import and export provisioning state
 
-Settings holds the workspace, API token, and audit actor that every Web UI request uses. Values are stored in the browser.
+Provisioning exports a redacted workspace snapshot and imports repeatable app, credential, client, input-setting, and webhook resources through dry-run first.
 
-![Set the control-plane context](../assets/ui/settings.png)
+![Import and export provisioning state](../assets/ui/provisioning.png)
+
+1. Open Settings from the sidebar and choose Provisioning.
+2. Export the current workspace as YAML or JSON for review.
+3. Paste or load a provisioning document, run Dry-run, then Apply only after validation succeeds.
+
+## Set API access and audit context
+
+General settings holds the API token and local audit actor used by Web UI requests. Values are stored in the browser.
+
+![Set API access and audit context](../assets/ui/settings.png)
 
 1. Open Settings from the sidebar.
-2. Set the workspace and, when the control plane requires one, the API token.
+2. Set the API token when the control plane requires authentication.
 3. Set the audit actor recorded on releases and cancels; local development defaults to local-dev.
 
 ## Collapse the sidebar
@@ -129,6 +139,17 @@ The sidebar collapses to an icon rail so wide tables get the full viewport. The 
 1. Click the collapse control beside the product title at the top of the sidebar.
 2. Navigate with the icon rail; hover shows each destination.
 3. Click the control again to expand the sidebar.
+
+## Manage workspaces
+
+The workspace registry is the instance-admin surface for workspace identity, status, scoped access, and lifecycle operations.
+
+![Manage workspaces](../assets/ui/workspaces.png)
+
+1. Select an active workspace from the sidebar.
+2. Open Settings and choose Workspaces to review the registry.
+3. Create a workspace or open Manage to edit its display name, rotate its one-time token, inspect lifecycle audit, or archive it.
+4. Use an instance-admin token for workspace lifecycle operations; workspace tokens remain scoped to one workspace.
 
 ## Manage release webhooks
 

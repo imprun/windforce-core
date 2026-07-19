@@ -275,6 +275,22 @@ func NormalizeWorkspace(value string) string {
 	return value
 }
 
+func ValidWorkspaceID(value string) bool {
+	if len(value) < 2 || len(value) > 48 || !utf8.ValidString(value) {
+		return false
+	}
+	for index, item := range value {
+		if item >= 'a' && item <= 'z' || item >= '0' && item <= '9' {
+			continue
+		}
+		if item == '-' && index > 0 && index < len(value)-1 {
+			continue
+		}
+		return false
+	}
+	return value[0] >= 'a' && value[0] <= 'z'
+}
+
 func NormalizeGitSourceID(value string, app string) string {
 	value = strings.TrimSpace(value)
 	if value != "" {

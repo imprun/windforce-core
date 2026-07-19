@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useApp } from "../lib/app-context";
 import { Link, useRouter } from "../lib/router";
+import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
 
 const navItems = [
   { to: "/", label: "Apps", icon: AppWindow, match: (path: string) => path === "/" || path.startsWith("/apps") },
@@ -88,9 +89,7 @@ export function Layout({
           })}
         </nav>
         <div className="sidebarFooter">
-          <span className="workspacePill" title="Active workspace">
-            workspace / {settings.workspace}
-          </span>
+          <WorkspaceSwitcher />
           <span className="actorPill" title="Audit actor for state-changing requests">
             actor / {settings.actor || "system"}
           </span>
@@ -101,6 +100,9 @@ export function Layout({
           <div>
             <h1>{title}</h1>
             {subtitle ? <p className="topbarSubtitle">{subtitle}</p> : null}
+            <div className="mobileWorkspaceContext">
+              <WorkspaceSwitcher />
+            </div>
           </div>
           {actions ? <div className="topbarActions">{actions}</div> : null}
         </header>

@@ -90,6 +90,14 @@ export default {
 
   async seed({ api, exec }) {
     if (external) return;
+    const workspaceResponse = await fetch(new URL("/api/workspaces", this.baseUrl), {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-windforce-actor": "ui-guide@example.test" },
+      body: JSON.stringify({ id: "operations", name: "Operations" }),
+    });
+    if (!workspaceResponse.ok) {
+      throw new Error(`workspace seed failed: HTTP ${workspaceResponse.status} ${await workspaceResponse.text()}`);
+    }
     await api("/git_sources/sample", {
       method: "POST",
       body: { app_key: "echo" },

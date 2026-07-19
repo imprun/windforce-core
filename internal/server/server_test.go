@@ -768,12 +768,16 @@ func TestJobTokenAuthorizesOnlySDKCallbacks(t *testing.T) {
 	if err := store.CreateRunAndEnqueue(context.Background(), run, job); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := store.ArchiveWorkspace(context.Background(), "ws-a", "admin"); err != nil {
+		t.Fatal(err)
+	}
 	server := httptest.NewServer(New(Config{
-		Store:          store,
-		EnableAPI:      true,
-		AdminToken:     "admin-token",
-		JobTokenSecret: "job-secret",
-		SecretKey:      secretKey,
+		Store:             store,
+		EnableAPI:         true,
+		ManagedWorkspaces: true,
+		AdminToken:        "admin-token",
+		JobTokenSecret:    "job-secret",
+		SecretKey:         secretKey,
 	}))
 	defer server.Close()
 
