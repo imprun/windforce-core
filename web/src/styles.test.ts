@@ -14,10 +14,10 @@ describe("table column alignment", () => {
 });
 
 describe("provisioning layout", () => {
-  test("keeps provisioning as task cards inside settings", () => {
-    expect(styles).toMatch(/\.provisioningTaskGrid\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(360px,\s*1fr\)\);/s);
-    expect(styles).toMatch(/\.provisioningTask\s*\{[^}]*min-height:\s*236px;/s);
-    expect(styles).toMatch(/\.provisioningEditor\s*\{[^}]*min-height:\s*320px;/s);
-    expect(styles).toMatch(/\.provisioningCode\s*\{[^}]*max-height:\s*460px;/s);
+  test("keeps commands next to the active provisioning document", () => {
+    expect(styles).toMatch(/\.provisioningWorkspace\s*\{[^}]*grid-template-columns:\s*minmax\(520px,\s*1fr\)\s*390px;/s);
+    expect(styles).toMatch(/\.provisioningSidePanel\s*\{[^}]*position:\s*sticky;/s);
+    expect(styles).toMatch(/\.provisioningEditor\s*\{[^}]*min-height:\s*560px;/s);
+    expect(styles).toMatch(/\.provisioningCode\s*\{[^}]*max-height:\s*70vh;/s);
   });
 });

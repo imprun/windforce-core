@@ -31,9 +31,11 @@ const sampleYaml = `resources:
 
 type ImportFormat = "yaml" | "json";
 type ExportFormat = "yaml" | "json";
+type ProvisioningTask = "import" | "export";
 
 export function ProvisioningPage() {
   const { api, notify, settings } = useApp();
+  const [task, setTask] = useState<ProvisioningTask>("import");
   const [exportFormat, setExportFormat] = useState<ExportFormat>("yaml");
   const [includeValues, setIncludeValues] = useState(false);
   const [exportText, setExportText] = useState("");
@@ -148,164 +150,185 @@ export function ProvisioningPage() {
       <SettingsNav />
       {error ? <ErrorNotice message={error} /> : null}
 
-      <section className="provisioningTaskGrid" aria-label="Provisioning tasks">
-        <div className="provisioningTask">
-          <div>
-            <span className="eyebrow">Export</span>
-            <h2>Workspace snapshot</h2>
-            <p>Create a redacted provisioning document for review, backup, or another environment.</p>
-          </div>
-          <div className="provisioningTaskControls">
-            <select
-              aria-label="Export format"
-              value={exportFormat}
-              onChange={(event) => setExportFormat(event.target.value as ExportFormat)}
-            >
-              <option value="yaml">YAML</option>
-              <option value="json">JSON</option>
-            </select>
-            <button className="button primary" type="button" onClick={handleExport} disabled={working === "export"}>
-              <Download aria-hidden="true" />
-              {exporting ? "Exporting…" : "Export"}
-            </button>
-          </div>
-          <label className="toggleField">
-            <input
-              type="checkbox"
-              checked={includeValues}
-              onChange={(event) => setIncludeValues(event.target.checked)}
-            />
-            <span>
-              Include non-secret values
-              <small>Secret variables and credential values remain redacted.</small>
-            </span>
-          </label>
-        </div>
-
-        <div className="provisioningTask">
-          <div>
-            <span className="eyebrow">Import</span>
-            <h2>Validate before apply</h2>
-            <p>Load or paste a provisioning document. Apply is guarded until the dry-run succeeds.</p>
-          </div>
-          <div className="provisioningTaskControls">
-            <select
-              aria-label="Import format"
-              value={importFormat}
-              onChange={(event) => {
-                setImportFormat(event.target.value as ImportFormat);
-                setDryRunResult([]);
-                setApplyResult([]);
-              }}
-            >
-              <option value="yaml">YAML</option>
-              <option value="json">JSON</option>
-            </select>
-            <label className="button">
-              <FileInput aria-hidden="true" />
-              Load file
-              <input
-                className="visuallyHidden"
-                type="file"
-                accept=".yaml,.yml,.json,application/json,application/yaml,text/yaml"
-                onChange={(event) => void handleFile(event.target.files?.[0] || null)}
-              />
-            </label>
-          </div>
-          <div className="provisioningTaskControls">
-            <button className="button" type="button" disabled={!importReady || working !== ""} onClick={handleDryRun}>
-              <Play aria-hidden="true" />
-              Dry-run
-            </button>
-            <button className="button primary" type="button" disabled={!canApply} onClick={handleApply}>
-              <Upload aria-hidden="true" />
-              Apply
-            </button>
-          </div>
-          <div className="provisioningSafety">
-            <ShieldCheck aria-hidden="true" />
-            <span>Dry-run checks the document without changing stored state.</span>
-          </div>
-        </div>
-      </section>
-
-      {exportText ? (
-        <Panel
-          title="Export preview"
-          subtitle="Review or save the latest exported snapshot."
-          actions={
-            <div className="inlineActions">
-              <button className="button small" type="button" onClick={copyExport}>
-                <Clipboard aria-hidden="true" />
-                Copy
-              </button>
-              <button className="button small" type="button" onClick={downloadExport}>
-                <Download aria-hidden="true" />
-                Download
-              </button>
-            </div>
-          }
+      <div className="provisioningModeTabs" role="tablist" aria-label="Provisioning mode">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={task === "import"}
+          className={task === "import" ? "active" : ""}
+          onClick={() => setTask("import")}
         >
-          <div className="provisioningToolbar">
-            <span className="cellSub">{exportFileName}</span>
-          </div>
-          <pre className="provisioningCode">{exportText}</pre>
-        </Panel>
-      ) : null}
+          Import
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={task === "export"}
+          className={task === "export" ? "active" : ""}
+          onClick={() => setTask("export")}
+        >
+          Export
+        </button>
+      </div>
 
-      <Panel title="Import document" subtitle="Use valueFrom.env or valueFrom.file for credentials and environment-specific values.">
-        <Field label="Provisioning document">
-          <textarea
-            className="provisioningEditor"
-            value={importText}
-            spellCheck={false}
-            onChange={(event) => {
-              setImportText(event.target.value);
-              setDryRunResult([]);
-              setApplyResult([]);
-            }}
-          />
-        </Field>
-      </Panel>
+      {task === "import" ? (
+        <section className="provisioningWorkspace" aria-label="Import provisioning document">
+          <Panel title="Import document" subtitle="Paste or load YAML/JSON. Dry-run must pass before Apply is enabled.">
+            <div className="provisioningDocumentHeader">
+              <Field label="Format">
+                <select
+                  aria-label="Import format"
+                  value={importFormat}
+                  onChange={(event) => {
+                    setImportFormat(event.target.value as ImportFormat);
+                    setDryRunResult([]);
+                    setApplyResult([]);
+                  }}
+                >
+                  <option value="yaml">YAML</option>
+                  <option value="json">JSON</option>
+                </select>
+              </Field>
+              <label className="button">
+                <FileInput aria-hidden="true" />
+                Load file
+                <input
+                  className="visuallyHidden"
+                  type="file"
+                  accept=".yaml,.yml,.json,application/json,application/yaml,text/yaml"
+                  onChange={(event) => void handleFile(event.target.files?.[0] || null)}
+                />
+              </label>
+            </div>
+            <Field label="Provisioning document">
+              <textarea
+                className="provisioningEditor"
+                value={importText}
+                spellCheck={false}
+                onChange={(event) => {
+                  setImportText(event.target.value);
+                  setDryRunResult([]);
+                  setApplyResult([]);
+                }}
+              />
+            </Field>
+          </Panel>
 
-      <Panel title={resultLabel} subtitle={resultRows.length ? resultSummary : "Run dry-run to review planned resources before applying."}>
-        {resultRows.length ? (
-          <div className="tableWrap">
-            <table className="table provisioningResultTable">
-              <thead>
-                <tr>
-                  <th>Kind</th>
-                  <th>Name</th>
-                  <th>Action</th>
-                  <th>Detail</th>
-                </tr>
-              </thead>
-              <tbody>
-                {resultRows.map((row, index) => (
-                  <tr key={`${row.kind}-${row.name}-${index}`}>
-                    <td>
-                      <span className="cellTitle">{row.kind}</span>
-                    </td>
-                    <td>{row.name}</td>
-                    <td>
-                      <span className={row.action === "validated" ? "badge badge-running" : "badge badge-good"}>
-                        <CheckCircle2 aria-hidden="true" />
-                        {row.action}
-                      </span>
-                    </td>
-                    <td className="mono">{row.detail || "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <EmptyState title="No validation result">
-            <span>Run dry-run to review what would be created, updated, stored, or validated.</span>
-          </EmptyState>
-        )}
-      </Panel>
+          <aside className="provisioningSidePanel" aria-label="Import controls and result">
+            <Panel title="Review and apply" subtitle="Validate the document, then apply the reviewed result.">
+              <div className="provisioningActionStack">
+                <button className="button" type="button" disabled={!importReady || working !== ""} onClick={handleDryRun}>
+                  <Play aria-hidden="true" />
+                  {working === "dry-run" ? "Checking…" : "Dry-run"}
+                </button>
+                <button className="button primary" type="button" disabled={!canApply} onClick={handleApply}>
+                  <Upload aria-hidden="true" />
+                  {working === "apply" ? "Applying…" : "Apply"}
+                </button>
+              </div>
+              <div className="provisioningSafety">
+                <ShieldCheck aria-hidden="true" />
+                <span>Dry-run checks the document without changing stored state.</span>
+              </div>
+            </Panel>
+
+            <Panel
+              title={resultLabel}
+              subtitle={resultRows.length ? resultSummary : "Run dry-run to review planned resources before applying."}
+            >
+              {resultRows.length ? (
+                <ProvisioningResultList rows={resultRows} />
+              ) : (
+                <EmptyState title="No validation result">
+                  <span>Run dry-run to review what would be created, updated, stored, or validated.</span>
+                </EmptyState>
+              )}
+            </Panel>
+          </aside>
+        </section>
+      ) : (
+        <section className="provisioningWorkspace" aria-label="Export provisioning snapshot">
+          <Panel title="Export preview" subtitle="Create and review a redacted workspace snapshot.">
+            {exportText ? (
+              <>
+                <div className="provisioningToolbar">
+                  <span className="cellSub">{exportFileName}</span>
+                </div>
+                <pre className="provisioningCode">{exportText}</pre>
+              </>
+            ) : (
+              <EmptyState title="No snapshot exported">
+                <span>Export a snapshot to preview, copy, or download the current workspace state.</span>
+              </EmptyState>
+            )}
+          </Panel>
+
+          <aside className="provisioningSidePanel" aria-label="Export controls">
+            <Panel title="Snapshot options" subtitle="Secrets and credential values are always redacted.">
+              <div className="formStack">
+                <Field label="Format">
+                  <select
+                    aria-label="Export format"
+                    value={exportFormat}
+                    onChange={(event) => setExportFormat(event.target.value as ExportFormat)}
+                  >
+                    <option value="yaml">YAML</option>
+                    <option value="json">JSON</option>
+                  </select>
+                </Field>
+                <label className="toggleField">
+                  <input
+                    type="checkbox"
+                    checked={includeValues}
+                    onChange={(event) => setIncludeValues(event.target.checked)}
+                  />
+                  <span>
+                    Include non-secret values
+                    <small>Secret variables and credential values remain redacted.</small>
+                  </span>
+                </label>
+              </div>
+              <div className="provisioningActionStack">
+                <button className="button primary" type="button" onClick={handleExport} disabled={working === "export"}>
+                  <Download aria-hidden="true" />
+                  {exporting ? "Exporting…" : "Export snapshot"}
+                </button>
+                <button className="button" type="button" onClick={copyExport} disabled={!exportText}>
+                  <Clipboard aria-hidden="true" />
+                  Copy
+                </button>
+                <button className="button" type="button" onClick={downloadExport} disabled={!exportText}>
+                  <Download aria-hidden="true" />
+                  Download
+                </button>
+              </div>
+            </Panel>
+          </aside>
+        </section>
+      )}
     </Layout>
+  );
+}
+
+function ProvisioningResultList({ rows }: { rows: ProvisioningAppliedResource[] }) {
+  return (
+    <div className="provisioningResultList">
+      {rows.map((row, index) => (
+        <div className="provisioningResultItem" key={`${row.kind}-${row.name}-${index}`}>
+          <div>
+            <span className="cellTitle">{row.name}</span>
+            <span className="cellSub">
+              {row.kind}
+              {row.detail ? ` · ${row.detail}` : ""}
+            </span>
+          </div>
+          <span className={row.action === "validated" ? "badge badge-running" : "badge badge-good"}>
+            <CheckCircle2 aria-hidden="true" />
+            {row.action}
+          </span>
+        </div>
+      ))}
+    </div>
   );
 }
 
