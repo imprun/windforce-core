@@ -2694,22 +2694,6 @@ textarea {
   justify-content: space-between;
 }
 
-.detailBreadcrumb {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 8px;
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
-.detailBreadcrumb a {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-
 .webhookDetailTabs {
   margin-bottom: 14px;
 }
@@ -2930,10 +2914,6 @@ textarea {
 
   .webhookScopeMode .segment {
     flex: 1;
-  }
-
-  .detailBreadcrumb .mono {
-    display: none;
   }
 
   .deliveryToolbar .filterField {

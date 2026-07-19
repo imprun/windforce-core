@@ -1,4 +1,4 @@
-import { ArrowLeft, RefreshCw, Send } from "lucide-react";
+import { RefreshCw, Send } from "lucide-react";
 import { useState } from "react";
 import { Layout } from "../components/Layout";
 import { SettingsNav } from "../components/SettingsNav";
@@ -73,10 +73,6 @@ export function WebhookDetailPage({ subscriptionID, tab }: { subscriptionID: str
       }
     >
       <SettingsNav />
-      <div className="detailBreadcrumb">
-        <Link to="/settings/webhooks"><ArrowLeft size={15} aria-hidden="true" /> Webhooks</Link>
-        {subscription ? <span className="mono">{subscription.id}</span> : null}
-      </div>
       {state.error ? <ErrorNotice message={state.error} onRetry={state.reload} /> : null}
       {actionError ? <ErrorNotice message={actionError} /> : null}
       {state.loading && !state.data ? <Loading label="Loading webhook…" /> : null}
