@@ -152,12 +152,12 @@ export function ProvisioningPage() {
       <SettingsNav />
       {error ? <ErrorNotice message={error} /> : null}
 
-      <div className="provisioningModeTabs" role="tablist" aria-label="Provisioning mode">
+      <div className="tabBar provisioningModeTabs" role="tablist" aria-label="Provisioning mode">
         <button
           type="button"
           role="tab"
           aria-selected={task === "import"}
-          className={task === "import" ? "active" : ""}
+          className={task === "import" ? "tab active" : "tab"}
           onClick={() => setTask("import")}
         >
           Import
@@ -166,7 +166,7 @@ export function ProvisioningPage() {
           type="button"
           role="tab"
           aria-selected={task === "export"}
-          className={task === "export" ? "active" : ""}
+          className={task === "export" ? "tab active" : "tab"}
           onClick={() => setTask("export")}
         >
           Export

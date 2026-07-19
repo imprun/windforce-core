@@ -1227,10 +1227,13 @@ textarea {
 
 .tab {
   padding: 8px 14px;
+  border: 0;
+  background: transparent;
   color: var(--text-secondary);
   font-weight: 540;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
+  cursor: pointer;
 }
 
 .tab:hover {
@@ -1661,30 +1664,8 @@ textarea {
 /* ---------- provisioning ---------- */
 
 .provisioningModeTabs {
-  display: inline-flex;
-  gap: 4px;
   margin-bottom: 16px;
-  padding: 4px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-small);
-  background: var(--surface);
-  box-shadow: var(--shadow-sm);
-}
-
-.provisioningModeTabs button {
-  min-height: 34px;
-  padding: 0 14px;
-  border: 0;
-  border-radius: 6px;
   background: transparent;
-  color: var(--text-secondary);
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.provisioningModeTabs button.active {
-  background: var(--accent);
-  color: #fff;
 }
 
 .provisioningWorkspace {

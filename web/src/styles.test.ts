@@ -20,4 +20,10 @@ describe("provisioning layout", () => {
     expect(styles).toMatch(/\.provisioningEditor\s*\{[^}]*min-height:\s*560px;/s);
     expect(styles).toMatch(/\.provisioningCode\s*\{[^}]*max-height:\s*70vh;/s);
   });
+
+  test("uses the shared tab style for import and export modes", () => {
+    expect(styles).toMatch(/\.tab\s*\{[^}]*border:\s*0;/s);
+    expect(styles).toMatch(/\.provisioningModeTabs\s*\{[^}]*margin-bottom:\s*16px;/s);
+    expect(styles).not.toMatch(/\.provisioningModeTabs button\.active\s*\{/);
+  });
 });
