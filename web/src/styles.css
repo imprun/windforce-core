@@ -561,22 +561,22 @@ p {
   letter-spacing: 0;
 }
 
-.topbarBreadcrumb {
-  min-height: 20px;
-  margin-bottom: 4px;
+.topbarHeading {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 12px;
 }
 
-.topbarBreadcrumbLink {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
+.topbarHeadingText {
+  min-width: 0;
+}
+
+.topbarTitleBack {
+  width: 32px;
+  height: 32px;
+  margin-top: -3px;
   color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 560;
-}
-
-.topbarBreadcrumbLink:hover {
-  color: var(--accent);
 }
 
 .topbarSubtitle {

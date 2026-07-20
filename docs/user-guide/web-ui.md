@@ -188,7 +188,7 @@ Each workspace has a dedicated instance-administration page without workspace-sc
 ![Administer a workspace](../assets/ui/workspace-detail.png)
 
 1. Open Manage workspaces from the workspace switcher, then choose a workspace from the registry.
-2. Use the Workspaces breadcrumb above the title to return to the registry.
+2. Use the back button beside the workspace title to return to the registry.
 3. Use Overview for its display name, Access for its scoped token, Audit for lifecycle history, and Lifecycle for archive controls.
 4. Return to the workspace switcher when changing the active workspace for workspace-scoped operations.
 

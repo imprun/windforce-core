@@ -12,8 +12,9 @@ describe("workspace administration shell", () => {
     expect(detailSource.match(/scope="instance"/g)?.length).toBe(3);
   });
 
-  test("uses a breadcrumb instead of a second back button on detail pages", () => {
-    expect(detailSource).toContain('className="topbarBreadcrumbLink"');
+  test("aligns the workspace registry back control with the detail title", () => {
+    expect(detailSource).toContain('className="button iconButton topbarTitleBack"');
+    expect(detailSource.match(/titleLeading={backToWorkspaces}/g)?.length).toBe(3);
     expect(detailSource).not.toContain('actions={<Link className="button" to="/workspaces">');
   });
 });

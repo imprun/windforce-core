@@ -23,13 +23,18 @@ export function WorkspaceDetailPage({ workspaceID, tab }: { workspaceID: string;
   const { api } = useApp();
   const state = useAsync(() => api.workspace(workspaceID), [api, workspaceID]);
   const activeTab = (workspaceDetailTabs.find((item) => item.key === tab)?.key || "overview") as WorkspaceTab;
+  const backToWorkspaces = (
+    <Link className="button iconButton topbarTitleBack" to="/workspaces" aria-label="Back to workspaces" title="Back to workspaces">
+      <ArrowLeft size={18} aria-hidden="true" />
+    </Link>
+  );
 
   if (state.loading && !state.data) {
-    return <Layout scope="instance" title="Workspace"><Loading label="Loading workspace…" /></Layout>;
+    return <Layout scope="instance" title="Workspace" titleLeading={backToWorkspaces}><Loading label="Loading workspace…" /></Layout>;
   }
   if (state.error || !state.data) {
     return (
-      <Layout scope="instance" title="Workspace not found">
+      <Layout scope="instance" title="Workspace not found" titleLeading={backToWorkspaces}>
         <ErrorNotice message={state.error || "Workspace not found."} onRetry={state.reload} />
       </Layout>
     );
@@ -41,11 +46,7 @@ export function WorkspaceDetailPage({ workspaceID, tab }: { workspaceID: string;
       scope="instance"
       title={workspace.name}
       subtitle={`Instance workspace · ${workspace.id}`}
-      breadcrumb={(
-        <Link className="topbarBreadcrumbLink" to="/workspaces">
-          <ArrowLeft size={14} aria-hidden="true" /> Workspaces
-        </Link>
-      )}
+      titleLeading={backToWorkspaces}
     >
       <nav className="tabBar" aria-label="Workspace detail tabs">
         {workspaceDetailTabs.map((item) => (

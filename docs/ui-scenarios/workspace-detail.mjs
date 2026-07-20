@@ -7,7 +7,7 @@ export default {
   screenshot: "docs/assets/ui/workspace-detail.png",
   guide: [
     "Open Manage workspaces from the workspace switcher, then choose a workspace from the registry.",
-    "Use the Workspaces breadcrumb above the title to return to the registry.",
+    "Use the back button beside the workspace title to return to the registry.",
     "Use Overview for its display name, Access for its scoped token, Audit for lifecycle history, and Lifecycle for archive controls.",
     "Return to the workspace switcher when changing the active workspace for workspace-scoped operations.",
   ],
