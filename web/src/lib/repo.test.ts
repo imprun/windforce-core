@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { forgeCommitURL, forgeName, forgeRawFileURL, forgeTreeURL } from "./repo";
 
 describe("forgeTreeURL", () => {
@@ -49,9 +49,9 @@ describe("forgeRawFileURL", () => {
     expect(forgeRawFileURL("https://github.com/acme/widgets.git", "abc123", "docs/logo.png")).toBe(
       "https://github.com/acme/widgets/raw/abc123/docs/logo.png",
     );
-    expect(forgeRawFileURL("https://gitlab.example.test/group/project.git", "abc123", "docs/logo.png")).toBe(
-      "https://gitlab.example.test/group/project/-/raw/abc123/docs/logo.png",
-    );
+    expect(
+      forgeRawFileURL("https://gitlab.example.test/group/project.git", "abc123", "docs/logo.png"),
+    ).toBe("https://gitlab.example.test/group/project/-/raw/abc123/docs/logo.png");
   });
 });
 

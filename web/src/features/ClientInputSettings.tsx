@@ -1,8 +1,8 @@
 import { Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { EmptyState, ErrorNotice, Loading, Modal, Panel } from "../components/ui";
-import { type AppSummary, type Client, type InputConfig } from "../lib/api";
 import { actionDisplayName } from "../lib/action-label";
+import type { AppSummary, Client, InputConfig } from "../lib/api";
 import { useApp, useAsync } from "../lib/app-context";
 import { groupInputSettings, inputSettingGroupMatches } from "../lib/input-setting-groups";
 import { Link } from "../lib/router";
@@ -34,7 +34,12 @@ export function ClientInputSettings({
       onChanged={onChanged}
     />
   ) : (
-    <ClientInputSettingsSummary client={client} configs={configs} apps={apps} onChanged={onChanged} />
+    <ClientInputSettingsSummary
+      client={client}
+      configs={configs}
+      apps={apps}
+      onChanged={onChanged}
+    />
   );
 }
 
@@ -54,16 +59,22 @@ function ClientInputSettingsSummary({
   const [editing, setEditing] = useState<EditingConfig | null>(null);
   const appsByKey = useMemo(() => new Map(apps.map((app) => [app.app_key, app])), [apps]);
   const groups = useMemo(
-    () => groupInputSettings(configs, (config) => config.app_key).sort((left, right) => left.key.localeCompare(right.key)),
+    () =>
+      groupInputSettings(configs, (config) => config.app_key).sort((left, right) =>
+        left.key.localeCompare(right.key),
+      ),
     [configs],
   );
   const filteredGroups = useMemo(
-    () => groups.filter((group) => inputSettingGroupMatches(group, search, [appsByKey.get(group.key)?.app_key || ""])),
+    () =>
+      groups.filter((group) =>
+        inputSettingGroupMatches(group, search, [appsByKey.get(group.key)?.app_key || ""]),
+      ),
     [appsByKey, groups, search],
   );
 
   useEffect(() => {
-    if (!selectedApp && apps.length) setSelectedApp(apps[0].app_key);
+    if (!selectedApp && apps.length) setSelectedApp(apps[0]!.app_key);
   }, [apps, selectedApp]);
 
   function finish() {
@@ -79,10 +90,23 @@ function ClientInputSettingsSummary({
         actions={
           apps.length ? (
             <div className="inlineActions">
-              <select value={selectedApp} aria-label="App for new input settings" onChange={(event) => setSelectedApp(event.target.value)}>
-                {apps.map((app) => <option key={app.app_key} value={app.app_key}>{app.app_key}</option>)}
+              <select
+                value={selectedApp}
+                aria-label="App for new input settings"
+                onChange={(event) => setSelectedApp(event.target.value)}
+              >
+                {apps.map((app) => (
+                  <option key={app.app_key} value={app.app_key}>
+                    {app.app_key}
+                  </option>
+                ))}
               </select>
-              <button className="button primary" type="button" disabled={!selectedApp} onClick={() => setEditing({ appKey: selectedApp })}>
+              <button
+                className="button primary"
+                type="button"
+                disabled={!selectedApp}
+                onClick={() => setEditing({ appKey: selectedApp })}
+              >
                 <Plus size={16} aria-hidden="true" />
                 Add settings
               </button>
@@ -91,7 +115,11 @@ function ClientInputSettingsSummary({
         }
       >
         {configs.length === 0 ? (
-          <EmptyState title={apps.length ? "No input settings for this client." : "No released apps are available."} />
+          <EmptyState
+            title={
+              apps.length ? "No input settings for this client." : "No released apps are available."
+            }
+          />
         ) : (
           <>
             <div className="settingsSummaryToolbar">
@@ -156,8 +184,14 @@ function ClientAppInputSettingsDetail({
   const { api } = useApp();
   const [editing, setEditing] = useState<EditingConfig | null>(null);
   const app = apps.find((item) => item.app_key === appKey);
-  const detail = useAsync(() => app ? api.app(appKey) : Promise.resolve(null), [api, app, appKey]);
-  const scopedConfigs = useMemo(() => configs.filter((config) => config.app_key === appKey), [appKey, configs]);
+  const detail = useAsync(
+    () => (app ? api.app(appKey) : Promise.resolve(null)),
+    [api, app, appKey],
+  );
+  const scopedConfigs = useMemo(
+    () => configs.filter((config) => config.app_key === appKey),
+    [appKey, configs],
+  );
   const actionsByKey = useMemo(
     () => new Map((detail.data?.actions || []).map((action) => [action.action_key, action])),
     [detail.data?.actions],
@@ -176,9 +210,15 @@ function ClientAppInputSettingsDetail({
         subtitle={`Action-level values applied when ${client.name} runs this app.`}
         actions={
           <>
-            <Link className="button" to={`/clients/${client.id}/input-settings`}>Back to apps</Link>
+            <Link className="button" to={`/clients/${client.id}/input-settings`}>
+              Back to apps
+            </Link>
             {app ? (
-              <button className="button primary" type="button" onClick={() => setEditing({ appKey })}>
+              <button
+                className="button primary"
+                type="button"
+                onClick={() => setEditing({ appKey })}
+              >
                 <Plus size={16} aria-hidden="true" />
                 Add settings
               </button>
@@ -188,24 +228,38 @@ function ClientAppInputSettingsDetail({
       >
         {detail.error ? <ErrorNotice message={detail.error} onRetry={detail.reload} /> : null}
         {detail.loading && app && !detail.data ? <Loading /> : null}
-        {!app ? <div className="inlineNotice">The active release is unavailable. Existing values are read-only.</div> : null}
-        {scopedConfigs.length === 0 ? <EmptyState title="No input settings for this app and client." /> : null}
+        {!app ? (
+          <div className="inlineNotice">
+            The active release is unavailable. Existing values are read-only.
+          </div>
+        ) : null}
+        {scopedConfigs.length === 0 ? (
+          <EmptyState title="No input settings for this app and client." />
+        ) : null}
         {scopedConfigs.length ? (
           <InputSettingScopeList
             id="clientInputSettings"
             items={scopedConfigs.map((config) => {
               const action = config.action_key ? actionsByKey.get(config.action_key) : undefined;
-              const actionName = action ? actionDisplayName(action.display_name) || action.action_key : config.action_key || "All actions";
+              const actionName = action
+                ? actionDisplayName(action.display_name) || action.action_key
+                : config.action_key || "All actions";
               return {
                 key: `${config.app_key}-${config.action_key || "all"}`,
                 config,
                 primaryLabel: "App",
                 primaryValue: app ? (
-                  <Link to={`/apps/${app.git_source_id}/input-settings/client/${client.id}`}>{appKey}</Link>
-                ) : appKey,
+                  <Link to={`/apps/${app.git_source_id}/input-settings/client/${client.id}`}>
+                    {appKey}
+                  </Link>
+                ) : (
+                  appKey
+                ),
                 primaryMeta: app ? "Released app" : "Release unavailable",
                 actionName,
-                actionMeta: config.action_key ? `${config.action_key} · Action override` : "App-wide client override",
+                actionMeta: config.action_key
+                  ? `${config.action_key} · Action override`
+                  : "App-wide client override",
                 editLabel: `Edit ${appKey} input settings for ${actionName}`,
                 editDisabled: !app,
                 onEdit: () => setEditing({ appKey, config }),
@@ -244,9 +298,18 @@ function ClientInputConfigDialog({
   const { api } = useApp();
   const state = useAsync(() => api.app(appKey), [api, appKey]);
   if (state.error) {
-    return <Modal title="Input Settings" onClose={onClose}><ErrorNotice message={state.error} onRetry={state.reload} /></Modal>;
+    return (
+      <Modal title="Input Settings" onClose={onClose}>
+        <ErrorNotice message={state.error} onRetry={state.reload} />
+      </Modal>
+    );
   }
-  if (!state.data) return <Modal title="Input Settings" onClose={onClose}><Loading /></Modal>;
+  if (!state.data)
+    return (
+      <Modal title="Input Settings" onClose={onClose}>
+        <Loading />
+      </Modal>
+    );
   return (
     <InputConfigDialog
       appKey={appKey}

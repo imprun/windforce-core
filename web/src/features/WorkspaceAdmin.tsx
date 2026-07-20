@@ -11,7 +11,13 @@ export function WorkspaceStatus({ workspace }: { workspace: Workspace }) {
   );
 }
 
-export function WorkspaceActivation({ workspace, compact = false }: { workspace: Workspace; compact?: boolean }) {
+export function WorkspaceActivation({
+  workspace,
+  compact = false,
+}: {
+  workspace: Workspace;
+  compact?: boolean;
+}) {
   const { settings, updateSettings } = useApp();
   const { navigate } = useRouter();
   const current = workspace.id === settings.workspace;
@@ -29,7 +35,11 @@ export function WorkspaceActivation({ workspace, compact = false }: { workspace:
       className={compact ? "button small primary" : "button primary"}
       type="button"
       disabled={workspace.status === "archived"}
-      title={workspace.status === "archived" ? "Archived workspaces cannot be selected" : `Switch to ${workspace.name}`}
+      title={
+        workspace.status === "archived"
+          ? "Archived workspaces cannot be selected"
+          : `Switch to ${workspace.name}`
+      }
       onClick={() => {
         updateSettings({ ...settings, workspace: workspace.id });
         navigate("/");
@@ -60,7 +70,9 @@ export function OneTimeWorkspaceToken({ token }: { token: string }) {
           <Copy size={16} aria-hidden="true" />
         </button>
       </div>
-      <p className="fieldHint">This value is shown once. Rotating it immediately invalidates the previous token.</p>
+      <p className="fieldHint">
+        This value is shown once. Rotating it immediately invalidates the previous token.
+      </p>
     </div>
   );
 }

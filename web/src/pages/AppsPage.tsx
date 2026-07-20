@@ -24,20 +24,20 @@ export function AppsPage() {
   const [publishing, setPublishing] = useState<GitSource | null>(null);
   const [actionRevision, setActionRevision] = useState(0);
 
-  const state = useAsync(
-    async () => {
-      const [sources, apps] = await Promise.all([api.gitSources(), api.apps()]);
-      return { sources, apps: apps.apps || [] };
-    },
-    [api],
-  );
+  const state = useAsync(async () => {
+    const [sources, apps] = await Promise.all([api.gitSources(), api.apps()]);
+    return { sources, apps: apps.apps || [] };
+  }, [api]);
 
   const rows = useMemo<AppRow[]>(() => {
     if (!state.data) return [];
     const bySource = new Map<number, AppSummary>();
     for (const app of state.data.apps) bySource.set(app.git_source_id, app);
     const sourceIDs = new Set(state.data.sources.map((source) => source.id));
-    const sourceRows = state.data.sources.map((source) => ({ source, app: bySource.get(source.id) || null }));
+    const sourceRows = state.data.sources.map((source) => ({
+      source,
+      app: bySource.get(source.id) || null,
+    }));
     const orphanRows = state.data.apps
       .filter((app) => !sourceIDs.has(app.git_source_id))
       .map((app) => ({ source: null, app }));
@@ -75,7 +75,12 @@ export function AppsPage() {
           >
             Refresh
           </button>
-          <button className="button primary" type="button" id="registerAppButton" onClick={() => setRegistering(true)}>
+          <button
+            className="button primary"
+            type="button"
+            id="registerAppButton"
+            onClick={() => setRegistering(true)}
+          >
             Register App
           </button>
         </>
@@ -89,8 +94,8 @@ export function AppsPage() {
           <EmptyState title={search ? "No apps match the filter." : "No apps registered yet."}>
             {!search ? (
               <p>
-                Register a repository source to create your first app, or create the managed sample app to explore the
-                release flow.
+                Register a repository source to create your first app, or create the managed sample
+                app to explore the release flow.
               </p>
             ) : null}
           </EmptyState>
@@ -110,20 +115,12 @@ export function AppsPage() {
               </thead>
               <tbody>
                 {rows.map(({ source, app }) => {
-                  const detailID = source ? source.id : app!.git_source_id;
+                  const detailID = source ? source.id : app?.git_source_id;
                   return (
-                    <tr
-                      key={detailID}
-                      className="tableRow clickable"
-                      onClick={() => navigate(`/apps/${detailID}`)}
-                    >
+                    <tr key={detailID} className="tableRow">
                       <td>
-                        <Link
-                          to={`/apps/${detailID}`}
-                          className="cellTitle"
-                          onClick={(event) => event.stopPropagation()}
-                        >
-                          {app ? app.app_key : source!.name}
+                        <Link to={`/apps/${detailID}`} className="cellTitle">
+                          {app ? app.app_key : source?.name}
                         </Link>
                         <span className="cellSub">
                           {app
@@ -136,7 +133,10 @@ export function AppsPage() {
                         </span>
                       </td>
                       <td>
-                        <ReleaseStateBadge released={Boolean(app)} bundleReady={app?.bundle_status === "ready"} />
+                        <ReleaseStateBadge
+                          released={Boolean(app)}
+                          bundleReady={app?.bundle_status === "ready"}
+                        />
                       </td>
                       <td>
                         {source ? (
@@ -145,7 +145,9 @@ export function AppsPage() {
                             <span className="cellSub mono">
                               {source.branch || "main"}
                               {source.subpath ? ` · ${source.subpath}` : ""}
-                              {source.last_synced_commit ? ` · synced ${shortSHA(source.last_synced_commit, 8)}` : " · not synced"}
+                              {source.last_synced_commit
+                                ? ` · synced ${shortSHA(source.last_synced_commit, 8)}`
+                                : " · not synced"}
                             </span>
                           </>
                         ) : (
@@ -158,7 +160,7 @@ export function AppsPage() {
                       </td>
                       <td>{app ? app.actions_count : "—"}</td>
                       <td>{app ? <span className="mono">{app.effective_route_tag}</span> : "—"}</td>
-                      <td className="rowActions" onClick={(event) => event.stopPropagation()}>
+                      <td className="rowActions">
                         {source ? (
                           <SourceReleaseActions
                             key={`${source.id}:${actionRevision}`}
@@ -166,7 +168,6 @@ export function AppsPage() {
                             source={source}
                             activeCommit={app?.commit_sha}
                             activeBundleReady={app?.bundle_status === "ready"}
-                            onSynced={() => state.reload()}
                             onPublish={setPublishing}
                           />
                         ) : null}
@@ -193,7 +194,9 @@ export function AppsPage() {
       {publishing ? (
         <PublishReleaseDialog
           source={publishing}
-          activeCommit={state.data?.apps.find((app) => app.git_source_id === publishing.id)?.commit_sha}
+          activeCommit={
+            state.data?.apps.find((app) => app.git_source_id === publishing.id)?.commit_sha
+          }
           onClose={() => setPublishing(null)}
           onPublished={() => {
             const id = publishing.id;

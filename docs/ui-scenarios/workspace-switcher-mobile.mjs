@@ -14,6 +14,7 @@ export default {
     await page.goto();
     await page.click(".mobileWorkspaceContext .workspaceSwitcherTrigger");
     await page.waitForSelector(".mobileWorkspaceContext .workspacePopover");
+    await page.waitForText(".mobileWorkspaceContext .workspacePopover", "Operations");
     await capture(this.id);
   },
 };

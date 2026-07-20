@@ -1,8 +1,17 @@
 import { useState } from "react";
-import { errorMessage, type GitSource, type ProbeResult, type RegisterSourcePayload } from "../lib/api";
-import { useApp } from "../lib/app-context";
-import { defaultGitCredentialPath, gitCredentialSecretValue, type GitAuthMethod } from "../lib/git-credential";
 import { Field, Modal, ProbeNotice } from "../components/ui";
+import {
+  errorMessage,
+  type GitSource,
+  type ProbeResult,
+  type RegisterSourcePayload,
+} from "../lib/api";
+import { useApp } from "../lib/app-context";
+import {
+  defaultGitCredentialPath,
+  type GitAuthMethod,
+  gitCredentialSecretValue,
+} from "../lib/git-credential";
 
 export function RegisterAppDialog({
   onClose,
@@ -70,7 +79,8 @@ export function RegisterAppDialog({
     setError("");
     try {
       const credentialValue = gitCredentialSecretValue(authMethod, accessToken, username, password);
-      const credentialPath = credsRef.trim() || (credentialValue ? defaultGitCredentialPath(name) : "");
+      const credentialPath =
+        credsRef.trim() || (credentialValue ? defaultGitCredentialPath(name) : "");
       if (authMethod === "pat" && !credentialValue && !credentialPath) {
         setError("Access token is required, or provide an existing credential path.");
         return;
@@ -122,8 +132,15 @@ export function RegisterAppDialog({
       wide
     >
       <div className="formGrid">
-        <Field label="Source name" hint="Repository source alias. The app key itself comes from windforce.json at release.">
-          <input value={name} onChange={(event) => setName(event.target.value)} placeholder="echo" autoFocus />
+        <Field
+          label="Source name"
+          hint="Repository source alias. The app key itself comes from windforce.json at release."
+        >
+          <input
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            placeholder="echo"
+          />
         </Field>
         <Field label="Repository URL">
           <input
@@ -133,20 +150,37 @@ export function RegisterAppDialog({
           />
         </Field>
         <Field label="Branch">
-          <input value={branch} onChange={(event) => setBranch(event.target.value)} placeholder="main" />
+          <input
+            value={branch}
+            onChange={(event) => setBranch(event.target.value)}
+            placeholder="main"
+          />
         </Field>
-        <Field label="Subpath" hint="Repository directory used as the app root. Leave empty for the repo root.">
-          <input value={subpath} onChange={(event) => setSubpath(event.target.value)} placeholder="apps/echo" />
+        <Field
+          label="Subpath"
+          hint="Repository directory used as the app root. Leave empty for the repo root."
+        >
+          <input
+            value={subpath}
+            onChange={(event) => setSubpath(event.target.value)}
+            placeholder="apps/echo"
+          />
         </Field>
         <Field label="Git auth">
-          <select value={authMethod} onChange={(event) => setAuthMethod(event.target.value as GitAuthMethod)}>
+          <select
+            value={authMethod}
+            onChange={(event) => setAuthMethod(event.target.value as GitAuthMethod)}
+          >
             <option value="none">Public (no credential)</option>
             <option value="pat">Access token</option>
             <option value="basic">Username + password</option>
           </select>
         </Field>
         {authMethod === "pat" ? (
-          <Field label="Access token" hint="Stored as a workspace secret variable; creds ref below is optional.">
+          <Field
+            label="Access token"
+            hint="Stored as a workspace secret variable; creds ref below is optional."
+          >
             <input
               type="password"
               value={accessToken}
@@ -158,7 +192,11 @@ export function RegisterAppDialog({
         {authMethod === "basic" ? (
           <>
             <Field label="Username">
-              <input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="off" />
+              <input
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+                autoComplete="off"
+              />
             </Field>
             <Field label="Password">
               <input
@@ -190,7 +228,12 @@ export function RegisterAppDialog({
           Create sample app
         </button>
         <div className="dialogFooterActions">
-          <button className="button" type="button" disabled={busy || !repoURL.trim()} onClick={handleProbe}>
+          <button
+            className="button"
+            type="button"
+            disabled={busy || !repoURL.trim()}
+            onClick={handleProbe}
+          >
             Probe repository
           </button>
           <button className="button primary" type="button" disabled={busy} onClick={handleRegister}>

@@ -3,7 +3,7 @@ export type GitAuthMethod = "none" | "pat" | "basic";
 export function defaultGitCredentialPath(sourceName: string): string {
   const segment = sourceName
     .trim()
-    .replace(/[\/\\\s\x00-\x1f\x7f]+/g, "-")
+    .replace(/[/\\\s\x00-\x1f\x7f]+/g, "-")
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "");
   const safeSegment = segment && segment !== "." && segment !== ".." ? segment : "source";

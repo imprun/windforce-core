@@ -2,10 +2,14 @@ import { Archive, ArrowLeft, KeyRound } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Layout } from "../components/Layout";
 import { DefinitionList, EmptyState, ErrorNotice, Field, Loading, Panel } from "../components/ui";
-import { OneTimeWorkspaceToken, WorkspaceActivation, WorkspaceStatus } from "../features/WorkspaceAdmin";
-import { useApp, useAsync } from "../lib/app-context";
+import {
+  OneTimeWorkspaceToken,
+  WorkspaceActivation,
+  WorkspaceStatus,
+} from "../features/WorkspaceAdmin";
 import type { Workspace } from "../lib/api";
 import { errorMessage } from "../lib/api";
+import { useApp, useAsync } from "../lib/app-context";
 import { formatTime } from "../lib/format";
 import { Link } from "../lib/router";
 import { notifyWorkspaceRegistryChanged } from "../lib/workspaces";
@@ -22,15 +26,25 @@ type WorkspaceTab = (typeof workspaceDetailTabs)[number]["key"];
 export function WorkspaceDetailPage({ workspaceID, tab }: { workspaceID: string; tab: string }) {
   const { api } = useApp();
   const state = useAsync(() => api.workspace(workspaceID), [api, workspaceID]);
-  const activeTab = (workspaceDetailTabs.find((item) => item.key === tab)?.key || "overview") as WorkspaceTab;
+  const activeTab = (workspaceDetailTabs.find((item) => item.key === tab)?.key ||
+    "overview") as WorkspaceTab;
   const backToWorkspaces = (
-    <Link className="button iconButton topbarTitleBack" to="/workspaces" aria-label="Back to workspaces" title="Back to workspaces">
+    <Link
+      className="button iconButton topbarTitleBack"
+      to="/workspaces"
+      aria-label="Back to workspaces"
+      title="Back to workspaces"
+    >
       <ArrowLeft size={18} aria-hidden="true" />
     </Link>
   );
 
   if (state.loading && !state.data) {
-    return <Layout scope="instance" title="Workspace" titleLeading={backToWorkspaces}><Loading label="Loading workspace…" /></Layout>;
+    return (
+      <Layout scope="instance" title="Workspace" titleLeading={backToWorkspaces}>
+        <Loading label="Loading workspace…" />
+      </Layout>
+    );
   }
   if (state.error || !state.data) {
     return (
@@ -54,22 +68,38 @@ export function WorkspaceDetailPage({ workspaceID, tab }: { workspaceID: string;
           <Link
             key={item.key}
             className={item.key === activeTab ? "tab active" : "tab"}
-            to={item.key === "overview" ? `/workspaces/${encodeURIComponent(workspace.id)}` : `/workspaces/${encodeURIComponent(workspace.id)}/${item.key}`}
+            to={
+              item.key === "overview"
+                ? `/workspaces/${encodeURIComponent(workspace.id)}`
+                : `/workspaces/${encodeURIComponent(workspace.id)}/${item.key}`
+            }
           >
             {item.label}
           </Link>
         ))}
       </nav>
 
-      {activeTab === "overview" ? <WorkspaceOverview workspace={workspace} onChanged={state.reload} /> : null}
-      {activeTab === "access" ? <WorkspaceAccess workspace={workspace} onChanged={state.reload} /> : null}
+      {activeTab === "overview" ? (
+        <WorkspaceOverview workspace={workspace} onChanged={state.reload} />
+      ) : null}
+      {activeTab === "access" ? (
+        <WorkspaceAccess workspace={workspace} onChanged={state.reload} />
+      ) : null}
       {activeTab === "audit" ? <WorkspaceAudit workspaceID={workspace.id} /> : null}
-      {activeTab === "lifecycle" ? <WorkspaceLifecycle workspace={workspace} onChanged={state.reload} /> : null}
+      {activeTab === "lifecycle" ? (
+        <WorkspaceLifecycle workspace={workspace} onChanged={state.reload} />
+      ) : null}
     </Layout>
   );
 }
 
-function WorkspaceOverview({ workspace, onChanged }: { workspace: Workspace; onChanged: () => void }) {
+function WorkspaceOverview({
+  workspace,
+  onChanged,
+}: {
+  workspace: Workspace;
+  onChanged: () => void;
+}) {
   const { api, notify } = useApp();
   const [name, setName] = useState(workspace.name);
   const [saving, setSaving] = useState(false);
@@ -93,22 +123,40 @@ function WorkspaceOverview({ workspace, onChanged }: { workspace: Workspace; onC
   }
 
   return (
-    <Panel title="Workspace identity" subtitle="The immutable routing ID and operator-facing display name.">
+    <Panel
+      title="Workspace identity"
+      subtitle="The immutable routing ID and operator-facing display name."
+    >
       {error ? <ErrorNotice message={error} /> : null}
-      <DefinitionList className="workspaceIdentityFacts" items={[
-        ["Workspace ID", <span className="mono">{workspace.id}</span>],
-        ["Status", <WorkspaceStatus workspace={workspace} />],
-        ["Created", formatTime(workspace.created_at)],
-        ["Created by", workspace.created_by],
-      ]} />
+      <DefinitionList
+        className="workspaceIdentityFacts"
+        items={[
+          ["Workspace ID", <span className="mono">{workspace.id}</span>],
+          ["Status", <WorkspaceStatus workspace={workspace} />],
+          ["Created", formatTime(workspace.created_at)],
+          ["Created by", workspace.created_by],
+        ]}
+      />
       <div className="workspaceSingleSetting">
-        <Field label="Display name" hint="Shown in the workspace switcher and administration screens.">
-          <input value={name} disabled={workspace.status === "archived"} onChange={(event) => setName(event.target.value)} />
+        <Field
+          label="Display name"
+          hint="Shown in the workspace switcher and administration screens."
+        >
+          <input
+            value={name}
+            disabled={workspace.status === "archived"}
+            onChange={(event) => setName(event.target.value)}
+          />
         </Field>
         <button
           className="button primary"
           type="button"
-          disabled={saving || workspace.status === "archived" || !name.trim() || name.trim() === workspace.name}
+          disabled={
+            saving ||
+            workspace.status === "archived" ||
+            !name.trim() ||
+            name.trim() === workspace.name
+          }
           onClick={save}
         >
           {saving ? "Saving…" : "Save display name"}
@@ -118,7 +166,13 @@ function WorkspaceOverview({ workspace, onChanged }: { workspace: Workspace; onC
   );
 }
 
-function WorkspaceAccess({ workspace, onChanged }: { workspace: Workspace; onChanged: () => void }) {
+function WorkspaceAccess({
+  workspace,
+  onChanged,
+}: {
+  workspace: Workspace;
+  onChanged: () => void;
+}) {
   const { api, notify } = useApp();
   const [token, setToken] = useState("");
   const [saving, setSaving] = useState(false);
@@ -126,7 +180,9 @@ function WorkspaceAccess({ workspace, onChanged }: { workspace: Workspace; onCha
 
   async function rotateToken() {
     const action = workspace.has_token ? "Rotate" : "Create";
-    const consequence = workspace.has_token ? " The current token will stop working immediately." : "";
+    const consequence = workspace.has_token
+      ? " The current token will stop working immediately."
+      : "";
     if (!window.confirm(`${action} the access token for ${workspace.name}?${consequence}`)) return;
     setSaving(true);
     setError("");
@@ -146,19 +202,31 @@ function WorkspaceAccess({ workspace, onChanged }: { workspace: Workspace; onCha
   return (
     <Panel title="Workspace access" subtitle="Scoped API access for this workspace only.">
       {error ? <ErrorNotice message={error} /> : null}
-      <DefinitionList items={[
-        ["Token status", workspace.has_token ? "Configured" : "Not configured"],
-        ["Scope", <span className="mono">/api/w/{workspace.id}</span>],
-        ["Last changed by", workspace.updated_by],
-        ["Last changed", formatTime(workspace.updated_at)],
-      ]} />
+      <DefinitionList
+        items={[
+          ["Token status", workspace.has_token ? "Configured" : "Not configured"],
+          ["Scope", <span className="mono">/api/w/{workspace.id}</span>],
+          ["Last changed by", workspace.updated_by],
+          ["Last changed", formatTime(workspace.updated_at)],
+        ]}
+      />
       <div className="workspaceCommandRow">
         <div>
           <strong>{workspace.has_token ? "Rotate access token" : "Create access token"}</strong>
-          <p>{workspace.has_token ? "Creates a new one-time token and immediately invalidates the current token." : "Creates the first one-time API token for this workspace."}</p>
+          <p>
+            {workspace.has_token
+              ? "Creates a new one-time token and immediately invalidates the current token."
+              : "Creates the first one-time API token for this workspace."}
+          </p>
         </div>
-        <button className="button" type="button" disabled={saving || workspace.status === "archived"} onClick={rotateToken}>
-          <KeyRound size={16} aria-hidden="true" /> {saving ? "Saving…" : workspace.has_token ? "Rotate token" : "Create token"}
+        <button
+          className="button"
+          type="button"
+          disabled={saving || workspace.status === "archived"}
+          onClick={rotateToken}
+        >
+          <KeyRound size={16} aria-hidden="true" />{" "}
+          {saving ? "Saving…" : workspace.has_token ? "Rotate token" : "Create token"}
         </button>
       </div>
       {token ? <OneTimeWorkspaceToken token={token} /> : null}
@@ -178,7 +246,14 @@ function WorkspaceAudit({ workspaceID }: { workspaceID: string }) {
       {state.data?.items.length ? (
         <div className="tableWrap">
           <table className="table workspaceAuditTable">
-            <thead><tr><th>Event</th><th>Actor</th><th>Detail</th><th>When</th></tr></thead>
+            <thead>
+              <tr>
+                <th>Event</th>
+                <th>Actor</th>
+                <th>Detail</th>
+                <th>When</th>
+              </tr>
+            </thead>
             <tbody>
               {state.data.items.map((record) => (
                 <tr key={record.id}>
@@ -196,13 +271,24 @@ function WorkspaceAudit({ workspaceID }: { workspaceID: string }) {
   );
 }
 
-function WorkspaceLifecycle({ workspace, onChanged }: { workspace: Workspace; onChanged: () => void }) {
+function WorkspaceLifecycle({
+  workspace,
+  onChanged,
+}: {
+  workspace: Workspace;
+  onChanged: () => void;
+}) {
   const { api, settings, updateSettings, notify } = useApp();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
   async function archive() {
-    if (!window.confirm(`Archive ${workspace.name}? Reads remain available, but releases, settings changes, and new runs will be blocked.`)) return;
+    if (
+      !window.confirm(
+        `Archive ${workspace.name}? Reads remain available, but releases, settings changes, and new runs will be blocked.`,
+      )
+    )
+      return;
     setSaving(true);
     setError("");
     try {
@@ -223,18 +309,33 @@ function WorkspaceLifecycle({ workspace, onChanged }: { workspace: Workspace; on
   }
 
   return (
-    <Panel title="Workspace lifecycle" subtitle="Archive preserves records while preventing future changes and executions.">
+    <Panel
+      title="Workspace lifecycle"
+      subtitle="Archive preserves records while preventing future changes and executions."
+    >
       {error ? <ErrorNotice message={error} /> : null}
-      <DefinitionList items={[["Current status", <WorkspaceStatus workspace={workspace} />], ["Workspace ID", <span className="mono">{workspace.id}</span>]]} />
+      <DefinitionList
+        items={[
+          ["Current status", <WorkspaceStatus workspace={workspace} />],
+          ["Workspace ID", <span className="mono">{workspace.id}</span>],
+        ]}
+      />
       {workspace.id === "default" ? (
-        <div className="inlineNotice">The default workspace is permanent and cannot be archived.</div>
+        <div className="inlineNotice">
+          The default workspace is permanent and cannot be archived.
+        </div>
       ) : workspace.status === "archived" ? (
-        <div className="inlineNotice">This workspace is archived. Reads and audit records remain available.</div>
+        <div className="inlineNotice">
+          This workspace is archived. Reads and audit records remain available.
+        </div>
       ) : (
         <div className="dangerZone">
           <div>
             <strong>Archive workspace</strong>
-            <p>Blocks releases, configuration changes, webhook changes, and new runs. This action cannot be reversed.</p>
+            <p>
+              Blocks releases, configuration changes, webhook changes, and new runs. This action
+              cannot be reversed.
+            </p>
           </div>
           <button className="button danger" type="button" disabled={saving} onClick={archive}>
             <Archive size={16} aria-hidden="true" /> {saving ? "Archiving…" : "Archive workspace"}

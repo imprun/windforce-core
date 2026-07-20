@@ -1,14 +1,14 @@
 import {
   createContext,
+  type ReactNode,
   useCallback,
   useContext,
   useEffect,
   useMemo,
   useRef,
   useState,
-  type ReactNode,
 } from "react";
-import { errorMessage, loadSettings, saveSettings, WindforceApi, type Settings } from "./api";
+import { errorMessage, loadSettings, type Settings, saveSettings, WindforceApi } from "./api";
 
 export type Toast = {
   id: number;
@@ -80,7 +80,9 @@ export function useAsync<T>(load: () => Promise<T>, deps: unknown[]): AsyncState
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: callers define the load contract.
   useEffect(() => {
+    void tick;
     let canceled = false;
     setLoading(true);
     load()
@@ -99,7 +101,6 @@ export function useAsync<T>(load: () => Promise<T>, deps: unknown[]): AsyncState
     return () => {
       canceled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [...deps, tick]);
 
   const reload = useCallback(() => setTick((current) => current + 1), []);

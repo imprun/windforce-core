@@ -33,7 +33,9 @@ export function WebhookDeliverySheet({
           </button>
         ) : (
           <span className="fieldHint">
-            {delivery.state === "failed" ? "Enable the subscription before retrying." : "Only failed deliveries can be retried."}
+            {delivery.state === "failed"
+              ? "Enable the subscription before retrying."
+              : "Only failed deliveries can be retried."}
           </span>
         )
       }
@@ -52,10 +54,17 @@ export function WebhookDeliverySheet({
             ["Latency", delivery.latency_ms != null ? `${delivery.latency_ms} ms` : "—"],
             ["Created", formatTime(delivery.created_at)],
             ["Completed", delivery.completed_at ? formatTime(delivery.completed_at) : "—"],
-            ["Next attempt", delivery.state === "retrying" || delivery.state === "pending" ? formatTime(delivery.next_attempt_at) : "—"],
+            [
+              "Next attempt",
+              delivery.state === "retrying" || delivery.state === "pending"
+                ? formatTime(delivery.next_attempt_at)
+                : "—",
+            ],
           ]}
         />
-        {delivery.error_summary ? <div className="inlineNotice error">{delivery.error_summary}</div> : null}
+        {delivery.error_summary ? (
+          <div className="inlineNotice error">{delivery.error_summary}</div>
+        ) : null}
       </div>
       <div className="sheetSection">
         <h3>Event</h3>

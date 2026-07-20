@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test";
-import { type InputConfig } from "./api";
+import { describe, expect, test } from "vitest";
+import type { InputConfig } from "./api";
 import { groupInputSettings, inputSettingGroupMatches, paginate } from "./input-setting-groups";
 
 function config(patch: Partial<InputConfig>): InputConfig {
@@ -44,17 +44,25 @@ describe("groupInputSettings", () => {
   });
 
   test("matches labels, action keys, and configured key names", () => {
-    const [group] = groupInputSettings([config({ action_key: "login", config: { proxy: null } })], () => "default");
-    expect(inputSettingGroupMatches(group, "Blue Client", ["Blue Client"])).toBeTrue();
-    expect(inputSettingGroupMatches(group, "login")).toBeTrue();
-    expect(inputSettingGroupMatches(group, "proxy")).toBeTrue();
-    expect(inputSettingGroupMatches(group, "missing")).toBeFalse();
+    const [group] = groupInputSettings(
+      [config({ action_key: "login", config: { proxy: null } })],
+      () => "default",
+    );
+    expect(inputSettingGroupMatches(group!, "Blue Client", ["Blue Client"])).toBe(true);
+    expect(inputSettingGroupMatches(group!, "login")).toBe(true);
+    expect(inputSettingGroupMatches(group!, "proxy")).toBe(true);
+    expect(inputSettingGroupMatches(group!, "missing")).toBe(false);
   });
 });
 
 describe("paginate", () => {
   test("clamps page bounds and slices the requested page", () => {
-    expect(paginate([1, 2, 3, 4, 5], 2, 2)).toEqual({ items: [3, 4], page: 2, totalPages: 3, start: 2 });
+    expect(paginate([1, 2, 3, 4, 5], 2, 2)).toEqual({
+      items: [3, 4],
+      page: 2,
+      totalPages: 3,
+      start: 2,
+    });
     expect(paginate([1, 2, 3], 99, 2).page).toBe(2);
     expect(paginate([], 1, 25)).toEqual({ items: [], page: 1, totalPages: 1, start: 0 });
   });

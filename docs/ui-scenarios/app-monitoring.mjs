@@ -14,7 +14,7 @@ export default {
   async run({ page, capture }) {
     await page.goto();
     await page.waitForSelector("#appList .tableRow");
-    await page.click("#appList .tableRow");
+    await page.click("#appList .cellTitle");
     await page.waitForSelector(".tabBar");
     await page.click(".tabBar .tab[href$='/monitoring']");
     await page.waitForSelector("#appMonitoring");

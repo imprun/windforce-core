@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { CLI_TOKEN_ENV, cliProfileCommand } from "./SettingsPage";
 
 describe("CLI connection settings", () => {

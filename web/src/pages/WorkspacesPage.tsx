@@ -2,9 +2,13 @@ import { Plus, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { Layout } from "../components/Layout";
 import { EmptyState, ErrorNotice, Field, Loading, Modal, Panel } from "../components/ui";
-import { OneTimeWorkspaceToken, WorkspaceActivation, WorkspaceStatus } from "../features/WorkspaceAdmin";
-import { useApp, useAsync } from "../lib/app-context";
+import {
+  OneTimeWorkspaceToken,
+  WorkspaceActivation,
+  WorkspaceStatus,
+} from "../features/WorkspaceAdmin";
 import { errorMessage } from "../lib/api";
+import { useApp, useAsync } from "../lib/app-context";
 import { formatRelative, formatTime } from "../lib/format";
 import { Link } from "../lib/router";
 import { notifyWorkspaceRegistryChanged } from "../lib/workspaces";
@@ -21,7 +25,12 @@ export function WorkspacesPage() {
       subtitle="Instance administration for workspace identity, access, and lifecycle."
       actions={
         <>
-          <button className="button" type="button" onClick={state.reload} title="Refresh workspaces">
+          <button
+            className="button"
+            type="button"
+            onClick={state.reload}
+            title="Refresh workspaces"
+          >
             <RefreshCw size={16} aria-hidden="true" /> Refresh
           </button>
           <button className="button primary" type="button" onClick={() => setCreating(true)}>
@@ -55,14 +64,17 @@ export function WorkspacesPage() {
                   {state.data.items.map((workspace) => (
                     <tr key={workspace.id}>
                       <td>
-                        <Link className="cellTitle tablePrimaryLink" to={`/workspaces/${encodeURIComponent(workspace.id)}`}>
+                        <Link
+                          className="cellTitle tablePrimaryLink"
+                          to={`/workspaces/${encodeURIComponent(workspace.id)}`}
+                        >
                           {workspace.name}
                         </Link>
-                        <span className="cellSub mono">
-                          {workspace.id}
-                        </span>
+                        <span className="cellSub mono">{workspace.id}</span>
                       </td>
-                      <td><WorkspaceStatus workspace={workspace} /></td>
+                      <td>
+                        <WorkspaceStatus workspace={workspace} />
+                      </td>
                       <td>{workspace.has_token ? "Configured" : "Not configured"}</td>
                       <td title={formatTime(workspace.updated_at)}>
                         <span className="cellTitle">{formatRelative(workspace.updated_at)}</span>
@@ -71,7 +83,12 @@ export function WorkspacesPage() {
                       <td className="tableActions">
                         <div className="workspaceTableActions">
                           <WorkspaceActivation workspace={workspace} compact />
-                          <Link className="button small" to={`/workspaces/${encodeURIComponent(workspace.id)}`}>Manage</Link>
+                          <Link
+                            className="button small"
+                            to={`/workspaces/${encodeURIComponent(workspace.id)}`}
+                          >
+                            Manage
+                          </Link>
                         </div>
                       </td>
                     </tr>
@@ -96,7 +113,13 @@ export function WorkspacesPage() {
   );
 }
 
-function CreateWorkspaceDialog({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+function CreateWorkspaceDialog({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: () => void;
+}) {
   const { api, notify } = useApp();
   const [id, setID] = useState("");
   const [name, setName] = useState("");
@@ -122,7 +145,11 @@ function CreateWorkspaceDialog({ onClose, onCreated }: { onClose: () => void; on
   return (
     <Modal
       title={token ? "Workspace created" : "Create workspace"}
-      subtitle={token ? "Store the workspace token now; it will not be shown again." : "Workspace IDs are permanent routing identifiers."}
+      subtitle={
+        token
+          ? "Store the workspace token now; it will not be shown again."
+          : "Workspace IDs are permanent routing identifiers."
+      }
       onClose={onClose}
     >
       {error ? <ErrorNotice message={error} /> : null}
@@ -130,14 +157,30 @@ function CreateWorkspaceDialog({ onClose, onCreated }: { onClose: () => void; on
         <OneTimeWorkspaceToken token={token} />
       ) : (
         <div className="dialogForm">
-          <Field label="Workspace ID" hint="Lowercase letters, digits, and hyphens. Cannot be changed later.">
-            <input value={id} onChange={(event) => setID(event.target.value)} placeholder="team-a" autoFocus />
+          <Field
+            label="Workspace ID"
+            hint="Lowercase letters, digits, and hyphens. Cannot be changed later."
+          >
+            <input
+              value={id}
+              onChange={(event) => setID(event.target.value)}
+              placeholder="team-a"
+            />
           </Field>
           <Field label="Display name">
-            <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Team A" />
+            <input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Team A"
+            />
           </Field>
           <div className="dialogFooter">
-            <button className="button primary" type="button" disabled={saving || !id.trim() || !name.trim()} onClick={create}>
+            <button
+              className="button primary"
+              type="button"
+              disabled={saving || !id.trim() || !name.trim()}
+              onClick={create}
+            >
               {saving ? "Creating…" : "Create workspace"}
             </button>
           </div>

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import type { GitSource } from "./api";
 import {
   probePassed,
@@ -32,7 +32,9 @@ describe("repository settings policy", () => {
 
   test("keeps an existing credential path when rotating a credential", () => {
     expect(reconnectCredentialPath(source)).toBe("git/gov24/credential");
-    expect(reconnectCredentialPath({ ...source, creds_ref: "", name: "Gov 24" })).toBe("git/Gov-24/credential");
+    expect(reconnectCredentialPath({ ...source, creds_ref: "", name: "Gov 24" })).toBe(
+      "git/Gov-24/credential",
+    );
   });
 
   test("requires both reachability and the selected branch", () => {

@@ -10,7 +10,8 @@ type ReleaseMarkdownProps = {
 };
 
 function releaseFilePath(subpath: string, target: string): string | null {
-  if (/^[a-z][a-z0-9+.-]*:/iu.test(target) || target.startsWith("//") || target.startsWith("#")) return null;
+  if (/^[a-z][a-z0-9+.-]*:/iu.test(target) || target.startsWith("//") || target.startsWith("#"))
+    return null;
   const cleanTarget = target.replace(/^[./]+/, "");
   if (!cleanTarget || cleanTarget.startsWith("..")) return null;
   const cleanSubpath = subpath.replace(/^\/+|\/+$/g, "");
@@ -19,7 +20,7 @@ function releaseFilePath(subpath: string, target: string): string | null {
 
 function safeAbsoluteURL(target: string, image: boolean): string | undefined {
   if (target.startsWith("//")) return undefined;
-  const scheme = target.match(/^([a-z][a-z0-9+.-]*):/iu)?.[1].toLowerCase();
+  const scheme = target.match(/^([a-z][a-z0-9+.-]*):/iu)?.[1]?.toLowerCase();
   if (!scheme) return target;
   if (scheme === "https" || scheme === "http" || (!image && scheme === "mailto")) return target;
   return undefined;

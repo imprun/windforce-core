@@ -9,14 +9,29 @@ const labels: Record<WebhookDeliveryState, string> = {
   canceled: "Canceled",
 };
 
-export function WebhookSubscriptionStatus({ enabled, deleted }: { enabled: boolean; deleted?: boolean }) {
+export function WebhookSubscriptionStatus({
+  enabled,
+  deleted,
+}: {
+  enabled: boolean;
+  deleted?: boolean;
+}) {
   if (deleted) return <span className="badge badge-neutral">Deleted</span>;
   if (!enabled) return <span className="badge badge-warning">Disabled</span>;
   return <span className="badge badge-good">Enabled</span>;
 }
 
 export function WebhookDeliveryStatus({ state }: { state: WebhookDeliveryState }) {
-  const tone = state === "succeeded" ? "good" : state === "failed" ? "critical" : state === "canceled" ? "neutral" : state === "retrying" ? "warning" : "running";
+  const tone =
+    state === "succeeded"
+      ? "good"
+      : state === "failed"
+        ? "critical"
+        : state === "canceled"
+          ? "neutral"
+          : state === "retrying"
+            ? "warning"
+            : "running";
   return <span className={`badge badge-${tone}`}>{labels[state]}</span>;
 }
 

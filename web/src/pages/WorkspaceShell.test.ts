@@ -1,8 +1,12 @@
-import { describe, expect, test } from "bun:test";
+import { readFile } from "node:fs/promises";
+import { describe, expect, test } from "vitest";
 
-const registrySource = await Bun.file(new URL("./WorkspacesPage.tsx", import.meta.url)).text();
-const detailSource = await Bun.file(new URL("./WorkspaceDetailPage.tsx", import.meta.url)).text();
-const adminSource = await Bun.file(new URL("../features/WorkspaceAdmin.tsx", import.meta.url)).text();
+const registrySource = await readFile(new URL("./WorkspacesPage.tsx", import.meta.url), "utf8");
+const detailSource = await readFile(new URL("./WorkspaceDetailPage.tsx", import.meta.url), "utf8");
+const adminSource = await readFile(
+  new URL("../features/WorkspaceAdmin.tsx", import.meta.url),
+  "utf8",
+);
 
 describe("workspace administration shell", () => {
   test("uses the instance shell for the registry", () => {

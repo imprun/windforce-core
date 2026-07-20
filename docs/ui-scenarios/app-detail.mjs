@@ -14,8 +14,9 @@ export default {
   async run({ page, capture }) {
     await page.goto();
     await page.waitForSelector("#appList .tableRow");
-    await page.click("#appList .tableRow");
+    await page.click("#appList .cellTitle");
     await page.waitForText("h2", "Active release");
+    await page.waitForFunction(() => !document.querySelector("main")?.textContent.includes("checking…"));
     await capture(this.id);
   },
 };

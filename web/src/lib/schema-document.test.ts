@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { describeSchema, formatSchemaValue } from "./schema-document";
 
 describe("describeSchema", () => {
@@ -8,7 +8,12 @@ describe("describeSchema", () => {
       type: "object",
       required: ["mode", "account"],
       properties: {
-        mode: { type: "string", enum: ["login", "refresh"], default: "login", description: "Session operation" },
+        mode: {
+          type: "string",
+          enum: ["login", "refresh"],
+          default: "login",
+          description: "Session operation",
+        },
         account: { type: "string", title: "Account ID" },
         retries: { type: "integer", const: 1 },
       },

@@ -4,7 +4,7 @@ import { Layout } from "../components/Layout";
 import { SettingsNav } from "../components/SettingsNav";
 import { EmptyState, ErrorNotice, Loading, Panel } from "../components/ui";
 import { WebhookDeliveryStatus, WebhookSubscriptionStatus } from "../features/WebhookStatus";
-import { webhookAppKeys, type WebhookDeliveryDetail, type WebhookSubscription } from "../lib/api";
+import { type WebhookDeliveryDetail, type WebhookSubscription, webhookAppKeys } from "../lib/api";
 import { useApp, useAsync } from "../lib/app-context";
 import { formatRelative, formatTime } from "../lib/format";
 import { Link } from "../lib/router";
@@ -36,12 +36,17 @@ export function WebhookSettingsPage() {
     const query = search.trim().toLowerCase();
     if (!state.data || !query) return state.data || [];
     return state.data.filter(({ subscription }) =>
-      [subscription.name, subscription.endpoint_summary, ...webhookAppKeys(subscription)].some((value) => value.toLowerCase().includes(query)),
+      [subscription.name, subscription.endpoint_summary, ...webhookAppKeys(subscription)].some(
+        (value) => value.toLowerCase().includes(query),
+      ),
     );
   }, [search, state.data]);
 
-  const enabledCount = state.data?.filter(({ subscription }) => subscription.enabled && !subscription.deleted_at).length || 0;
-  const failedCount = state.data?.filter(({ lastDelivery }) => lastDelivery?.delivery.state === "failed").length || 0;
+  const enabledCount =
+    state.data?.filter(({ subscription }) => subscription.enabled && !subscription.deleted_at)
+      .length || 0;
+  const failedCount =
+    state.data?.filter(({ lastDelivery }) => lastDelivery?.delivery.state === "failed").length || 0;
 
   return (
     <Layout
@@ -56,7 +61,12 @@ export function WebhookSettingsPage() {
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
-          <button className="button" type="button" onClick={() => state.reload()} title="Refresh webhooks">
+          <button
+            className="button"
+            type="button"
+            onClick={() => state.reload()}
+            title="Refresh webhooks"
+          >
             <RefreshCw size={16} aria-hidden="true" />
             Refresh
           </button>
@@ -68,14 +78,22 @@ export function WebhookSettingsPage() {
       }
     >
       <SettingsNav />
-      <div className="webhookSummaryBar" aria-label="Webhook summary">
-        <span><strong>{enabledCount}</strong> enabled</span>
-        <span className={failedCount ? "summaryCritical" : undefined}><strong>{failedCount}</strong> latest deliveries failed</span>
+      <section className="webhookSummaryBar" aria-label="Webhook summary">
+        <span>
+          <strong>{enabledCount}</strong> enabled
+        </span>
+        <span className={failedCount ? "summaryCritical" : undefined}>
+          <strong>{failedCount}</strong> latest deliveries failed
+        </span>
         <label className="historyToggle">
-          <input type="checkbox" checked={includeDeleted} onChange={(event) => setIncludeDeleted(event.target.checked)} />
+          <input
+            type="checkbox"
+            checked={includeDeleted}
+            onChange={(event) => setIncludeDeleted(event.target.checked)}
+          />
           Show deleted
         </label>
-      </div>
+      </section>
 
       {state.error ? <ErrorNotice message={state.error} onRetry={state.reload} /> : null}
       {state.loading && !state.data ? <Loading label="Loading webhooks…" /> : null}
@@ -85,8 +103,14 @@ export function WebhookSettingsPage() {
           subtitle={`${rows.length} webhook${rows.length === 1 ? "" : "s"} in the current view`}
         >
           {rows.length === 0 ? (
-            <EmptyState title={search ? "No webhooks match the filter." : "No webhook subscriptions yet."}>
-              {!search ? <Link className="button primary" to="/settings/webhooks/new">Create webhook</Link> : null}
+            <EmptyState
+              title={search ? "No webhooks match the filter." : "No webhook subscriptions yet."}
+            >
+              {!search ? (
+                <Link className="button primary" to="/settings/webhooks/new">
+                  Create webhook
+                </Link>
+              ) : null}
             </EmptyState>
           ) : (
             <div className="tableWrap">
@@ -104,9 +128,14 @@ export function WebhookSettingsPage() {
                   {rows.map(({ subscription, lastDelivery }) => (
                     <tr key={subscription.id}>
                       <td>
-                        <Link className="cellTitle" to={`/settings/webhooks/${subscription.id}`}>{subscription.name}</Link>
+                        <Link className="cellTitle" to={`/settings/webhooks/${subscription.id}`}>
+                          {subscription.name}
+                        </Link>
                         <span className="cellSub webhookStatusLine">
-                          <WebhookSubscriptionStatus enabled={subscription.enabled} deleted={Boolean(subscription.deleted_at)} />
+                          <WebhookSubscriptionStatus
+                            enabled={subscription.enabled}
+                            deleted={Boolean(subscription.deleted_at)}
+                          />
                         </span>
                       </td>
                       <td>
@@ -118,8 +147,14 @@ export function WebhookSettingsPage() {
                           <span className="cellTitle">All apps</span>
                         ) : (
                           <>
-                            <span className="cellTitle">{webhookAppKeys(subscription).slice(0, 2).join(", ")}</span>
-                            {webhookAppKeys(subscription).length > 2 ? <span className="cellSub">+{webhookAppKeys(subscription).length - 2} more</span> : null}
+                            <span className="cellTitle">
+                              {webhookAppKeys(subscription).slice(0, 2).join(", ")}
+                            </span>
+                            {webhookAppKeys(subscription).length > 2 ? (
+                              <span className="cellSub">
+                                +{webhookAppKeys(subscription).length - 2} more
+                              </span>
+                            ) : null}
                           </>
                         )}
                       </td>
@@ -127,9 +162,16 @@ export function WebhookSettingsPage() {
                         {lastDelivery ? (
                           <>
                             <WebhookDeliveryStatus state={lastDelivery.delivery.state} />
-                            <span className="cellSub" title={formatTime(lastDelivery.delivery.created_at)}>{formatRelative(lastDelivery.delivery.created_at)}</span>
+                            <span
+                              className="cellSub"
+                              title={formatTime(lastDelivery.delivery.created_at)}
+                            >
+                              {formatRelative(lastDelivery.delivery.created_at)}
+                            </span>
                           </>
-                        ) : <span className="cellSub">No deliveries yet</span>}
+                        ) : (
+                          <span className="cellSub">No deliveries yet</span>
+                        )}
                       </td>
                       <td title={formatTime(subscription.updated_at)}>
                         <span className="cellTitle">{formatRelative(subscription.updated_at)}</span>

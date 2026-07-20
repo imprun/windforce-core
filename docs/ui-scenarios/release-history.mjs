@@ -13,7 +13,7 @@ export default {
   async run({ page, capture }) {
     await page.goto();
     await page.waitForSelector("#appList .tableRow");
-    await page.click("#appList .tableRow");
+    await page.click("#appList .cellTitle");
     await page.clickText("Releases");
     await page.waitForSelector("#releaseHistory .cellTitle");
     await capture(this.id);

@@ -1,9 +1,16 @@
-import { useEffect, type ReactNode } from "react";
 import { X } from "lucide-react";
+import { Dialog as DialogPrimitive } from "radix-ui";
+import type { ReactNode } from "react";
 import type { ProbeResult } from "../lib/api";
 import { formatJSON } from "../lib/format";
 
-export function ReleaseStateBadge({ released, bundleReady = true }: { released: boolean; bundleReady?: boolean }) {
+export function ReleaseStateBadge({
+  released,
+  bundleReady = true,
+}: {
+  released: boolean;
+  bundleReady?: boolean;
+}) {
   if (released && !bundleReady) {
     return (
       <span className="badge badge-warning">
@@ -125,29 +132,26 @@ export function Modal({
   id?: string;
   wide?: boolean;
 }) {
-  useEffect(() => {
-    const handler = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [onClose]);
-
   return (
-    <div className="modalBackdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <section className={wide ? "dialog wide" : "dialog"} role="dialog" aria-modal="true" aria-label={title} id={id}>
-        <header className="dialogHeader">
-          <div>
-            <h2>{title}</h2>
-            {subtitle ? <p>{subtitle}</p> : null}
-          </div>
-          <button className="button small" type="button" onClick={onClose}>
-            Close
-          </button>
-        </header>
-        <div className="dialogBody">{children}</div>
-      </section>
-    </div>
+    <DialogPrimitive.Root open onOpenChange={(open) => !open && onClose()}>
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Overlay className="modalBackdrop" />
+        <DialogPrimitive.Content className={wide ? "dialog wide" : "dialog"} id={id}>
+          <header className="dialogHeader">
+            <div>
+              <DialogPrimitive.Title>{title}</DialogPrimitive.Title>
+              {subtitle ? (
+                <DialogPrimitive.Description>{subtitle}</DialogPrimitive.Description>
+              ) : null}
+            </div>
+            <DialogPrimitive.Close className="icon-control" aria-label="Close" title="Close">
+              <X size={18} aria-hidden="true" />
+            </DialogPrimitive.Close>
+          </header>
+          <div className="dialogBody">{children}</div>
+        </DialogPrimitive.Content>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
   );
 }
 
@@ -166,42 +170,44 @@ export function Sheet({
   actions?: ReactNode;
   id?: string;
 }) {
-  useEffect(() => {
-    const handler = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [onClose]);
-
   return (
-    <div className="sheetBackdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <aside className="sheet" role="dialog" aria-modal="true" aria-label={title} id={id}>
-        <header className="sheetHeader">
-          <div>
-            <h2>{title}</h2>
-            {subtitle ? <p>{subtitle}</p> : null}
-          </div>
-          <button className="button iconButton" type="button" aria-label="Close" title="Close" onClick={onClose}>
-            <X size={18} aria-hidden="true" />
-          </button>
-        </header>
-        <div className="sheetBody">{children}</div>
-        {actions ? <footer className="sheetFooter">{actions}</footer> : null}
-      </aside>
-    </div>
+    <DialogPrimitive.Root open onOpenChange={(open) => !open && onClose()}>
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Overlay className="sheetBackdrop" />
+        <DialogPrimitive.Content className="sheet" id={id}>
+          <header className="sheetHeader">
+            <div>
+              <DialogPrimitive.Title>{title}</DialogPrimitive.Title>
+              {subtitle ? (
+                <DialogPrimitive.Description>{subtitle}</DialogPrimitive.Description>
+              ) : null}
+            </div>
+            <DialogPrimitive.Close className="icon-control" aria-label="Close" title="Close">
+              <X size={18} aria-hidden="true" />
+            </DialogPrimitive.Close>
+          </header>
+          <div className="sheetBody">{children}</div>
+          {actions ? <footer className="sheetFooter">{actions}</footer> : null}
+        </DialogPrimitive.Content>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
   );
 }
 
 export function ProbeNotice({ probe, branch }: { probe: ProbeResult; branch: string }) {
   if (!probe.reachable) {
-    return <div className="inlineNotice error">{probe.error || "Repository is not reachable."}</div>;
+    return (
+      <div className="inlineNotice error">{probe.error || "Repository is not reachable."}</div>
+    );
   }
   const branchName = probe.branch || branch;
-  const branches = probe.branches?.length ? ` Remote branches: ${probe.branches.slice(0, 8).join(", ")}.` : "";
+  const branches = probe.branches?.length
+    ? ` Remote branches: ${probe.branches.slice(0, 8).join(", ")}.`
+    : "";
   return (
     <div className="inlineNotice ok">
-      Repository reachable. Branch {branchName} {probe.branch_exists ? "exists" : "was not found"}.{branches}
+      Repository reachable. Branch {branchName} {probe.branch_exists ? "exists" : "was not found"}.
+      {branches}
     </div>
   );
 }

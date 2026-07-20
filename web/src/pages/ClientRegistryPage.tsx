@@ -17,7 +17,9 @@ export function ClientRegistryPage() {
     const query = search.trim().toLowerCase();
     if (!state.data || !query) return state.data || [];
     return state.data.filter(
-      (client) => client.name.toLowerCase().includes(query) || client.external_key.toLowerCase().includes(query),
+      (client) =>
+        client.name.toLowerCase().includes(query) ||
+        client.external_key.toLowerCase().includes(query),
     );
   }, [search, state.data]);
 
@@ -49,14 +51,16 @@ export function ClientRegistryPage() {
       }
     >
       <div className="inlineNotice">
-        External Key identifies an external client for app- and action-specific configuration. It is not a
-        Windforce API credential.
+        External Key identifies an external client for app- and action-specific configuration. It is
+        not a Windforce API credential.
       </div>
       {state.error ? <ErrorNotice message={state.error} onRetry={state.reload} /> : null}
       {state.loading && !state.data ? <Loading /> : null}
       {state.data ? (
         clients.length === 0 ? (
-          <EmptyState title={search ? "No clients match the filter." : "No clients registered yet."} />
+          <EmptyState
+            title={search ? "No clients match the filter." : "No clients registered yet."}
+          />
         ) : (
           <div className="tableWrap">
             <table className="table" id="clientList">
@@ -84,7 +88,11 @@ export function ClientRegistryPage() {
                     </td>
                     <td>{client.updated_by}</td>
                     <td className="rowActions">
-                      <button className="button small" type="button" onClick={() => setEditing(client)}>
+                      <button
+                        className="button small"
+                        type="button"
+                        onClick={() => setEditing(client)}
+                      >
                         Edit
                       </button>
                     </td>

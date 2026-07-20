@@ -14,6 +14,7 @@ export default {
     await page.goto();
     await page.click(".sidebarFooter .workspaceSwitcherTrigger");
     await page.waitForSelector(".workspacePopover");
+    await page.waitForText(".workspacePopover", "Operations");
     await capture(this.id);
   },
 };

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { inputConfigPayload } from "./InputConfigDialog";
 
 describe("inputConfigPayload", () => {
@@ -31,8 +31,8 @@ describe("inputConfigPayload", () => {
         "",
       ),
     ).toThrow("Duplicate key");
-    expect(() => inputConfigPayload([{ key: "region", valueText: "kr", locked: false }], "", "")).toThrow(
-      "valid JSON",
-    );
+    expect(() =>
+      inputConfigPayload([{ key: "region", valueText: "kr", locked: false }], "", ""),
+    ).toThrow("valid JSON");
   });
 });

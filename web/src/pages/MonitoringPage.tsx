@@ -11,16 +11,15 @@ export function MonitoringPage({ legacyJobID }: { legacyJobID?: string } = {}) {
   const { api } = useApp();
   const [windowSeconds, setWindowSeconds] = useState<number>(86400);
 
-  const state = useAsync(
-    async () => {
-      const [summary, apps] = await Promise.all([api.jobsSummary(windowSeconds), api.apps()]);
-      return { summary, apps: apps.apps || [] };
-    },
-    [api, windowSeconds],
-  );
+  const state = useAsync(async () => {
+    const [summary, apps] = await Promise.all([api.jobsSummary(windowSeconds), api.apps()]);
+    return { summary, apps: apps.apps || [] };
+  }, [api, windowSeconds]);
   const summary = state.data?.summary || null;
   const label = windowLabel(windowSeconds);
-  const sourceByApp = new Map((state.data?.apps || []).map((app) => [app.app_key, app.git_source_id]));
+  const sourceByApp = new Map(
+    (state.data?.apps || []).map((app) => [app.app_key, app.git_source_id]),
+  );
 
   return (
     <Layout
@@ -38,7 +37,8 @@ export function MonitoringPage({ legacyJobID }: { legacyJobID?: string } = {}) {
       {legacyJobID ? (
         <div className="inlineNotice">
           The Web UI shows aggregate job activity only. Individual runs such as job{" "}
-          <span className="mono">{legacyJobID}</span> are available through the control-plane API and CLI.
+          <span className="mono">{legacyJobID}</span> are available through the control-plane API
+          and CLI.
         </div>
       ) : null}
       {state.error ? <ErrorNotice message={state.error} onRetry={state.reload} /> : null}
@@ -49,9 +49,21 @@ export function MonitoringPage({ legacyJobID }: { legacyJobID?: string } = {}) {
           <div className="statRow" id="jobSummary">
             <StatTile label="Queued" value={summary.queued_count} tone="waiting" />
             <StatTile label="Running" value={summary.running_count} tone="running" />
-            <StatTile label={`Completed · ${label}`} value={summary.completed_count_recent} tone="good" />
-            <StatTile label={`Failed · ${label}`} value={summary.failed_count_recent} tone="critical" />
-            <StatTile label={`Canceled · ${label}`} value={summary.canceled_count_recent} tone="serious" />
+            <StatTile
+              label={`Completed · ${label}`}
+              value={summary.completed_count_recent}
+              tone="good"
+            />
+            <StatTile
+              label={`Failed · ${label}`}
+              value={summary.failed_count_recent}
+              tone="critical"
+            />
+            <StatTile
+              label={`Canceled · ${label}`}
+              value={summary.canceled_count_recent}
+              tone="serious"
+            />
           </div>
 
           {summary.oldest_queued_at ? (
@@ -73,7 +85,10 @@ export function MonitoringPage({ legacyJobID }: { legacyJobID?: string } = {}) {
             />
           </Panel>
 
-          <Panel title="By route tag" subtitle={`Job activity per worker route tag over the last ${label}.`}>
+          <Panel
+            title="By route tag"
+            subtitle={`Job activity per worker route tag over the last ${label}.`}
+          >
             <BreakdownTable
               id="jobsByTag"
               nameHeader="Route tag"
@@ -97,7 +112,15 @@ type BreakdownRow = {
   counts: JobStatusCounts;
 };
 
-function BreakdownTable({ id, nameHeader, rows }: { id: string; nameHeader: string; rows: BreakdownRow[] }) {
+function BreakdownTable({
+  id,
+  nameHeader,
+  rows,
+}: {
+  id: string;
+  nameHeader: string;
+  rows: BreakdownRow[];
+}) {
   if (rows.length === 0) {
     return <EmptyState title="No job activity in this window." />;
   }

@@ -19,7 +19,9 @@ const changeLabels: Array<[keyof AuditChanges, string]> = [
   ["unlocked", "Unlocked"],
 ];
 
-export function auditChangeGroups(changes?: AuditChanges): Array<{ label: string; keys: string[] }> {
+export function auditChangeGroups(
+  changes?: AuditChanges,
+): Array<{ label: string; keys: string[] }> {
   if (!changes) return [];
   return changeLabels.flatMap(([key, label]) => {
     const keys = changes[key] || [];
@@ -40,7 +42,10 @@ function AuditScope({ event }: { event: AuditEvent }) {
         )
       ) : null}
       {event.client_id ? (
-        <Link className={event.app_key ? "cellSub" : "cellTitle"} to={`/clients/${event.client_id}`}>
+        <Link
+          className={event.app_key ? "cellSub" : "cellTitle"}
+          to={`/clients/${event.client_id}`}
+        >
           {event.client_name || "Registered client"}
         </Link>
       ) : null}
@@ -53,10 +58,18 @@ function AuditScope({ event }: { event: AuditEvent }) {
           Webhook {event.webhook_subscription_id.slice(0, 12)}…
         </Link>
       ) : null}
-      {!event.app_key && !event.client_id && !event.action_key && !event.webhook_subscription_id && event.git_source_id ? (
+      {!event.app_key &&
+      !event.client_id &&
+      !event.action_key &&
+      !event.webhook_subscription_id &&
+      event.git_source_id ? (
         <span className="cellTitle">Repository source #{event.git_source_id}</span>
       ) : null}
-      {!event.app_key && !event.client_id && !event.action_key && !event.git_source_id && !event.webhook_subscription_id ? (
+      {!event.app_key &&
+      !event.client_id &&
+      !event.action_key &&
+      !event.git_source_id &&
+      !event.webhook_subscription_id ? (
         <span className="cellSub">Workspace</span>
       ) : null}
     </div>
@@ -76,10 +89,20 @@ function AuditDetail({ event }: { event: AuditEvent }) {
       </div>
     );
   }
-  return <span className={event.detail ? "auditDetail" : "cellSub"}>{event.detail || "No additional detail"}</span>;
+  return (
+    <span className={event.detail ? "auditDetail" : "cellSub"}>
+      {event.detail || "No additional detail"}
+    </span>
+  );
 }
 
-export function AuditEventTable({ events, emptyTitle = "No audit events match this view." }: { events: AuditEvent[]; emptyTitle?: string }) {
+export function AuditEventTable({
+  events,
+  emptyTitle = "No audit events match this view.",
+}: {
+  events: AuditEvent[];
+  emptyTitle?: string;
+}) {
   if (events.length === 0) return <EmptyState title={emptyTitle} />;
 
   return (
@@ -103,13 +126,21 @@ export function AuditEventTable({ events, emptyTitle = "No audit events match th
                 <span className="cellSub">{formatTime(event.created_at)}</span>
               </td>
               <td>{event.actor || "system"}</td>
-              <td><span className="badge auditCategory">{categoryLabels[event.category] || event.category}</span></td>
+              <td>
+                <span className="badge auditCategory">
+                  {categoryLabels[event.category] || event.category}
+                </span>
+              </td>
               <td>
                 <span className="cellTitle">{event.summary}</span>
                 <span className="cellSub mono">{event.kind}</span>
               </td>
-              <td><AuditScope event={event} /></td>
-              <td><AuditDetail event={event} /></td>
+              <td>
+                <AuditScope event={event} />
+              </td>
+              <td>
+                <AuditDetail event={event} />
+              </td>
             </tr>
           ))}
         </tbody>

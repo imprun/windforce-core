@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { defaultGitCredentialPath, gitCredentialSecretValue } from "./git-credential";
 
 describe("defaultGitCredentialPath", () => {

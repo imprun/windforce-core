@@ -863,7 +863,7 @@ func (s *LocalStore) Load(ctx context.Context) (Snapshot, error) {
 	if err := ctx.Err(); err != nil {
 		return Snapshot{}, err
 	}
-	data, err := os.ReadFile(s.Path)
+	data, err := s.readStateFile(ctx)
 	if errors.Is(err, os.ErrNotExist) {
 		return newSnapshot(), nil
 	}
@@ -876,6 +876,29 @@ func (s *LocalStore) Load(ctx context.Context) (Snapshot, error) {
 	}
 	ensureSnapshot(&snapshot)
 	return snapshot, nil
+}
+
+func (s *LocalStore) readStateFile(ctx context.Context) ([]byte, error) {
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for {
+		data, err := os.ReadFile(s.Path)
+		if err == nil {
+			return data, nil
+		}
+		if errors.Is(err, os.ErrNotExist) {
+			if _, lockErr := os.Stat(s.Path + ".lock"); errors.Is(lockErr, os.ErrNotExist) {
+				return nil, err
+			}
+		}
+		if time.Now().After(deadline) {
+			return nil, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
 }
 
 func (s *LocalStore) update(ctx context.Context, fn func(*Snapshot, time.Time) error) error {

@@ -1,6 +1,7 @@
-import { describe, expect, test } from "bun:test";
+import { readFile } from "node:fs/promises";
+import { describe, expect, test } from "vitest";
 
-const styles = await Bun.file(new URL("./styles.css", import.meta.url)).text();
+const styles = await readFile(new URL("./styles.css", import.meta.url), "utf8");
 
 describe("table column alignment", () => {
   test("does not override every non-first table header", () => {
@@ -15,7 +16,9 @@ describe("table column alignment", () => {
 
 describe("provisioning layout", () => {
   test("keeps commands next to the active provisioning document", () => {
-    expect(styles).toMatch(/\.provisioningWorkspace\s*\{[^}]*grid-template-columns:\s*minmax\(520px,\s*1fr\)\s*390px;/s);
+    expect(styles).toMatch(
+      /\.provisioningWorkspace\s*\{[^}]*grid-template-columns:\s*minmax\(520px,\s*1fr\)\s*390px;/s,
+    );
     expect(styles).toMatch(/\.provisioningSidePanel\s*\{[^}]*position:\s*sticky;/s);
     expect(styles).toMatch(/\.provisioningEditor\s*\{[^}]*min-height:\s*560px;/s);
     expect(styles).toMatch(/\.provisioningCode\s*\{[^}]*max-height:\s*70vh;/s);
@@ -31,10 +34,12 @@ describe("provisioning layout", () => {
 describe("workspace switcher layout", () => {
   test("limits collapsed labels to the desktop sidebar instance", () => {
     expect(styles).toContain(".sidebarCollapsed .sidebar .workspaceSwitcherText");
-    expect(styles).not.toMatch(/\.sidebarCollapsed \.workspaceSwitcherText\s*[,\{]/);
+    expect(styles).not.toMatch(/\.sidebarCollapsed \.workspaceSwitcherText\s*[,{]/);
   });
 
   test("opens the mobile workspace popover below its trigger", () => {
-    expect(styles).toMatch(/\.mobileWorkspaceContext \.workspacePopover\s*\{[^}]*top:\s*calc\(100% \+ 8px\);[^}]*bottom:\s*auto;/s);
+    expect(styles).toMatch(
+      /\.mobileWorkspaceContext \.workspacePopover\s*\{[^}]*top:\s*calc\(100% \+ 8px\);[^}]*bottom:\s*auto;/s,
+    );
   });
 });

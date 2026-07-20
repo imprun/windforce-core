@@ -1,20 +1,20 @@
 import { BookOpen, Lock, Plus, Save, Trash2, Unlock } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Field, Modal } from "../components/ui";
+import { actionDisplayName } from "../lib/action-label";
 import {
-  errorMessage,
   type ActionView,
   type Client,
+  errorMessage,
   type InputConfig,
   type InputConfigPayload,
 } from "../lib/api";
-import { actionDisplayName } from "../lib/action-label";
 import { useApp } from "../lib/app-context";
 import {
   formatInputSettingExample,
+  type InputSettingDefinition,
   inputSettingDefinitions,
   validateInputSettingValue,
-  type InputSettingDefinition,
 } from "../lib/input-setting-schema";
 import { formatSchemaValue } from "../lib/schema-document";
 
@@ -45,7 +45,7 @@ export function inputConfigPayload(
   for (const row of rows) {
     const key = row.key.trim();
     if (!key) continue;
-    if (Object.prototype.hasOwnProperty.call(config, key)) throw new Error(`Duplicate key "${key}".`);
+    if (Object.hasOwn(config, key)) throw new Error(`Duplicate key "${key}".`);
     try {
       config[key] = JSON.parse(row.valueText);
     } catch {
@@ -58,7 +58,12 @@ export function inputConfigPayload(
     }
     if (row.locked) lockedKeys.push(key);
   }
-  return { action_key: actionKey, client_id: clientID || undefined, config, locked_keys: lockedKeys };
+  return {
+    action_key: actionKey,
+    client_id: clientID || undefined,
+    config,
+    locked_keys: lockedKeys,
+  };
 }
 
 export function InputConfigDialog({
@@ -128,7 +133,9 @@ export function InputConfigDialog({
   }, [actionKey, api, appKey]);
 
   function updateRow(index: number, patch: Partial<InputConfigRow>) {
-    setRows((current) => current.map((row, rowIndex) => (rowIndex === index ? { ...row, ...patch } : row)));
+    setRows((current) =>
+      current.map((row, rowIndex) => (rowIndex === index ? { ...row, ...patch } : row)),
+    );
   }
 
   async function save() {
@@ -167,7 +174,8 @@ export function InputConfigDialog({
   }
 
   const fixedClient = clients.find((client) => client.id === fixedClientID);
-  const fixedClientLabel = fixedClientID === "" ? "All clients (default)" : fixedClient?.name || fixedClientID;
+  const fixedClientLabel =
+    fixedClientID === "" ? "All clients (default)" : fixedClient?.name || fixedClientID;
   return (
     <Modal
       title={existing ? "Edit Input Settings" : "Add Input Settings"}
@@ -180,7 +188,11 @@ export function InputConfigDialog({
           {fixedClientID !== undefined ? (
             <input value={fixedClientLabel} disabled />
           ) : (
-            <select value={clientID} disabled={identityLocked} onChange={(event) => setClientID(event.target.value)}>
+            <select
+              value={clientID}
+              disabled={identityLocked}
+              onChange={(event) => setClientID(event.target.value)}
+            >
               <option value="">All clients (default)</option>
               {clients.map((client) => (
                 <option key={client.id} value={client.id}>
@@ -191,7 +203,11 @@ export function InputConfigDialog({
           )}
         </Field>
         <Field label="Action scope">
-          <select value={actionKey} disabled={identityLocked} onChange={(event) => setActionKey(event.target.value)}>
+          <select
+            value={actionKey}
+            disabled={identityLocked}
+            onChange={(event) => setActionKey(event.target.value)}
+          >
             <option value="">All actions (app default)</option>
             {actions.map((action) => (
               <option key={action.action_key} value={action.action_key}>
@@ -204,8 +220,8 @@ export function InputConfigDialog({
 
       {!actionKey ? (
         <div className="inlineNotice info">
-          Choose an action to use its documented request fields and operator settings. App-default keys can still be
-          entered manually.
+          Choose an action to use its documented request fields and operator settings. App-default
+          keys can still be entered manually.
         </div>
       ) : schemaState.loading ? (
         <div className="inlineNotice info">Loading documented settings for this release…</div>
@@ -215,14 +231,16 @@ export function InputConfigDialog({
         </div>
       ) : definitions.length === 0 ? (
         <div className="inlineNotice info">
-          This action does not publish documented settings. Use a custom key only when the app implementation expects it.
+          This action does not publish documented settings. Use a custom key only when the app
+          implementation expects it.
         </div>
       ) : (
         <div className="inputConfigCatalogSummary">
           <BookOpen size={16} aria-hidden="true" />
           <span>
-            This release documents <strong>{operatorDefinitions.length}</strong> operator setting(s) and{" "}
-            <strong>{requestDefinitions.length}</strong> request field(s) that can be pre-applied.
+            This release documents <strong>{operatorDefinitions.length}</strong> operator setting(s)
+            and <strong>{requestDefinitions.length}</strong> request field(s) that can be
+            pre-applied.
           </span>
         </div>
       )}
@@ -242,7 +260,11 @@ export function InputConfigDialog({
                     onChange={(event) => {
                       const key = event.target.value;
                       if (key === "__custom__") {
-                        updateRow(index, { key: definition ? "" : row.key, custom: true, valueText: definition ? "" : row.valueText });
+                        updateRow(index, {
+                          key: definition ? "" : row.key,
+                          custom: true,
+                          valueText: definition ? "" : row.valueText,
+                        });
                         return;
                       }
                       const selected = definitions.find((candidate) => candidate.key === key);
@@ -259,7 +281,8 @@ export function InputConfigDialog({
                       <optgroup label="Operator settings">
                         {operatorDefinitions.map((candidate) => (
                           <option value={candidate.key} key={candidate.key}>
-                            {candidate.title ? `${candidate.title} · ` : ""}{candidate.key}
+                            {candidate.title ? `${candidate.title} · ` : ""}
+                            {candidate.key}
                           </option>
                         ))}
                       </optgroup>
@@ -268,7 +291,8 @@ export function InputConfigDialog({
                       <optgroup label="Request fields">
                         {requestDefinitions.map((candidate) => (
                           <option value={candidate.key} key={candidate.key}>
-                            {candidate.title ? `${candidate.title} · ` : ""}{candidate.key}
+                            {candidate.title ? `${candidate.title} · ` : ""}
+                            {candidate.key}
                           </option>
                         ))}
                       </optgroup>
@@ -281,7 +305,9 @@ export function InputConfigDialog({
                     className="mono"
                     value={row.key}
                     placeholder="SETTING_KEY"
-                    onChange={(event) => updateRow(index, { key: event.target.value, custom: true })}
+                    onChange={(event) =>
+                      updateRow(index, { key: event.target.value, custom: true })
+                    }
                     aria-label={`Setting key ${index + 1}`}
                   />
                 )}
@@ -290,7 +316,9 @@ export function InputConfigDialog({
                     className="mono inputConfigCustomKey"
                     value={row.key}
                     placeholder="CUSTOM_SETTING_KEY"
-                    onChange={(event) => updateRow(index, { key: event.target.value, custom: true })}
+                    onChange={(event) =>
+                      updateRow(index, { key: event.target.value, custom: true })
+                    }
                     aria-label={`Custom setting key ${index + 1}`}
                   />
                 ) : null}
@@ -306,21 +334,33 @@ export function InputConfigDialog({
               </div>
               <div className="inputConfigRowActions">
                 <button
-                  className={row.locked ? "button small primary iconButton" : "button small iconButton"}
+                  className={
+                    row.locked ? "button small primary iconButton" : "button small iconButton"
+                  }
                   type="button"
-                  title={row.locked ? "Locked: request cannot override" : "Unlocked: request may override"}
+                  title={
+                    row.locked
+                      ? "Locked: request cannot override"
+                      : "Unlocked: request may override"
+                  }
                   aria-label={row.locked ? "Unlock input key" : "Lock input key"}
                   aria-pressed={row.locked}
                   onClick={() => updateRow(index, { locked: !row.locked })}
                 >
-                  {row.locked ? <Lock size={16} aria-hidden="true" /> : <Unlock size={16} aria-hidden="true" />}
+                  {row.locked ? (
+                    <Lock size={16} aria-hidden="true" />
+                  ) : (
+                    <Unlock size={16} aria-hidden="true" />
+                  )}
                 </button>
                 <button
                   className="button small iconButton"
                   type="button"
                   title="Remove key"
                   aria-label="Remove input key"
-                  onClick={() => setRows((current) => current.filter((_, rowIndex) => rowIndex !== index))}
+                  onClick={() =>
+                    setRows((current) => current.filter((_, rowIndex) => rowIndex !== index))
+                  }
                 >
                   <Trash2 size={16} aria-hidden="true" />
                 </button>
@@ -328,11 +368,14 @@ export function InputConfigDialog({
               {definition ? (
                 <InputSettingGuide
                   definition={definition}
-                  onUseExample={() => updateRow(index, { valueText: formatInputSettingExample(definition.example) })}
+                  onUseExample={() =>
+                    updateRow(index, { valueText: formatInputSettingExample(definition.example) })
+                  }
                 />
               ) : (
                 <p className="inputConfigCustomHelp">
-                  Custom keys have no release-provided validation or guidance. Confirm the key and JSON shape with the app owner.
+                  Custom keys have no release-provided validation or guidance. Confirm the key and
+                  JSON shape with the app owner.
                 </p>
               )}
             </div>
@@ -341,7 +384,9 @@ export function InputConfigDialog({
         <button
           className="button small inputConfigAdd"
           type="button"
-          onClick={() => setRows((current) => [...current, { key: "", valueText: "", locked: false }])}
+          onClick={() =>
+            setRows((current) => [...current, { key: "", valueText: "", locked: false }])
+          }
         >
           <Plus size={16} aria-hidden="true" />
           Add key
@@ -388,7 +433,12 @@ function InputSettingValueEditor({
   }
   if (definition?.enumValues?.length) {
     return (
-      <select id={id} className="mono" value={normalizedEnumValue(row.valueText, definition.enumValues)} onChange={(event) => onChange(event.target.value)}>
+      <select
+        id={id}
+        className="mono"
+        value={normalizedEnumValue(row.valueText, definition.enumValues)}
+        onChange={(event) => onChange(event.target.value)}
+      >
         <option value="">Select an allowed value</option>
         {definition.enumValues.map((value) => {
           const encoded = formatInputSettingExample(value);
@@ -404,13 +454,25 @@ function InputSettingValueEditor({
   if (definition?.type === "boolean") {
     return (
       <label className="inputConfigBoolean" htmlFor={id}>
-        <input id={id} type="checkbox" checked={row.valueText === "true"} onChange={(event) => onChange(String(event.target.checked))} />
+        <input
+          id={id}
+          type="checkbox"
+          checked={row.valueText === "true"}
+          onChange={(event) => onChange(String(event.target.checked))}
+        />
         <span>{row.valueText === "true" ? "Enabled" : "Disabled"}</span>
       </label>
     );
   }
   if (definition?.type === "number" || definition?.type === "integer") {
-    return <input id={id} type="number" value={row.valueText} onChange={(event) => onChange(event.target.value)} />;
+    return (
+      <input
+        id={id}
+        type="number"
+        value={row.valueText}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    );
   }
   return (
     <textarea
@@ -424,7 +486,13 @@ function InputSettingValueEditor({
   );
 }
 
-function InputSettingGuide({ definition, onUseExample }: { definition: InputSettingDefinition; onUseExample: () => void }) {
+function InputSettingGuide({
+  definition,
+  onUseExample,
+}: {
+  definition: InputSettingDefinition;
+  onUseExample: () => void;
+}) {
   return (
     <aside className="inputConfigGuide">
       <div className="inputConfigGuideHeading">
@@ -441,21 +509,27 @@ function InputSettingGuide({ definition, onUseExample }: { definition: InputSett
       <strong>{definition.title || definition.key}</strong>
       <p>{definition.description || "No description was provided by this release."}</p>
       {definition.fields.length > 0 ? (
-        <div className="inputConfigFieldGuide" role="table" aria-label={`${definition.key} fields`}>
-          {definition.fields.map((field) => (
-            <div className="inputConfigFieldGuideRow" role="row" key={field.name}>
-              <code role="cell">{field.name}</code>
-              <span role="cell">
-                {field.title || field.description || "No description"}
-                <small>
-                  {field.type}
-                  {field.required ? " · required" : " · optional"}
-                  {field.enumValues?.length ? ` · ${field.enumValues.map(formatSchemaValue).join(" | ")}` : ""}
-                </small>
-              </span>
-            </div>
-          ))}
-        </div>
+        <table className="inputConfigFieldGuide" aria-label={`${definition.key} fields`}>
+          <tbody>
+            {definition.fields.map((field) => (
+              <tr className="inputConfigFieldGuideRow" key={field.name}>
+                <td>
+                  <code>{field.name}</code>
+                </td>
+                <td>
+                  {field.title || field.description || "No description"}
+                  <small>
+                    {field.type}
+                    {field.required ? " · required" : " · optional"}
+                    {field.enumValues?.length
+                      ? ` · ${field.enumValues.map(formatSchemaValue).join(" | ")}`
+                      : ""}
+                  </small>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       ) : null}
       <div className="inputConfigExample">
         <span>Example</span>

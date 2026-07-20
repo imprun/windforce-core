@@ -147,6 +147,10 @@ export default {
       },
     });
     await waitForClientConfigRun();
+    // The standalone local store replaces its JSON file after the worker
+    // publishes the terminal result. Let that final Windows file operation
+    // settle before browser scenarios begin issuing concurrent reads.
+    await sleep(500);
   },
 
   async stop() {

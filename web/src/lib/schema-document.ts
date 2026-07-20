@@ -34,10 +34,14 @@ export function describeSchema(raw: unknown): SchemaDocument {
 
   const properties = asRecord(schema.properties);
   const required = new Set(
-    Array.isArray(schema.required) ? schema.required.filter((item): item is string => typeof item === "string") : [],
+    Array.isArray(schema.required)
+      ? schema.required.filter((item): item is string => typeof item === "string")
+      : [],
   );
   const fields = properties
-    ? Object.entries(properties).map(([name, value]) => describeField(name, value, required.has(name)))
+    ? Object.entries(properties).map(([name, value]) =>
+        describeField(name, value, required.has(name)),
+      )
     : [];
 
   return {
@@ -57,7 +61,7 @@ export function formatSchemaValue(value: unknown): string {
 
 function describeField(name: string, raw: unknown, required: boolean): SchemaField {
   const schema = asRecord(raw) || {};
-  const hasDefault = Object.prototype.hasOwnProperty.call(schema, "default");
+  const hasDefault = Object.hasOwn(schema, "default");
   return {
     name,
     title: stringValue(schema.title),
@@ -66,7 +70,7 @@ function describeField(name: string, raw: unknown, required: boolean): SchemaFie
     description: stringValue(schema.description),
     format: stringValue(schema.format),
     enumValues: Array.isArray(schema.enum) ? schema.enum : undefined,
-    constValue: Object.prototype.hasOwnProperty.call(schema, "const") ? schema.const : undefined,
+    constValue: Object.hasOwn(schema, "const") ? schema.const : undefined,
     defaultValue: hasDefault ? schema.default : undefined,
     hasDefault,
   };
@@ -76,29 +80,31 @@ function schemaExample(schema: JSONRecord): SchemaExample {
   if (Array.isArray(schema.examples) && schema.examples.length > 0) {
     return { value: schema.examples[0], source: "declared" };
   }
-  if (Object.prototype.hasOwnProperty.call(schema, "example")) {
+  if (Object.hasOwn(schema, "example")) {
     return { value: schema.example, source: "declared" };
   }
   return { value: generatedExample(schema), source: "generated" };
 }
 
 function generatedExample(schema: JSONRecord): unknown {
-  if (Object.prototype.hasOwnProperty.call(schema, "const")) return schema.const;
-  if (Object.prototype.hasOwnProperty.call(schema, "default")) return schema.default;
+  if (Object.hasOwn(schema, "const")) return schema.const;
+  if (Object.hasOwn(schema, "default")) return schema.default;
   if (Array.isArray(schema.enum) && schema.enum.length > 0) return schema.enum[0];
 
   const properties = asRecord(schema.properties);
   if (schemaType(schema) === "object" || properties) {
     const required = new Set(
-      Array.isArray(schema.required) ? schema.required.filter((item): item is string => typeof item === "string") : [],
+      Array.isArray(schema.required)
+        ? schema.required.filter((item): item is string => typeof item === "string")
+        : [],
     );
     const example: JSONRecord = {};
     for (const [name, value] of Object.entries(properties || {})) {
       const property = asRecord(value) || {};
       if (
         required.has(name) ||
-        Object.prototype.hasOwnProperty.call(property, "const") ||
-        Object.prototype.hasOwnProperty.call(property, "default")
+        Object.hasOwn(property, "const") ||
+        Object.hasOwn(property, "default")
       ) {
         example[name] = generatedExample(property);
       }
@@ -124,7 +130,9 @@ function generatedExample(schema: JSONRecord): unknown {
 function schemaType(schema: JSONRecord): string {
   if (typeof schema.type === "string" && schema.type.trim()) return schema.type.trim();
   if (Array.isArray(schema.type)) {
-    const types = schema.type.filter((item): item is string => typeof item === "string" && item.trim() !== "");
+    const types = schema.type.filter(
+      (item): item is string => typeof item === "string" && item.trim() !== "",
+    );
     if (types.length > 0) return types.join(" | ");
   }
   if (asRecord(schema.properties)) return "object";

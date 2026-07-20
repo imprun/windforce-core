@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { type FormEvent, useState } from "react";
 import { Layout } from "../components/Layout";
 import { ErrorNotice, Loading, Panel } from "../components/ui";
 import { AuditEventTable } from "../features/AuditEventTable";
@@ -12,23 +12,21 @@ export function AuditPage() {
   const [actorDraft, setActorDraft] = useState("");
   const [actor, setActor] = useState("");
 
-  const options = useAsync(
-    async () => {
-      const [apps, clients] = await Promise.all([api.apps(), api.clients()]);
-      return { apps: apps.apps || [], clients };
-    },
-    [api],
-  );
+  const options = useAsync(async () => {
+    const [apps, clients] = await Promise.all([api.apps(), api.clients()]);
+    return { apps: apps.apps || [], clients };
+  }, [api]);
   const selectedApp = options.data?.apps.find((app) => app.app_key === appKey);
   const events = useAsync(
-    () => api.auditEvents({
-      category,
-      appKey,
-      clientID,
-      actor,
-      gitSourceID: selectedApp?.git_source_id,
-      limit: 250,
-    }),
+    () =>
+      api.auditEvents({
+        category,
+        appKey,
+        clientID,
+        actor,
+        gitSourceID: selectedApp?.git_source_id,
+        limit: 250,
+      }),
     [api, category, appKey, clientID, actor, selectedApp?.git_source_id],
   );
 
@@ -59,8 +57,18 @@ export function AuditPage() {
     >
       <Panel
         title="Workspace activity"
-        subtitle={events.data ? `${events.data.length} most recent event${events.data.length === 1 ? "" : "s"}` : "Loading events…"}
-        actions={filtered ? <button className="button small" type="button" onClick={resetFilters}>Reset filters</button> : null}
+        subtitle={
+          events.data
+            ? `${events.data.length} most recent event${events.data.length === 1 ? "" : "s"}`
+            : "Loading events…"
+        }
+        actions={
+          filtered ? (
+            <button className="button small" type="button" onClick={resetFilters}>
+              Reset filters
+            </button>
+          ) : null
+        }
       >
         <form className="auditFilters" onSubmit={applyActor}>
           <label className="filterField">
@@ -79,7 +87,9 @@ export function AuditPage() {
             <select value={appKey} onChange={(event) => setAppKey(event.target.value)}>
               <option value="">All apps</option>
               {(options.data?.apps || []).map((app) => (
-                <option key={`${app.git_source_id}-${app.app_key}`} value={app.app_key}>{app.app_key}</option>
+                <option key={`${app.git_source_id}-${app.app_key}`} value={app.app_key}>
+                  {app.app_key}
+                </option>
               ))}
             </select>
           </label>
@@ -88,15 +98,23 @@ export function AuditPage() {
             <select value={clientID} onChange={(event) => setClientID(event.target.value)}>
               <option value="">All clients</option>
               {(options.data?.clients || []).map((client) => (
-                <option key={client.id} value={client.id}>{client.name}</option>
+                <option key={client.id} value={client.id}>
+                  {client.name}
+                </option>
               ))}
             </select>
           </label>
           <label className="filterField auditActorFilter">
             <span>Actor</span>
             <span className="filterInputAction">
-              <input value={actorDraft} placeholder="Name or account" onChange={(event) => setActorDraft(event.target.value)} />
-              <button className="button" type="submit">Apply</button>
+              <input
+                value={actorDraft}
+                placeholder="Name or account"
+                onChange={(event) => setActorDraft(event.target.value)}
+              />
+              <button className="button" type="submit">
+                Apply
+              </button>
             </span>
           </label>
         </form>

@@ -18,7 +18,13 @@ const tabs = [
   { key: "audit", label: "Audit" },
 ] as const;
 
-export function WebhookDetailPage({ subscriptionID, tab }: { subscriptionID: string; tab: string }) {
+export function WebhookDetailPage({
+  subscriptionID,
+  tab,
+}: {
+  subscriptionID: string;
+  tab: string;
+}) {
   const { api, notify } = useApp();
   const { navigate } = useRouter();
   const [updated, setUpdated] = useState<WebhookSubscription | null>(null);
@@ -53,17 +59,37 @@ export function WebhookDetailPage({ subscriptionID, tab }: { subscriptionID: str
   return (
     <Layout
       title={subscription?.name || "Webhook"}
-      subtitle={subscription ? `${subscription.endpoint_summary} · Signed release delivery` : "Loading webhook configuration…"}
+      subtitle={
+        subscription
+          ? `${subscription.endpoint_summary} · Signed release delivery`
+          : "Loading webhook configuration…"
+      }
       actions={
         subscription ? (
           <>
-            <WebhookSubscriptionStatus enabled={subscription.enabled} deleted={Boolean(subscription.deleted_at)} />
-            <button className="button" type="button" title="Refresh webhook" onClick={() => { setUpdated(null); state.reload(); }}>
+            <WebhookSubscriptionStatus
+              enabled={subscription.enabled}
+              deleted={Boolean(subscription.deleted_at)}
+            />
+            <button
+              className="button"
+              type="button"
+              title="Refresh webhook"
+              onClick={() => {
+                setUpdated(null);
+                state.reload();
+              }}
+            >
               <RefreshCw size={16} aria-hidden="true" />
               Refresh
             </button>
             {!subscription.deleted_at ? (
-              <button className="button primary" type="button" disabled={testing || !subscription.enabled} onClick={sendTest}>
+              <button
+                className="button primary"
+                type="button"
+                disabled={testing || !subscription.enabled}
+                onClick={sendTest}
+              >
                 <Send size={16} aria-hidden="true" />
                 {testing ? "Sending…" : "Send test"}
               </button>
@@ -76,7 +102,9 @@ export function WebhookDetailPage({ subscriptionID, tab }: { subscriptionID: str
       {state.error ? <ErrorNotice message={state.error} onRetry={state.reload} /> : null}
       {actionError ? <ErrorNotice message={actionError} /> : null}
       {state.loading && !state.data ? <Loading label="Loading webhook…" /> : null}
-      {state.data && !subscription ? <ErrorNotice message="Webhook subscription not found." /> : null}
+      {state.data && !subscription ? (
+        <ErrorNotice message="Webhook subscription not found." />
+      ) : null}
       {subscription ? (
         <>
           <nav className="tabBar webhookDetailTabs" aria-label="Webhook sections">

@@ -99,13 +99,13 @@ export type ProbeResult = {
 };
 
 export type SourceSyncResult = {
-	commit: string;
-	app: string;
-	actions: string[];
-	runtime: string;
-	sync_status: "synced";
-	synced_at: string;
-	validation_checks: string[];
+  commit: string;
+  app: string;
+  actions: string[];
+  runtime: string;
+  sync_status: "synced";
+  synced_at: string;
+  validation_checks: string[];
 };
 
 export type DeployResult = {
@@ -221,7 +221,6 @@ export type JobsSummary = JobStatusCounts & {
   by_app?: Array<JobStatusCounts & { app_key: string }>;
 };
 
-
 export type AuditRecord = {
   id: string;
   git_source_id: number;
@@ -311,7 +310,13 @@ export type ControlPlaneEvent = {
   data: Record<string, unknown>;
 };
 
-export type WebhookDeliveryState = "pending" | "delivering" | "retrying" | "succeeded" | "failed" | "canceled";
+export type WebhookDeliveryState =
+  | "pending"
+  | "delivering"
+  | "retrying"
+  | "succeeded"
+  | "failed"
+  | "canceled";
 
 export type WebhookDelivery = {
   id: string;
@@ -519,7 +524,10 @@ export class WindforceApi {
   }
 
   setInputConfig(appKey: string, payload: InputConfigPayload): Promise<InputConfig> {
-    return this.request(`/apps/${encodeURIComponent(appKey)}/input-configs`, { method: "PUT", body: payload });
+    return this.request(`/apps/${encodeURIComponent(appKey)}/input-configs`, {
+      method: "PUT",
+      body: payload,
+    });
   }
 
   async deleteInputConfig(appKey: string, actionKey: string, clientID = ""): Promise<void> {
@@ -527,9 +535,12 @@ export class WindforceApi {
     if (actionKey) params.set("action_key", actionKey);
     if (clientID) params.set("client_id", clientID);
     const query = params.toString();
-    await this.request(`/apps/${encodeURIComponent(appKey)}/input-configs${query ? `?${query}` : ""}`, {
-      method: "DELETE",
-    });
+    await this.request(
+      `/apps/${encodeURIComponent(appKey)}/input-configs${query ? `?${query}` : ""}`,
+      {
+        method: "DELETE",
+      },
+    );
   }
 
   gitSources(): Promise<GitSource[]> {
@@ -582,7 +593,11 @@ export class WindforceApi {
     return this.request(`/apps/${encodeURIComponent(appKey)}/history`);
   }
 
-  rollbackAppRelease(appKey: string, releaseID: string, reason: string): Promise<ReleaseRollbackResult> {
+  rollbackAppRelease(
+    appKey: string,
+    releaseID: string,
+    reason: string,
+  ): Promise<ReleaseRollbackResult> {
     return this.request(
       `/apps/${encodeURIComponent(appKey)}/releases/${encodeURIComponent(releaseID)}/rollback`,
       { method: "POST", body: { confirm: true, reason } },
@@ -630,11 +645,16 @@ export class WindforceApi {
     return this.request(`/webhooks/${encodeURIComponent(id)}`);
   }
 
-  createWebhookSubscription(payload: WebhookSubscriptionCreate): Promise<WebhookSubscriptionMutation> {
+  createWebhookSubscription(
+    payload: WebhookSubscriptionCreate,
+  ): Promise<WebhookSubscriptionMutation> {
     return this.request("/webhooks", { method: "POST", body: payload });
   }
 
-  updateWebhookSubscription(id: string, payload: WebhookSubscriptionUpdate): Promise<WebhookSubscriptionMutation> {
+  updateWebhookSubscription(
+    id: string,
+    payload: WebhookSubscriptionUpdate,
+  ): Promise<WebhookSubscriptionMutation> {
     return this.request(`/webhooks/${encodeURIComponent(id)}`, { method: "PATCH", body: payload });
   }
 
@@ -663,7 +683,11 @@ export class WindforceApi {
     return this.request(`/webhook-deliveries/${encodeURIComponent(id)}/retry`, { method: "POST" });
   }
 
-  importProvisioning(text: string, dryRun: boolean, format: "yaml" | "json"): Promise<ProvisioningImportResult> {
+  importProvisioning(
+    text: string,
+    dryRun: boolean,
+    format: "yaml" | "json",
+  ): Promise<ProvisioningImportResult> {
     const suffix = dryRun ? "?dry_run=true" : "";
     return this.requestRaw(`/provisioning/import${suffix}`, {
       method: "POST",
@@ -696,15 +720,22 @@ export class WindforceApi {
   }
 
   updateWorkspace(id: string, name: string): Promise<Workspace> {
-    return this.globalRequest(`/api/workspaces/${encodeURIComponent(id)}`, { method: "PATCH", body: { name } });
+    return this.globalRequest(`/api/workspaces/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: { name },
+    });
   }
 
   archiveWorkspace(id: string): Promise<Workspace> {
-    return this.globalRequest(`/api/workspaces/${encodeURIComponent(id)}/archive`, { method: "POST" });
+    return this.globalRequest(`/api/workspaces/${encodeURIComponent(id)}/archive`, {
+      method: "POST",
+    });
   }
 
   rotateWorkspaceToken(id: string): Promise<WorkspaceTokenResult> {
-    return this.globalRequest(`/api/workspaces/${encodeURIComponent(id)}/token`, { method: "POST" });
+    return this.globalRequest(`/api/workspaces/${encodeURIComponent(id)}/token`, {
+      method: "POST",
+    });
   }
 
   workspaceAudit(id: string): Promise<{ items: WorkspaceAudit[] }> {

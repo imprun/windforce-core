@@ -13,9 +13,28 @@ export default {
   async run({ page, capture }) {
     await page.goto();
     await page.waitForSelector("#appList .tableRow");
-    await page.click("#appList .tableRow");
+    await page.click("#appList .cellTitle");
+    await page.waitForFunction(() => {
+      const button = document.querySelector("#syncSourceButton");
+      return button instanceof HTMLButtonElement && !button.disabled;
+    });
     await page.click("#syncSourceButton");
-    await page.waitForSelector('#syncSourceButton[data-checked="true"]');
+    await page.waitForFunction(() => {
+      return (
+        document.querySelector("#syncSourceButton")?.getAttribute("data-checked") === "true" ||
+        document.querySelector("#toast")?.textContent
+      );
+    });
+    const result = await page.evaluate(() => ({
+      checked: document.querySelector("#syncSourceButton")?.getAttribute("data-checked"),
+      message: document.querySelector("#toast")?.textContent?.trim(),
+    }));
+    if (result.checked !== "true") {
+      if (!result.message?.startsWith("Synchronized ")) {
+        throw new Error(`source synchronization failed: ${result.message || "unknown error"}`);
+      }
+      await page.waitForSelector('#syncSourceButton[data-checked="true"]');
+    }
     await capture(this.id);
   },
 };

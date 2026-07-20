@@ -21,14 +21,19 @@ export function SourceReleaseActions({
   compact?: boolean;
   syncButtonID?: string;
   publishButtonID?: string;
-  onSynced: (result: SourceSyncResult) => void;
+  onSynced?: (result: SourceSyncResult) => void;
   onPublish: (source: GitSource) => void;
 }) {
   const { api, notify } = useApp();
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<SourceSyncResult | null>(null);
   const latestCommit = syncResult?.commit || source.last_synced_commit || "";
-  const state = releaseActionState(activeCommit, latestCommit, Boolean(syncResult), activeBundleReady);
+  const state = releaseActionState(
+    activeCommit,
+    latestCommit,
+    Boolean(syncResult),
+    activeBundleReady,
+  );
   const buttonClass = compact ? "button small" : "button";
 
   async function syncSource() {
@@ -41,7 +46,7 @@ export function SourceReleaseActions({
       } else {
         notify("ok", `Synchronized ${result.app} at ${shortSHA(result.commit, 12)}.`);
       }
-      onSynced(result);
+      onSynced?.(result);
     } catch (cause) {
       notify("error", errorMessage(cause));
     } finally {
@@ -61,10 +66,20 @@ export function SourceReleaseActions({
         data-checked={syncResult ? "true" : "false"}
         type="button"
         disabled={syncing || state.syncDisabled}
-        title={state.syncDisabled ? "The tracked branch was checked in this view." : "Check and synchronize the tracked branch."}
+        title={
+          state.syncDisabled
+            ? "The tracked branch was checked in this view."
+            : "Check and synchronize the tracked branch."
+        }
         onClick={syncSource}
       >
-        {syncing ? <RefreshCw aria-hidden="true" className="spin" /> : state.syncDisabled ? <Check aria-hidden="true" /> : <RefreshCw aria-hidden="true" />}
+        {syncing ? (
+          <RefreshCw aria-hidden="true" className="spin" />
+        ) : state.syncDisabled ? (
+          <Check aria-hidden="true" />
+        ) : (
+          <RefreshCw aria-hidden="true" />
+        )}
         {syncing ? "Synchronizing…" : state.syncLabel}
       </button>
       <button
@@ -82,9 +97,13 @@ export function SourceReleaseActions({
   );
 }
 
-function publishButtonTitle(label: "Sync required" | "Up to date" | "Publish Release" | "Republish required"): string {
+function publishButtonTitle(
+  label: "Sync required" | "Up to date" | "Publish Release" | "Republish required",
+): string {
   if (label === "Sync required") return "Synchronize the source before publishing.";
-  if (label === "Up to date") return "The active release already uses the latest synchronized source.";
-  if (label === "Republish required") return "The active release has no execution bundle. Publish it again before running jobs.";
+  if (label === "Up to date")
+    return "The active release already uses the latest synchronized source.";
+  if (label === "Republish required")
+    return "The active release has no execution bundle. Publish it again before running jobs.";
   return "Prepare and publish the latest synchronized source.";
 }

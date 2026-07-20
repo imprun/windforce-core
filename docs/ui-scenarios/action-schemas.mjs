@@ -13,7 +13,7 @@ export default {
   async run({ page, capture }) {
     await page.goto();
     await page.waitForSelector("#appList .tableRow");
-    await page.click("#appList .tableRow");
+    await page.click("#appList .cellTitle");
     await page.clickText("Docs");
     await page.click('a[href$="/docs/actions/echo"]');
     await page.waitForText("h3", "Request body");

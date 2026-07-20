@@ -1,5 +1,15 @@
+import {
+  CheckCircle2,
+  Clipboard,
+  Download,
+  FileInput,
+  Play,
+  RotateCcw,
+  ShieldCheck,
+  Trash2,
+  Upload,
+} from "lucide-react";
 import { useMemo, useState } from "react";
-import { CheckCircle2, Clipboard, Download, FileInput, Play, RotateCcw, ShieldCheck, Trash2, Upload } from "lucide-react";
 import { Layout } from "../components/Layout";
 import { SettingsNav } from "../components/SettingsNav";
 import { EmptyState, ErrorNotice, Field, Panel } from "../components/ui";
@@ -53,7 +63,8 @@ export function ProvisioningPage() {
   const resultLabel = applyResult.length ? "Applied resources" : "Dry-run result";
   const resultSummary = summarizeResult(resultRows);
   const exportFileName = useMemo(
-    () => `windforce-lite-${settings.workspace || "default"}-provisioning.${exportFormat === "yaml" ? "yaml" : "json"}`,
+    () =>
+      `windforce-lite-${settings.workspace || "default"}-provisioning.${exportFormat === "yaml" ? "yaml" : "json"}`,
     [exportFormat, settings.workspace],
   );
 
@@ -116,7 +127,9 @@ export function ProvisioningPage() {
 
   function downloadExport() {
     if (!exportText) return;
-    const blob = new Blob([exportText], { type: exportFormat === "yaml" ? "application/yaml" : "application/json" });
+    const blob = new Blob([exportText], {
+      type: exportFormat === "yaml" ? "application/yaml" : "application/json",
+    });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
@@ -175,7 +188,10 @@ export function ProvisioningPage() {
 
       {task === "import" ? (
         <section className="provisioningWorkspace" aria-label="Import provisioning document">
-          <Panel title="Import document" subtitle="Paste or load YAML/JSON. Dry-run must pass before Apply is enabled.">
+          <Panel
+            title="Import document"
+            subtitle="Paste or load YAML/JSON. Dry-run must pass before Apply is enabled."
+          >
             <div className="provisioningDocumentHeader">
               <Field label="Format">
                 <select
@@ -201,7 +217,11 @@ export function ProvisioningPage() {
                   onChange={(event) => void handleFile(event.target.files?.[0] || null)}
                 />
               </label>
-              <button className="button" type="button" onClick={() => resetImportDocument(sampleYaml, "yaml")}>
+              <button
+                className="button"
+                type="button"
+                onClick={() => resetImportDocument(sampleYaml, "yaml")}
+              >
                 <RotateCcw aria-hidden="true" />
                 Reset sample
               </button>
@@ -221,13 +241,26 @@ export function ProvisioningPage() {
           </Panel>
 
           <aside className="provisioningSidePanel" aria-label="Import controls and result">
-            <Panel title="Review and apply" subtitle="Validate the document, then apply the reviewed result.">
+            <Panel
+              title="Review and apply"
+              subtitle="Validate the document, then apply the reviewed result."
+            >
               <div className="provisioningActionStack">
-                <button className="button" type="button" disabled={!importReady || working !== ""} onClick={handleDryRun}>
+                <button
+                  className="button"
+                  type="button"
+                  disabled={!importReady || working !== ""}
+                  onClick={handleDryRun}
+                >
                   <Play aria-hidden="true" />
                   {working === "dry-run" ? "Checking…" : "Dry-run"}
                 </button>
-                <button className="button primary" type="button" disabled={!canApply} onClick={handleApply}>
+                <button
+                  className="button primary"
+                  type="button"
+                  disabled={!canApply}
+                  onClick={handleApply}
+                >
                   <Upload aria-hidden="true" />
                   {working === "apply" ? "Applying…" : "Apply"}
                 </button>
@@ -249,13 +282,19 @@ export function ProvisioningPage() {
 
             <Panel
               title={resultLabel}
-              subtitle={resultRows.length ? resultSummary : "Run dry-run to review planned resources before applying."}
+              subtitle={
+                resultRows.length
+                  ? resultSummary
+                  : "Run dry-run to review planned resources before applying."
+              }
             >
               {resultRows.length ? (
                 <ProvisioningResultList rows={resultRows} />
               ) : (
                 <EmptyState title="No validation result">
-                  <span>Run dry-run to review what would be created, updated, stored, or validated.</span>
+                  <span>
+                    Run dry-run to review what would be created, updated, stored, or validated.
+                  </span>
                 </EmptyState>
               )}
             </Panel>
@@ -273,13 +312,18 @@ export function ProvisioningPage() {
               </>
             ) : (
               <EmptyState title="No snapshot exported">
-                <span>Export a snapshot to preview, copy, or download the current workspace state.</span>
+                <span>
+                  Export a snapshot to preview, copy, or download the current workspace state.
+                </span>
               </EmptyState>
             )}
           </Panel>
 
           <aside className="provisioningSidePanel" aria-label="Export controls">
-            <Panel title="Snapshot options" subtitle="Secrets and credential values are always redacted.">
+            <Panel
+              title="Snapshot options"
+              subtitle="Secrets and credential values are always redacted."
+            >
               <div className="formStack">
                 <Field label="Format">
                   <select
@@ -304,15 +348,30 @@ export function ProvisioningPage() {
                 </label>
               </div>
               <div className="provisioningActionStack">
-                <button className="button primary" type="button" onClick={handleExport} disabled={working === "export"}>
+                <button
+                  className="button primary"
+                  type="button"
+                  onClick={handleExport}
+                  disabled={working === "export"}
+                >
                   <Download aria-hidden="true" />
                   {exporting ? "Exporting…" : "Export snapshot"}
                 </button>
-                <button className="button" type="button" onClick={copyExport} disabled={!exportText}>
+                <button
+                  className="button"
+                  type="button"
+                  onClick={copyExport}
+                  disabled={!exportText}
+                >
                   <Clipboard aria-hidden="true" />
                   Copy
                 </button>
-                <button className="button" type="button" onClick={downloadExport} disabled={!exportText}>
+                <button
+                  className="button"
+                  type="button"
+                  onClick={downloadExport}
+                  disabled={!exportText}
+                >
                   <Download aria-hidden="true" />
                   Download
                 </button>

@@ -16,7 +16,7 @@ export default {
     await page.evaluate(() => localStorage.setItem("wf.actor", "ui-guide@example.test"));
     await page.goto();
     await page.waitForSelector("#appList .tableRow");
-    await page.click("#appList .tableRow");
+    await page.click("#appList .cellTitle");
     await page.waitForSelector("#publishReleaseButton");
     await page.waitForSelector("#publishReleaseButton:not([disabled])");
     await page.click("#publishReleaseButton");

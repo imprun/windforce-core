@@ -1,18 +1,18 @@
 import { matchRoute, useRouter } from "./lib/router";
 import { AppDetailPage } from "./pages/AppDetailPage";
 import { AppsPage } from "./pages/AppsPage";
-import { ClientRegistryPage } from "./pages/ClientRegistryPage";
+import { AuditPage } from "./pages/AuditPage";
 import { ClientDetailPage } from "./pages/ClientDetailPage";
+import { ClientRegistryPage } from "./pages/ClientRegistryPage";
 import { MonitoringPage } from "./pages/MonitoringPage";
 import { ProvisioningPage } from "./pages/ProvisioningPage";
 import { SettingsInfoPage } from "./pages/SettingsInfoPage";
 import { SettingsPage } from "./pages/SettingsPage";
-import { AuditPage } from "./pages/AuditPage";
 import { WebhookCreatePage } from "./pages/WebhookCreatePage";
 import { WebhookDetailPage } from "./pages/WebhookDetailPage";
 import { WebhookSettingsPage } from "./pages/WebhookSettingsPage";
-import { WorkspacesPage } from "./pages/WorkspacesPage";
 import { WorkspaceDetailPage } from "./pages/WorkspaceDetailPage";
+import { WorkspacesPage } from "./pages/WorkspacesPage";
 
 export function App() {
   const { path } = useRouter();
@@ -36,12 +36,23 @@ export function App() {
   if (matchRoute("/audit", path)) return <AuditPage />;
   const clientDetail = matchRoute("/clients/:id/:tab?/:appKey?", path);
   if (clientDetail?.id) {
-    return <ClientDetailPage clientID={clientDetail.id} tab={clientDetail.tab || "overview"} appKey={clientDetail.appKey} />;
+    return (
+      <ClientDetailPage
+        clientID={clientDetail.id}
+        tab={clientDetail.tab || "overview"}
+        appKey={clientDetail.appKey}
+      />
+    );
   }
   if (matchRoute("/clients", path)) return <ClientRegistryPage />;
   const workspaceDetail = matchRoute("/workspaces/:id/:tab?", path);
   if (workspaceDetail?.id) {
-    return <WorkspaceDetailPage workspaceID={workspaceDetail.id} tab={workspaceDetail.tab || "overview"} />;
+    return (
+      <WorkspaceDetailPage
+        workspaceID={workspaceDetail.id}
+        tab={workspaceDetail.tab || "overview"}
+      />
+    );
   }
   if (matchRoute("/workspaces", path)) return <WorkspacesPage />;
   // Back-compat: /jobs was the pre-rename route, and /jobs/{id} was the
@@ -51,7 +62,9 @@ export function App() {
   if (matchRoute("/settings/webhooks/new", path)) return <WebhookCreatePage />;
   const webhookDetail = matchRoute("/settings/webhooks/:id/:tab?", path);
   if (webhookDetail?.id) {
-    return <WebhookDetailPage subscriptionID={webhookDetail.id} tab={webhookDetail.tab || "overview"} />;
+    return (
+      <WebhookDetailPage subscriptionID={webhookDetail.id} tab={webhookDetail.tab || "overview"} />
+    );
   }
   if (matchRoute("/settings/webhooks", path)) return <WebhookSettingsPage />;
   if (matchRoute("/settings/workspaces", path)) return <WorkspacesPage />;

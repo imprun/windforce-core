@@ -1,12 +1,12 @@
 import {
+  type AnchorHTMLAttributes,
   createContext,
+  type MouseEvent,
+  type ReactNode,
   useCallback,
   useContext,
   useEffect,
   useState,
-  type AnchorHTMLAttributes,
-  type MouseEvent,
-  type ReactNode,
 } from "react";
 
 // BASE is "/ui/" in both dev and production builds. The fallback keeps the
@@ -68,7 +68,8 @@ export function Link({ to, onClick, children, ...rest }: LinkProps) {
   const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
     onClick?.(event);
     if (event.defaultPrevented) return;
-    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
+      return;
     event.preventDefault();
     navigate(to);
   };
@@ -101,7 +102,7 @@ export function matchRoute(pattern: string, path: string): Record<string, string
         if (optional) continue;
         return null;
       }
-      params[name] = pathParts[i];
+      params[name] = pathParts[i]!;
       i += 1;
     } else {
       if (pathParts[i] !== part) return null;

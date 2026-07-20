@@ -1,12 +1,12 @@
 import { KeyRound, Search, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { ErrorNotice, Field, Modal, Panel } from "../components/ui";
 import type { AppSummary, WebhookSubscription } from "../lib/api";
 import { errorMessage, webhookAppKeys } from "../lib/api";
 import { useApp } from "../lib/app-context";
 import { formatTime } from "../lib/format";
 import { WebhookSecretDialog } from "./WebhookSecretDialog";
-import { webhookEventLabel, WebhookSubscriptionStatus } from "./WebhookStatus";
+import { WebhookSubscriptionStatus, webhookEventLabel } from "./WebhookStatus";
 
 type Props = {
   subscription: WebhookSubscription;
@@ -20,7 +20,9 @@ export function WebhookOverview({ subscription, apps, onUpdated, onDeleted }: Pr
   const [name, setName] = useState(subscription.name);
   const [endpoint, setEndpoint] = useState("");
   const [enabled, setEnabled] = useState(subscription.enabled);
-  const [scope, setScope] = useState<"all" | "selected">(webhookAppKeys(subscription).length ? "selected" : "all");
+  const [scope, setScope] = useState<"all" | "selected">(
+    webhookAppKeys(subscription).length ? "selected" : "all",
+  );
   const [selectedApps, setSelectedApps] = useState(webhookAppKeys(subscription));
   const [search, setSearch] = useState("");
   const [busy, setBusy] = useState(false);
@@ -67,7 +69,9 @@ export function WebhookOverview({ subscription, apps, onUpdated, onDeleted }: Pr
 
   function toggleApp(appKey: string) {
     setSelectedApps((current) =>
-      current.includes(appKey) ? current.filter((key) => key !== appKey) : [...current, appKey].sort(),
+      current.includes(appKey)
+        ? current.filter((key) => key !== appKey)
+        : [...current, appKey].sort(),
     );
   }
 
@@ -87,7 +91,8 @@ export function WebhookOverview({ subscription, apps, onUpdated, onDeleted }: Pr
     if (normalizedName !== subscription.name) payload.name = normalizedName;
     if (endpoint.trim()) payload.endpoint = endpoint.trim();
     if (enabled !== subscription.enabled) payload.enabled = enabled;
-    if (JSON.stringify(nextApps) !== JSON.stringify(webhookAppKeys(subscription))) payload.app_keys = nextApps;
+    if (JSON.stringify(nextApps) !== JSON.stringify(webhookAppKeys(subscription)))
+      payload.app_keys = nextApps;
     if (Object.keys(payload).length === 0) {
       notify("info", "No webhook settings changed.");
       return;
@@ -109,7 +114,9 @@ export function WebhookOverview({ subscription, apps, onUpdated, onDeleted }: Pr
     setBusy(true);
     setError("");
     try {
-      const result = await api.updateWebhookSubscription(subscription.id, { rotate_signing_secret: true });
+      const result = await api.updateWebhookSubscription(subscription.id, {
+        rotate_signing_secret: true,
+      });
       setRotateOpen(false);
       onUpdated(result.subscription);
       setSecret(result.signing_secret || "");
@@ -137,7 +144,10 @@ export function WebhookOverview({ subscription, apps, onUpdated, onDeleted }: Pr
   const deleted = Boolean(subscription.deleted_at);
   return (
     <div className="webhookDetailStack">
-      <Panel title="Configuration" subtitle="Delivery scope and receiver settings used for future release events.">
+      <Panel
+        title="Configuration"
+        subtitle="Delivery scope and receiver settings used for future release events."
+      >
         <div className="webhookConfigSummary">
           <div>
             <span className="fieldLabel">Status</span>
@@ -161,14 +171,24 @@ export function WebhookOverview({ subscription, apps, onUpdated, onDeleted }: Pr
         </div>
 
         {deleted ? (
-          <div className="inlineNotice warning">Deleted webhooks are read-only. Delivery and audit history remain available.</div>
+          <div className="inlineNotice warning">
+            Deleted webhooks are read-only. Delivery and audit history remain available.
+          </div>
         ) : (
           <form className="webhookEditForm" onSubmit={save}>
             <div className="formGrid">
               <Field label="Name" hint="Shown in operations, delivery history, and audit events.">
-                <input id="webhookEditName" maxLength={200} value={name} onChange={(event) => setName(event.target.value)} />
+                <input
+                  id="webhookEditName"
+                  maxLength={200}
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                />
               </Field>
-              <Field label="Replace endpoint URL" hint="Leave blank to keep the current receiver. Enter a new full URL to rotate the hidden path or query.">
+              <Field
+                label="Replace endpoint URL"
+                hint="Leave blank to keep the current receiver. Enter a new full URL to rotate the hidden path or query."
+              >
                 <input
                   id="webhookEditEndpoint"
                   type="url"
@@ -180,39 +200,77 @@ export function WebhookOverview({ subscription, apps, onUpdated, onDeleted }: Pr
               </Field>
             </div>
             <label className="toggleField">
-              <input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />
+              <input
+                type="checkbox"
+                checked={enabled}
+                onChange={(event) => setEnabled(event.target.checked)}
+              />
               <span>
                 <strong>Enable deliveries</strong>
-                <small>Disabled subscriptions keep their configuration and history but do not receive new events.</small>
+                <small>
+                  Disabled subscriptions keep their configuration and history but do not receive new
+                  events.
+                </small>
               </span>
             </label>
 
             <fieldset className="webhookScopeFieldset">
               <legend>App scope</legend>
-              <div className="segmented webhookScopeMode" role="group" aria-label="App scope">
-                <button type="button" className={scope === "all" ? "segment active" : "segment"} onClick={() => setScope("all")}>All apps</button>
-                <button type="button" className={scope === "selected" ? "segment active" : "segment"} onClick={() => setScope("selected")}>Selected apps</button>
+              <div className="segmented webhookScopeMode">
+                <button
+                  type="button"
+                  className={scope === "all" ? "segment active" : "segment"}
+                  onClick={() => setScope("all")}
+                >
+                  All apps
+                </button>
+                <button
+                  type="button"
+                  className={scope === "selected" ? "segment active" : "segment"}
+                  onClick={() => setScope("selected")}
+                >
+                  Selected apps
+                </button>
               </div>
               {scope === "selected" ? (
                 <div className="appScopePicker compact">
                   <label className="scopeSearch">
                     <Search size={16} aria-hidden="true" />
-                    <input aria-label="Filter apps" placeholder="Filter apps…" value={search} onChange={(event) => setSearch(event.target.value)} />
+                    <input
+                      aria-label="Filter apps"
+                      placeholder="Filter apps…"
+                      value={search}
+                      onChange={(event) => setSearch(event.target.value)}
+                    />
                   </label>
                   <div className="appScopeList" id="webhookEditAppScope">
                     {availableApps.map((app) => (
                       <label className="appScopeOption" key={app.app_key}>
-                        <input type="checkbox" checked={selectedApps.includes(app.app_key)} onChange={() => toggleApp(app.app_key)} />
-                        <span><strong>{app.app_key}</strong><small>{app.entrypoint}</small></span>
+                        <input
+                          type="checkbox"
+                          checked={selectedApps.includes(app.app_key)}
+                          onChange={() => toggleApp(app.app_key)}
+                        />
+                        <span>
+                          <strong>{app.app_key}</strong>
+                          <small>{app.entrypoint}</small>
+                        </span>
                       </label>
                     ))}
                   </div>
                 </div>
-              ) : <p className="fieldHint">Receive release events for every app in this workspace.</p>}
+              ) : (
+                <p className="fieldHint">Receive release events for every app in this workspace.</p>
+              )}
             </fieldset>
             {error ? <ErrorNotice message={error} /> : null}
             <div className="formActions">
-              <button className="button primary" type="submit" disabled={busy} id="saveWebhookButton">
+              <button
+                className="button primary"
+                type="submit"
+                disabled={busy}
+                id="saveWebhookButton"
+              >
                 {busy ? "Saving…" : "Save changes"}
               </button>
             </div>
@@ -220,21 +278,36 @@ export function WebhookOverview({ subscription, apps, onUpdated, onDeleted }: Pr
         )}
       </Panel>
 
-      <Panel title="Signing secret" subtitle="Receivers use this secret to verify that a request came from Windforce.">
+      <Panel
+        title="Signing secret"
+        subtitle="Receivers use this secret to verify that a request came from Windforce."
+      >
         <div className="webhookSecurityRow">
           <div className="securityIdentity">
             <KeyRound size={18} aria-hidden="true" />
             <div>
-              <strong>{subscription.has_signing_secret ? "Signing enabled" : "No signing secret"}</strong>
-              <p>The stored secret cannot be read. Rotation immediately invalidates the current secret.</p>
+              <strong>
+                {subscription.has_signing_secret ? "Signing enabled" : "No signing secret"}
+              </strong>
+              <p>
+                The stored secret cannot be read. Rotation immediately invalidates the current
+                secret.
+              </p>
             </div>
           </div>
-          {!deleted ? <button className="button" type="button" onClick={() => setRotateOpen(true)}>Rotate secret</button> : null}
+          {!deleted ? (
+            <button className="button" type="button" onClick={() => setRotateOpen(true)}>
+              Rotate secret
+            </button>
+          ) : null}
         </div>
       </Panel>
 
       {!deleted ? (
-        <Panel title="Delete webhook" subtitle="Stop future deliveries while retaining delivery and audit history.">
+        <Panel
+          title="Delete webhook"
+          subtitle="Stop future deliveries while retaining delivery and audit history."
+        >
           <div className="dangerZoneRow">
             <p>Deletion cannot be undone from the console.</p>
             <button className="button danger" type="button" onClick={() => setDeleteOpen(true)}>
@@ -246,27 +319,51 @@ export function WebhookOverview({ subscription, apps, onUpdated, onDeleted }: Pr
       ) : null}
 
       {rotateOpen ? (
-        <Modal title="Rotate signing secret?" subtitle="The current receiver will fail verification until it is configured with the new secret." onClose={() => setRotateOpen(false)}>
+        <Modal
+          title="Rotate signing secret?"
+          subtitle="The current receiver will fail verification until it is configured with the new secret."
+          onClose={() => setRotateOpen(false)}
+        >
           <div className="dialogFooter">
-            <button className="button" type="button" onClick={() => setRotateOpen(false)}>Cancel</button>
-            <button className="button primary" type="button" disabled={busy} onClick={rotateSecret}>{busy ? "Rotating…" : "Rotate secret"}</button>
+            <button className="button" type="button" onClick={() => setRotateOpen(false)}>
+              Cancel
+            </button>
+            <button className="button primary" type="button" disabled={busy} onClick={rotateSecret}>
+              {busy ? "Rotating…" : "Rotate secret"}
+            </button>
           </div>
         </Modal>
       ) : null}
       {deleteOpen ? (
-        <Modal title="Delete webhook?" subtitle="Future releases will no longer create deliveries for this receiver." onClose={() => setDeleteOpen(false)}>
+        <Modal
+          title="Delete webhook?"
+          subtitle="Future releases will no longer create deliveries for this receiver."
+          onClose={() => setDeleteOpen(false)}
+        >
           <Field label={`Type ${subscription.name} to confirm`}>
-            <input autoFocus value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} />
+            <input
+              value={deleteConfirmation}
+              onChange={(event) => setDeleteConfirmation(event.target.value)}
+            />
           </Field>
           <div className="dialogFooter">
-            <button className="button" type="button" onClick={() => setDeleteOpen(false)}>Cancel</button>
-            <button className="button danger" type="button" disabled={busy || deleteConfirmation !== subscription.name} onClick={remove}>
+            <button className="button" type="button" onClick={() => setDeleteOpen(false)}>
+              Cancel
+            </button>
+            <button
+              className="button danger"
+              type="button"
+              disabled={busy || deleteConfirmation !== subscription.name}
+              onClick={remove}
+            >
               {busy ? "Deleting…" : "Delete webhook"}
             </button>
           </div>
         </Modal>
       ) : null}
-      {secret ? <WebhookSecretDialog secret={secret} endpoint={endpoint} onClose={() => setSecret("")} /> : null}
+      {secret ? (
+        <WebhookSecretDialog secret={secret} endpoint={endpoint} onClose={() => setSecret("")} />
+      ) : null}
     </div>
   );
 }

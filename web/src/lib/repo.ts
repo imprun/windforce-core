@@ -33,7 +33,11 @@ export function forgeBase(repoURL: string): ForgeBase | null {
   return { base: `${parsed.origin}${path}`, kind };
 }
 
-export function forgeTreeURL(repoURL: string, commit: string | null | undefined, subpath?: string): string | null {
+export function forgeTreeURL(
+  repoURL: string,
+  commit: string | null | undefined,
+  subpath?: string,
+): string | null {
   const forge = forgeBase(repoURL);
   if (!forge || !commit) return null;
   const cleanSubpath = (subpath || "").replace(/^\/+|\/+$/g, "");
@@ -43,7 +47,11 @@ export function forgeTreeURL(repoURL: string, commit: string | null | undefined,
     : `${forge.base}/-/tree/${commit}${suffix}`;
 }
 
-export function forgeRawFileURL(repoURL: string, commit: string | null | undefined, path: string): string | null {
+export function forgeRawFileURL(
+  repoURL: string,
+  commit: string | null | undefined,
+  path: string,
+): string | null {
   const forge = forgeBase(repoURL);
   if (!forge || !commit) return null;
   const cleanPath = path.replace(/^\/+/, "");
@@ -56,7 +64,9 @@ export function forgeRawFileURL(repoURL: string, commit: string | null | undefin
 export function forgeCommitURL(repoURL: string, commit: string | null | undefined): string | null {
   const forge = forgeBase(repoURL);
   if (!forge || !commit) return null;
-  return forge.kind === "github" ? `${forge.base}/commit/${commit}` : `${forge.base}/-/commit/${commit}`;
+  return forge.kind === "github"
+    ? `${forge.base}/commit/${commit}`
+    : `${forge.base}/-/commit/${commit}`;
 }
 
 export function forgeName(repoURL: string): string | null {

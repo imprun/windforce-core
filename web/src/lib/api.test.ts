@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test";
-import { setActorHeaders, webhookAppKeys, WindforceApi, type WebhookSubscription } from "./api";
+import { describe, expect, test } from "vitest";
+import { setActorHeaders, type WebhookSubscription, WindforceApi, webhookAppKeys } from "./api";
 
 function decodeUTF8Base64(value: string): string {
   const binary = atob(value);
@@ -85,10 +85,13 @@ describe("WindforceApi release flow", () => {
       const api = new WindforceApi({ workspace: "default", token: "", actor: "operator" });
       await api.rollbackAppRelease("echo", "release/a", "Restore stable release");
       expect(requests).toHaveLength(1);
-      expect(requests[0].url).toBe("/api/w/default/apps/echo/releases/release%2Fa/rollback");
-      expect(requests[0].method).toBe("POST");
-      expect(requests[0].headers.get("x-windforce-actor")).toBe("operator");
-      expect(JSON.parse(requests[0].body)).toEqual({ confirm: true, reason: "Restore stable release" });
+      expect(requests[0]?.url).toBe("/api/w/default/apps/echo/releases/release%2Fa/rollback");
+      expect(requests[0]?.method).toBe("POST");
+      expect(requests[0]?.headers.get("x-windforce-actor")).toBe("operator");
+      expect(JSON.parse(requests[0]!.body)).toEqual({
+        confirm: true,
+        reason: "Restore stable release",
+      });
     } finally {
       globalThis.fetch = originalFetch;
     }
@@ -111,10 +114,7 @@ describe("WindforceApi webhooks", () => {
       const api = new WindforceApi({ workspace: "demo", token: "", actor: "operator" });
       await api.webhookSubscriptions();
       await api.webhookSubscriptions(true);
-      expect(calls).toEqual([
-        "/api/w/demo/webhooks",
-        "/api/w/demo/webhooks?include_deleted=true",
-      ]);
+      expect(calls).toEqual(["/api/w/demo/webhooks", "/api/w/demo/webhooks?include_deleted=true"]);
     } finally {
       globalThis.fetch = originalFetch;
     }
@@ -130,10 +130,13 @@ describe("WindforceApi webhooks", () => {
         headers: new Headers(init?.headers),
         body: String(init?.body || ""),
       });
-      return new Response(JSON.stringify({ subscription: { id: "wh_1" }, signing_secret: "shown-once" }), {
-        status: 201,
-        headers: { "content-type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ subscription: { id: "wh_1" }, signing_secret: "shown-once" }),
+        {
+          status: 201,
+          headers: { "content-type": "application/json" },
+        },
+      );
     }) as typeof fetch;
     try {
       const api = new WindforceApi({ workspace: "default", token: "token", actor: "운영자" });
@@ -145,10 +148,12 @@ describe("WindforceApi webhooks", () => {
         enabled: true,
       });
       expect(requests).toHaveLength(1);
-      expect(requests[0].url).toBe("/api/w/default/webhooks");
-      expect(requests[0].method).toBe("POST");
-      expect(decodeUTF8Base64(requests[0].headers.get("x-windforce-actor-utf8") || "")).toBe("운영자");
-      expect(JSON.parse(requests[0].body)).toEqual({
+      expect(requests[0]?.url).toBe("/api/w/default/webhooks");
+      expect(requests[0]?.method).toBe("POST");
+      expect(decodeUTF8Base64(requests[0]?.headers.get("x-windforce-actor-utf8") || "")).toBe(
+        "운영자",
+      );
+      expect(JSON.parse(requests[0]!.body)).toEqual({
         name: "Release notifications",
         endpoint: "https://hooks.example.test/releases",
         event_types: ["windforce.release.published"],
@@ -196,22 +201,29 @@ describe("WindforceApi provisioning", () => {
         headers: new Headers(init?.headers),
         body: String(init?.body || ""),
       });
-      return new Response(JSON.stringify({ applied: [{ kind: "Client", name: "Client A", action: "validated" }] }), {
-        status: 200,
-      });
+      return new Response(
+        JSON.stringify({ applied: [{ kind: "Client", name: "Client A", action: "validated" }] }),
+        {
+          status: 200,
+        },
+      );
     }) as typeof fetch;
     try {
       const api = new WindforceApi({ workspace: "default", token: "tok", actor: "operator" });
-      const result = await api.importProvisioning("kind: Client\nmetadata:\n  name: Client A\n", true, "yaml");
+      const result = await api.importProvisioning(
+        "kind: Client\nmetadata:\n  name: Client A\n",
+        true,
+        "yaml",
+      );
 
-      expect(result.applied[0].action).toBe("validated");
+      expect(result.applied[0]?.action).toBe("validated");
       expect(requests).toHaveLength(1);
-      expect(requests[0].url).toBe("/api/w/default/provisioning/import?dry_run=true");
-      expect(requests[0].method).toBe("POST");
-      expect(requests[0].headers.get("content-type")).toBe("application/yaml");
-      expect(requests[0].headers.get("authorization")).toBe("Bearer tok");
-      expect(requests[0].headers.get("x-windforce-actor")).toBe("operator");
-      expect(requests[0].body).toContain("kind: Client");
+      expect(requests[0]?.url).toBe("/api/w/default/provisioning/import?dry_run=true");
+      expect(requests[0]?.method).toBe("POST");
+      expect(requests[0]?.headers.get("content-type")).toBe("application/yaml");
+      expect(requests[0]?.headers.get("authorization")).toBe("Bearer tok");
+      expect(requests[0]?.headers.get("x-windforce-actor")).toBe("operator");
+      expect(requests[0]?.body).toContain("kind: Client");
     } finally {
       globalThis.fetch = originalFetch;
     }
@@ -222,7 +234,10 @@ describe("WindforceApi provisioning", () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (input) => {
       calls.push(String(input));
-      return new Response("resources: []\n", { status: 200, headers: { "content-type": "application/yaml" } });
+      return new Response("resources: []\n", {
+        status: 200,
+        headers: { "content-type": "application/yaml" },
+      });
     }) as typeof fetch;
     try {
       const api = new WindforceApi({ workspace: "ops", token: "", actor: "operator" });
@@ -241,15 +256,18 @@ describe("WindforceApi system info", () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (input) => {
       calls.push(String(input));
-      return new Response(JSON.stringify({
-        service: "windforce-lite",
-        workspace: "ops",
-        ready: true,
-        planes: { control_api: true },
-        backends: { state_store: true },
-        auth: { admin_token_configured: true },
-        runtime_config: { wait_ms: 250 },
-      }), { status: 200 });
+      return new Response(
+        JSON.stringify({
+          service: "windforce-lite",
+          workspace: "ops",
+          ready: true,
+          planes: { control_api: true },
+          backends: { state_store: true },
+          auth: { admin_token_configured: true },
+          runtime_config: { wait_ms: 250 },
+        }),
+        { status: 200 },
+      );
     }) as typeof fetch;
     try {
       const api = new WindforceApi({ workspace: "ops", token: "", actor: "operator" });
@@ -277,7 +295,11 @@ describe("WindforceApi workspaces", () => {
       return new Response(JSON.stringify({ items: [] }), { status: 200 });
     }) as typeof fetch;
     try {
-      const api = new WindforceApi({ workspace: "default", token: "admin-token", actor: "operator" });
+      const api = new WindforceApi({
+        workspace: "default",
+        token: "admin-token",
+        actor: "operator",
+      });
       await api.workspaces();
       await api.workspace("team-a");
       await api.createWorkspace("team-a", "Team A");
@@ -287,9 +309,9 @@ describe("WindforceApi workspaces", () => {
         ["/api/workspaces/team-a", "GET"],
         ["/api/workspaces", "POST"],
       ]);
-      expect(requests[0].headers.get("authorization")).toBe("Bearer admin-token");
-      expect(requests[2].headers.get("x-windforce-actor")).toBe("operator");
-      expect(JSON.parse(requests[2].body)).toEqual({ id: "team-a", name: "Team A" });
+      expect(requests[0]?.headers.get("authorization")).toBe("Bearer admin-token");
+      expect(requests[2]?.headers.get("x-windforce-actor")).toBe("operator");
+      expect(JSON.parse(requests[2]!.body)).toEqual({ id: "team-a", name: "Team A" });
     } finally {
       globalThis.fetch = originalFetch;
     }

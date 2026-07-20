@@ -2,8 +2,8 @@ import { useState } from "react";
 import { DefinitionList, Field, Modal, Panel, ProbeNotice } from "../components/ui";
 import { errorMessage, type GitSource, type ProbeResult } from "../lib/api";
 import { useApp } from "../lib/app-context";
-import { gitCredentialSecretValue, type GitAuthMethod } from "../lib/git-credential";
 import { formatTime, shortSHA } from "../lib/format";
+import { type GitAuthMethod, gitCredentialSecretValue } from "../lib/git-credential";
 import {
   probePassed,
   reconnectCredentialPath,
@@ -75,7 +75,12 @@ export function RepositorySettings({
         title="Repository settings"
         subtitle="Release source and access state. Protected values require an explicit change action."
         actions={
-          <button className="button" type="button" disabled={probing} onClick={probeCurrentRepository}>
+          <button
+            className="button"
+            type="button"
+            disabled={probing}
+            onClick={probeCurrentRepository}
+          >
             {probing ? "Probing…" : "Probe repository"}
           </button>
         }
@@ -89,15 +94,25 @@ export function RepositorySettings({
             ["Repository access", repositoryAccessLabel(source)],
             ["Kind", source.kind],
             ["Registered", formatTime(source.created_at)],
-            ["Latest synchronized source", source.last_synced_commit ? shortSHA(source.last_synced_commit, 16) : "Not synchronized"],
+            [
+              "Latest synchronized source",
+              source.last_synced_commit
+                ? shortSHA(source.last_synced_commit, 16)
+                : "Not synchronized",
+            ],
           ]}
         />
 
         {probe ? <ProbeNotice probe={probe} branch={source.branch || "main"} /> : null}
         {error ? <div className="inlineNotice error">{error}</div> : null}
 
-        <div className="repositoryActions" aria-label="Repository management actions">
-          <RepositoryActionRow label="Source name" value={source.name} action="Rename" onClick={() => setAction("rename")} />
+        <section className="repositoryActions" aria-label="Repository management actions">
+          <RepositoryActionRow
+            label="Source name"
+            value={source.name}
+            action="Rename"
+            onClick={() => setAction("rename")}
+          />
           <RepositoryActionRow
             label="Tracked branch"
             value={source.branch || "main"}
@@ -106,7 +121,11 @@ export function RepositorySettings({
           />
           <RepositoryActionRow
             label="Repository location"
-            value={locationLocked ? "Locked after first synchronization" : "Editable before first synchronization"}
+            value={
+              locationLocked
+                ? "Locked after first synchronization"
+                : "Editable before first synchronization"
+            }
             action={locationLocked ? undefined : "Change location"}
             onClick={locationLocked ? undefined : () => setAction("location")}
           />
@@ -116,7 +135,7 @@ export function RepositorySettings({
             action="Reconnect"
             onClick={() => setAction("credential")}
           />
-        </div>
+        </section>
 
         <div className="dangerZone compact">
           <div>
@@ -130,16 +149,32 @@ export function RepositorySettings({
       </Panel>
 
       {action === "rename" ? (
-        <RenameSourceDialog source={source} onClose={() => setAction(null)} onChanged={finishChange} />
+        <RenameSourceDialog
+          source={source}
+          onClose={() => setAction(null)}
+          onChanged={finishChange}
+        />
       ) : null}
       {action === "branch" ? (
-        <ChangeBranchDialog source={source} onClose={() => setAction(null)} onChanged={finishChange} />
+        <ChangeBranchDialog
+          source={source}
+          onClose={() => setAction(null)}
+          onChanged={finishChange}
+        />
       ) : null}
       {action === "location" && !locationLocked ? (
-        <ChangeLocationDialog source={source} onClose={() => setAction(null)} onChanged={finishChange} />
+        <ChangeLocationDialog
+          source={source}
+          onClose={() => setAction(null)}
+          onChanged={finishChange}
+        />
       ) : null}
       {action === "credential" ? (
-        <ReconnectCredentialDialog source={source} onClose={() => setAction(null)} onChanged={finishChange} />
+        <ReconnectCredentialDialog
+          source={source}
+          onClose={() => setAction(null)}
+          onChanged={finishChange}
+        />
       ) : null}
     </>
   );
@@ -199,12 +234,22 @@ function RenameSourceDialog({ source, onClose, onChanged }: RepositoryDialogProp
   }
 
   return (
-    <Modal title="Rename source" subtitle="The manifest app key and active release are unchanged." onClose={onClose}>
+    <Modal
+      title="Rename source"
+      subtitle="The manifest app key and active release are unchanged."
+      onClose={onClose}
+    >
       <Field label="Source name">
-        <input autoFocus value={name} onChange={(event) => setName(event.target.value)} />
+        <input value={name} onChange={(event) => setName(event.target.value)} />
       </Field>
       {error ? <div className="inlineNotice error">{error}</div> : null}
-      <DialogActions busy={busy} saveLabel="Rename" saveDisabled={!name.trim() || name.trim() === source.name} onClose={onClose} onSave={save} />
+      <DialogActions
+        busy={busy}
+        saveLabel="Rename"
+        saveDisabled={!name.trim() || name.trim() === source.name}
+        onClose={onClose}
+        onSave={save}
+      />
     </Modal>
   );
 }
@@ -256,7 +301,6 @@ function ChangeBranchDialog({ source, onClose, onChanged }: RepositoryDialogProp
     <Modal title="Change tracked branch" subtitle={source.repo_url} onClose={onClose}>
       <Field label="Branch">
         <input
-          autoFocus
           value={branch}
           onChange={(event) => {
             setBranch(event.target.value);
@@ -333,19 +377,29 @@ function ChangeLocationDialog({ source, onClose, onChanged }: RepositoryDialogPr
   }
 
   return (
-    <Modal title="Change repository location" subtitle="Available until the first release is published." onClose={onClose}>
+    <Modal
+      title="Change repository location"
+      subtitle="Available until the first release is published."
+      onClose={onClose}
+    >
       <Field label="Repository URL">
-        <input autoFocus value={repoURL} onChange={(event) => changeLocation(event.target.value, subpath)} />
+        <input value={repoURL} onChange={(event) => changeLocation(event.target.value, subpath)} />
       </Field>
       <Field label="Subpath">
-        <input value={subpath} placeholder="(repo root)" onChange={(event) => changeLocation(repoURL, event.target.value)} />
+        <input
+          value={subpath}
+          placeholder="(repo root)"
+          onChange={(event) => changeLocation(repoURL, event.target.value)}
+        />
       </Field>
       {probe ? <ProbeNotice probe={probe} branch={source.branch || "main"} /> : null}
       {error ? <div className="inlineNotice error">{error}</div> : null}
       <DialogActions
         busy={busy}
         saveLabel="Save location"
-        saveDisabled={!verified || (repoURL.trim() === source.repo_url && subpath.trim() === source.subpath)}
+        saveDisabled={
+          !verified || (repoURL.trim() === source.repo_url && subpath.trim() === source.subpath)
+        }
         onClose={onClose}
         onSave={save}
         secondaryLabel="Probe repository"
@@ -392,7 +446,9 @@ function ReconnectCredentialDialog({ source, onClose, onChanged }: RepositoryDia
 
   async function verify() {
     if (authMethod !== "none" && !credentialValue()) {
-      setError(authMethod === "pat" ? "Access token is required." : "Username and password are required.");
+      setError(
+        authMethod === "pat" ? "Access token is required." : "Username and password are required.",
+      );
       return;
     }
     setBusy(true);
@@ -539,7 +595,12 @@ function DialogActions({
         <button className="button" type="button" disabled={busy} onClick={onClose}>
           Cancel
         </button>
-        <button className="button primary" type="button" disabled={busy || saveDisabled} onClick={onSave}>
+        <button
+          className="button primary"
+          type="button"
+          disabled={busy || saveDisabled}
+          onClick={onSave}
+        >
           {busy ? "Saving…" : saveLabel}
         </button>
       </div>

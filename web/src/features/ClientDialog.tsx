@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Field, Modal } from "../components/ui";
-import { errorMessage, type Client } from "../lib/api";
+import { type Client, errorMessage } from "../lib/api";
 import { useApp } from "../lib/app-context";
 
 export function ClientDialog({
@@ -70,7 +70,7 @@ export function ClientDialog({
     <Modal title={client ? "Edit Client" : "Register Client"} onClose={onClose}>
       <div className="formGrid">
         <Field label="Name">
-          <input autoFocus maxLength={200} value={name} onChange={(event) => setName(event.target.value)} />
+          <input maxLength={200} value={name} onChange={(event) => setName(event.target.value)} />
         </Field>
         <Field label="External key">
           <div>
@@ -83,7 +83,8 @@ export function ClientDialog({
               onChange={(event) => setExternalKey(event.target.value)}
             />
             <p className="fieldHint">
-              Identifies the external client for app and action settings. This is not a Windforce API credential.
+              Identifies the external client for app and action settings. This is not a Windforce
+              API credential.
             </p>
           </div>
         </Field>

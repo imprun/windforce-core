@@ -30,14 +30,21 @@ export function WebhookDeliveries({ subscription }: { subscription: WebhookSubsc
     setNextCursor(state.data.next_cursor || "");
   }, [state.data]);
 
-  const deliveries = useMemo(() => [...(state.data?.items || []), ...additional], [additional, state.data]);
+  const deliveries = useMemo(
+    () => [...(state.data?.items || []), ...additional],
+    [additional, state.data],
+  );
 
   async function loadMore() {
     if (!nextCursor) return;
     setLoadingMore(true);
     setActionError("");
     try {
-      const page = await api.webhookDeliveries(subscription.id, { state: filter, limit: 25, cursor: nextCursor });
+      const page = await api.webhookDeliveries(subscription.id, {
+        state: filter,
+        limit: 25,
+        cursor: nextCursor,
+      });
       setAdditional((current) => [...current, ...page.items]);
       setNextCursor(page.next_cursor || "");
     } catch (cause) {
@@ -68,7 +75,11 @@ export function WebhookDeliveries({ subscription }: { subscription: WebhookSubsc
       title="Delivery history"
       subtitle="Outbound attempts for this subscription. Event payloads are immutable after creation."
       actions={
-        <button className="button" type="button" onClick={() => setRevision((current) => current + 1)}>
+        <button
+          className="button"
+          type="button"
+          onClick={() => setRevision((current) => current + 1)}
+        >
           <RefreshCw size={16} aria-hidden="true" />
           Refresh
         </button>
@@ -77,7 +88,10 @@ export function WebhookDeliveries({ subscription }: { subscription: WebhookSubsc
       <div className="deliveryToolbar">
         <label className="filterField">
           <span>Status</span>
-          <select value={filter} onChange={(event) => setFilter(event.target.value as WebhookDeliveryState | "")}>
+          <select
+            value={filter}
+            onChange={(event) => setFilter(event.target.value as WebhookDeliveryState | "")}
+          >
             <option value="">All statuses</option>
             <option value="pending">Pending</option>
             <option value="delivering">Delivering</option>
@@ -87,12 +101,16 @@ export function WebhookDeliveries({ subscription }: { subscription: WebhookSubsc
             <option value="canceled">Canceled</option>
           </select>
         </label>
-        <span className="fieldHint">{deliveries.length} delivery record{deliveries.length === 1 ? "" : "s"} loaded</span>
+        <span className="fieldHint">
+          {deliveries.length} delivery record{deliveries.length === 1 ? "" : "s"} loaded
+        </span>
       </div>
       {state.error ? <ErrorNotice message={state.error} onRetry={state.reload} /> : null}
       {actionError ? <ErrorNotice message={actionError} /> : null}
       {state.loading && !state.data ? <Loading label="Loading deliveries…" /> : null}
-      {state.data && deliveries.length === 0 ? <EmptyState title="No deliveries match this view." /> : null}
+      {state.data && deliveries.length === 0 ? (
+        <EmptyState title="No deliveries match this view." />
+      ) : null}
       {deliveries.length ? (
         <div className="tableWrap">
           <table className="table webhookDeliveryTable" id="webhookDeliveries">
@@ -110,17 +128,31 @@ export function WebhookDeliveries({ subscription }: { subscription: WebhookSubsc
                 const delivery = detail.delivery;
                 return (
                   <tr key={delivery.id}>
-                    <td><WebhookDeliveryStatus state={delivery.state} /></td>
                     <td>
-                      <button className="tableLink" type="button" onClick={() => setSelected(detail)}>
+                      <WebhookDeliveryStatus state={delivery.state} />
+                    </td>
+                    <td>
+                      <button
+                        className="tableLink"
+                        type="button"
+                        onClick={() => setSelected(detail)}
+                      >
                         {webhookEventLabel(detail.event.type)}
                       </button>
                       <span className="cellSub mono">{delivery.id}</span>
                     </td>
-                    <td><span className="cellTitle">{delivery.attempt}</span></td>
                     <td>
-                      <span className="cellTitle">{delivery.response_status ? `HTTP ${delivery.response_status}` : "—"}</span>
-                      {delivery.error_summary ? <span className="cellSub deliveryErrorSummary">{delivery.error_summary}</span> : null}
+                      <span className="cellTitle">{delivery.attempt}</span>
+                    </td>
+                    <td>
+                      <span className="cellTitle">
+                        {delivery.response_status ? `HTTP ${delivery.response_status}` : "—"}
+                      </span>
+                      {delivery.error_summary ? (
+                        <span className="cellSub deliveryErrorSummary">
+                          {delivery.error_summary}
+                        </span>
+                      ) : null}
                     </td>
                     <td title={formatTime(delivery.created_at)}>
                       <span className="cellTitle">{formatRelative(delivery.created_at)}</span>
@@ -135,7 +167,9 @@ export function WebhookDeliveries({ subscription }: { subscription: WebhookSubsc
       ) : null}
       {nextCursor ? (
         <div className="tableFooter">
-          <button className="button" type="button" disabled={loadingMore} onClick={loadMore}>{loadingMore ? "Loading…" : "Load more"}</button>
+          <button className="button" type="button" disabled={loadingMore} onClick={loadMore}>
+            {loadingMore ? "Loading…" : "Load more"}
+          </button>
         </div>
       ) : null}
       {selected ? (

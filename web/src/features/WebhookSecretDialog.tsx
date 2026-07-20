@@ -43,20 +43,26 @@ export function WebhookSecretDialog({
         </button>
       </div>
       <div className="inlineNotice warning">
-        Configure the receiving service with this secret to verify the <span className="mono">X-Windforce-Signature</span> header.
+        Configure the receiving service with this secret to verify the{" "}
+        <span className="mono">X-Windforce-Signature</span> header.
       </div>
       {notificationCenterSourceKey ? (
         <div className="notificationCenterHandoff">
           <div>
             <strong>Notification Center source</strong>
             <p>
-              Open source <span className="mono">{notificationCenterSourceKey}</span> and paste this body into the signing secret completion request.
+              Open source <span className="mono">{notificationCenterSourceKey}</span> and paste this
+              body into the signing secret completion request.
             </p>
             <code>POST /api/v1/admin/sources/{notificationCenterSourceKey}/signing-secret</code>
           </div>
           <pre>{notificationCenterCompletion}</pre>
           <button className="button" type="button" onClick={copyNotificationCenterCompletion}>
-            {completionCopied ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}
+            {completionCopied ? (
+              <Check size={16} aria-hidden="true" />
+            ) : (
+              <Copy size={16} aria-hidden="true" />
+            )}
             {completionCopied ? "Copied" : "Copy Notification Center body"}
           </button>
         </div>

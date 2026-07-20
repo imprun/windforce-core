@@ -78,7 +78,9 @@ export function WorkspaceSwitcher() {
         title={`Workspace: ${current?.name || settings.workspace}`}
         onClick={toggle}
       >
-        <span className="workspaceSwitcherIcon" aria-hidden="true"><Boxes size={17} /></span>
+        <span className="workspaceSwitcherIcon" aria-hidden="true">
+          <Boxes size={17} />
+        </span>
         <span className="workspaceSwitcherText">
           <span className="workspaceSwitcherName">{current?.name || settings.workspace}</span>
           <span className="workspaceSwitcherID">{settings.workspace}</span>
@@ -87,7 +89,12 @@ export function WorkspaceSwitcher() {
       </button>
 
       {open ? (
-        <div className="workspacePopover" id={popoverID} role="dialog" aria-label="Switch workspace">
+        <div
+          className="workspacePopover"
+          id={popoverID}
+          role="dialog"
+          aria-label="Switch workspace"
+        >
           <div className="workspacePopoverHeader">
             <strong>Switch workspace</strong>
             <span>{workspaces.length} available</span>
@@ -106,9 +113,17 @@ export function WorkspaceSwitcher() {
             </label>
           ) : null}
           <div className="workspaceOptionList" role="listbox" aria-label="Available workspaces">
-            {state.loading && !state.data ? <span className="workspacePopoverState">Loading workspaces…</span> : null}
-            {state.error ? <span className="workspacePopoverState errorText">Could not load workspace list.</span> : null}
-            {!state.loading && !state.error && filtered.length === 0 ? <span className="workspacePopoverState">No matching workspaces.</span> : null}
+            {state.loading && !state.data ? (
+              <span className="workspacePopoverState">Loading workspaces…</span>
+            ) : null}
+            {state.error ? (
+              <span className="workspacePopoverState errorText">
+                Could not load workspace list.
+              </span>
+            ) : null}
+            {!state.loading && !state.error && filtered.length === 0 ? (
+              <span className="workspacePopoverState">No matching workspaces.</span>
+            ) : null}
             {filtered.map((workspace, index) => {
               const selected = workspace.id === settings.workspace;
               return (
@@ -121,12 +136,16 @@ export function WorkspaceSwitcher() {
                   ref={index === 0 ? firstOptionRef : undefined}
                   onClick={() => switchWorkspace(workspace.id)}
                 >
-                  <span className="workspaceOptionMark" aria-hidden="true">{selected ? <Check size={16} /> : null}</span>
+                  <span className="workspaceOptionMark" aria-hidden="true">
+                    {selected ? <Check size={16} /> : null}
+                  </span>
                   <span className="workspaceOptionIdentity">
                     <strong>{workspace.name}</strong>
                     <span className="mono">{workspace.id}</span>
                   </span>
-                  {workspace.status === "archived" ? <span className="badge badge-neutral">Archived</span> : null}
+                  {workspace.status === "archived" ? (
+                    <span className="badge badge-neutral">Archived</span>
+                  ) : null}
                 </button>
               );
             })}

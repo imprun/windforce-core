@@ -34,7 +34,8 @@ export function WindowSelector({
   onChange: (seconds: number) => void;
 }) {
   return (
-    <div className="segmented" role="group" aria-label="Recent window">
+    <fieldset className="segmented">
+      <legend className="sr-only">Recent window</legend>
       {recentWindows.map((item) => (
         <button
           key={item.label}
@@ -45,7 +46,7 @@ export function WindowSelector({
           {item.label}
         </button>
       ))}
-    </div>
+    </fieldset>
   );
 }
 

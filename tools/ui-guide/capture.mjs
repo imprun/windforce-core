@@ -315,6 +315,7 @@ class CdpPage {
   async initialize() {
     this.eventHandlers.set(this.sessionId, (message) => this.handleEvent(message));
     await this.send("Page.enable", {}, this.sessionId);
+    await this.send("Network.enable", {}, this.sessionId);
     await this.send("Runtime.enable", {}, this.sessionId);
     await this.send("Log.enable", {}, this.sessionId);
     await this.send("Emulation.setDeviceMetricsOverride", {
@@ -326,6 +327,16 @@ class CdpPage {
   }
 
   handleEvent(message) {
+    if (message.method === "Network.responseReceived") {
+      const response = message.params?.response;
+      if (response?.status >= 500 && !response.url.includes("favicon")) {
+        const prefix = `HTTP ${response.status} ${response.url}`;
+        this.send("Network.getResponseBody", { requestId: message.params.requestId }, this.sessionId)
+          .then((payload) => this.errors.push(`${prefix}: ${payload.body || "empty response"}`))
+          .catch(() => this.errors.push(prefix));
+      }
+      return;
+    }
     if (message.method === "Runtime.exceptionThrown") {
       const detail = message.params?.exceptionDetails;
       this.errors.push(detail?.exception?.description || detail?.text || "Unhandled page exception");

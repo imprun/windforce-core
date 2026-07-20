@@ -1,14 +1,22 @@
 import { Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { EmptyState, ErrorNotice, Loading, Panel } from "../components/ui";
-import { type AppDetail, type InputConfig } from "../lib/api";
 import { actionDisplayName } from "../lib/action-label";
+import type { AppDetail, InputConfig } from "../lib/api";
 import { useApp, useAsync } from "../lib/app-context";
-import { groupInputSettings, inputSettingGroupMatches, paginate } from "../lib/input-setting-groups";
+import {
+  groupInputSettings,
+  inputSettingGroupMatches,
+  paginate,
+} from "../lib/input-setting-groups";
 import { Link } from "../lib/router";
 import { InputConfigDialog } from "./InputConfigDialog";
 import { InputSettingScopeList } from "./InputSettingScopeList";
-import { countLabel, InputSettingSummaryTable, SummaryPagination } from "./InputSettingSummaryTable";
+import {
+  countLabel,
+  InputSettingSummaryTable,
+  SummaryPagination,
+} from "./InputSettingSummaryTable";
 
 const PAGE_SIZE = 25;
 
@@ -25,13 +33,13 @@ export function AppInputSettings({
   const [editing, setEditing] = useState<InputConfig | "new" | null>(null);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
-  const state = useAsync(
-    async () => {
-      const [configs, clients] = await Promise.all([api.appInputConfigs(detail.app.app_key), api.clients()]);
-      return { configs, clients };
-    },
-    [api, detail.app.app_key],
-  );
+  const state = useAsync(async () => {
+    const [configs, clients] = await Promise.all([
+      api.appInputConfigs(detail.app.app_key),
+      api.clients(),
+    ]);
+    return { configs, clients };
+  }, [api, detail.app.app_key]);
   const clientsByID = useMemo(
     () => new Map((state.data?.clients || []).map((client) => [client.id, client])),
     [state.data?.clients],
@@ -41,7 +49,10 @@ export function AppInputSettings({
     [detail.actions],
   );
   const groups = useMemo(() => {
-    const grouped = groupInputSettings(state.data?.configs || [], (config) => config.client_id || "");
+    const grouped = groupInputSettings(
+      state.data?.configs || [],
+      (config) => config.client_id || "",
+    );
     return grouped.sort((left, right) => {
       if (!left.key) return -1;
       if (!right.key) return 1;
@@ -50,16 +61,26 @@ export function AppInputSettings({
       return leftName.localeCompare(rightName);
     });
   }, [clientsByID, state.data?.configs]);
-  const filteredGroups = useMemo(() => groups.filter((group) => {
-    const actionNames = group.actionKeys.flatMap((actionKey) => {
-      const action = actionsByKey.get(actionKey);
-      return action ? [actionDisplayName(action.display_name) || action.action_key] : [];
-    });
-    return inputSettingGroupMatches(group, search, [clientsByID.get(group.key)?.name || "App default", ...actionNames]);
-  }), [actionsByKey, clientsByID, groups, search]);
-  const pagedGroups = useMemo(() => paginate(filteredGroups, page, PAGE_SIZE), [filteredGroups, page]);
+  const filteredGroups = useMemo(
+    () =>
+      groups.filter((group) => {
+        const actionNames = group.actionKeys.flatMap((actionKey) => {
+          const action = actionsByKey.get(actionKey);
+          return action ? [actionDisplayName(action.display_name) || action.action_key] : [];
+        });
+        return inputSettingGroupMatches(group, search, [
+          clientsByID.get(group.key)?.name || "App default",
+          ...actionNames,
+        ]);
+      }),
+    [actionsByKey, clientsByID, groups, search],
+  );
+  const pagedGroups = useMemo(
+    () => paginate(filteredGroups, page, PAGE_SIZE),
+    [filteredGroups, page],
+  );
 
-  useEffect(() => setPage(1), [search]);
+  useEffect(() => setPage(1), []);
   useEffect(() => {
     if (page !== pagedGroups.page) setPage(pagedGroups.page);
   }, [page, pagedGroups.page]);
@@ -70,9 +91,14 @@ export function AppInputSettings({
   }
 
   const selectedScopeKey = selectedClientID === "default" ? "" : selectedClientID;
-  const selectedGroup = selectedClientID === undefined ? undefined : groups.find((group) => group.key === selectedScopeKey);
+  const selectedGroup =
+    selectedClientID === undefined
+      ? undefined
+      : groups.find((group) => group.key === selectedScopeKey);
   const selectedClient = selectedScopeKey ? clientsByID.get(selectedScopeKey) : undefined;
-  const selectedLabel = selectedScopeKey ? selectedClient?.name || "Removed client" : "All clients (app default)";
+  const selectedLabel = selectedScopeKey
+    ? selectedClient?.name || "Removed client"
+    : "All clients (app default)";
   const fixedClientID = selectedClientID === undefined ? undefined : selectedScopeKey;
 
   return (
@@ -83,7 +109,9 @@ export function AppInputSettings({
           subtitle="Client scopes with configured values. Open a scope to inspect and edit its action-level settings."
           actions={
             <>
-              <Link className="button" to={`/apps/${sourceID}/audit`}>View audit</Link>
+              <Link className="button" to={`/apps/${sourceID}/audit`}>
+                View audit
+              </Link>
               <button className="button primary" type="button" onClick={() => setEditing("new")}>
                 <Plus size={16} aria-hidden="true" />
                 Add settings
@@ -118,7 +146,9 @@ export function AppInputSettings({
                       const actionNames = group.actionKeys.map((actionKey) => {
                         if (!actionKey) return "All actions";
                         const action = actionsByKey.get(actionKey);
-                        return action ? actionDisplayName(action.display_name) || actionKey : actionKey;
+                        return action
+                          ? actionDisplayName(action.display_name) || actionKey
+                          : actionKey;
                       });
                       return {
                         group,
@@ -150,7 +180,9 @@ export function AppInputSettings({
           subtitle="Action-level values applied to this client scope before execution."
           actions={
             <>
-              <Link className="button" to={`/apps/${sourceID}/input-settings`}>Back to client scopes</Link>
+              <Link className="button" to={`/apps/${sourceID}/input-settings`}>
+                Back to client scopes
+              </Link>
               <button className="button primary" type="button" onClick={() => setEditing("new")}>
                 <Plus size={16} aria-hidden="true" />
                 Add settings
@@ -171,14 +203,20 @@ export function AppInputSettings({
               id="appInputSettings"
               items={selectedGroup.configs.map((config) => {
                 const action = config.action_key ? actionsByKey.get(config.action_key) : undefined;
-                const actionName = action ? actionDisplayName(action.display_name) || action.action_key : "All actions";
+                const actionName = action
+                  ? actionDisplayName(action.display_name) || action.action_key
+                  : "All actions";
                 return {
                   key: `${config.client_id || "default"}-${config.action_key || "all"}`,
                   config,
                   primaryLabel: "Client scope",
                   primaryValue: selectedClient ? (
-                    <Link to={`/clients/${selectedClient.id}/input-settings/${detail.app.app_key}`}>{selectedClient.name}</Link>
-                  ) : "All clients",
+                    <Link to={`/clients/${selectedClient.id}/input-settings/${detail.app.app_key}`}>
+                      {selectedClient.name}
+                    </Link>
+                  ) : (
+                    "All clients"
+                  ),
                   primaryMeta: selectedClient ? "Client override" : "App default",
                   actionName,
                   actionMeta: config.action_key || "App default",

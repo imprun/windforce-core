@@ -49,16 +49,36 @@ export function RollbackReleaseDialog({
     >
       <DefinitionList
         items={[
-          ["Current release", active ? <><code>{shortSHA(active.id, 12)}</code> · commit <code>{shortSHA(active.commit_sha, 12)}</code></> : "unknown"],
-          ["Target release", <><code>{shortSHA(target.id, 12)}</code> · commit <code>{shortSHA(target.commit_sha, 12)}</code></>],
+          [
+            "Current release",
+            active ? (
+              <>
+                <code>{shortSHA(active.id, 12)}</code> · commit{" "}
+                <code>{shortSHA(active.commit_sha, 12)}</code>
+              </>
+            ) : (
+              "unknown"
+            ),
+          ],
+          [
+            "Target release",
+            <>
+              <code>{shortSHA(target.id, 12)}</code> · commit{" "}
+              <code>{shortSHA(target.commit_sha, 12)}</code>
+            </>,
+          ],
           ["Target release ID", <code>{target.id}</code>],
-          ["Originally published", `${target.created_by || "system"} · ${formatTime(target.created_at)}`],
+          [
+            "Originally published",
+            `${target.created_by || "system"} · ${formatTime(target.created_at)}`,
+          ],
           ["Actor", settings.actor || "(not set)"],
         ]}
       />
       <div className="inlineNotice">
-        This moves the active release pointer to the stored execution bundle. It does not synchronize Git, install dependencies,
-        or rebuild source. Existing runs keep their pinned release; new runs use this target.
+        This moves the active release pointer to the stored execution bundle. It does not
+        synchronize Git, install dependencies, or rebuild source. Existing runs keep their pinned
+        release; new runs use this target.
       </div>
       {!settings.actor ? (
         <div className="inlineNotice error">
@@ -71,7 +91,6 @@ export function RollbackReleaseDialog({
           onChange={(event) => setReason(event.target.value)}
           placeholder="Why is this historical release being restored?"
           rows={3}
-          autoFocus
         />
       </Field>
       {error ? <div className="inlineNotice error">{error}</div> : null}
@@ -81,7 +100,12 @@ export function RollbackReleaseDialog({
           <button className="button" type="button" onClick={onClose} disabled={busy}>
             Cancel
           </button>
-          <button className="button danger" type="button" onClick={rollback} disabled={busy || !settings.actor || !reason.trim()}>
+          <button
+            className="button danger"
+            type="button"
+            onClick={rollback}
+            disabled={busy || !settings.actor || !reason.trim()}
+          >
             <RotateCcw size={16} aria-hidden="true" />
             {busy ? "Rolling back…" : "Rollback release"}
           </button>

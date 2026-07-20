@@ -1,4 +1,4 @@
-import { type InputConfig } from "./api";
+import type { InputConfig } from "./api";
 
 export type InputSettingGroup = {
   key: string;
@@ -30,7 +30,10 @@ export function groupInputSettings(
       configs: groupedConfigs,
       actionKeys: [...new Set(groupedConfigs.map((config) => config.action_key))],
       keyNames: [...new Set(groupedConfigs.flatMap((config) => Object.keys(config.config)))].sort(),
-      valueCount: groupedConfigs.reduce((total, config) => total + Object.keys(config.config).length, 0),
+      valueCount: groupedConfigs.reduce(
+        (total, config) => total + Object.keys(config.config).length,
+        0,
+      ),
       lockedCount: groupedConfigs.reduce((total, config) => total + config.locked_keys.length, 0),
       updatedAt: latest.updated_at,
       updatedBy: latest.updated_by,
@@ -38,7 +41,11 @@ export function groupInputSettings(
   });
 }
 
-export function inputSettingGroupMatches(group: InputSettingGroup, query: string, aliases: string[] = []): boolean {
+export function inputSettingGroupMatches(
+  group: InputSettingGroup,
+  query: string,
+  aliases: string[] = [],
+): boolean {
   const normalized = query.trim().toLowerCase();
   if (!normalized) return true;
   return [group.key, ...group.actionKeys, ...group.keyNames, ...aliases]

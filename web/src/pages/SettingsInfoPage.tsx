@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { CheckCircle2, CircleAlert, ServerCog } from "lucide-react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { Layout } from "../components/Layout";
 import { SettingsNav } from "../components/SettingsNav";
 import { DefinitionList, ErrorNotice, Loading, Panel } from "../components/ui";
@@ -37,7 +37,8 @@ export function SettingsInfoPage() {
     let active = true;
     setLoading(true);
     setError("");
-    api.systemInfo()
+    api
+      .systemInfo()
       .then((data) => {
         if (active) setInfo(data);
       })
@@ -57,7 +58,12 @@ export function SettingsInfoPage() {
       title="Settings"
       subtitle="Read-only service information and browser-local Web UI settings."
       actions={
-        <button className="button" type="button" onClick={() => void loadInfo()} title="Refresh service information">
+        <button
+          className="button"
+          type="button"
+          onClick={() => void loadInfo()}
+          title="Refresh service information"
+        >
           <ServerCog aria-hidden="true" />
           Refresh
         </button>
@@ -68,10 +74,19 @@ export function SettingsInfoPage() {
       {loading && !info ? <Loading label="Loading service information…" /> : null}
       {info ? (
         <>
-          <Panel title="Service" subtitle="Backend service identity and readiness reported by the control plane.">
+          <Panel
+            title="Service"
+            subtitle="Backend service identity and readiness reported by the control plane."
+          >
             <div className="settingsInfoHero">
-              <div className={info.ready ? "settingsInfoStatus good" : "settingsInfoStatus warning"}>
-                {info.ready ? <CheckCircle2 aria-hidden="true" /> : <CircleAlert aria-hidden="true" />}
+              <div
+                className={info.ready ? "settingsInfoStatus good" : "settingsInfoStatus warning"}
+              >
+                {info.ready ? (
+                  <CheckCircle2 aria-hidden="true" />
+                ) : (
+                  <CircleAlert aria-hidden="true" />
+                )}
                 <div>
                   <strong>{info.ready ? "Ready" : "Not ready"}</strong>
                   <span>{info.service}</span>
@@ -88,26 +103,46 @@ export function SettingsInfoPage() {
           </Panel>
 
           <div className="settingsInfoGrid">
-            <Panel title="Enabled surfaces" subtitle="Request planes and public handlers enabled in this process.">
+            <Panel
+              title="Enabled surfaces"
+              subtitle="Request planes and public handlers enabled in this process."
+            >
               <FlagList values={info.planes} />
             </Panel>
-            <Panel title="Backend availability" subtitle="Backend integrations available to this control-plane process.">
+            <Panel
+              title="Backend availability"
+              subtitle="Backend integrations available to this control-plane process."
+            >
               <FlagList values={info.backends} />
             </Panel>
           </div>
 
           <div className="settingsInfoGrid">
-            <Panel title="Authentication and secrets" subtitle="Only configured/not configured is shown; secret values are never exposed.">
+            <Panel
+              title="Authentication and secrets"
+              subtitle="Only configured/not configured is shown; secret values are never exposed."
+            >
               <FlagList values={info.auth} />
             </Panel>
-            <Panel title="Runtime configuration" subtitle="Non-secret runtime settings useful for local and operational diagnosis.">
-              <DefinitionList items={Object.entries(info.runtime_config).map(([key, value]) => [labelize(key), formatSystemInfoValue(value)])} />
+            <Panel
+              title="Runtime configuration"
+              subtitle="Non-secret runtime settings useful for local and operational diagnosis."
+            >
+              <DefinitionList
+                items={Object.entries(info.runtime_config).map(([key, value]) => [
+                  labelize(key),
+                  formatSystemInfoValue(value),
+                ])}
+              />
             </Panel>
           </div>
         </>
       ) : null}
 
-      <Panel title="Web UI browser settings" subtitle="Local values this browser sends with control-plane requests.">
+      <Panel
+        title="Web UI browser settings"
+        subtitle="Local values this browser sends with control-plane requests."
+      >
         <DefinitionList items={browserItems} />
       </Panel>
     </Layout>
@@ -120,7 +155,9 @@ function FlagList({ values }: { values: Record<string, boolean> }) {
     <div className="settingsInfoFlags">
       {entries.map(([key, enabled]) => (
         <div className="settingsInfoFlag" key={key}>
-          <span className={enabled ? "badge badge-good" : "badge badge-neutral"}>{enabled ? "Enabled" : "Not enabled"}</span>
+          <span className={enabled ? "badge badge-good" : "badge badge-neutral"}>
+            {enabled ? "Enabled" : "Not enabled"}
+          </span>
           <strong>{labelize(key)}</strong>
         </div>
       ))}
@@ -132,7 +169,7 @@ function labelize(key: string): string {
   return key
     .split("_")
     .filter(Boolean)
-    .map((part) => part[0].toUpperCase() + part.slice(1))
+    .map((part) => part[0]?.toUpperCase() + part.slice(1))
     .join(" ");
 }
 

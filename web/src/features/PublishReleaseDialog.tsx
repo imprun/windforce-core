@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { errorMessage, type DeployResult, type GitSource } from "../lib/api";
+import { DefinitionList, Field, Modal } from "../components/ui";
+import { type DeployResult, errorMessage, type GitSource } from "../lib/api";
 import { useApp } from "../lib/app-context";
 import { shortSHA } from "../lib/format";
-import { DefinitionList, Field, Modal } from "../components/ui";
 import { Link } from "../lib/router";
 
 export function PublishReleaseDialog({
@@ -53,19 +53,32 @@ export function PublishReleaseDialog({
           ["Repository", source.repo_url],
           ["Branch", source.branch || "main"],
           ["Subpath", source.subpath || "(repo root)"],
-          ["Active release", activeCommit ? <code>{shortSHA(activeCommit, 12)}</code> : "not published yet"],
-          ["Latest synchronized", latestSyncedCommit ? <code>{shortSHA(latestSyncedCommit, 12)}</code> : "not synchronized yet"],
+          [
+            "Active release",
+            activeCommit ? <code>{shortSHA(activeCommit, 12)}</code> : "not published yet",
+          ],
+          [
+            "Latest synchronized",
+            latestSyncedCommit ? (
+              <code>{shortSHA(latestSyncedCommit, 12)}</code>
+            ) : (
+              "not synchronized yet"
+            ),
+          ],
           ["Actor", settings.actor || "(not set)"],
         ]}
       />
       {latestSyncedCommit ? (
         <div className="inlineNotice">
-          Publishing installs locked dependencies, validates the entrypoint, stores a worker-ready execution bundle,
-          and activates commit <code>{shortSHA(latestSyncedCommit, 12)}</code>. The active release stays unchanged if preparation fails.
+          Publishing installs locked dependencies, validates the entrypoint, stores a worker-ready
+          execution bundle, and activates commit <code>{shortSHA(latestSyncedCommit, 12)}</code>.
+          The active release stays unchanged if preparation fails.
         </div>
       ) : (
         <div className="inlineNotice error">
-          No synchronized source is available. <Link to={`/apps/${source.id}/repository`}>Sync the repository source</Link> before publishing.
+          No synchronized source is available.{" "}
+          <Link to={`/apps/${source.id}/repository`}>Sync the repository source</Link> before
+          publishing.
         </div>
       )}
       {!settings.actor ? (

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import type { Workspace } from "./api";
 import { filterWorkspaces, visibleWorkspaces } from "./workspaces";
 
@@ -18,10 +18,9 @@ describe("visibleWorkspaces", () => {
       { ...base, id: "archived-other", name: "Archived other", status: "archived" },
     ];
 
-    expect(visibleWorkspaces(workspaces, "archived-current").map((workspace) => workspace.id)).toEqual([
-      "default",
-      "archived-current",
-    ]);
+    expect(
+      visibleWorkspaces(workspaces, "archived-current").map((workspace) => workspace.id),
+    ).toEqual(["default", "archived-current"]);
   });
 });
 
@@ -32,8 +31,12 @@ describe("filterWorkspaces", () => {
   ];
 
   test("matches workspace display names and routing IDs", () => {
-    expect(filterWorkspaces(workspaces, "finance").map((workspace) => workspace.id)).toEqual(["finance-ops"]);
-    expect(filterWorkspaces(workspaces, "DEFAULT").map((workspace) => workspace.id)).toEqual(["default"]);
+    expect(filterWorkspaces(workspaces, "finance").map((workspace) => workspace.id)).toEqual([
+      "finance-ops",
+    ]);
+    expect(filterWorkspaces(workspaces, "DEFAULT").map((workspace) => workspace.id)).toEqual([
+      "default",
+    ]);
   });
 
   test("preserves the server order for an empty query", () => {

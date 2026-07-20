@@ -16,5 +16,7 @@ export default {
     await page.click("#sidebarToggle");
     await page.waitForSelector(".sidebarCollapsed");
     await capture(this.id);
+    await page.click("#sidebarToggle");
+    await page.waitForFunction(() => !document.querySelector(".sidebarCollapsed"));
   },
 };

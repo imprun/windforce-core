@@ -15,7 +15,10 @@ export type InputSettingDefinition = {
   schema: JSONRecord;
 };
 
-export function inputSettingDefinitions(inputSchema: unknown, operatorSettingsSchema: unknown): InputSettingDefinition[] {
+export function inputSettingDefinitions(
+  inputSchema: unknown,
+  operatorSettingsSchema: unknown,
+): InputSettingDefinition[] {
   const definitions = new Map<string, InputSettingDefinition>();
   addDefinitions(definitions, inputSchema, "request");
   addDefinitions(definitions, operatorSettingsSchema, "operator");
@@ -30,7 +33,10 @@ export function formatInputSettingExample(value: unknown): string {
   return JSON.stringify(value, null, 2) ?? String(value);
 }
 
-export function validateInputSettingValue(definition: InputSettingDefinition, value: unknown): string | undefined {
+export function validateInputSettingValue(
+  definition: InputSettingDefinition,
+  value: unknown,
+): string | undefined {
   return validateSchemaValue(definition.schema, value, definition.key);
 }
 
@@ -54,7 +60,7 @@ function addDefinitions(
       type: document.type,
       fields: document.fields,
       enumValues: Array.isArray(property.enum) ? property.enum : undefined,
-      constValue: Object.prototype.hasOwnProperty.call(property, "const") ? property.const : undefined,
+      constValue: Object.hasOwn(property, "const") ? property.const : undefined,
       example: document.example.value,
       schema: property,
     });
@@ -62,7 +68,7 @@ function addDefinitions(
 }
 
 function validateSchemaValue(schema: JSONRecord, value: unknown, path: string): string | undefined {
-  if (Object.prototype.hasOwnProperty.call(schema, "const") && !sameJSON(schema.const, value)) {
+  if (Object.hasOwn(schema, "const") && !sameJSON(schema.const, value)) {
     return `${path} must be ${formatSchemaValue(schema.const)}.`;
   }
   if (Array.isArray(schema.enum) && !schema.enum.some((candidate) => sameJSON(candidate, value))) {
@@ -83,10 +89,12 @@ function validateSchemaValue(schema: JSONRecord, value: unknown, path: string): 
   const properties = asRecord(schema.properties);
   if (properties && isRecord(value)) {
     const required = new Set(
-      Array.isArray(schema.required) ? schema.required.filter((item): item is string => typeof item === "string") : [],
+      Array.isArray(schema.required)
+        ? schema.required.filter((item): item is string => typeof item === "string")
+        : [],
     );
     for (const key of required) {
-      if (!Object.prototype.hasOwnProperty.call(value, key)) return `${path}.${key} is required.`;
+      if (!Object.hasOwn(value, key)) return `${path}.${key} is required.`;
     }
     for (const [key, nestedValue] of Object.entries(value)) {
       const property = asRecord(properties[key]);

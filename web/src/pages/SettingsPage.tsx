@@ -12,7 +12,7 @@ export function cliProfileCommand(apiURL: string, workspace: string): string {
 }
 
 export function SettingsPage() {
-  const { settings, updateSettings, api, notify } = useApp();
+  const { settings, updateSettings, notify } = useApp();
   const [token, setToken] = useState(settings.token);
   const [actor, setActor] = useState(settings.actor);
   const [health, setHealth] = useState<string>("checking…");
@@ -37,7 +37,7 @@ export function SettingsPage() {
     return () => {
       canceled = true;
     };
-  }, [api]);
+  }, []);
 
   const dirty = token !== settings.token || actor !== settings.actor;
 
@@ -55,13 +55,22 @@ export function SettingsPage() {
       title="Settings"
       subtitle="CLI connection details, browser authentication, and audit context."
       actions={
-        <button className="button primary" type="button" id="saveSettings" disabled={!dirty} onClick={handleSave}>
+        <button
+          className="button primary"
+          type="button"
+          id="saveSettings"
+          disabled={!dirty}
+          onClick={handleSave}
+        >
           Save settings
         </button>
       }
     >
       <SettingsNav />
-      <Panel title="CLI connection" subtitle="Non-secret connection details for the active workspace.">
+      <Panel
+        title="CLI connection"
+        subtitle="Non-secret connection details for the active workspace."
+      >
         <div className="cliConnectionGrid">
           <Field label="Control plane URL" hint="The root address currently used by this browser.">
             <CopyableSetting label="control plane URL" value={apiURL} />
@@ -69,20 +78,32 @@ export function SettingsPage() {
           <Field label="Workspace ID" hint="Passed to the CLI as --workspace.">
             <CopyableSetting label="workspace ID" value={settings.workspace} />
           </Field>
-          <Field label="Token environment" hint="Set this variable to the one-time token issued from the workspace Access tab.">
+          <Field
+            label="Token environment"
+            hint="Set this variable to the one-time token issued from the workspace Access tab."
+          >
             <CopyableSetting label="token environment variable" value={CLI_TOKEN_ENV} />
           </Field>
         </div>
-        <Field label="Profile command" hint="The token value is intentionally excluded from this command.">
+        <Field
+          label="Profile command"
+          hint="The token value is intentionally excluded from this command."
+        >
           <div className="cliProfileCommand">
             <CopyableSetting label="CLI profile command" value={profileCommand} />
           </div>
         </Field>
       </Panel>
 
-      <Panel title="Browser API access" subtitle="Credential used by this Web UI for requests in the active workspace.">
+      <Panel
+        title="Browser API access"
+        subtitle="Credential used by this Web UI for requests in the active workspace."
+      >
         <div className="formGrid">
-          <Field label="API token" hint="Paste the workspace token here only when this browser must authenticate its requests.">
+          <Field
+            label="API token"
+            hint="Paste the workspace token here only when this browser must authenticate its requests."
+          >
             <input
               id="settingsToken"
               type="password"
@@ -100,8 +121,15 @@ export function SettingsPage() {
         subtitle="Recorded as the subject of releases, cancels, and other state changes. Not an authentication credential."
       >
         <div className="formGrid">
-          <Field label="Actor" hint="With real authentication the actor comes from the request principal; local development defaults to local-dev.">
-            <input id="settingsActor" value={actor} onChange={(event) => setActor(event.target.value)} />
+          <Field
+            label="Actor"
+            hint="With real authentication the actor comes from the request principal; local development defaults to local-dev."
+          >
+            <input
+              id="settingsActor"
+              value={actor}
+              onChange={(event) => setActor(event.target.value)}
+            />
           </Field>
         </div>
       </Panel>
