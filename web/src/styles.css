@@ -561,6 +561,24 @@ p {
   letter-spacing: 0;
 }
 
+.topbarBreadcrumb {
+  min-height: 20px;
+  margin-bottom: 4px;
+}
+
+.topbarBreadcrumbLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 560;
+}
+
+.topbarBreadcrumbLink:hover {
+  color: var(--accent);
+}
+
 .topbarSubtitle {
   color: var(--text-secondary);
   margin-top: 2px;

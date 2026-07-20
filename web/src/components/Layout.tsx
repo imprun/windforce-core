@@ -32,12 +32,14 @@ export function Layout({
   actions,
   children,
   scope = "workspace",
+  breadcrumb,
 }: {
   title: string;
   subtitle?: string;
   actions?: ReactNode;
   children: ReactNode;
   scope?: "workspace" | "instance";
+  breadcrumb?: ReactNode;
 }) {
   const { path } = useRouter();
   const { settings, toasts, dismissToast } = useApp();
@@ -118,6 +120,7 @@ export function Layout({
         ) : null}
         <header className="topbar">
           <div>
+            {breadcrumb ? <div className="topbarBreadcrumb">{breadcrumb}</div> : null}
             <h1>{title}</h1>
             {subtitle ? <p className="topbarSubtitle">{subtitle}</p> : null}
             {scope === "workspace" ? <div className="mobileWorkspaceContext"><WorkspaceSwitcher /></div> : null}

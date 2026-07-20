@@ -1,4 +1,4 @@
-import { Archive, KeyRound } from "lucide-react";
+import { Archive, ArrowLeft, KeyRound } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Layout } from "../components/Layout";
 import { DefinitionList, EmptyState, ErrorNotice, Field, Loading, Panel } from "../components/ui";
@@ -41,7 +41,11 @@ export function WorkspaceDetailPage({ workspaceID, tab }: { workspaceID: string;
       scope="instance"
       title={workspace.name}
       subtitle={`Instance workspace · ${workspace.id}`}
-      actions={<Link className="button" to="/workspaces">Back to workspaces</Link>}
+      breadcrumb={(
+        <Link className="topbarBreadcrumbLink" to="/workspaces">
+          <ArrowLeft size={14} aria-hidden="true" /> Workspaces
+        </Link>
+      )}
     >
       <nav className="tabBar" aria-label="Workspace detail tabs">
         {workspaceDetailTabs.map((item) => (
