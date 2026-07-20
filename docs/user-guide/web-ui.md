@@ -120,15 +120,17 @@ Provisioning exports a redacted workspace snapshot and imports repeatable app, c
 2. Export the current workspace as YAML or JSON for review.
 3. Paste or load a provisioning document, run Dry-run, then Apply only after validation succeeds.
 
-## Set API access and audit context
+## Connect the CLI and set browser access
 
-General settings holds the API token and local audit actor used by Web UI requests. Values are stored in the browser.
+General settings shows external CLI connection metadata and stores the API token and audit actor used by Web UI requests.
 
-![Set API access and audit context](../assets/ui/settings.png)
+![Connect the CLI and set browser access](../assets/ui/settings.png)
 
 1. Open Settings from the sidebar.
-2. Set the API token when the control plane requires authentication.
-3. Set the audit actor recorded on releases and cancels; local development defaults to local-dev.
+2. Copy the control plane URL, workspace ID, token environment name, or complete profile command from CLI connection.
+3. Set the named environment variable to the one-time token issued from the workspace Access tab; token values are not included in copied commands.
+4. Set the API token when the control plane requires authentication.
+5. Set the audit actor recorded on releases and cancels; local development defaults to local-dev.
 
 ## Switch workspace context
 

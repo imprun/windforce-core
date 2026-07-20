@@ -2426,6 +2426,18 @@ textarea {
   white-space: nowrap;
 }
 
+.cliConnectionGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.cliProfileCommand .copyField code {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .workspaceAuditTable th:last-child,
 .workspaceAuditTable td:last-child {
   width: 220px;
@@ -2478,6 +2490,10 @@ textarea {
 @media (max-width: 860px) {
   .appShell {
     flex-direction: column;
+  }
+
+  .cliConnectionGrid {
+    grid-template-columns: 1fr;
   }
 
   .sidebar {
