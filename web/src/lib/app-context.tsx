@@ -20,7 +20,7 @@ export type Toast = {
 type AppContextValue = {
   settings: Settings;
   updateSettings: (next: Settings) => void;
-  logout: () => void;
+  clearLocalCredentials: () => void;
   api: WindforceApi;
   toasts: Toast[];
   notify: (tone: Toast["tone"], text: string) => void;
@@ -55,7 +55,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [dismissToast],
   );
 
-  const logout = useCallback(() => {
+  const clearLocalCredentials = useCallback(() => {
     queryClient.clear();
     setToasts([]);
     setSettings((current) => ({ ...current, actor: "", token: "" }));
@@ -63,8 +63,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const api = useMemo(() => new WindforceApi(settings), [settings]);
   const value = useMemo(
-    () => ({ settings, updateSettings: setSettings, logout, api, toasts, notify, dismissToast }),
-    [settings, logout, api, toasts, notify, dismissToast],
+    () => ({
+      settings,
+      updateSettings: setSettings,
+      clearLocalCredentials,
+      api,
+      toasts,
+      notify,
+      dismissToast,
+    }),
+    [settings, clearLocalCredentials, api, toasts, notify, dismissToast],
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

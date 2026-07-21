@@ -7,20 +7,20 @@ import { beforeEach, describe, expect, test } from "vitest";
 import { AppProvider, useApp } from "./app-context";
 
 function SessionProbe() {
-  const { settings, logout } = useApp();
+  const { settings, clearLocalCredentials } = useApp();
   return (
     <div>
       <span data-testid="session">
         {settings.workspace}:{settings.actor}:{settings.token || "signed-out"}
       </span>
-      <button type="button" onClick={logout}>
-        Log out
+      <button type="button" onClick={clearLocalCredentials}>
+        Clear local credentials
       </button>
     </div>
   );
 }
 
-describe("AppProvider logout", () => {
+describe("AppProvider local credentials", () => {
   beforeEach(() => {
     localStorage.clear();
     localStorage.setItem("wf.workspace", "gale");
@@ -43,7 +43,7 @@ describe("AppProvider logout", () => {
 
     expect(screen.getByTestId("session").textContent).toBe("gale:operator:workspace-secret");
 
-    await user.click(screen.getByRole("button", { name: "Log out" }));
+    await user.click(screen.getByRole("button", { name: "Clear local credentials" }));
 
     await waitFor(() => {
       expect(screen.getByTestId("session").textContent).toBe("gale::signed-out");

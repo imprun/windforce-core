@@ -28,7 +28,7 @@ describe("UserMenu", () => {
     );
   }
 
-  test("offers logout when only an audit actor is stored", async () => {
+  test("offers local credential clearing when only an audit actor is stored", async () => {
     const user = userEvent.setup();
     renderMenu();
 
@@ -36,11 +36,13 @@ describe("UserMenu", () => {
 
     expect(screen.getByText("API token not configured")).toBeTruthy();
     expect(
-      screen.getByRole("menuitem", { name: "Log out" }).getAttribute("data-disabled"),
+      screen
+        .getByRole("menuitem", { name: "Clear local credentials" })
+        .getAttribute("data-disabled"),
     ).toBeNull();
   });
 
-  test("offers logout when a browser token is stored", async () => {
+  test("offers local credential clearing when a browser token is stored", async () => {
     const user = userEvent.setup();
     localStorage.setItem("wf.token", "workspace-secret");
     renderMenu();
@@ -48,6 +50,6 @@ describe("UserMenu", () => {
     await user.click(screen.getByRole("button", { name: "User menu for local-dev" }));
 
     expect(screen.getByText("API token configured")).toBeTruthy();
-    expect(screen.getByRole("menuitem", { name: "Log out" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Clear local credentials" })).toBeTruthy();
   });
 });

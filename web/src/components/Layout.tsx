@@ -5,7 +5,7 @@ import {
   ChevronDown,
   CircleUserRound,
   ContactRound,
-  LogOut,
+  Eraser,
   MonitorSmartphone,
   Moon,
   PanelLeftClose,
@@ -80,15 +80,15 @@ function ThemeToggle() {
 }
 
 export function UserMenu() {
-  const { settings, logout, notify } = useApp();
+  const { settings, clearLocalCredentials, notify } = useApp();
   const { navigate } = useRouter();
   const hasApiToken = Boolean(settings.token);
   const hasBrowserIdentity = Boolean(settings.actor || settings.token);
 
-  function handleLogout() {
-    logout();
+  function handleClearLocalCredentials() {
+    clearLocalCredentials();
     navigate("/settings");
-    notify("info", "Signed out. The audit actor and API token were removed from this browser.");
+    notify("info", "Local API token and audit actor cleared from this browser.");
   }
 
   const itemClass =
@@ -132,10 +132,10 @@ export function UserMenu() {
           <DropdownMenuPrimitive.Item
             className={itemClass}
             disabled={!hasBrowserIdentity}
-            onSelect={handleLogout}
+            onSelect={handleClearLocalCredentials}
           >
-            <LogOut size={16} />
-            {hasBrowserIdentity ? "Log out" : "Signed out"}
+            <Eraser size={16} />
+            {hasBrowserIdentity ? "Clear local credentials" : "No local credentials"}
           </DropdownMenuPrimitive.Item>
         </DropdownMenuPrimitive.Content>
       </DropdownMenuPrimitive.Portal>
