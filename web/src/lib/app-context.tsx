@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
   type ReactNode,
@@ -19,6 +20,7 @@ export type Toast = {
 type AppContextValue = {
   settings: Settings;
   updateSettings: (next: Settings) => void;
+  logout: () => void;
   api: WindforceApi;
   toasts: Toast[];
   notify: (tone: Toast["tone"], text: string) => void;
@@ -28,6 +30,7 @@ type AppContextValue = {
 const AppContext = createContext<AppContextValue | null>(null);
 
 export function AppProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
   const [settings, setSettings] = useState<Settings>(loadSettings);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const nextToastID = useRef(1);
@@ -52,10 +55,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [dismissToast],
   );
 
+  const logout = useCallback(() => {
+    queryClient.clear();
+    setToasts([]);
+    setSettings((current) => ({ ...current, token: "" }));
+  }, [queryClient]);
+
   const api = useMemo(() => new WindforceApi(settings), [settings]);
   const value = useMemo(
-    () => ({ settings, updateSettings: setSettings, api, toasts, notify, dismissToast }),
-    [settings, api, toasts, notify, dismissToast],
+    () => ({ settings, updateSettings: setSettings, logout, api, toasts, notify, dismissToast }),
+    [settings, logout, api, toasts, notify, dismissToast],
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

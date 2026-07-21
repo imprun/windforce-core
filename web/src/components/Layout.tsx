@@ -3,6 +3,7 @@ import {
   AppWindow,
   ArrowLeft,
   ContactRound,
+  LogOut,
   MonitorSmartphone,
   Moon,
   PanelLeftClose,
@@ -75,6 +76,31 @@ function ThemeToggle() {
   );
 }
 
+function LogoutButton() {
+  const { settings, logout, notify } = useApp();
+  const { navigate } = useRouter();
+
+  if (!settings.token) return null;
+
+  function handleLogout() {
+    logout();
+    navigate("/settings");
+    notify("info", "Signed out. The API token was removed from this browser.");
+  }
+
+  return (
+    <button
+      type="button"
+      className="icon-control"
+      onClick={handleLogout}
+      title="Log out"
+      aria-label="Log out"
+    >
+      <LogOut size={16} />
+    </button>
+  );
+}
+
 export function Layout({
   title,
   subtitle,
@@ -119,6 +145,7 @@ export function Layout({
           </div>
           <div className="flex items-center gap-2">
             <ThemeToggle />
+            <LogoutButton />
             <Link className="button small" to="/">
               <ArrowLeft size={15} /> Back to workspace
             </Link>
@@ -219,6 +246,7 @@ export function Layout({
               <div className="text-sm font-medium leading-tight">{settings.actor || "system"}</div>
               <div className="text-xs leading-tight text-muted-foreground">Audit actor</div>
             </div>
+            <LogoutButton />
           </div>
         </header>
         <main className="min-w-0 flex-1 overflow-y-auto">
