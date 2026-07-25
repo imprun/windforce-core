@@ -284,17 +284,6 @@ export function Layout({
             </span>
             {!collapsed ? <span className="truncate">windforce-core</span> : null}
           </Link>
-          {!collapsed ? (
-            <button
-              className="icon-control"
-              id="sidebarToggle"
-              type="button"
-              aria-label="Collapse sidebar"
-              onClick={() => setCollapsed(true)}
-            >
-              <PanelLeftClose size={17} />
-            </button>
-          ) : null}
         </div>
         <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-4" aria-label="Primary">
           {primaryNavItems.map((item) => {
@@ -313,21 +302,11 @@ export function Layout({
             );
           })}
         </nav>
-        <div className="sidebarFooter flex flex-col gap-2 border-t border-shell-border p-3">
-          {collapsed ? (
-            <button
-              className="icon-control mx-auto"
-              id="sidebarToggle"
-              type="button"
-              aria-label="Expand sidebar"
-              onClick={() => setCollapsed(false)}
-            >
-              <PanelLeftOpen size={17} />
-            </button>
-          ) : (
+        {!collapsed ? (
+          <div className="sidebarFooter flex flex-col gap-2 border-t border-shell-border p-3">
             <WorkspaceSwitcher />
-          )}
-        </div>
+          </div>
+        ) : null}
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -338,6 +317,17 @@ export function Layout({
               <WorkspaceSwitcher />
             </div>
           </div>
+          <button
+            className="icon-control hidden md:inline-flex"
+            id="sidebarToggle"
+            type="button"
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-expanded={!collapsed}
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            onClick={() => setCollapsed((current) => !current)}
+          >
+            {collapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
+          </button>
           <div className="hidden min-w-0 items-center gap-2 text-xs text-muted-foreground md:flex">
             <span className="font-mono text-foreground">{settings.workspace}</span>
             <span>workspace</span>
