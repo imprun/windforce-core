@@ -55,6 +55,12 @@
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
   --color-success-subtle: var(--success-subtle);
+  --color-shell-background: var(--shell-background);
+  --color-shell-foreground: var(--shell-foreground);
+  --color-shell-muted-foreground: var(--shell-muted-foreground);
+  --color-shell-border: var(--shell-border);
+  --color-shell-active: var(--shell-active);
+  --color-shell-active-foreground: var(--shell-active-foreground);
   --font-sans: var(--font-family-sans);
   --font-mono: var(--font-family-mono);
   --radius-sm: calc(var(--radius) - 2px);
@@ -306,7 +312,7 @@ pre {
 }
 
 a {
-  color: var(--accent);
+  color: var(--primary);
   text-decoration: none;
 }
 
@@ -378,8 +384,8 @@ p {
   height: 28px;
   flex-shrink: 0;
   border-radius: 7px;
-  background: var(--accent);
-  color: var(--accent-contrast);
+  background: var(--primary);
+  color: var(--primary-foreground);
 }
 
 .nav {
@@ -408,7 +414,7 @@ p {
 }
 
 .navItem.active .navIcon {
-  color: var(--accent);
+  color: var(--primary);
 }
 
 .navItem:hover {
@@ -445,7 +451,7 @@ p {
 }
 
 .sidebarToggle:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 
@@ -535,7 +541,7 @@ p {
 }
 
 .workspaceSwitcherTrigger:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--ring);
   outline-offset: 1px;
 }
 
@@ -546,8 +552,8 @@ p {
   height: 28px;
   flex: 0 0 28px;
   border-radius: 6px;
-  background: var(--status-running-bg);
-  color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-foreground);
 }
 
 .workspaceSwitcherText,
@@ -628,7 +634,7 @@ p {
 }
 
 .workspaceSearch:focus-within {
-  border-color: var(--accent);
+  border-color: var(--ring);
 }
 
 .workspaceSearch input {
@@ -675,7 +681,7 @@ p {
   place-items: center;
   width: 18px;
   flex: 0 0 18px;
-  color: var(--accent);
+  color: var(--primary);
 }
 
 .workspacePopoverState {
@@ -848,9 +854,9 @@ p {
 }
 
 .button.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-contrast);
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-foreground);
 }
 
 .button.primary:hover:not(:disabled) {
@@ -914,8 +920,8 @@ textarea:focus-visible,
 .button:focus-visible,
 .tab:focus-visible,
 .segment:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }
 
 textarea {
@@ -1137,7 +1143,7 @@ textarea {
 }
 
 .inputConfigCatalogSummary svg {
-  color: var(--accent);
+  color: var(--primary);
   flex: 0 0 auto;
 }
 
@@ -1751,7 +1757,7 @@ textarea {
 .tab.active {
   color: var(--text-primary);
   font-weight: 640;
-  border-bottom-color: var(--accent);
+  border-bottom-color: var(--primary);
 }
 
 /* ---------- release documentation ---------- */
@@ -1798,7 +1804,7 @@ textarea {
 }
 
 .docsNavLink.active {
-  border-left-color: var(--accent);
+  border-left-color: var(--primary);
   color: var(--text-primary);
   font-weight: 620;
 }
@@ -2114,13 +2120,35 @@ textarea {
 }
 
 .emptyState {
-  padding: 28px 20px;
+  min-height: 14rem;
+  padding: var(--space-12) var(--space-6);
+  border: 1px solid var(--border);
+  border-radius: var(--shape-radius-lg);
+  background: var(--surface);
   text-align: center;
   color: var(--text-secondary);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-2);
   align-items: center;
+  justify-content: center;
+}
+
+.emptyMark {
+  display: flex;
+  width: 2.25rem;
+  height: 2.25rem;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: var(--space-1);
+  border-radius: var(--shape-radius-md);
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.emptyMark svg {
+  width: 1rem;
+  height: 1rem;
 }
 
 .emptyTitle {
@@ -2234,7 +2262,7 @@ textarea {
 
 .provisioningSafety svg {
   flex: 0 0 auto;
-  color: var(--accent);
+  color: var(--primary);
 }
 
 .provisioningEditor,
@@ -2574,8 +2602,8 @@ textarea {
 
 .badge-current {
   gap: 3px;
-  color: var(--accent);
-  background: var(--status-running-bg);
+  color: var(--info);
+  background: var(--info-subtle);
 }
 
 .workspaceIdentityFacts {
@@ -3465,7 +3493,7 @@ textarea {
   padding: 0;
   border: none;
   background: none;
-  color: var(--accent);
+  color: var(--primary);
   font: inherit;
   font-weight: 580;
   cursor: pointer;
@@ -3613,4 +3641,71 @@ textarea {
   .sheetFooter .fieldHint {
     display: none;
   }
+}
+
+/* Gale-reference platform shell. Product content stays Windforce-specific. */
+.platformSidebar .brand,
+.platformSidebar .brand:visited,
+.platformMobileNav {
+  color: var(--shell-foreground);
+}
+
+.platformSidebar .navItem,
+.platformMobileNav .navItem {
+  min-height: 2.75rem;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--shape-radius-lg);
+  color: var(--shell-muted-foreground);
+}
+
+.platformSidebar .navItem:hover,
+.platformMobileNav .navItem:hover {
+  background: color-mix(in srgb, var(--shell-foreground) 8%, transparent);
+  color: var(--shell-foreground);
+}
+
+.platformSidebar .navItem.active,
+.platformMobileNav .navItem.active {
+  background: var(--shell-active);
+  color: var(--shell-active-foreground);
+  font-weight: 700;
+}
+
+.platformSidebar .navItem.active svg,
+.platformMobileNav .navItem.active svg {
+  color: currentColor;
+}
+
+.platformSidebar .icon-control,
+.platformMobileNav .icon-control {
+  color: var(--shell-muted-foreground);
+}
+
+.platformSidebar .icon-control:hover,
+.platformMobileNav .icon-control:hover {
+  background: color-mix(in srgb, var(--shell-foreground) 8%, transparent);
+  color: var(--shell-foreground);
+}
+
+.platformSidebar .workspaceSwitcherTrigger,
+.platformMobileNav .workspaceSwitcherTrigger {
+  border-color: var(--shell-border);
+  background: color-mix(in srgb, var(--shell-foreground) 5%, transparent);
+  color: var(--shell-foreground);
+}
+
+.platformSidebar .workspaceSwitcherTrigger:hover,
+.platformMobileNav .workspaceSwitcherTrigger:hover {
+  background: color-mix(in srgb, var(--shell-foreground) 9%, transparent);
+}
+
+.platformSidebar .workspaceSwitcherText small,
+.platformMobileNav .workspaceSwitcherText small {
+  color: var(--shell-muted-foreground);
+}
+
+.platformSidebar .workspaceSwitcherIcon,
+.platformMobileNav .workspaceSwitcherIcon {
+  background: var(--shell-active);
+  color: var(--shell-active-foreground);
 }

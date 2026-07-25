@@ -157,12 +157,12 @@ function MobileNavigation({ path }: { path: string }) {
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-[80] bg-[var(--overlay)] md:hidden" />
         <DialogPrimitive.Content
-          className="fixed inset-y-0 left-0 z-[81] flex w-[min(20rem,calc(100vw-3rem))] flex-col border-r border-border bg-surface text-foreground shadow-md outline-none md:hidden"
+          className="platformMobileNav fixed inset-y-0 left-0 z-[81] flex w-[min(20rem,calc(100vw-3rem))] flex-col border-r border-shell-border bg-shell-background text-shell-foreground shadow-md outline-none md:hidden"
           aria-describedby={undefined}
         >
-          <header className="flex h-14 shrink-0 items-center justify-between border-b border-border px-3">
+          <header className="flex h-[var(--shell-header-height)] shrink-0 items-center justify-between border-b border-shell-border px-4">
             <DialogPrimitive.Title className="flex items-center gap-2 text-sm font-semibold">
-              <span className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
+              <span className="flex size-8 items-center justify-center rounded-lg bg-shell-active text-shell-active-foreground">
                 <Wind size={16} strokeWidth={2.2} aria-hidden="true" />
               </span>
               windforce-core
@@ -188,7 +188,7 @@ function MobileNavigation({ path }: { path: string }) {
               );
             })}
           </nav>
-          <div className="border-t border-border p-3">
+          <div className="border-t border-shell-border p-3">
             <WorkspaceSwitcher />
           </div>
         </DialogPrimitive.Content>
@@ -213,7 +213,7 @@ export function Layout({
   titleLeading?: ReactNode;
 }) {
   const { path } = useRouter();
-  const { toasts, dismissToast } = useApp();
+  const { settings, toasts, dismissToast } = useApp();
   const [collapsed, setCollapsed] = useState(loadCollapsed);
 
   useEffect(() => {
@@ -223,13 +223,13 @@ export function Layout({
   if (scope === "instance") {
     return (
       <div className="min-h-screen bg-background text-foreground">
-        <header className="flex h-14 items-center justify-between border-b border-border bg-surface px-4 sm:px-6">
+        <header className="flex h-[var(--shell-header-height)] items-center justify-between border-b border-border bg-background px-4 sm:px-6">
           <div className="flex items-center gap-3">
             <Link
               className="flex items-center gap-2 text-sm font-semibold text-foreground no-underline"
               to="/"
             >
-              <span className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
+              <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
                 <Wind size={16} strokeWidth={2.2} />
               </span>
               windforce-core
@@ -265,21 +265,21 @@ export function Layout({
     <div className="flex min-h-screen bg-background text-foreground">
       <aside
         className={cn(
-          "appSidebar hidden h-screen shrink-0 flex-col border-r border-border bg-surface transition-[width] duration-150 md:sticky md:top-0 md:flex",
+          "platformSidebar appSidebar hidden h-screen shrink-0 flex-col border-r border-shell-border bg-shell-background text-shell-foreground transition-[width] duration-150 md:sticky md:top-0 md:flex",
           collapsed && "sidebarCollapsed",
-          collapsed ? "w-16" : "w-60",
+          collapsed ? "w-16" : "w-[var(--shell-sidebar-width)]",
         )}
       >
-        <div className="flex h-14 items-center gap-2 border-b border-border px-3">
+        <div className="flex h-[var(--shell-header-height)] items-center gap-2 border-b border-shell-border px-4">
           <Link
             className={cn(
-              "brand flex min-w-0 flex-1 items-center gap-2 text-sm font-semibold text-foreground no-underline",
+              "brand flex min-w-0 flex-1 items-center gap-3 text-sm font-semibold text-shell-foreground no-underline",
               collapsed && "justify-center",
             )}
             to="/"
             title="windforce-core"
           >
-            <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-shell-active text-shell-active-foreground">
               <Wind size={16} strokeWidth={2.2} />
             </span>
             {!collapsed ? <span className="truncate">windforce-core</span> : null}
@@ -313,7 +313,7 @@ export function Layout({
             );
           })}
         </nav>
-        <div className="sidebarFooter flex flex-col gap-2 border-t border-border p-3">
+        <div className="sidebarFooter flex flex-col gap-2 border-t border-shell-border p-3">
           {collapsed ? (
             <button
               className="icon-control mx-auto"
@@ -331,12 +331,18 @@ export function Layout({
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border bg-surface px-4 sm:px-6">
+        <header className="flex h-[var(--shell-header-height)] shrink-0 items-center justify-between gap-3 border-b border-border bg-background px-4 sm:px-6">
           <div className="flex min-w-0 items-center gap-2 md:hidden">
             <MobileNavigation path={path} />
             <div className="mobileWorkspaceContext min-w-0">
               <WorkspaceSwitcher />
             </div>
+          </div>
+          <div className="hidden min-w-0 items-center gap-2 text-xs text-muted-foreground md:flex">
+            <span className="font-mono text-foreground">{settings.workspace}</span>
+            <span>workspace</span>
+            <span aria-hidden="true">/</span>
+            <span className="truncate font-medium text-foreground">{title}</span>
           </div>
           <div className="ml-auto flex items-center gap-2">
             <ThemeToggle />

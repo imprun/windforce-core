@@ -7,10 +7,12 @@ const designTokens = await readFile(new URL("./design-tokens.css", import.meta.u
 describe("Imprun design contract", () => {
   test("loads the synchronized semantic token source before application styles", () => {
     expect(styles).toMatch(/^@import "tailwindcss";\r?\n@import "\.\/design-tokens\.css";/);
-    expect(designTokens).toContain("Synchronized from imprun/design-system/tokens.css");
-    expect(designTokens).toContain("--shell-sidebar-width: 15rem");
-    expect(designTokens).toContain("--shell-header-height: 3.5rem");
-    expect(designTokens).toContain("--content-max-width: 64rem");
+    expect(designTokens).toContain("Gale Console is the current visual reference");
+    expect(designTokens).toContain("--shell-sidebar-width: 16rem");
+    expect(designTokens).toContain("--shell-header-height: 4.25rem");
+    expect(designTokens).toContain("--content-max-width: 90rem");
+    expect(designTokens).toContain("Pretendard");
+    expect(designTokens).toContain("--shell-active: #d7f56a");
   });
 
   test("keeps literal palette values out of application styling", () => {
@@ -18,6 +20,16 @@ describe("Imprun design contract", () => {
     expect(styles).not.toMatch(/\brgba?\(/i);
     expect(styles).not.toMatch(/\bhsla?\(/i);
     expect(styles).not.toContain('"Inter"');
+  });
+
+  test("maps legacy interaction classes to the strong Imprun semantic tokens", () => {
+    expect(styles).toMatch(
+      /\.button\.primary\s*\{[^}]*background:\s*var\(--primary\);[^}]*border-color:\s*var\(--primary\);/s,
+    );
+    expect(styles).toMatch(
+      /textarea:focus-visible,[^{]+\.segment:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--ring\);/s,
+    );
+    expect(styles).not.toMatch(/\.button\.primary\s*\{[^}]*background:\s*var\(--accent\);/s);
   });
 });
 

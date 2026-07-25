@@ -82,9 +82,25 @@ export function DefinitionList({
   );
 }
 
+export function ImpMark({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <path
+        d="M6 9c0-2 .6-4.4-1-6 2.6 0 4.5 1 5.5 2.4h3C14.5 4 16.4 3 19 3c-1.6 1.6-1 4-1 6a6 6 0 0 1-2 4.6V17a4 4 0 0 1-8 0v-3.4A6 6 0 0 1 6 9Z"
+        fill="currentColor"
+      />
+      <circle cx="9.8" cy="10" r="1.1" fill="var(--surface)" />
+      <circle cx="14.2" cy="10" r="1.1" fill="var(--surface)" />
+    </svg>
+  );
+}
+
 export function EmptyState({ title, children }: { title: string; children?: ReactNode }) {
   return (
     <div className="emptyState">
+      <span className="emptyMark">
+        <ImpMark />
+      </span>
       <p className="emptyTitle">{title}</p>
       {children ? <div className="emptyBody">{children}</div> : null}
     </div>
