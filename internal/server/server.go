@@ -57,6 +57,8 @@ type Config struct {
 	Wait              time.Duration
 	MetricsHandler    http.Handler
 	ArtifactStore     ArtifactStore
+	UIHostURL         string
+	UIHostLabel       string
 }
 
 type Handler struct {
@@ -78,6 +80,8 @@ type Handler struct {
 	metricsHandler    http.Handler
 	execution         *executionpkg.Service
 	syncLocks         sync.Map
+	uiHostURL         string
+	uiHostLabel       string
 }
 
 type jobPrincipal struct {
@@ -138,6 +142,7 @@ func New(config Config) http.Handler {
 	if secretKey == "" {
 		secretKey = DefaultSecretKey
 	}
+	uiHostURL, uiHostLabel := normalizeUIHost(config.UIHostURL, config.UIHostLabel)
 	var bundleStore executionpkg.BundleStore
 	if config.Syncer != nil {
 		bundleStore = config.Syncer.Store
@@ -160,6 +165,8 @@ func New(config Config) http.Handler {
 		wait:              config.Wait,
 		execution:         executionpkg.NewService(config.Store, config.Catalog, bundleStore),
 		metricsHandler:    config.MetricsHandler,
+		uiHostURL:         uiHostURL,
+		uiHostLabel:       uiHostLabel,
 	}
 }
 

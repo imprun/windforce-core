@@ -246,3 +246,23 @@ Review app- and action-specific values applied for one external client.
 1. Open Client Registry.
 2. Select an external client.
 3. Open a settings row to review its JSON values and locked keys.
+
+## Return to the host console
+
+A hosted or self-managed portal can configure one explicit return action without changing the engine navigation.
+
+![Return to the host console](../assets/ui/host-console-navigation.png)
+
+1. Open the embedded Web UI from the configured host portal.
+2. Use Back to host console in the top bar to return to the surrounding product.
+3. On narrow screens the same action remains available as an icon with an accessible label.
+
+## Return to the host console on mobile
+
+The configured return action remains in the top bar as a compact icon with the same accessible label.
+
+![Return to the host console on mobile](../assets/ui/host-console-navigation-mobile.png)
+
+1. Open the embedded Web UI on a narrow screen.
+2. Use the arrow icon in the top bar to return to the configured host console.
+3. The icon keeps the full host-console label for assistive technology and pointer tooltips.

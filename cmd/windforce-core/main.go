@@ -93,6 +93,8 @@ func runServer(args []string, mode string) int {
 	secretKeyEnv := flags.String("secret-key-env", "SECRET_KEY", "environment variable that contains the instance secret used for secret variables")
 	secretKeyPreviousEnv := flags.String("secret-key-previous-env", "SECRET_KEY_PREVIOUS", "environment variable that contains the previous instance secret during rotation")
 	baseURL := flags.String("base-url", "", "public API base URL injected into job ctx helpers")
+	uiHostURL := flags.String("ui-host-url", strings.TrimSpace(os.Getenv("WINDFORCE_UI_HOST_URL")), "optional host console URL shown in the Web UI")
+	uiHostLabel := flags.String("ui-host-label", strings.TrimSpace(os.Getenv("WINDFORCE_UI_HOST_LABEL")), "accessible label for the optional host console action")
 	storeDir := flags.String("store", defaultStoreDir(), "source snapshot and execution bundle store directory")
 	catalogPath := flags.String("catalog", defaultCatalogPath(), "catalog JSON import path")
 	gitSourcesPath := flags.String("git-sources", defaultGitSourcesPath(), "registered git sources JSON path")
@@ -230,6 +232,8 @@ func runServer(args []string, mode string) int {
 		SecretKey:         secretKey,
 		SecretKeyPrevious: secretKeyPrevious,
 		MetricsHandler:    webhookMetrics.Handler(webhookStore),
+		UIHostURL:         *uiHostURL,
+		UIHostLabel:       *uiHostLabel,
 	})
 
 	retention := jobRetentionPolicy{
