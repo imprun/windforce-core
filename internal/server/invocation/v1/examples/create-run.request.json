@@ -1,0 +1,8 @@
+{
+  "app": "orders",
+  "action": "ingest",
+  "input": {
+    "order_id": "order-20260727-0001"
+  },
+  "correlation_id": "gateway-request-018"
+}

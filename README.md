@@ -36,6 +36,32 @@ Read [Core concepts](docs/concepts/core-concepts.md) for the exact storage,
 fingerprint, marker, Run, and Job definitions. The complete state flow is in
 [Release and execution lifecycle](docs/concepts/release-lifecycle.md).
 
+## System-to-system Invocation API
+
+`/api/v1` is the canonical system-to-system boundary for admitting and
+observing Runs:
+
+```text
+POST /api/v1/workspaces/{workspace}/runs
+POST /api/v1/workspaces/{workspace}/runs/wait
+GET  /api/v1/workspaces/{workspace}/runs/{run_id}
+GET  /api/v1/workspaces/{workspace}/runs/{run_id}/result
+POST /api/v1/workspaces/{workspace}/runs/{run_id}/cancel
+GET  /api/v1/workspaces/{workspace}/apps/{app}
+GET  /api/v1/openapi.json
+```
+
+Operator, workspace, Client Registry (`wfk_`), and Service Principal (`wfs_`)
+credentials use the same routes. Authentication derives the principal;
+requests cannot assert `client_id`, actors, or per-run `env`. The caller-visible
+lifecycle and idempotency boundary is Run, while Job remains the internal worker
+queue unit. See [Invocation API](docs/concepts/public-api.md) and
+[ADR 0013](docs/adr/0013-canonical-invocation-and-trigger-boundary.md).
+
+The old `/execution/v1`, `/api/v1/w/.../run`, and control-plane job admission
+routes remain only during the v0.3 migration foundation and are scheduled for
+one breaking removal after the known operating consumers are ready.
+
 ## Deploy
 
 `sync` stores the latest valid source revision. `deploy` prepares that revision
@@ -96,7 +122,7 @@ docker compose --profile backend up -d server web
 docker compose --profile worker up -d worker
 ```
 
-`standalone` starts one process containing the server and worker. The `backend` profile starts the server without an execution worker, while the `worker` profile starts a server and worker as separate processes. External protocol adapters join the Compose network and call the server's versioned Execution API. PostgreSQL and the active catalog remain private to Windforce Core. The compose `volume-init` service fixes the mounted data volume ownership before a role starts.
+`standalone` starts one process containing the server and worker. The `backend` profile starts the server without an execution worker, while the `worker` profile starts a server and worker as separate processes. External protocol adapters join the Compose network and call the server's versioned Invocation API with a scoped Service Principal. PostgreSQL and the active catalog remain private to Windforce Core. The compose `volume-init` service fixes the mounted data volume ownership before a role starts.
 
 ## Run
 

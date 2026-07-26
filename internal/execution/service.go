@@ -31,6 +31,7 @@ type FaultKind string
 const (
 	FaultUnavailable     FaultKind = "unavailable"
 	FaultInvalidRequest  FaultKind = "invalid_request"
+	FaultForbidden       FaultKind = "forbidden"
 	FaultAppNotFound     FaultKind = "app_not_found"
 	FaultActionNotFound  FaultKind = "action_not_found"
 	FaultRoutingConflict FaultKind = "routing_conflict"
@@ -64,14 +65,20 @@ func FaultKindOf(err error) FaultKind {
 	return FaultInternal
 }
 
-type Service struct {
+type AdmissionService struct {
 	store   Store
 	catalog Catalog
 	bundles BundleStore
 }
 
-func NewService(store Store, catalog Catalog, bundles BundleStore) *Service {
-	return &Service{store: store, catalog: catalog, bundles: bundles}
+type Service = AdmissionService
+
+func NewAdmissionService(store Store, catalog Catalog, bundles BundleStore) *AdmissionService {
+	return &AdmissionService{store: store, catalog: catalog, bundles: bundles}
+}
+
+func NewService(store Store, catalog Catalog, bundles BundleStore) *AdmissionService {
+	return NewAdmissionService(store, catalog, bundles)
 }
 
 type CreateRunRequest struct {
@@ -88,6 +95,7 @@ type CreateRunRequest struct {
 	ClientID       string
 	CreatedBy      string
 	PermissionedAs string
+	Principal      Principal
 }
 
 type Admission struct {
@@ -107,9 +115,9 @@ type AppDescription struct {
 	Actions    map[string]ActionDescription `json:"actions"`
 }
 
-func (s *Service) CreateRun(ctx context.Context, request CreateRunRequest) (Admission, error) {
+func (s *AdmissionService) CreateRun(ctx context.Context, request CreateRunRequest) (Admission, error) {
 	if s == nil || s.store == nil || s.catalog == nil {
-		return Admission{}, &Fault{Kind: FaultUnavailable, Message: "execution service is not configured"}
+		return Admission{}, &Fault{Kind: FaultUnavailable, Message: "admission service is not configured"}
 	}
 	request.Workspace = contract.NormalizeWorkspace(request.Workspace)
 	request.App = strings.TrimSpace(request.App)
@@ -123,6 +131,30 @@ func (s *Service) CreateRun(ctx context.Context, request CreateRunRequest) (Admi
 	if !json.Valid(request.Input) {
 		return Admission{}, &Fault{Kind: FaultInvalidRequest, Message: "input must be valid JSON"}
 	}
+
+	principal := request.Principal.Normalized()
+	if principal.Kind != "" {
+		if principal.Workspace != request.Workspace {
+			return Admission{}, &Fault{Kind: FaultForbidden, Message: "principal workspace mismatch"}
+		}
+		if !principal.HasScope(ScopeRunsCreate) {
+			return Admission{}, &Fault{Kind: FaultForbidden, Message: "principal lacks runs:create"}
+		}
+		if !principal.AllowsTarget(request.App, request.Action) {
+			return Admission{}, &Fault{Kind: FaultForbidden, Message: "principal is not allowed to invoke this app/action"}
+		}
+		if len(request.Env) > 0 {
+			return Admission{}, &Fault{Kind: FaultInvalidRequest, Message: "per-run env is not allowed"}
+		}
+		request.CreatedBy = principal.Subject
+		request.PermissionedAs = principal.Subject
+		if principal.Kind == PrincipalClient {
+			request.ClientID = principal.ID
+		} else {
+			request.ClientID = ""
+		}
+	}
+
 	clientID := strings.TrimSpace(request.ClientID)
 	if clientID != "" {
 		client, err := s.store.GetClient(ctx, request.Workspace, clientID)
@@ -134,18 +166,28 @@ func (s *Service) CreateRun(ctx context.Context, request CreateRunRequest) (Admi
 		}
 		clientID = client.ID
 	}
+
+	fingerprint, err := invocationRequestFingerprint(request.App, request.Action, request.Input, request.CorrelationID)
+	if err != nil {
+		return Admission{}, &Fault{Kind: FaultInvalidRequest, Message: "input must be valid JSON", Err: err}
+	}
 	runID := ""
+	idempotencyHash := ""
 	if key := strings.TrimSpace(request.IdempotencyKey); key != "" {
-		if clientID != "" {
-			key += "\x00client:" + clientID
+		scope := "legacy"
+		if principal.Kind != "" {
+			scope = principal.IdempotencyScope()
+		} else if clientID != "" {
+			scope = "client:" + clientID
 		}
-		runID = deterministicRunID(request.Workspace, request.App, request.Action, key)
-		existingJob, existingRun, found, err := s.store.GetJobByRunID(ctx, request.Workspace, runID)
-		if err != nil {
-			return Admission{}, &Fault{Kind: FaultInternal, Message: "could not resolve idempotent run", Err: err}
+		runID = deterministicRunID(request.Workspace, scope, key)
+		idempotencyHash = digestString(key)
+		existingJob, existingRun, found, getErr := s.store.GetJobByRunID(ctx, request.Workspace, runID)
+		if getErr != nil {
+			return Admission{}, &Fault{Kind: FaultInternal, Message: "could not resolve idempotent run", Err: getErr}
 		}
 		if found {
-			return Admission{Run: existingRun, Job: existingJob, Replayed: true}, nil
+			return replayAdmission(existingRun, existingJob, fingerprint)
 		}
 	}
 
@@ -197,6 +239,12 @@ func (s *Service) CreateRun(ctx context.Context, request CreateRunRequest) (Admi
 	run.CreatedBy = strings.TrimSpace(request.CreatedBy)
 	run.PermissionedAs = strings.TrimSpace(request.PermissionedAs)
 	run.ClientID = clientID
+	run.IdempotencyHash = idempotencyHash
+	run.RequestFingerprint = fingerprint
+	if principal.Kind != "" {
+		run.PrincipalKind = string(principal.Kind)
+		run.PrincipalID = principal.ID
+	}
 	job := state.NewActionJob(run, cloneRaw(resolvedInput))
 	job.Payload.TriggerKind = strings.TrimSpace(request.TriggerKind)
 	if job.Payload.TriggerKind == "" {
@@ -216,7 +264,7 @@ func (s *Service) CreateRun(ctx context.Context, request CreateRunRequest) (Admi
 				return Admission{}, &Fault{Kind: FaultInternal, Message: "could not resolve idempotent run", Err: getErr}
 			}
 			if found {
-				return Admission{Run: existingRun, Job: existingJob, Replayed: true}, nil
+				return replayAdmission(existingRun, existingJob, fingerprint)
 			}
 			return Admission{}, &Fault{Kind: FaultConflict, Message: "idempotent run already exists", Err: err}
 		}
@@ -286,6 +334,55 @@ func (s *Service) DescribeApp(ctx context.Context, workspace string, app string)
 	return AppDescription{Deployment: deployment, Actions: actions}, nil
 }
 
+func (s *AdmissionService) GetRunForPrincipal(ctx context.Context, principal Principal, workspace string, runID string) (state.Run, error) {
+	principal = principal.Normalized()
+	workspace = contract.NormalizeWorkspace(workspace)
+	if principal.Workspace != workspace {
+		return state.Run{}, &Fault{Kind: FaultForbidden, Message: "principal workspace mismatch"}
+	}
+	run, err := s.GetRun(ctx, workspace, runID)
+	if err != nil {
+		return state.Run{}, err
+	}
+	if principal.HasScope(ScopeRunsReadAny) {
+		return run, nil
+	}
+	if principal.HasScope(ScopeRunsReadOwn) && principal.Owns(run) {
+		return run, nil
+	}
+	return state.Run{}, &Fault{Kind: FaultForbidden, Message: "principal cannot read this run"}
+}
+
+func (s *AdmissionService) CancelRunForPrincipal(ctx context.Context, principal Principal, workspace string, runID string, reason string) (state.Run, error) {
+	principal = principal.Normalized()
+	run, err := s.GetRun(ctx, workspace, runID)
+	if err != nil {
+		return state.Run{}, err
+	}
+	if principal.Workspace != contract.NormalizeWorkspace(workspace) {
+		return state.Run{}, &Fault{Kind: FaultForbidden, Message: "principal workspace mismatch"}
+	}
+	if !principal.HasScope(ScopeRunsCancelAny) && !(principal.HasScope(ScopeRunsCancelOwn) && principal.Owns(run)) {
+		return state.Run{}, &Fault{Kind: FaultForbidden, Message: "principal cannot cancel this run"}
+	}
+	return s.CancelRun(ctx, workspace, runID, reason)
+}
+
+func (s *AdmissionService) DescribeAppForPrincipal(ctx context.Context, principal Principal, workspace string, app string) (AppDescription, error) {
+	principal = principal.Normalized()
+	workspace = contract.NormalizeWorkspace(workspace)
+	if principal.Workspace != workspace {
+		return AppDescription{}, &Fault{Kind: FaultForbidden, Message: "principal workspace mismatch"}
+	}
+	if !principal.HasScope(ScopeAppsRead) {
+		return AppDescription{}, &Fault{Kind: FaultForbidden, Message: "principal lacks apps:read"}
+	}
+	if !principal.AllowsTarget(app, "") {
+		return AppDescription{}, &Fault{Kind: FaultForbidden, Message: "principal is not allowed to read this app"}
+	}
+	return s.DescribeApp(ctx, workspace, app)
+}
+
 func (s *Service) lookupDeployment(ctx context.Context, workspace string, app string) (contract.Deployment, error) {
 	if scoped, ok := s.catalog.(interface {
 		GetDeploymentForWorkspace(context.Context, string, string) (contract.Deployment, error)
@@ -302,9 +399,38 @@ func (s *Service) lookupDeployment(ctx context.Context, workspace string, app st
 	return deployment, nil
 }
 
-func deterministicRunID(workspace string, app string, action string, key string) string {
-	digest := sha256.Sum256([]byte(workspace + "\x00" + app + "\x00" + action + "\x00" + key))
+func deterministicRunID(workspace string, principalScope string, key string) string {
+	digest := sha256.Sum256([]byte(workspace + "\x00" + principalScope + "\x00" + key))
 	return "run_" + hex.EncodeToString(digest[:12])
+}
+
+func digestString(value string) string {
+	digest := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(digest[:])
+}
+
+func invocationRequestFingerprint(app string, action string, input json.RawMessage, correlationID string) (string, error) {
+	var decoded any
+	if err := json.Unmarshal(input, &decoded); err != nil {
+		return "", err
+	}
+	canonical, err := json.Marshal(map[string]any{
+		"app":            app,
+		"action":         action,
+		"input":          decoded,
+		"correlation_id": state.CleanID(correlationID),
+	})
+	if err != nil {
+		return "", err
+	}
+	return digestString(string(canonical)), nil
+}
+
+func replayAdmission(run state.Run, job state.Job, fingerprint string) (Admission, error) {
+	if run.RequestFingerprint != "" && run.RequestFingerprint != fingerprint {
+		return Admission{}, &Fault{Kind: FaultConflict, Message: "idempotency key was already used for a different request"}
+	}
+	return Admission{Run: run, Job: job, Replayed: true}, nil
 }
 
 func cloneRaw(value json.RawMessage) json.RawMessage {

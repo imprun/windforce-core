@@ -1044,6 +1044,12 @@ func ensureSnapshot(snapshot *Snapshot) {
 			snapshot.ClientAudits = map[string][]ClientAudit{}
 		}
 	}
+	if snapshot.ServicePrincipals == nil {
+		snapshot.ServicePrincipals = map[string]map[string]ServicePrincipal{}
+	}
+	if snapshot.ServicePrincipalAudits == nil {
+		snapshot.ServicePrincipalAudits = map[string][]ServicePrincipalAudit{}
+	}
 	migrateLocalClientTokens(snapshot)
 	if snapshot.InputConfigs == nil {
 		snapshot.InputConfigs = map[string]map[string]InputConfig{}

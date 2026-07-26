@@ -2,15 +2,15 @@
 
 ## Status
 
-Accepted (2026-07-26) — issue [#137](https://github.com/imprun/windforce-core/issues/137). 구현 순서와 제거 gate는 [Canonical Invocation과 Trigger 구현 계획](../canonical-invocation-trigger-implementation-plan.md)에 고정한다.
+Accepted (2026-07-26) — issue [#137](https://github.com/imprun/windforce-core/issues/137). Phase 1 안정화는 [#139](https://github.com/imprun/windforce-core/issues/139)에서 추적하고, 구현 순서와 제거 gate는 [Canonical Invocation과 Trigger 구현 계획](../canonical-invocation-trigger-implementation-plan.md)에 고정한다.
 
 이 결정은 [ADR 0011](0011-public-api-client-tokens.md)의 별도 Public API plane과 공개 응답 식별자 결정을 갱신하고, [ADR 0012](0012-server-worker-standalone-roles.md)의 외부 adapter용 `/execution/v1` 결정과 네 개 HTTP plane 유지 결정을 갱신한다. Client token 수명주기, InputConfig, server/worker/standalone 배치와 `/worker/v1` 계약은 유지한다.
 
 ## Context
 
-Windforce Core는 같은 admission 의미를 세 HTTP 표면으로 제공한다. Operator와 도구는 `/api/w/{workspace}/jobs/run/...`, 신뢰된 adapter와 Python SDK는 `/execution/v1/workspaces/{workspace}/runs`, client token 호출자는 `/api/v1/w/{workspace}/run/...`을 사용한다. 세 handler는 모두 `execution.Service.CreateRun`으로 수렴하지만 인증 주체, 요청 필드, Run/Job 식별자, wait 응답과 SDK가 다르므로 기능을 추가할 때마다 계약이 갈라진다.
+Windforce Core는 같은 admission 의미를 세 HTTP 표면으로 제공한다. Operator와 도구는 `/api/w/{workspace}/jobs/run/...`, 신뢰된 adapter와 Python SDK는 `/execution/v1/workspaces/{workspace}/runs`, client token 호출자는 `/api/v1/w/{workspace}/run/...`을 사용한다. 세 handler는 모두 `execution.Service.CreateRun`으로 수렴하지만 인증 주체, 요청 필드, Run/Job 식별자, wait 응답과 SDK가 다르므로 기능을 추가할 때마다 시스템 간 통신 규격이 갈라진다.
 
-실제 소비자 조사에서 Gale은 `/execution/v1`의 idempotent Run lifecycle을 직접 사용하고, Imprun Cloud gateway는 tenant 경로 아래로 `/execution/v1`을 전달하며, Core Python SDK와 구형 dhworker trigger도 Execution API 계약을 소비한다. 반면 새 `wf-triggers`는 `/api/v1/w/.../run/.../wait`를 사용한다. 따라서 한 repository만 먼저 기존 경로를 삭제할 수는 없지만 known consumer를 같은 release set으로 이전하면 두 계약을 영구적인 정본으로 유지할 이유도 없다.
+실제 소비자 조사에서 Gale은 `/execution/v1`의 idempotent Run lifecycle을 직접 사용하고, Imprun Cloud gateway는 tenant 경로 아래로 `/execution/v1`을 전달하며, Core Python SDK와 구형 dhworker trigger도 Execution API 규격을 소비한다. `wf-triggers` 저장소에는 `/api/v1/w/.../run/.../wait` 기반 코드가 있지만 아직 운영 배포되지 않았으므로 기존 운영 전환이나 rollback 대상이 아니다. 따라서 Gale과 Imprun gateway 같은 실제 소비자는 같은 release set으로 이전해야 하지만, `wf-triggers`는 안정된 v0.3 규격을 기준으로 첫 구현과 첫 배포를 준비한다.
 
 Core의 모델에서 Run과 Job은 같은 이름의 중복 표현이 아니다. Run은 호출자가 추적하는 논리적 실행과 결과를 소유하고, Job은 Run을 실행하기 위한 queue, lease, priority와 attempt를 소유한다. 외부 API에서 Job ID를 실행 식별자로 사용하면 worker queue 구현을 호출자 계약에 노출한다.
 
@@ -48,7 +48,7 @@ Run 생성 body는 `app`, `action`, opaque `input`과 선택적인 `correlation_
 
 Run은 caller-visible idempotency, 상태, result, cancel과 retention의 정본이다. Job은 Run을 수행하는 내부 queue record이며 worker claim, lease, priority와 attempt를 소유한다. 하나의 Run에 대한 실행 재시도는 외부 Run ID를 바꾸지 않는다.
 
-Control plane은 운영 진단을 위해 Run과 연결된 Job ID와 attempt를 표시할 수 있지만 Invocation API와 SDK는 이를 안정 계약으로 노출하지 않는다. 기존 외부 `job_id`와 `X-WF-Job-Id`는 v0.3.0 cutover에서 제거한다.
+Control plane은 운영 진단을 위해 Run과 연결된 Job ID와 attempt를 표시할 수 있지만 Invocation API와 SDK는 이를 안정된 시스템 간 통신 규격으로 노출하지 않는다. 기존 외부 `job_id`와 `X-WF-Job-Id`는 v0.3.0 cutover에서 제거한다.
 
 ### 4. 경로가 아니라 principal과 scope로 권한을 구분한다
 
@@ -92,7 +92,7 @@ Trigger의 `delivery_id`는 canonical idempotency key로 정규화한다. Broker
 
 현재 기준 버전은 pre-1.0인 v0.2.0이고 알려진 production 소비자는 모두 소유자가 확인된 저장소에 있다. 장기간 compatibility layer를 운영하지 않고 v0.3.0에서 canonical Invocation API, principal scope, Trigger SPI와 replacement SDK를 도입하는 동시에 `/execution/v1`, `/api/v1/w/{workspace}/run/...`, `/api/w/{workspace}/jobs/run/...`과 `/api/w/{workspace}/jobs/webhook/...` submission route를 제거한다.
 
-Core와 downstream은 독립적으로 production에 순차 배포하지 않는다. Core release candidate와 Gale, Imprun gateway, wf-triggers migration branch를 같은 contract fixture로 사전 검증하고, maintenance window에서 ingress drain, Core v0.3.0, downstream consumer, live probe 순으로 전환한다.
+Core와 운영 downstream은 독립적으로 production에 순차 배포하지 않는다. Core release candidate와 Gale, Imprun gateway migration branch를 같은 OpenAPI와 JSON fixture로 사전 검증하고, maintenance window에서 ingress drain, Core v0.3.0, downstream consumer, live probe 순으로 전환한다. 비운영 `wf-triggers`는 이 전환·rollback release set에 포함하지 않고 안정된 Core v0.3 규격에 맞춰 별도로 첫 배포한다.
 
 Cutover gate는 모든 known consumer migration commit과 CI 준비, Core release candidate contract test, deploy manifest/image pin 준비, 이전 Core와 downstream release set으로의 rollback 절차 검증이다. 하나라도 준비되지 않으면 전체 cutover를 연기하며 일부 legacy handler만 임시 유지하지 않는다.
 
@@ -105,7 +105,7 @@ Canonical Python distribution과 module은 `windforce-invocation`과 `windforce_
 - 모든 caller와 trigger가 같은 release resolution, authorization, idempotency와 Run lifecycle을 사용한다.
 - Public 여부와 trusted 여부를 URL namespace가 아니라 principal scope로 표현하므로 새 caller 종류 때문에 API plane을 추가하지 않는다.
 - Run과 Job의 경계가 안정되어 worker queue 구현을 바꾸거나 attempt 모델을 확장해도 외부 Run contract를 유지할 수 있다.
-- Gale, Imprun gateway, wf-triggers와 SDK를 함께 이전해야 하므로 v0.3.0은 maintenance window와 release-set rollback이 필요한 cross-repository breaking release가 된다.
+- Gale, Imprun gateway와 SDK를 함께 이전해야 하므로 v0.3.0은 maintenance window와 release-set rollback이 필요한 cross-repository breaking release가 된다. 비운영 `wf-triggers`는 이 release set의 gate가 아니다.
 - Legacy dhworker trigger처럼 임의 `env`와 caller-supplied client identity를 사용한 adapter는 canonical API에 그대로 옮길 수 없다. 해당 adapter는 새 `wf-triggers` 경계로 이전하거나 pinned legacy engine에 동결해야 한다.
 - Trigger credential storage, protocol lifecycle, delivery observability와 dead-letter 운영이 Core의 self-hosted execution 범위에 추가된다.
 

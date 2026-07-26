@@ -18,7 +18,9 @@ import (
 
 const runColumns = `
 	id, adapter, app, action, state, deployment, input, output, result, error,
-	task_id, correlation_id, env, client_id, created_at, updated_at, expires_at
+	task_id, correlation_id, env, client_id, principal_kind, principal_id,
+	idempotency_hash, request_fingerprint, created_by, permissioned_as,
+	created_at, updated_at, expires_at
 `
 
 const jobColumns = `
@@ -320,11 +322,20 @@ func (s *PostgresStore) CreateRunAndEnqueue(ctx context.Context, run Run, job Jo
 		if _, err := tx.Exec(ctx, `
 INSERT INTO runs (
 	id, adapter, app, action, state, deployment, input, output, result, error,
-	task_id, correlation_id, env, client_id, created_at, updated_at, expires_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+	task_id, correlation_id, env, client_id, principal_kind, principal_id,
+	idempotency_hash, request_fingerprint, created_by, permissioned_as,
+	created_at, updated_at, expires_at
+) VALUES (
+	$1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+	$11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+	$21, $22, $23
+)
 `, run.ID, run.Adapter, run.App, run.Action, string(run.State), mustRaw(run.Deployment), requiredRaw(run.Input),
 			nullableRaw(run.Output), nullableResult(run.Result), nullableRaw(run.Error), nullableString(run.TaskID),
-			nullableString(run.CorrelationID), nullableStrings(run.Env), nullableString(run.ClientID), run.CreatedAt, run.UpdatedAt, run.ExpiresAt); err != nil {
+			nullableString(run.CorrelationID), nullableStrings(run.Env), nullableString(run.ClientID),
+			nullableString(run.PrincipalKind), nullableString(run.PrincipalID), nullableString(run.IdempotencyHash),
+			nullableString(run.RequestFingerprint), run.CreatedBy, run.PermissionedAs,
+			run.CreatedAt, run.UpdatedAt, run.ExpiresAt); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `
