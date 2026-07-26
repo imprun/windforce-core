@@ -1,0 +1,77 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verify formatting
+        run: |
+          go fmt ./...
+          git diff --exit-code
+      - name: Build
+        run: make build
+      - name: Test
+        run: make test
+
+  windows-cli:
+    name: windows CLI
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build CLI
+        run: go build -trimpath -o "${{ runner.temp }}/windforce.exe" ./cmd/windforce
+      - name: Build server
+        run: go build -trimpath -o "${{ runner.temp }}/windforce-core.exe" ./cmd/windforce-core
+      - name: Test CLI contracts
+        run: go test ./internal/controlcli ./pkg/controlplane
+
+  release-snapshot:
+    name: release snapshot
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --snapshot --clean
+      - name: Verify snapshot archives
+        shell: bash
+        run: |
+          test "$(find dist -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.zip' \) | wc -l)" -eq 6
+          archive="$(find dist -maxdepth 1 -type f -name '*_linux_amd64.tar.gz' -print -quit)"
+          test -n "${archive}"
+          mkdir -p "${RUNNER_TEMP}/windforce-smoke"
+          tar -xzf "${archive}" -C "${RUNNER_TEMP}/windforce-smoke"
+          "${RUNNER_TEMP}/windforce-smoke/windforce" version

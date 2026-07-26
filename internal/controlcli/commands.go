@@ -12,12 +12,20 @@ import (
 	"strings"
 )
 
+type sourceDeployRequest struct {
+	Confirm bool   `json:"confirm"`
+	Message string `json:"message,omitempty"`
+}
+
 func (r *runner) profile(path string, config ConfigFile, args []string) error {
 	if len(args) == 0 {
 		return usageError{"profile requires list, show, use, or set"}
 	}
 	switch args[0] {
 	case "list":
+		if len(args) != 1 {
+			return usageError{"usage: windforce profile list"}
+		}
 		names := make([]string, 0, len(config.Profiles))
 		for name := range config.Profiles {
 			names = append(names, name)
@@ -30,6 +38,9 @@ func (r *runner) profile(path string, config ConfigFile, args []string) error {
 		}
 		return r.outputJSON(rows)
 	case "show":
+		if len(args) > 2 {
+			return usageError{"usage: windforce profile show [name]"}
+		}
 		name := config.CurrentProfile
 		if len(args) > 1 {
 			name = args[1]
@@ -63,6 +74,9 @@ func (r *runner) profile(path string, config ConfigFile, args []string) error {
 		if err := fs.Parse(args[2:]); err != nil {
 			return usageError{err.Error()}
 		}
+		if fs.NArg() != 0 {
+			return usageError{"usage: windforce profile set <name> [flags]"}
+		}
 		if name == "" || profile.APIURL == "" {
 			return usageError{"profile name and --api-url are required"}
 		}
@@ -85,6 +99,9 @@ func (r *runner) source(args []string) error {
 	}
 	switch args[0] {
 	case "list":
+		if len(args) != 1 {
+			return usageError{"usage: windforce source list"}
+		}
 		return r.json(http.MethodGet, r.client.WorkspacePath("git_sources"), nil)
 	case "sync":
 		if len(args) != 2 {
@@ -100,10 +117,10 @@ func (r *runner) source(args []string) error {
 		if err := fs.Parse(args[2:]); err != nil {
 			return usageError{err.Error()}
 		}
-		body := map[string]any{}
-		if *message != "" {
-			body["message"] = *message
+		if fs.NArg() != 0 {
+			return usageError{"usage: windforce source deploy <source-id> [--message note]"}
 		}
+		body := sourceDeployRequest{Confirm: true, Message: *message}
 		return r.json(http.MethodPost, r.client.WorkspacePath("git_sources", args[1], "deploy"), body)
 	case "register", "probe":
 		return r.sourceRegistration(args[0], args[1:])
@@ -125,6 +142,9 @@ func (r *runner) sourceRegistration(command string, args []string) error {
 	accessTokenEnv := fs.String("access-token-env", "", "environment variable containing Git PAT")
 	if err := fs.Parse(args); err != nil {
 		return usageError{err.Error()}
+	}
+	if fs.NArg() != 0 {
+		return usageError{"usage: windforce source " + command + " [flags]"}
 	}
 	if *repo == "" || (command == "register" && *name == "") {
 		return usageError{"--repo-url and, for register, --name are required"}
@@ -217,6 +237,9 @@ func (r *runner) job(args []string) error {
 		if err := fs.Parse(args[3:]); err != nil {
 			return usageError{err.Error()}
 		}
+		if fs.NArg() != 0 {
+			return usageError{"usage: windforce job run <app> <action> [flags]"}
+		}
 		body, err := r.readJSON(*input, *inputFile)
 		if err != nil {
 			return err
@@ -240,6 +263,9 @@ func (r *runner) job(args []string) error {
 		if err := fs.Parse(args[1:]); err != nil {
 			return usageError{err.Error()}
 		}
+		if fs.NArg() != 0 {
+			return usageError{"usage: windforce job list [flags]"}
+		}
 		values := url.Values{}
 		addQuery(values, "status", *status)
 		addQuery(values, "app", *app)
@@ -253,6 +279,9 @@ func (r *runner) job(args []string) error {
 		if len(args) < 2 {
 			return usageError{"usage: windforce job " + args[0] + " <job-id>"}
 		}
+		if (args[0] == "show" || args[0] == "result") && len(args) != 2 {
+			return usageError{"usage: windforce job " + args[0] + " <job-id>"}
+		}
 		parts := []string{"jobs", args[1]}
 		if args[0] != "show" {
 			parts = append(parts, args[0])
@@ -262,6 +291,9 @@ func (r *runner) job(args []string) error {
 			tail := fs.Int("tail-bytes", 0, "tail bytes")
 			if err := fs.Parse(args[2:]); err != nil {
 				return usageError{err.Error()}
+			}
+			if fs.NArg() != 0 {
+				return usageError{"usage: windforce job logs <job-id> [--tail-bytes bytes]"}
 			}
 			path := r.client.WorkspacePath(parts...)
 			if *tail > 0 {
@@ -274,6 +306,9 @@ func (r *runner) job(args []string) error {
 			reason := fs.String("reason", "", "cancellation reason")
 			if err := fs.Parse(args[2:]); err != nil {
 				return usageError{err.Error()}
+			}
+			if fs.NArg() != 0 {
+				return usageError{"usage: windforce job cancel <job-id> [--reason note]"}
 			}
 			return r.json(http.MethodPost, r.client.WorkspacePath(parts...), compact(map[string]any{"reason": *reason}))
 		}
@@ -296,6 +331,9 @@ func (r *runner) provisioning(args []string) error {
 		if err := fs.Parse(args[1:]); err != nil {
 			return usageError{err.Error()}
 		}
+		if fs.NArg() != 0 {
+			return usageError{"usage: windforce provisioning export [flags]"}
+		}
 		values := url.Values{"format": []string{*format}}
 		if *includeValues {
 			values.Set("include_values", "true")
@@ -315,6 +353,9 @@ func (r *runner) provisioning(args []string) error {
 		dryRun := fs.Bool("dry-run", false, "validate without applying")
 		if err := fs.Parse(args[1:]); err != nil {
 			return usageError{err.Error()}
+		}
+		if fs.NArg() != 0 {
+			return usageError{"usage: windforce provisioning apply --file <path> [--dry-run]"}
 		}
 		if *file == "" {
 			return usageError{"--file is required"}
