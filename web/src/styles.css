@@ -152,6 +152,10 @@ a {
   color: var(--foreground);
 }
 
+.mobileNavTrigger {
+  display: none;
+}
+
 .panel,
 .tableWrap,
 .inputSettingValues,
@@ -478,28 +482,17 @@ p {
   margin-left: 0;
 }
 
-.sidebarCollapsed .sidebarFooter {
-  align-items: center;
-}
-
-.sidebarCollapsed .sidebar .actorPill,
-.sidebarCollapsed .sidebar .workspaceSwitcherText,
-.sidebarCollapsed .sidebar .workspaceSwitcherChevron {
+.sidebarCollapsed .sidebarWorkspaceContext .workspaceSwitcherText,
+.sidebarCollapsed .sidebarWorkspaceContext .workspaceSwitcherChevron {
   display: none;
 }
 
-.sidebarCollapsed .sidebar .workspaceSwitcherTrigger {
+.sidebarCollapsed .sidebarWorkspaceContext .workspaceSwitcherTrigger {
   justify-content: center;
   width: 40px;
   height: 40px;
+  margin-inline: auto;
   padding: 0;
-}
-
-.sidebarFooter {
-  margin-top: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
 }
 
 .actorPill {
@@ -715,8 +708,10 @@ p {
   color: var(--text-muted);
 }
 
-.mobileWorkspaceContext {
-  display: none;
+.sidebarWorkspaceContext .workspacePopover,
+.platformMobileNav .workspacePopover {
+  top: calc(100% + 8px);
+  bottom: auto;
 }
 
 .mainArea {
@@ -2737,6 +2732,10 @@ textarea {
 /* ---------- responsive ---------- */
 
 @media (max-width: 860px) {
+  .mobileNavTrigger {
+    display: inline-flex;
+  }
+
   .appShell {
     flex-direction: column;
   }
@@ -2763,20 +2762,8 @@ textarea {
     flex-direction: row;
   }
 
-  .sidebarFooter,
   .sidebarToggle {
     display: none;
-  }
-
-  .mobileWorkspaceContext {
-    display: block;
-    width: min(320px, 100%);
-    margin-top: 10px;
-  }
-
-  .mobileWorkspaceContext .workspacePopover {
-    top: calc(100% + 8px);
-    bottom: auto;
   }
 
   .sidebarCollapsed .brand {
@@ -3643,7 +3630,7 @@ textarea {
   }
 }
 
-/* Gale-reference platform shell. Product content stays Windforce-specific. */
+/* Stable application shell. Runtime content stays Windforce-specific. */
 .platformSidebar .brand,
 .platformSidebar .brand:visited,
 .platformMobileNav {
@@ -3695,12 +3682,19 @@ textarea {
 }
 
 .platformSidebar .workspaceSwitcherTrigger:hover,
-.platformMobileNav .workspaceSwitcherTrigger:hover {
+.platformSidebar .workspaceSwitcherTrigger[aria-expanded="true"],
+.platformMobileNav .workspaceSwitcherTrigger:hover,
+.platformMobileNav .workspaceSwitcherTrigger[aria-expanded="true"] {
+  border-color: color-mix(in srgb, var(--shell-foreground) 24%, transparent);
   background: color-mix(in srgb, var(--shell-foreground) 9%, transparent);
 }
 
 .platformSidebar .workspaceSwitcherText small,
-.platformMobileNav .workspaceSwitcherText small {
+.platformMobileNav .workspaceSwitcherText small,
+.platformSidebar .workspaceSwitcherID,
+.platformMobileNav .workspaceSwitcherID,
+.platformSidebar .workspaceSwitcherChevron,
+.platformMobileNav .workspaceSwitcherChevron {
   color: var(--shell-muted-foreground);
 }
 

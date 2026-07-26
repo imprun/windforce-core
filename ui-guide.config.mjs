@@ -78,7 +78,7 @@ export default {
         "--cache", path.join(baseDir, "cache"),
         "--webhook-allow-insecure-loopback",
         "--ui-host-url", "https://portal.example.test/console",
-        "--ui-host-label", "Back to host console",
+        "--ui-host-label", "Open host console",
       ],
       { cwd: baseDir, stdio: "ignore" },
     );

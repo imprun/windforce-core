@@ -1,21 +1,21 @@
 /*
- * Imprun platform tokens for the embedded Windforce console.
+ * Windforce Web UI semantic design tokens.
  *
- * Gale Console is the current visual reference: warm neutral canvas,
- * deep-green controls and shell, mint selection accent, and
- * Pretendard-first typography. Keep product-specific Windforce visuals
- * outside this platform token layer.
+ * The palette uses warm green-tinted neutrals, deep-green controls and shell,
+ * mint interaction accents, Pretendard-first Korean typography, and calm
+ * high-density work surfaces. Host products can provide navigation context
+ * without changing this standalone runtime theme.
  */
 
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
 
-  /* Warm neutral ground */
+  /* Neutral ground */
   --background: #f4f7f5;
   --surface: #ffffff;
   --surface-muted: #eef2f0;
   --foreground: #17231d;
-  --muted: #e8eeea;
+  --muted: #e6ece8;
   --muted-foreground: #68746e;
   --border: #dce4df;
   --input: #c8d3cd;
@@ -23,24 +23,25 @@
   /* Platform interaction */
   --primary: #1b503e;
   --primary-foreground: #ffffff;
-  --accent: #effac8;
+  --accent: #d7f56a;
   --accent-foreground: #102c23;
   --ring: #328163;
 
-  /* Shared deep-green shell */
+  /* Shared shell */
   --shell-background: #102c23;
   --shell-foreground: #f7fbf8;
-  --shell-muted-foreground: #a7b7af;
-  --shell-border: #29483c;
+  --shell-muted-foreground: rgb(255 255 255 / 67%);
   --shell-active: #d7f56a;
   --shell-active-foreground: #102c23;
+  --shell-emphasis: #d7f56a;
+  --shell-border: #29483c;
 
   /* Semantic status */
   --info: #3478a8;
   --info-foreground: #ffffff;
-  --info-subtle: #e8f3fa;
-  --warning: #b67612;
-  --warning-foreground: #3d2908;
+  --info-subtle: #e8f2f8;
+  --warning: #9a6414;
+  --warning-foreground: #332000;
   --warning-subtle: #fff3d8;
   --critical: #c74d4d;
   --critical-foreground: #ffffff;
@@ -53,16 +54,17 @@
   --font-family-sans:
     Pretendard, "Noto Sans KR", Inter, ui-sans-serif, system-ui, -apple-system,
     BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-family-mono: "IBM Plex Mono", ui-monospace, "Cascadia Code", "SF Mono", monospace;
+  --font-family-mono:
+    "IBM Plex Mono", ui-monospace, "Cascadia Code", "SF Mono", monospace;
 
   /* Shape and elevation */
   --shape-radius-sm: 0.5rem;
-  --shape-radius-md: 0.625rem;
-  --shape-radius-lg: 0.75rem;
-  --shape-radius-xl: 1rem;
+  --shape-radius-md: 0.6875rem;
+  --shape-radius-lg: 0.875rem;
+  --shape-radius-xl: 1.125rem;
   --radius: var(--shape-radius-md);
-  --shadow-sm: 0 1px 2px color-mix(in srgb, var(--shell-background) 8%, transparent);
-  --shadow-md: 0 14px 42px color-mix(in srgb, var(--shell-background) 9%, transparent);
+  --shadow-sm: 0 1px 0 rgb(255 255 255 / 75%);
+  --shadow-md: 0 14px 42px rgb(21 59 47 / 7%);
 
   /* Four-pixel spacing scale */
   --space-1: 0.25rem;
@@ -75,98 +77,90 @@
   --space-10: 2.5rem;
   --space-12: 3rem;
 
-  /* Shared application shell */
+  /* Application shell */
   --shell-sidebar-width: 16rem;
   --shell-header-height: 4.25rem;
   --content-max-width: 90rem;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0f1713;
-    --surface: #16221c;
-    --surface-muted: #1b2b23;
-    --foreground: #f1f6f3;
-    --muted: #21352b;
-    --muted-foreground: #a7b5ad;
-    --border: #2b4035;
-    --input: #3b5749;
-
-    --primary: #328163;
-    --primary-foreground: #ffffff;
-    --accent: #294635;
-    --accent-foreground: #effac8;
-    --ring: #d7f56a;
-
-    --info: #68a9d3;
-    --info-foreground: #0d2432;
-    --info-subtle: #19384a;
-    --warning: #e4ac50;
-    --warning-foreground: #332207;
-    --warning-subtle: #3a2c14;
-    --critical: #e47a7a;
-    --critical-foreground: #350d0d;
-    --critical-subtle: #412020;
-    --success: #69b998;
-    --success-foreground: #0c2b1f;
-    --success-subtle: #18392d;
-  }
-}
-
 :root[data-theme="light"] {
   color-scheme: light;
-  --background: #f4f7f5;
-  --surface: #ffffff;
-  --surface-muted: #eef2f0;
-  --foreground: #17231d;
-  --muted: #e8eeea;
-  --muted-foreground: #68746e;
-  --border: #dce4df;
-  --input: #c8d3cd;
-  --primary: #1b503e;
-  --primary-foreground: #ffffff;
-  --accent: #effac8;
-  --accent-foreground: #102c23;
-  --ring: #328163;
-  --info: #3478a8;
-  --info-foreground: #ffffff;
-  --info-subtle: #e8f3fa;
-  --warning: #b67612;
-  --warning-foreground: #3d2908;
-  --warning-subtle: #fff3d8;
-  --critical: #c74d4d;
-  --critical-foreground: #ffffff;
-  --critical-subtle: #fff0ef;
-  --success: #276a51;
-  --success-foreground: #ffffff;
-  --success-subtle: #dff0e8;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    --background: #0d1713;
+    --surface: #12211b;
+    --surface-muted: #192a23;
+    --foreground: #f7fbf8;
+    --muted: #24372f;
+    --muted-foreground: #9aaba2;
+    --border: #2b4037;
+    --input: #3b5147;
+    --primary: #d7f56a;
+    --primary-foreground: #102c23;
+    --accent: #1b503e;
+    --accent-foreground: #effac8;
+    --ring: #d7f56a;
+    --shell-background: #09110e;
+    --shell-foreground: #f7fbf8;
+    --shell-muted-foreground: rgb(255 255 255 / 67%);
+    --shell-active: #d7f56a;
+    --shell-active-foreground: #102c23;
+    --shell-emphasis: #d7f56a;
+    --shell-border: #22352d;
+    --info: #66a9d4;
+    --info-foreground: #07151e;
+    --info-subtle: #173444;
+    --warning: #e4aa48;
+    --warning-foreground: #241703;
+    --warning-subtle: #3c2c13;
+    --critical: #eb7b7b;
+    --critical-foreground: #2b0909;
+    --critical-subtle: #421d1d;
+    --success: #79c6a6;
+    --success-foreground: #071a12;
+    --success-subtle: #18382b;
+    --shadow-sm: 0 1px 0 rgb(255 255 255 / 4%);
+    --shadow-md: 0 14px 42px rgb(0 0 0 / 20%);
+  }
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --background: #0f1713;
-  --surface: #16221c;
-  --surface-muted: #1b2b23;
-  --foreground: #f1f6f3;
-  --muted: #21352b;
-  --muted-foreground: #a7b5ad;
-  --border: #2b4035;
-  --input: #3b5749;
-  --primary: #328163;
-  --primary-foreground: #ffffff;
-  --accent: #294635;
+  --background: #0d1713;
+  --surface: #12211b;
+  --surface-muted: #192a23;
+  --foreground: #f7fbf8;
+  --muted: #24372f;
+  --muted-foreground: #9aaba2;
+  --border: #2b4037;
+  --input: #3b5147;
+  --primary: #d7f56a;
+  --primary-foreground: #102c23;
+  --accent: #1b503e;
   --accent-foreground: #effac8;
   --ring: #d7f56a;
-  --info: #68a9d3;
-  --info-foreground: #0d2432;
-  --info-subtle: #19384a;
-  --warning: #e4ac50;
-  --warning-foreground: #332207;
-  --warning-subtle: #3a2c14;
-  --critical: #e47a7a;
-  --critical-foreground: #350d0d;
-  --critical-subtle: #412020;
-  --success: #69b998;
-  --success-foreground: #0c2b1f;
-  --success-subtle: #18392d;
+  --shell-background: #09110e;
+  --shell-foreground: #f7fbf8;
+  --shell-muted-foreground: rgb(255 255 255 / 67%);
+  --shell-active: #d7f56a;
+  --shell-active-foreground: #102c23;
+  --shell-emphasis: #d7f56a;
+  --shell-border: #22352d;
+  --info: #66a9d4;
+  --info-foreground: #07151e;
+  --info-subtle: #173444;
+  --warning: #e4aa48;
+  --warning-foreground: #241703;
+  --warning-subtle: #3c2c13;
+  --critical: #eb7b7b;
+  --critical-foreground: #2b0909;
+  --critical-subtle: #421d1d;
+  --success: #79c6a6;
+  --success-foreground: #071a12;
+  --success-subtle: #18382b;
+  --shadow-sm: 0 1px 0 rgb(255 255 255 / 4%);
+  --shadow-md: 0 14px 42px rgb(0 0 0 / 20%);
 }

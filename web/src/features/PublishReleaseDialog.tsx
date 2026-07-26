@@ -3,6 +3,7 @@ import { DefinitionList, Field, Modal } from "../components/ui";
 import { type DeployResult, errorMessage, type GitSource } from "../lib/api";
 import { useApp } from "../lib/app-context";
 import { shortSHA } from "../lib/format";
+import { displayRepoURL } from "../lib/repo";
 import { Link } from "../lib/router";
 
 export function PublishReleaseDialog({
@@ -50,7 +51,7 @@ export function PublishReleaseDialog({
       <DefinitionList
         items={[
           ["Repository source", source.name],
-          ["Repository", source.repo_url],
+          ["Repository", displayRepoURL(source.repo_url)],
           ["Branch", source.branch || "main"],
           ["Subpath", source.subpath || "(repo root)"],
           [

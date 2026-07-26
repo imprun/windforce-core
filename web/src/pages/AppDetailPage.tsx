@@ -30,7 +30,7 @@ import type {
 } from "../lib/api";
 import { useApp, useAsync } from "../lib/app-context";
 import { formatJSON, formatRelative, formatTime, shortSHA } from "../lib/format";
-import { forgeCommitURL, forgeName, forgeTreeURL } from "../lib/repo";
+import { displayRepoURL, forgeCommitURL, forgeName, forgeTreeURL } from "../lib/repo";
 import { Link, useRouter } from "../lib/router";
 import { describeSchema, formatSchemaValue, type SchemaField } from "../lib/schema-document";
 
@@ -116,7 +116,7 @@ export function AppDetailPage({
       title={title}
       subtitle={
         source
-          ? `Repository source #${source.id}${source.name !== title ? ` · ${source.name}` : ""} · ${source.repo_url}`
+          ? `Repository source #${source.id}${source.name !== title ? ` · ${source.name}` : ""} · ${displayRepoURL(source.repo_url)}`
           : "Repository source removed · the released contract is still active"
       }
       actions={
@@ -900,7 +900,7 @@ function SourceCodeRef({
   if (!repoURL) return <span>repository source removed</span>;
   return (
     <span className="mono">
-      {repoURL}
+      {displayRepoURL(repoURL)}
       {subpath ? ` · ${subpath}` : ""}
     </span>
   );

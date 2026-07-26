@@ -9,6 +9,19 @@ type ForgeBase = {
   kind: ForgeKind;
 };
 
+export function displayRepoURL(repoURL: string): string {
+  const value = (repoURL || "").trim();
+  if (!value) return "";
+
+  if (/^(?:file:\/\/|[a-z]:[\\/]|[/\\])/i.test(value)) {
+    const segments = value.replace(/^file:\/\//i, "").split(/[\\/]+/).filter(Boolean);
+    const leaf = (segments.at(-1) || "repository").replace(/\.git$/i, "");
+    return `local/${leaf}`;
+  }
+
+  return value.replace(/^https?:\/\//i, "").replace(/\.git$/i, "");
+}
+
 export function forgeBase(repoURL: string): ForgeBase | null {
   let url = (repoURL || "").trim();
   const ssh = url.match(/^(?:ssh:\/\/)?git@([^:/]+)[:/](.+)$/);

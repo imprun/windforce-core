@@ -2,16 +2,16 @@ import {
   Activity,
   AppWindow,
   ArrowLeft,
-  ArrowUpLeft,
   ChevronDown,
-  CircleUserRound,
   ContactRound,
   Eraser,
+  KeyRound,
   Menu,
   MonitorSmartphone,
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
+  PanelTopOpen,
   ScrollText,
   Settings,
   Sun,
@@ -22,10 +22,7 @@ import { Dialog as DialogPrimitive, DropdownMenu as DropdownMenuPrimitive } from
 import { type ReactNode, useEffect, useState } from "react";
 import { useApp } from "../lib/app-context";
 import { Link, useRouter } from "../lib/router";
-import {
-  type HostConsoleConfig,
-  loadHostConsoleConfig,
-} from "../lib/runtime-config";
+import { type HostConsoleConfig, loadHostConsoleConfig } from "../lib/runtime-config";
 import { cn } from "../shared/lib/cn";
 import { useThemeStore } from "../shared/lib/theme";
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
@@ -85,7 +82,13 @@ function ThemeToggle() {
   );
 }
 
-function HostConsoleAction() {
+function HostConsoleAction({
+  placement = "topbar",
+  collapsed = false,
+}: {
+  placement?: "topbar" | "sidebar";
+  collapsed?: boolean;
+}) {
   const [hostConsole, setHostConsole] = useState<HostConsoleConfig | null>(null);
 
   useEffect(() => {
@@ -105,18 +108,36 @@ function HostConsoleAction() {
   if (!hostConsole) return null;
   return (
     <a
-      className="button secondary small min-w-0 gap-2 no-underline"
+      className={cn(
+        placement === "sidebar"
+          ? "flex min-h-10 w-full min-w-0 items-center gap-3 rounded-lg border border-shell-border bg-shell-foreground/5 px-3 text-sm font-medium text-shell-foreground no-underline transition-colors hover:bg-shell-foreground/10"
+          : "button secondary small min-w-0 gap-2 no-underline",
+        placement === "sidebar" && collapsed && "justify-center px-0",
+      )}
+      data-testid="host-console-action"
       href={hostConsole.url}
       aria-label={hostConsole.label}
       title={hostConsole.label}
     >
-      <ArrowUpLeft size={15} aria-hidden="true" />
-      <span className="hidden max-w-48 truncate lg:inline">{hostConsole.label}</span>
+      <PanelTopOpen size={15} aria-hidden="true" />
+      {placement === "sidebar" ? (
+        collapsed ? null : (
+          <span className="truncate">{hostConsole.label}</span>
+        )
+      ) : (
+        <span className="hidden max-w-48 truncate lg:inline">{hostConsole.label}</span>
+      )}
     </a>
   );
 }
 
-export function UserMenu() {
+export function UserMenu({
+  placement = "topbar",
+  collapsed = false,
+}: {
+  placement?: "topbar" | "sidebar";
+  collapsed?: boolean;
+} = {}) {
   const { settings, clearLocalCredentials, notify } = useApp();
   const { navigate } = useRouter();
   const hasApiToken = Boolean(settings.token);
@@ -125,7 +146,7 @@ export function UserMenu() {
   function handleClearLocalCredentials() {
     clearLocalCredentials();
     navigate("/settings");
-    notify("info", "Local API token and audit actor cleared from this browser.");
+    notify("info", "Browser API token and audit actor cleared.");
   }
 
   const itemClass =
@@ -136,35 +157,67 @@ export function UserMenu() {
       <DropdownMenuPrimitive.Trigger asChild>
         <button
           type="button"
-          className="flex min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-          aria-label={`User menu for ${settings.actor || "system"}`}
+          className={cn(
+            placement === "sidebar"
+              ? "flex min-h-10 w-full min-w-0 items-center gap-2.5 rounded-lg px-2 text-left text-shell-foreground hover:bg-shell-foreground/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-shell-active"
+              : "flex min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
+            placement === "sidebar" && collapsed && "justify-center px-0",
+          )}
+          aria-label={`Browser access menu for ${settings.actor || "system"}`}
         >
-          <CircleUserRound className="shrink-0 text-muted-foreground" size={18} />
-          <span className="hidden min-w-0 sm:block">
-            <span className="block truncate text-sm font-medium leading-tight">
-              {settings.actor || "system"}
+          <KeyRound
+            className={cn(
+              "shrink-0",
+              placement === "sidebar" ? "text-shell-muted-foreground" : "text-muted-foreground",
+            )}
+            size={18}
+          />
+          <span
+            className={cn(
+              "min-w-0 flex-1",
+              placement === "topbar" && "hidden sm:block",
+              collapsed && "hidden",
+            )}
+          >
+            <span className="block truncate text-sm font-medium leading-tight">Browser access</span>
+            <span
+              className={cn(
+                "block text-xs leading-tight",
+                placement === "sidebar" ? "text-shell-muted-foreground" : "text-muted-foreground",
+              )}
+            >
+              {settings.actor || "system"} actor
             </span>
-            <span className="block text-xs leading-tight text-muted-foreground">Audit actor</span>
           </span>
-          <ChevronDown className="shrink-0 text-muted-foreground" size={14} />
+          {collapsed ? null : (
+            <ChevronDown
+              className={cn(
+                "shrink-0",
+                placement === "sidebar" ? "text-shell-muted-foreground" : "text-muted-foreground",
+              )}
+              size={14}
+            />
+          )}
         </button>
       </DropdownMenuPrimitive.Trigger>
       <DropdownMenuPrimitive.Portal>
         <DropdownMenuPrimitive.Content
-          align="end"
+          align={placement === "sidebar" ? "start" : "end"}
+          side={placement === "sidebar" ? "top" : "bottom"}
           sideOffset={8}
           className="z-[100] min-w-56 rounded-md border border-border bg-surface p-1 text-foreground shadow-lg"
         >
           <DropdownMenuPrimitive.Label className="px-2 py-2">
-            <span className="block text-sm font-medium">{settings.actor || "system"}</span>
+            <span className="block text-sm font-medium">Browser access</span>
             <span className="block text-xs text-muted-foreground">
+              {settings.actor || "system"} actor ·{" "}
               {hasApiToken ? "API token configured" : "API token not configured"}
             </span>
           </DropdownMenuPrimitive.Label>
           <DropdownMenuPrimitive.Separator className="my-1 h-px bg-border" />
           <DropdownMenuPrimitive.Item className={itemClass} onSelect={() => navigate("/settings")}>
             <Settings size={16} />
-            Browser API settings
+            Connection settings
           </DropdownMenuPrimitive.Item>
           <DropdownMenuPrimitive.Item
             className={itemClass}
@@ -172,7 +225,7 @@ export function UserMenu() {
             onSelect={handleClearLocalCredentials}
           >
             <Eraser size={16} />
-            {hasBrowserIdentity ? "Clear local credentials" : "No local credentials"}
+            {hasBrowserIdentity ? "Clear browser access" : "No browser access configured"}
           </DropdownMenuPrimitive.Item>
         </DropdownMenuPrimitive.Content>
       </DropdownMenuPrimitive.Portal>
@@ -186,7 +239,11 @@ function MobileNavigation({ path }: { path: string }) {
   return (
     <DialogPrimitive.Root open={open} onOpenChange={setOpen}>
       <DialogPrimitive.Trigger asChild>
-        <button className="icon-control md:hidden" type="button" aria-label="Open navigation menu">
+        <button
+          className="mobileNavTrigger icon-control"
+          type="button"
+          aria-label="Open navigation menu"
+        >
           <Menu size={18} aria-hidden="true" />
         </button>
       </DialogPrimitive.Trigger>
@@ -201,12 +258,23 @@ function MobileNavigation({ path }: { path: string }) {
               <span className="flex size-8 items-center justify-center rounded-lg bg-shell-active text-shell-active-foreground">
                 <Wind size={16} strokeWidth={2.2} aria-hidden="true" />
               </span>
-              windforce-core
+              <span className="min-w-0">
+                <span className="block leading-tight">Windforce</span>
+                <span className="block text-xs font-normal leading-tight text-shell-muted-foreground">
+                  Execution workspace
+                </span>
+              </span>
             </DialogPrimitive.Title>
             <DialogPrimitive.Close className="icon-control" aria-label="Close navigation menu">
               <X size={17} aria-hidden="true" />
             </DialogPrimitive.Close>
           </header>
+          <section className="border-b border-shell-border p-3" aria-label="Workspace context">
+            <span className="mb-2 block px-1 text-[0.6875rem] font-medium uppercase tracking-[0.08em] text-shell-muted-foreground">
+              Workspace
+            </span>
+            <WorkspaceSwitcher />
+          </section>
           <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-4" aria-label="Mobile">
             {primaryNavItems.map((item) => {
               const Icon = item.icon;
@@ -224,9 +292,10 @@ function MobileNavigation({ path }: { path: string }) {
               );
             })}
           </nav>
-          <div className="border-t border-shell-border p-3">
-            <WorkspaceSwitcher />
-          </div>
+          <footer className="grid gap-2 border-t border-shell-border p-3">
+            <HostConsoleAction placement="sidebar" />
+            <UserMenu placement="sidebar" />
+          </footer>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>
@@ -272,15 +341,21 @@ export function Layout({
             </Link>
             <span className="h-5 w-px bg-border" aria-hidden="true" />
             <span className="text-xs font-medium text-muted-foreground">
-              Instance administration
+              Workspace administration
             </span>
           </div>
           <div className="flex items-center gap-2">
             <HostConsoleAction />
             <ThemeToggle />
             <UserMenu />
-            <Link className="button small" to="/">
-              <ArrowLeft size={15} /> Back to workspace
+            <Link
+              className="button small"
+              to="/"
+              aria-label="Open current workspace"
+              title="Open current workspace"
+            >
+              <ArrowLeft size={15} />
+              <span className="hidden sm:inline">Open current workspace</span>
             </Link>
           </div>
         </header>
@@ -319,9 +394,30 @@ export function Layout({
             <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-shell-active text-shell-active-foreground">
               <Wind size={16} strokeWidth={2.2} />
             </span>
-            {!collapsed ? <span className="truncate">windforce-core</span> : null}
+            {!collapsed ? (
+              <span className="min-w-0">
+                <span className="block truncate leading-tight">Windforce</span>
+                <span className="block truncate text-xs font-normal leading-tight text-shell-muted-foreground">
+                  Execution workspace
+                </span>
+              </span>
+            ) : null}
           </Link>
         </div>
+        <section
+          className={cn(
+            "sidebarWorkspaceContext border-b border-shell-border p-3",
+            collapsed && "px-2",
+          )}
+          aria-label="Workspace context"
+        >
+          {!collapsed ? (
+            <span className="mb-2 block px-1 text-[0.6875rem] font-medium uppercase tracking-[0.08em] text-shell-muted-foreground">
+              Workspace
+            </span>
+          ) : null}
+          <WorkspaceSwitcher />
+        </section>
         <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-4" aria-label="Primary">
           {primaryNavItems.map((item) => {
             const Icon = item.icon;
@@ -339,43 +435,45 @@ export function Layout({
             );
           })}
         </nav>
-        {!collapsed ? (
-          <div className="sidebarFooter flex flex-col gap-2 border-t border-shell-border p-3">
-            <WorkspaceSwitcher />
-          </div>
-        ) : null}
+        <footer
+          className={cn(
+            "sidebarFooter grid gap-2 border-t border-shell-border p-3",
+            collapsed && "px-2",
+          )}
+        >
+          <HostConsoleAction placement="sidebar" collapsed={collapsed} />
+          <UserMenu placement="sidebar" collapsed={collapsed} />
+        </footer>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-[var(--shell-header-height)] shrink-0 items-center justify-between gap-3 border-b border-border bg-background px-4 sm:px-6">
-          <div className="flex min-w-0 items-center gap-2 md:hidden">
+          <div className="flex min-w-0 items-center gap-2">
             <MobileNavigation path={path} />
-            <div className="mobileWorkspaceContext min-w-0">
-              <WorkspaceSwitcher />
+            <button
+              className="icon-control hidden md:inline-flex"
+              id="sidebarToggle"
+              type="button"
+              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              aria-expanded={!collapsed}
+              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              onClick={() => setCollapsed((current) => !current)}
+            >
+              {collapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
+            </button>
+            <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+              <span className="hidden font-mono text-foreground sm:inline">
+                {settings.workspace}
+              </span>
+              <span className="hidden sm:inline" aria-hidden="true">
+                workspace
+              </span>
+              <span aria-hidden="true">/</span>
+              <span className="truncate font-medium text-foreground">{title}</span>
             </div>
           </div>
-          <button
-            className="icon-control hidden md:inline-flex"
-            id="sidebarToggle"
-            type="button"
-            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            aria-expanded={!collapsed}
-            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            onClick={() => setCollapsed((current) => !current)}
-          >
-            {collapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
-          </button>
-          <div className="hidden min-w-0 items-center gap-2 text-xs text-muted-foreground md:flex">
-            <span className="font-mono text-foreground">{settings.workspace}</span>
-            <span>workspace</span>
-            <span aria-hidden="true">/</span>
-            <span className="truncate font-medium text-foreground">{title}</span>
-          </div>
-          <div className="ml-auto flex items-center gap-2">
-            <HostConsoleAction />
+          <div className="flex shrink-0 items-center">
             <ThemeToggle />
-            <span className="hidden h-6 w-px bg-border sm:block" aria-hidden="true" />
-            <UserMenu />
           </div>
         </header>
         <main className="min-w-0 flex-1 overflow-y-auto">

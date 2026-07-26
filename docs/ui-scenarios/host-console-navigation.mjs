@@ -1,17 +1,17 @@
 export default {
   id: "host-console-navigation",
-  title: "Return to the host console",
+  title: "Open host management",
   description:
-    "A hosted or self-managed portal can configure one explicit return action without changing the engine navigation.",
+    "A hosted or self-managed portal can configure one explicit management action in the sidebar footer without crowding the runtime top bar.",
   screenshot: "docs/assets/ui/host-console-navigation.png",
   guide: [
     "Open the embedded Web UI from the configured host portal.",
-    "Use Back to host console in the top bar to return to the surrounding product.",
-    "On narrow screens the same action remains available as an icon with an accessible label.",
+    "Use the configured host action above the account control in the sidebar footer.",
+    "The destination label makes the management-plane boundary explicit.",
   ],
   async run({ page, capture }) {
     await page.goto();
-    await page.waitForSelector("a[aria-label='Back to host console']");
+    await page.waitForSelector("[data-testid='host-console-action']");
     await capture();
   },
 };
