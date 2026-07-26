@@ -14,10 +14,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/imprun/windforce-core/internal/pythonruntime"
 )
 
 type RunParams struct {
@@ -106,27 +107,7 @@ func pythonArgv(pythonPath string, wrapperName string) []string {
 }
 
 func defaultWindowsPythonPath() string {
-	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
-		if strings.TrimSpace(dir) == "" {
-			continue
-		}
-		for _, name := range []string{"python.exe", "python3.exe"} {
-			candidate := filepath.Join(dir, name)
-			if isWindowsAppsAlias(candidate) {
-				continue
-			}
-			info, err := os.Stat(candidate)
-			if err == nil && !info.IsDir() {
-				return candidate
-			}
-		}
-	}
-	return ""
-}
-
-func isWindowsAppsAlias(path string) bool {
-	clean := strings.ToLower(filepath.Clean(path))
-	return strings.Contains(clean, `\microsoft\windowsapps\`)
+	return pythonruntime.FindWindowsExecutable(os.Getenv("PATH"))
 }
 
 // Run executes the job and returns its result. An error is returned only for

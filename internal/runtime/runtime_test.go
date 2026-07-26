@@ -600,6 +600,52 @@ func TestSourceReadyValueIncludesPythonABI(t *testing.T) {
 	}
 }
 
+func TestValidatePythonEntrypointRunsOutsidePreparedSource(t *testing.T) {
+	requirePythonRuntime(t)
+	sourceDir := t.TempDir()
+	observationDir := t.TempDir()
+	t.Setenv("TEMP", observationDir)
+	t.Setenv("TMP", observationDir)
+	t.Setenv("TMPDIR", observationDir)
+
+	entrypointPath := filepath.Join(sourceDir, "main.py")
+	source := `import os
+from pathlib import Path
+
+temp_dir = os.environ.get("TEMP") or os.environ.get("TMPDIR") or os.environ["TMP"]
+Path(temp_dir, "validation-cwd.txt").write_text(os.getcwd(), encoding="utf-8")
+
+def main(ctx):
+    return {}
+`
+	if err := os.WriteFile(entrypointPath, []byte(source), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	runner := Runner{PythonPath: defaultPythonPath()}
+	if err := runner.validatePythonEntrypoint(context.Background(), sourceDir, entrypointPath); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(observationDir, "validation-cwd.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := filepath.Abs(strings.TrimSpace(string(raw)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceAbs, err := filepath.Abs(sourceDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == sourceAbs {
+		t.Fatalf("python entrypoint validation cwd = %q, must be isolated from prepared source", got)
+	}
+	if !strings.HasPrefix(filepath.Base(got), "windforce-python-check-") {
+		t.Fatalf("python entrypoint validation cwd = %q, want isolated check directory", got)
+	}
+}
+
 func TestRunnerDoesNotMarkFailedPrepareReady(t *testing.T) {
 	tempDir := t.TempDir()
 	sourceDir := filepath.Join(tempDir, "source")
