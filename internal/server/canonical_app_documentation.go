@@ -87,7 +87,7 @@ func readCanonicalReadme(root string) (path string, markdown string, available b
 		if !utf8.Valid(contents) {
 			return "", "", false, &documentationEncodingError{path: name}
 		}
-		return name, string(contents), true, nil
+		return "README.md", string(contents), true, nil
 	}
 	return "", "", false, nil
 }
