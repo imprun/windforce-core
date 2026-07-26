@@ -12,10 +12,26 @@ import (
 	"testing"
 )
 
+func chdir(t *testing.T, dir string) {
+	t.Helper()
+	previous, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(previous); err != nil {
+			t.Errorf("restore working directory: %v", err)
+		}
+	})
+}
+
 func runMainInDir(t *testing.T, input string, env map[string]string, h Handler) (int, []byte) {
 	t.Helper()
 	dir := t.TempDir()
-	t.Chdir(dir)
+	chdir(t, dir)
 	if err := os.WriteFile(filepath.Join(dir, "input.json"), []byte(input), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +142,7 @@ func TestCreateAppMiddlewareOnionOrder(t *testing.T) {
 
 func TestNewContextMapsEnvAndInput(t *testing.T) {
 	dir := t.TempDir()
-	t.Chdir(dir)
+	chdir(t, dir)
 	if err := os.WriteFile(filepath.Join(dir, "input.json"), []byte(`{"k":1}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +175,7 @@ func TestNewContextMapsEnvAndInput(t *testing.T) {
 
 func TestNewContextSetsFlowResumeValue(t *testing.T) {
 	dir := t.TempDir()
-	t.Chdir(dir)
+	chdir(t, dir)
 	if err := os.WriteFile(filepath.Join(dir, "input.json"), []byte(`{"approved":true}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
