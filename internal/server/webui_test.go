@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -61,5 +62,56 @@ func TestWebUIServedWithoutAPIAuth(t *testing.T) {
 	handler.ServeHTTP(api, httptest.NewRequest(http.MethodGet, "/api/w/default/apps", nil))
 	if api.Code != http.StatusUnauthorized {
 		t.Fatalf("api status = %d, want %d", api.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestWebUIExposesValidatedHostConsoleConfig(t *testing.T) {
+	handler := New(Config{
+		UIHostURL:   "https://portal.example.test/console",
+		UIHostLabel: "Back to operations portal",
+	})
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(
+		response,
+		httptest.NewRequest(http.MethodGet, "/ui/config.json", nil),
+	)
+	if response.Code != http.StatusOK {
+		t.Fatalf("config status = %d, want %d", response.Code, http.StatusOK)
+	}
+	if got := response.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("cache control = %q, want no-store", got)
+	}
+	var config struct {
+		HostConsole *struct {
+			URL   string `json:"url"`
+			Label string `json:"label"`
+		} `json:"host_console"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&config); err != nil {
+		t.Fatal(err)
+	}
+	if config.HostConsole == nil ||
+		config.HostConsole.URL != "https://portal.example.test/console" ||
+		config.HostConsole.Label != "Back to operations portal" {
+		t.Fatalf("host console config = %#v", config.HostConsole)
+	}
+
+	invalid := New(Config{UIHostURL: "javascript:alert(1)"})
+	response = httptest.NewRecorder()
+	invalid.ServeHTTP(
+		response,
+		httptest.NewRequest(http.MethodGet, "/ui/config.json", nil),
+	)
+	config = struct {
+		HostConsole *struct {
+			URL   string `json:"url"`
+			Label string `json:"label"`
+		} `json:"host_console"`
+	}{}
+	if err := json.NewDecoder(response.Body).Decode(&config); err != nil {
+		t.Fatal(err)
+	}
+	if config.HostConsole != nil {
+		t.Fatalf("invalid host console was exposed: %#v", config.HostConsole)
 	}
 }

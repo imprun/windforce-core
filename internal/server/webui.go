@@ -3,6 +3,7 @@ package server
 import (
 	"io/fs"
 	"net/http"
+	"net/url"
 	"path"
 	"strings"
 
@@ -22,6 +23,21 @@ func mustWebUIAssets() fs.FS {
 	return assets
 }
 
+func normalizeUIHost(rawURL, rawLabel string) (string, string) {
+	target, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil ||
+		(target.Scheme != "http" && target.Scheme != "https") ||
+		target.Host == "" ||
+		target.User != nil {
+		return "", ""
+	}
+	label := strings.TrimSpace(rawLabel)
+	if label == "" {
+		label = "Back to host console"
+	}
+	return target.String(), label
+}
+
 func (h *Handler) handleWebUI(w http.ResponseWriter, r *http.Request) bool {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		return false
@@ -38,6 +54,18 @@ func (h *Handler) handleWebUI(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 	assetPath := strings.TrimPrefix(r.URL.Path, "/ui/")
+	if assetPath == "config.json" {
+		w.Header().Set("Cache-Control", "no-store")
+		config := map[string]interface{}{}
+		if h.uiHostURL != "" {
+			config["host_console"] = map[string]string{
+				"url":   h.uiHostURL,
+				"label": h.uiHostLabel,
+			}
+		}
+		writeJSON(w, http.StatusOK, config)
+		return true
+	}
 	r = r.Clone(r.Context())
 	if assetPath != "" && !webUIAssetExists(assetPath) && !looksLikeAssetPath(assetPath) {
 		// The Web UI is a single-page app: client-side routes such as

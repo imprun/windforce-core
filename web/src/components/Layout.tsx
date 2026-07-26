@@ -2,6 +2,7 @@ import {
   Activity,
   AppWindow,
   ArrowLeft,
+  ArrowUpLeft,
   ChevronDown,
   CircleUserRound,
   ContactRound,
@@ -21,6 +22,10 @@ import { Dialog as DialogPrimitive, DropdownMenu as DropdownMenuPrimitive } from
 import { type ReactNode, useEffect, useState } from "react";
 import { useApp } from "../lib/app-context";
 import { Link, useRouter } from "../lib/router";
+import {
+  type HostConsoleConfig,
+  loadHostConsoleConfig,
+} from "../lib/runtime-config";
 import { cn } from "../shared/lib/cn";
 import { useThemeStore } from "../shared/lib/theme";
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
@@ -77,6 +82,37 @@ function ThemeToggle() {
     >
       <Icon size={16} />
     </button>
+  );
+}
+
+function HostConsoleAction() {
+  const [hostConsole, setHostConsole] = useState<HostConsoleConfig | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void loadHostConsoleConfig()
+      .then((config) => {
+        if (active) setHostConsole(config);
+      })
+      .catch(() => {
+        if (active) setHostConsole(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  if (!hostConsole) return null;
+  return (
+    <a
+      className="button secondary small min-w-0 gap-2 no-underline"
+      href={hostConsole.url}
+      aria-label={hostConsole.label}
+      title={hostConsole.label}
+    >
+      <ArrowUpLeft size={15} aria-hidden="true" />
+      <span className="hidden max-w-48 truncate lg:inline">{hostConsole.label}</span>
+    </a>
   );
 }
 
@@ -240,6 +276,7 @@ export function Layout({
             </span>
           </div>
           <div className="flex items-center gap-2">
+            <HostConsoleAction />
             <ThemeToggle />
             <UserMenu />
             <Link className="button small" to="/">
@@ -335,6 +372,7 @@ export function Layout({
             <span className="truncate font-medium text-foreground">{title}</span>
           </div>
           <div className="ml-auto flex items-center gap-2">
+            <HostConsoleAction />
             <ThemeToggle />
             <span className="hidden h-6 w-px bg-border sm:block" aria-hidden="true" />
             <UserMenu />
