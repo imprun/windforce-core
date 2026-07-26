@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-07-22) — issue #126.
+Accepted (2026-07-22) — issue #126. 외부 adapter용 Execution API와 네 HTTP plane 유지 결정은 [ADR 0013](0013-canonical-invocation-and-trigger-boundary.md)이 canonical Invocation API와 compatibility migration으로 갱신한다.
 
 이 결정은 ADR 0008의 Dispatcher 프로세스 배치와 ADR 0011의 Public API 프로세스 배치를 갱신한다. 각 ADR의 Webhook 전달 계약과 Public API 계약은 그대로 유지한다.
 
