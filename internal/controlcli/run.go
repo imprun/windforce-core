@@ -119,11 +119,20 @@ func (r *runner) command(args []string) error {
 	case "provisioning":
 		return r.provisioning(args[1:])
 	case "openapi":
+		if len(args) != 1 {
+			return usageError{"usage: windforce openapi"}
+		}
 		return r.json(http.MethodGet, r.client.WorkspacePath("openapi.json"), nil)
 	case "version":
+		if len(args) != 1 {
+			return usageError{"usage: windforce version"}
+		}
 		_, err := fmt.Fprintln(r.stdout, Version)
 		return err
 	case "help", "--help", "-h":
+		if len(args) != 1 {
+			return usageError{"usage: windforce help"}
+		}
 		printUsage(r.stdout)
 		return nil
 	default:

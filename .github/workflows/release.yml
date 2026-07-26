@@ -10,6 +10,7 @@ permissions:
 jobs:
   cli:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -18,6 +19,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Test
+        run: go test ./...
       - uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
@@ -25,3 +28,27 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  verify:
+    needs: cli
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Download published CLI
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download "${GITHUB_REF_NAME}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --pattern checksums.txt \
+            --pattern '*_linux_amd64.tar.gz'
+      - name: Verify checksum and executable
+        run: |
+          sha256sum --check --ignore-missing checksums.txt
+          archive="$(find . -maxdepth 1 -type f -name '*_linux_amd64.tar.gz' -print -quit)"
+          test -n "${archive}"
+          mkdir -p "${RUNNER_TEMP}/windforce-smoke"
+          tar -xzf "${archive}" -C "${RUNNER_TEMP}/windforce-smoke"
+          "${RUNNER_TEMP}/windforce-smoke/windforce" version
