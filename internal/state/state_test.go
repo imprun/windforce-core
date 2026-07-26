@@ -416,7 +416,9 @@ func TestJobSummarySkipsBreakdownsWithOnlyOldCompletedJobs(t *testing.T) {
 
 func TestLocalStoreHeartbeatExtendsLease(t *testing.T) {
 	store := NewLocalStore(t.TempDir() + "/state.json")
-	exerciseStoreHeartbeatExtendsLease(t, store)
+	clock := newManualClock()
+	store.leaseNow = clock.Now
+	exerciseStoreHeartbeatExtendsLease(t, store, clock)
 }
 
 func TestPostgresStoreHeartbeatExtendsLease(t *testing.T) {
@@ -435,7 +437,9 @@ func TestPostgresStoreHeartbeatExtendsLease(t *testing.T) {
 	if _, err := store.pool.Exec(context.Background(), `TRUNCATE job_logs, run_events, human_tasks, jobs, runs RESTART IDENTITY CASCADE`); err != nil {
 		t.Fatalf("TRUNCATE returned error: %v", err)
 	}
-	exerciseStoreHeartbeatExtendsLease(t, store)
+	clock := newManualClock()
+	store.leaseNow = clock.Now
+	exerciseStoreHeartbeatExtendsLease(t, store, clock)
 }
 
 func TestLocalStoreClaimJobForTags(t *testing.T) {
@@ -568,9 +572,25 @@ func TestActionJobDefaultsActorAudit(t *testing.T) {
 	}
 }
 
-func exerciseStoreHeartbeatExtendsLease(t *testing.T, store Store) {
+type manualClock struct {
+	now time.Time
+}
+
+func newManualClock() *manualClock {
+	return &manualClock{now: time.Now().UTC().Truncate(time.Millisecond)}
+}
+
+func (c *manualClock) Now() time.Time {
+	return c.now
+}
+
+func (c *manualClock) Advance(duration time.Duration) {
+	c.now = c.now.Add(duration)
+}
+
+func exerciseStoreHeartbeatExtendsLease(t *testing.T, store Store, clock *manualClock) {
 	t.Helper()
-	ttl := 100 * time.Millisecond
+	ttl := time.Minute
 	deployment := contract.Deployment{
 		Workspace: "default",
 		App:       "echo",
@@ -591,7 +611,10 @@ func exerciseStoreHeartbeatExtendsLease(t *testing.T, store Store) {
 	if claimed.ID != job.ID {
 		t.Fatalf("claimed job = %s, want %s", claimed.ID, job.ID)
 	}
-	time.Sleep(70 * time.Millisecond)
+	if want := clock.Now().Add(ttl); !lease.ExpiresAt.Equal(want) {
+		t.Fatalf("initial lease expiry = %s, want %s", lease.ExpiresAt, want)
+	}
+	clock.Advance(45 * time.Second)
 	heartbeat, err := store.HeartbeatJob(context.Background(), lease, ttl)
 	if err != nil {
 		t.Fatalf("HeartbeatJob returned error: %v", err)
@@ -599,10 +622,21 @@ func exerciseStoreHeartbeatExtendsLease(t *testing.T, store Store) {
 	if !heartbeat.StillOwned {
 		t.Fatalf("HeartbeatJob StillOwned = false")
 	}
-	time.Sleep(50 * time.Millisecond)
+	clock.Advance(30 * time.Second)
 	_, _, err = store.ClaimJob(context.Background(), "worker-b", ttl)
 	if !errors.Is(err, ErrNoQueuedJob) {
 		t.Fatalf("ClaimJob after heartbeat error = %v, want ErrNoQueuedJob", err)
+	}
+	clock.Advance(31 * time.Second)
+	reclaimed, renewedLease, err := store.ClaimJob(context.Background(), "worker-b", ttl)
+	if err != nil {
+		t.Fatalf("ClaimJob after renewed lease expiry returned error: %v", err)
+	}
+	if reclaimed.ID != job.ID {
+		t.Fatalf("reclaimed job = %s, want %s", reclaimed.ID, job.ID)
+	}
+	if renewedLease.WorkerID != "worker-b" || renewedLease.Attempt != lease.Attempt+1 {
+		t.Fatalf("renewed lease = %#v, want worker-b attempt %d", renewedLease, lease.Attempt+1)
 	}
 }
 

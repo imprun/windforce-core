@@ -35,6 +35,7 @@ type PostgresStore struct {
 	pool              *pgxpool.Pool
 	SecretKey         string
 	SecretKeyPrevious string
+	leaseNow          nowFunc
 }
 
 func OpenPostgresStore(ctx context.Context, databaseURL string) (*PostgresStore, error) {
@@ -392,7 +393,7 @@ func (s *PostgresStore) ClaimJobForWorker(ctx context.Context, workerID string, 
 	var claimed Job
 	var lease Lease
 	err := s.withTx(ctx, func(tx pgx.Tx) error {
-		now := time.Now().UTC()
+		now := currentUTC(s.leaseNow)
 		canceledRows, err := tx.Query(ctx, `SELECT `+jobColumns+` FROM jobs WHERE state='running' AND lease_expires_at < $1 AND canceled_by IS NOT NULL FOR UPDATE`, now)
 		if err != nil {
 			return err
@@ -499,7 +500,7 @@ func (s *PostgresStore) HeartbeatJob(ctx context.Context, lease Lease, leaseTTL 
 	if leaseTTL <= 0 {
 		leaseTTL = defaultLeaseTime
 	}
-	now := time.Now().UTC()
+	now := currentUTC(s.leaseNow)
 	expiresAt := now.Add(leaseTTL)
 	var result HeartbeatResult
 	err := s.withTx(ctx, func(tx pgx.Tx) error {

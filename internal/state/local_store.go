@@ -21,6 +21,7 @@ type LocalStore struct {
 	Path              string
 	SecretKey         string
 	SecretKeyPrevious string
+	leaseNow          nowFunc
 }
 
 func NewLocalStore(path string) *LocalStore {
@@ -507,7 +508,7 @@ func (s *LocalStore) ClaimJobForWorker(ctx context.Context, workerID string, tag
 	offeredLabels := normalizeClaimTags(labels)
 	var claimed Job
 	var lease Lease
-	err := s.update(ctx, func(snapshot *Snapshot, now time.Time) error {
+	err := s.updateLease(ctx, func(snapshot *Snapshot, now time.Time) error {
 		if err := s.requeueExpiredJobs(ctx, snapshot, now); err != nil {
 			return err
 		}
@@ -578,7 +579,7 @@ func (s *LocalStore) HeartbeatJob(ctx context.Context, lease Lease, leaseTTL tim
 		leaseTTL = defaultLeaseTime
 	}
 	var result HeartbeatResult
-	err := s.update(ctx, func(snapshot *Snapshot, now time.Time) error {
+	err := s.updateLease(ctx, func(snapshot *Snapshot, now time.Time) error {
 		job, ok := snapshot.Jobs[lease.JobID]
 		if !ok || job.State != JobRunning || job.LeaseOwner != lease.WorkerID || job.Attempt != lease.Attempt {
 			return nil
@@ -923,6 +924,14 @@ func (s *LocalStore) readStateFile(ctx context.Context) ([]byte, error) {
 }
 
 func (s *LocalStore) update(ctx context.Context, fn func(*Snapshot, time.Time) error) error {
+	return s.updateWithClock(ctx, nil, fn)
+}
+
+func (s *LocalStore) updateLease(ctx context.Context, fn func(*Snapshot, time.Time) error) error {
+	return s.updateWithClock(ctx, s.leaseNow, fn)
+}
+
+func (s *LocalStore) updateWithClock(ctx context.Context, nowFunc nowFunc, fn func(*Snapshot, time.Time) error) error {
 	if s.Path == "" {
 		return errors.New("state path is required")
 	}
@@ -931,7 +940,7 @@ func (s *LocalStore) update(ctx context.Context, fn func(*Snapshot, time.Time) e
 		if err != nil {
 			return err
 		}
-		now := time.Now().UTC()
+		now := currentUTC(nowFunc)
 		if err := fn(&snapshot, now); err != nil {
 			return err
 		}
