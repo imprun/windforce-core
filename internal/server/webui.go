@@ -33,7 +33,7 @@ func normalizeUIHost(rawURL, rawLabel string) (string, string) {
 	}
 	label := strings.TrimSpace(rawLabel)
 	if label == "" {
-		label = "Back to host console"
+		label = "Open host console"
 	}
 	return target.String(), label
 }

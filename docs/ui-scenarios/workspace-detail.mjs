@@ -14,8 +14,8 @@ export default {
   ],
   async run({ page, capture }) {
     await page.goto();
-    await page.click(".sidebarFooter .workspaceSwitcherTrigger");
-    await page.click(".sidebarFooter .workspaceManageLink");
+    await page.click(".sidebarWorkspaceContext .workspaceSwitcherTrigger");
+    await page.click(".sidebarWorkspaceContext .workspaceManageLink");
     await page.waitForSelector("#workspaceRegistry tbody tr");
     await page.clickText("Operations");
     await page.waitForText("main", "Workspace identity");

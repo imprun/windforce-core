@@ -4,15 +4,18 @@ import { describe, expect, test } from "vitest";
 const styles = await readFile(new URL("./styles.css", import.meta.url), "utf8");
 const designTokens = await readFile(new URL("./design-tokens.css", import.meta.url), "utf8");
 
-describe("Imprun design contract", () => {
+describe("Windforce Web UI design contract", () => {
   test("loads the synchronized semantic token source before application styles", () => {
     expect(styles).toMatch(/^@import "tailwindcss";\r?\n@import "\.\/design-tokens\.css";/);
-    expect(designTokens).toContain("Gale Console is the current visual reference");
+    expect(designTokens).toContain("Windforce Web UI semantic design tokens");
     expect(designTokens).toContain("--shell-sidebar-width: 16rem");
     expect(designTokens).toContain("--shell-header-height: 4.25rem");
     expect(designTokens).toContain("--content-max-width: 90rem");
     expect(designTokens).toContain("Pretendard");
+    expect(designTokens).toContain("--background: #f4f7f5");
     expect(designTokens).toContain("--shell-active: #d7f56a");
+    expect(designTokens).toContain("--background: #0d1713");
+    expect(designTokens).not.toContain("#a9c7ff");
   });
 
   test("keeps literal palette values out of application styling", () => {
@@ -22,7 +25,7 @@ describe("Imprun design contract", () => {
     expect(styles).not.toContain('"Inter"');
   });
 
-  test("maps legacy interaction classes to the strong Imprun semantic tokens", () => {
+  test("maps legacy interaction classes to strong semantic tokens", () => {
     expect(styles).toMatch(
       /\.button\.primary\s*\{[^}]*background:\s*var\(--primary\);[^}]*border-color:\s*var\(--primary\);/s,
     );
@@ -62,14 +65,15 @@ describe("provisioning layout", () => {
 });
 
 describe("workspace switcher layout", () => {
-  test("limits collapsed labels to the desktop sidebar instance", () => {
-    expect(styles).toContain(".sidebarCollapsed .sidebar .workspaceSwitcherText");
-    expect(styles).not.toMatch(/\.sidebarCollapsed \.workspaceSwitcherText\s*[,{]/);
+  test("keeps the collapsed sidebar workspace context compact", () => {
+    expect(styles).toMatch(
+      /\.sidebarCollapsed \.sidebarWorkspaceContext \.workspaceSwitcherTrigger\s*\{[^}]*width:\s*40px;[^}]*height:\s*40px;/s,
+    );
   });
 
-  test("opens the mobile workspace popover below its trigger", () => {
+  test("opens sidebar workspace popovers below their triggers", () => {
     expect(styles).toMatch(
-      /\.mobileWorkspaceContext \.workspacePopover\s*\{[^}]*top:\s*calc\(100% \+ 8px\);[^}]*bottom:\s*auto;/s,
+      /\.sidebarWorkspaceContext \.workspacePopover,[^{]+\.platformMobileNav \.workspacePopover\s*\{[^}]*top:\s*calc\(100% \+ 8px\);[^}]*bottom:\s*auto;/s,
     );
   });
 });

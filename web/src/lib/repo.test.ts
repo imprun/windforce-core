@@ -1,5 +1,16 @@
 import { describe, expect, test } from "vitest";
-import { forgeCommitURL, forgeName, forgeRawFileURL, forgeTreeURL } from "./repo";
+import { displayRepoURL, forgeCommitURL, forgeName, forgeRawFileURL, forgeTreeURL } from "./repo";
+
+describe("displayRepoURL", () => {
+  test("keeps hosted repository context concise", () => {
+    expect(displayRepoURL("https://github.com/org/repo.git")).toBe("github.com/org/repo");
+  });
+
+  test("does not expose local absolute paths", () => {
+    expect(displayRepoURL("C:\\Users\\developer\\sample\\remote.git")).toBe("local/remote");
+    expect(displayRepoURL("/home/developer/sample/repository.git")).toBe("local/repository");
+  });
+});
 
 describe("forgeTreeURL", () => {
   test("github https remotes", () => {

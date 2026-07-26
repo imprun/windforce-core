@@ -3,12 +3,13 @@ export default {
   id: "mobile-navigation",
   title: "Navigate on a narrow screen",
   description:
-    "The Imprun application shell keeps every primary engine destination available from an accessible mobile drawer.",
+    "The application shell keeps every primary engine destination available from an accessible mobile drawer.",
   screenshot: "docs/assets/ui/mobile-navigation.png",
   viewport: { width: 390, height: 844 },
   guide: [
     "Open the navigation menu in the top bar.",
-    "Choose Apps, Client Registry, Monitoring, Audit, or Settings.",
+    "Switch workspace, choose a product destination, or return to host management.",
+    "Use the account control at the bottom for browser credentials.",
     "Close the drawer with its close control, the backdrop, or the Escape key.",
   ],
   async run({ page, capture }) {

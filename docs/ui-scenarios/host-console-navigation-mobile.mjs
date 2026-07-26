@@ -1,18 +1,19 @@
 export default {
   id: "host-console-navigation-mobile",
-  title: "Return to the host console on mobile",
+  title: "Open host management on mobile",
   description:
-    "The configured return action remains in the top bar as a compact icon with the same accessible label.",
+    "The configured return action stays with account context in the mobile drawer instead of competing with page context.",
   screenshot: "docs/assets/ui/host-console-navigation-mobile.png",
   viewport: { width: 390, height: 844 },
   guide: [
     "Open the embedded Web UI on a narrow screen.",
-    "Use the arrow icon in the top bar to return to the configured host console.",
-    "The icon keeps the full host-console label for assistive technology and pointer tooltips.",
+    "Open the mobile navigation drawer.",
+    "Use the labelled host action above the account control to open the configured management console.",
   ],
   async run({ page, capture }) {
     await page.goto();
-    await page.waitForSelector("a[aria-label='Back to host console']");
+    await page.click('button[aria-label="Open navigation menu"]');
+    await page.waitForSelector(".platformMobileNav [data-testid='host-console-action']");
     await capture();
   },
 };

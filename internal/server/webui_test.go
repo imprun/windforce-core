@@ -66,6 +66,10 @@ func TestWebUIServedWithoutAPIAuth(t *testing.T) {
 }
 
 func TestWebUIExposesValidatedHostConsoleConfig(t *testing.T) {
+	if _, label := normalizeUIHost("https://portal.example.test/console", ""); label != "Open host console" {
+		t.Fatalf("default host console label = %q, want %q", label, "Open host console")
+	}
+
 	handler := New(Config{
 		UIHostURL:   "https://portal.example.test/console",
 		UIHostLabel: "Back to operations portal",

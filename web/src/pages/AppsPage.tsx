@@ -7,6 +7,7 @@ import { SourceReleaseActions } from "../features/SourceReleaseActions";
 import type { AppSummary, GitSource } from "../lib/api";
 import { useApp, useAsync } from "../lib/app-context";
 import { formatRelative, shortSHA } from "../lib/format";
+import { displayRepoURL } from "../lib/repo";
 import { Link, useRouter } from "../lib/router";
 
 // Either side may be missing: a registered source may not be released yet,
@@ -90,95 +91,129 @@ export function AppsPage() {
       {state.loading && !state.data ? <Loading /> : null}
 
       {state.data ? (
-        rows.length === 0 ? (
-          <EmptyState title={search ? "No apps match the filter." : "No apps registered yet."}>
-            {!search ? (
-              <p>
-                Register a repository source to create your first app, or create the managed sample
-                app to explore the release flow.
-              </p>
-            ) : null}
-          </EmptyState>
-        ) : (
-          <div className="tableWrap">
-            <table className="table" id="appList">
-              <thead>
-                <tr>
-                  <th>App</th>
-                  <th>Release state</th>
-                  <th>Repository source</th>
-                  <th>Last release</th>
-                  <th>Actions</th>
-                  <th>Route tag</th>
-                  <th aria-label="Row actions" />
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map(({ source, app }) => {
-                  const detailID = source ? source.id : app?.git_source_id;
-                  return (
-                    <tr key={detailID} className="tableRow">
-                      <td>
-                        <Link to={`/apps/${detailID}`} className="cellTitle">
-                          {app ? app.app_key : source?.name}
-                        </Link>
-                        <span className="cellSub">
-                          {app
-                            ? source
-                              ? source.name !== app.app_key
-                                ? `source / ${source.name}`
-                                : "released"
-                              : "repository source removed"
-                            : "registered · pending release"}
-                        </span>
-                      </td>
-                      <td>
-                        <ReleaseStateBadge
-                          released={Boolean(app)}
-                          bundleReady={app?.bundle_status === "ready"}
-                        />
-                      </td>
-                      <td>
-                        {source ? (
-                          <>
-                            <span className="cellTitle mono">{repoLabel(source.repo_url)}</span>
-                            <span className="cellSub mono">
-                              {source.branch || "main"}
-                              {source.subpath ? ` · ${source.subpath}` : ""}
-                              {source.last_synced_commit
-                                ? ` · synced ${shortSHA(source.last_synced_commit, 8)}`
-                                : " · not synced"}
-                            </span>
-                          </>
-                        ) : (
-                          <span className="cellSub">repository source removed</span>
-                        )}
-                      </td>
-                      <td>
-                        <span className="cellTitle mono">{shortSHA(app?.commit_sha)}</span>
-                        <span className="cellSub">{formatRelative(app?.updated_at)}</span>
-                      </td>
-                      <td>{app ? app.actions_count : "—"}</td>
-                      <td>{app ? <span className="mono">{app.effective_route_tag}</span> : "—"}</td>
-                      <td className="rowActions">
-                        {source ? (
-                          <SourceReleaseActions
-                            key={`${source.id}:${actionRevision}`}
-                            compact
-                            source={source}
-                            activeCommit={app?.commit_sha}
-                            activeBundleReady={app?.bundle_status === "ready"}
-                            onPublish={setPublishing}
+        <>
+          <section className="grid gap-3 sm:grid-cols-3" aria-label="Workspace summary">
+            {[
+              {
+                label: "Repository sources",
+                value: state.data.sources.length,
+                detail: "registered in this workspace",
+              },
+              {
+                label: "Published apps",
+                value: state.data.apps.length,
+                detail: "available to workers",
+              },
+              {
+                label: "Actions",
+                value: state.data.apps.reduce((total, app) => total + app.actions_count, 0),
+                detail: "in active releases",
+              },
+            ].map((item) => (
+              <article
+                key={item.label}
+                className="min-h-32 rounded-lg border border-border bg-surface p-4"
+              >
+                <span className="text-xs text-muted-foreground">{item.label}</span>
+                <strong className="mt-4 block text-3xl font-semibold tracking-tight">
+                  {item.value}
+                </strong>
+                <span className="mt-1 block text-xs text-muted-foreground">{item.detail}</span>
+              </article>
+            ))}
+          </section>
+          {rows.length === 0 ? (
+            <EmptyState title={search ? "No apps match the filter." : "No apps registered yet."}>
+              {!search ? (
+                <p>
+                  Register a repository source to create your first app, or create the managed
+                  sample app to explore the release flow.
+                </p>
+              ) : null}
+            </EmptyState>
+          ) : (
+            <div className="tableWrap">
+              <table className="table" id="appList">
+                <thead>
+                  <tr>
+                    <th>App</th>
+                    <th>Release state</th>
+                    <th>Repository source</th>
+                    <th>Last release</th>
+                    <th>Actions</th>
+                    <th>Route tag</th>
+                    <th aria-label="Row actions" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map(({ source, app }) => {
+                    const detailID = source ? source.id : app?.git_source_id;
+                    return (
+                      <tr key={detailID} className="tableRow">
+                        <td>
+                          <Link to={`/apps/${detailID}`} className="cellTitle">
+                            {app ? app.app_key : source?.name}
+                          </Link>
+                          <span className="cellSub">
+                            {app
+                              ? source
+                                ? source.name !== app.app_key
+                                  ? `source / ${source.name}`
+                                  : "released"
+                                : "repository source removed"
+                              : "registered · pending release"}
+                          </span>
+                        </td>
+                        <td>
+                          <ReleaseStateBadge
+                            released={Boolean(app)}
+                            bundleReady={app?.bundle_status === "ready"}
                           />
-                        ) : null}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )
+                        </td>
+                        <td>
+                          {source ? (
+                            <>
+                              <span className="cellTitle mono">{displayRepoURL(source.repo_url)}</span>
+                              <span className="cellSub mono">
+                                {source.branch || "main"}
+                                {source.subpath ? ` · ${source.subpath}` : ""}
+                                {source.last_synced_commit
+                                  ? ` · synced ${shortSHA(source.last_synced_commit, 8)}`
+                                  : " · not synced"}
+                              </span>
+                            </>
+                          ) : (
+                            <span className="cellSub">repository source removed</span>
+                          )}
+                        </td>
+                        <td>
+                          <span className="cellTitle mono">{shortSHA(app?.commit_sha)}</span>
+                          <span className="cellSub">{formatRelative(app?.updated_at)}</span>
+                        </td>
+                        <td>{app ? app.actions_count : "—"}</td>
+                        <td>
+                          {app ? <span className="mono">{app.effective_route_tag}</span> : "—"}
+                        </td>
+                        <td className="rowActions">
+                          {source ? (
+                            <SourceReleaseActions
+                              key={`${source.id}:${actionRevision}`}
+                              compact
+                              source={source}
+                              activeCommit={app?.commit_sha}
+                              activeBundleReady={app?.bundle_status === "ready"}
+                              onPublish={setPublishing}
+                            />
+                          ) : null}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
       ) : null}
 
       {registering ? (
@@ -208,8 +243,4 @@ export function AppsPage() {
       ) : null}
     </Layout>
   );
-}
-
-function repoLabel(repoURL: string): string {
-  return repoURL.replace(/^https?:\/\//, "").replace(/\.git$/, "");
 }

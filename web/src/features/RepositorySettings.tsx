@@ -4,6 +4,7 @@ import { errorMessage, type GitSource, type ProbeResult } from "../lib/api";
 import { useApp } from "../lib/app-context";
 import { formatTime, shortSHA } from "../lib/format";
 import { type GitAuthMethod, gitCredentialSecretValue } from "../lib/git-credential";
+import { displayRepoURL } from "../lib/repo";
 import {
   probePassed,
   reconnectCredentialPath,
@@ -88,7 +89,7 @@ export function RepositorySettings({
         <DefinitionList
           items={[
             ["Source name", source.name],
-            ["Repository URL", source.repo_url],
+            ["Repository URL", displayRepoURL(source.repo_url)],
             ["Branch", source.branch || "main"],
             ["Subpath", source.subpath || "(repo root)"],
             ["Repository access", repositoryAccessLabel(source)],
@@ -298,7 +299,7 @@ function ChangeBranchDialog({ source, onClose, onChanged }: RepositoryDialogProp
   }
 
   return (
-    <Modal title="Change tracked branch" subtitle={source.repo_url} onClose={onClose}>
+    <Modal title="Change tracked branch" subtitle={displayRepoURL(source.repo_url)} onClose={onClose}>
       <Field label="Branch">
         <input
           value={branch}
@@ -492,7 +493,11 @@ function ReconnectCredentialDialog({ source, onClose, onChanged }: RepositoryDia
   }
 
   return (
-    <Modal title="Reconnect repository access" subtitle={source.repo_url} onClose={onClose}>
+    <Modal
+      title="Reconnect repository access"
+      subtitle={displayRepoURL(source.repo_url)}
+      onClose={onClose}
+    >
       <Field label="Authentication">
         <select
           value={authMethod}

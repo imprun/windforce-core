@@ -15,6 +15,16 @@ The Apps view is the home screen. Every row is one app: its release state, repos
 3. Compare repository source, last release commit, action count, and route tag per app.
 4. Select an app row or app name to open its full detail view, or publish a release from the row.
 
+## Review the execution workspace in dark mode
+
+Dark mode keeps the green runtime identity while separating the shell, work surface, selection, and status colors by luminance.
+
+![Review the execution workspace in dark mode](../assets/ui/apps-overview-dark.png)
+
+1. Switch the execution workspace to dark mode from the appearance control.
+2. Confirm the near-black green shell stays distinct from the dark work surface.
+3. Use the mint selection and focus colors to identify the active workspace and navigation item.
+
 ## Register an app
 
 Register App points the control plane at a repository source. Registration validates repository access, branch, and windforce.json before saving.
@@ -134,32 +144,34 @@ General settings shows external CLI connection metadata and stores the API token
 
 ## Switch workspace context
 
-The workspace switcher identifies the current scope, lists available workspaces, and provides the entry point to instance workspace administration.
+The sidebar keeps the current workspace visible above product navigation and provides the entry point to instance workspace administration.
 
 ![Switch workspace context](../assets/ui/workspace-switcher.png)
 
-1. Open the workspace control at the bottom of the sidebar.
+1. Open the workspace control at the top of the sidebar.
 2. Select a workspace to change the active application and monitoring scope.
 3. Choose Manage workspaces to create workspaces or manage identity, access, audit, and lifecycle settings.
 
 ## Navigate on a narrow screen
 
-The Imprun application shell keeps every primary engine destination available from an accessible mobile drawer.
+The application shell keeps every primary engine destination available from an accessible mobile drawer.
 
 ![Navigate on a narrow screen](../assets/ui/mobile-navigation.png)
 
 1. Open the navigation menu in the top bar.
-2. Choose Apps, Client Registry, Monitoring, Audit, or Settings.
-3. Close the drawer with its close control, the backdrop, or the Escape key.
+2. Switch workspace, choose a product destination, or return to host management.
+3. Use the account control at the bottom for browser credentials.
+4. Close the drawer with its close control, the backdrop, or the Escape key.
 
 ## Switch workspace on a narrow screen
 
-The current workspace remains visible below the page title and opens the same context and administration menu on narrow screens.
+The mobile drawer keeps workspace context separate from the compact top bar and opens the same switcher and administration menu.
 
 ![Switch workspace on a narrow screen](../assets/ui/workspace-switcher-mobile.png)
 
-1. Open the workspace control below the page title.
-2. Choose another workspace or open Manage workspaces without returning to desktop navigation.
+1. Open the mobile navigation drawer.
+2. Open the workspace control below the Windforce runtime identity.
+3. Choose another workspace or open Manage workspaces without returning to desktop navigation.
 
 ## Collapse the sidebar
 
@@ -167,7 +179,7 @@ The sidebar collapses to an icon rail so wide tables get the full viewport. The 
 
 ![Collapse the sidebar](../assets/ui/collapse-sidebar.png)
 
-1. Click the collapse control beside the product title at the top of the sidebar.
+1. Click the collapse control at the start of the top context bar.
 2. Navigate with the icon rail; hover shows each destination.
 3. Click the control again to expand the sidebar.
 
@@ -177,10 +189,10 @@ The workspace registry uses an instance-administration shell without the active 
 
 ![Manage workspaces](../assets/ui/workspaces.png)
 
-1. Open the workspace switcher at the bottom of the sidebar.
+1. Open the workspace switcher at the top of the sidebar.
 2. Choose Manage workspaces to review the instance registry.
 3. Use Switch to select a workspace for application and monitoring operations; the selected row is marked Current.
-4. Use Back to workspace to return to the active workspace console.
+4. Use Open current workspace to return to the active workspace console.
 5. Create a workspace or open a workspace's dedicated administration page.
 6. Use an instance-admin token for workspace lifecycle operations; workspace tokens remain scoped to one workspace.
 
@@ -247,22 +259,22 @@ Review app- and action-specific values applied for one external client.
 2. Select an external client.
 3. Open a settings row to review its JSON values and locked keys.
 
-## Return to the host console
+## Open host management
 
-A hosted or self-managed portal can configure one explicit return action without changing the engine navigation.
+A hosted or self-managed portal can configure one explicit management action in the sidebar footer without crowding the runtime top bar.
 
-![Return to the host console](../assets/ui/host-console-navigation.png)
+![Open host management](../assets/ui/host-console-navigation.png)
 
 1. Open the embedded Web UI from the configured host portal.
-2. Use Back to host console in the top bar to return to the surrounding product.
-3. On narrow screens the same action remains available as an icon with an accessible label.
+2. Use the configured host action above the account control in the sidebar footer.
+3. The destination label makes the management-plane boundary explicit.
 
-## Return to the host console on mobile
+## Open host management on mobile
 
-The configured return action remains in the top bar as a compact icon with the same accessible label.
+The configured return action stays with account context in the mobile drawer instead of competing with page context.
 
-![Return to the host console on mobile](../assets/ui/host-console-navigation-mobile.png)
+![Open host management on mobile](../assets/ui/host-console-navigation-mobile.png)
 
 1. Open the embedded Web UI on a narrow screen.
-2. Use the arrow icon in the top bar to return to the configured host console.
-3. The icon keeps the full host-console label for assistive technology and pointer tooltips.
+2. Open the mobile navigation drawer.
+3. Use the labelled host action above the account control to open the configured management console.
