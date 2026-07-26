@@ -99,7 +99,7 @@ func (s *LocalStore) Publish(ctx context.Context, sourceDir string) (Descriptor,
 	if err := writeDescriptor(filepath.Join(tempDir, markerFile), descriptor); err != nil {
 		return Descriptor{}, err
 	}
-	if err := os.Rename(tempDir, targetDir); err != nil {
+	if err := renameDir(ctx, tempDir, targetDir); err != nil {
 		if existing, readErr := s.readDescriptor(digest); readErr == nil {
 			return existing, nil
 		}
@@ -178,7 +178,7 @@ func (s *LocalStore) FetchTo(ctx context.Context, destinationDir string, digest 
 	if err := os.RemoveAll(destinationDir); err != nil {
 		return Descriptor{}, err
 	}
-	if err := os.Rename(tempDir, destinationDir); err != nil {
+	if err := renameDir(ctx, tempDir, destinationDir); err != nil {
 		return Descriptor{}, err
 	}
 	return descriptor, nil

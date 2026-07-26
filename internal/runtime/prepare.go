@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/imprun/windforce-core/internal/pythonruntime"
 	windforcegoclient "github.com/imprun/windforce-core/internal/sdk/go"
 	windforcepyclient "github.com/imprun/windforce-core/internal/sdk/python"
 	windforceclient "github.com/imprun/windforce-core/internal/sdk/typescript"
@@ -317,10 +318,16 @@ func defaultPythonPath() string {
 		return "python3"
 	}
 	defaultPythonOnce.Do(func() {
-		cmd := exec.Command("py", "-3", "-c", "import sys; print(sys.executable)")
-		cmd.Env = os.Environ()
-		if output, err := cmd.CombinedOutput(); err == nil {
-			resolvedDefaultPython = lastOutputLine(output)
+		resolvedDefaultPython = pythonruntime.FindWindowsExecutable(os.Getenv("PATH"))
+		if resolvedDefaultPython == "" {
+			if py, err := exec.LookPath("py"); err == nil && !pythonruntime.IsWindowsAppsAlias(py) {
+				cmd := exec.Command(py, "-3", "-c", "import sys; print(sys.executable)")
+				cmd.Dir = os.TempDir()
+				cmd.Env = os.Environ()
+				if output, err := cmd.CombinedOutput(); err == nil {
+					resolvedDefaultPython = lastOutputLine(output)
+				}
+			}
 		}
 		if resolvedDefaultPython == "" {
 			resolvedDefaultPython = "python"

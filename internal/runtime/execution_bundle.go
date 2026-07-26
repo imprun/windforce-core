@@ -191,8 +191,13 @@ if not callable(getattr(module, "main", None)):
     raise RuntimeError("main function is missing")
 `
 	pythonPath := firstNonEmpty(r.PythonPath, defaultPythonPath())
+	checkDir, err := os.MkdirTemp("", "windforce-python-check-*")
+	if err != nil {
+		return fmt.Errorf("create python entrypoint check directory: %w", err)
+	}
+	defer os.RemoveAll(checkDir)
 	command := exec.CommandContext(ctx, pythonPath, "-c", check, entrypointPath)
-	command.Dir = sourceDir
+	command.Dir = checkDir
 	command.Env = appendPreparedSourceEnv(curatedPrepareEnv(), sourceDir, "python")
 	command.Env = append(command.Env, "PYTHONPATH="+strings.Join([]string{
 		filepath.Join(sourceDir, pyVendorDir),
