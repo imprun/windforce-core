@@ -34,6 +34,19 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
 
+  rabbitmq:
+    profiles:
+      - integration
+    image: rabbitmq:4.1-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${WINDFORCE_RABBITMQ_PORT:-5672}:5672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   server:
     profiles:
       - backend

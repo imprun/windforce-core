@@ -39,6 +39,7 @@ type RunRequest struct {
 	Input            json.RawMessage
 	TriggerKind      string
 	TriggerHeaders   json.RawMessage
+	ScheduledFor     string
 	Tag              string
 	RunnablePath     string
 	InputPath        string
@@ -357,6 +358,9 @@ func (r *Runner) jobEnv(req RunRequest, action contract.Action) []string {
 	add("WF_PERMISSIONED_AS", permissionedAs)
 	add("WF_STATE_PATH", req.Deployment.App+"/"+req.Action)
 	add("WF_TRIGGER_KIND", triggerKind)
+	if scheduledFor := strings.TrimSpace(req.ScheduledFor); scheduledFor != "" {
+		add("WF_SCHEDULED_FOR", scheduledFor)
+	}
 	add("WF_WORKER_GROUP", workerGroup)
 	if egressProxyAddr != "" {
 		proxyURL := "http://job-" + req.JobID + "@" + egressProxyAddr

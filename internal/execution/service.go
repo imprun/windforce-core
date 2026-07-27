@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/imprun/windforce-core/internal/contract"
 	"github.com/imprun/windforce-core/internal/state"
@@ -91,6 +92,7 @@ type CreateRunRequest struct {
 	TriggerHeaders json.RawMessage
 	CorrelationID  string
 	IdempotencyKey string
+	ScheduledFor   time.Time
 	Env            []string
 	ClientID       string
 	CreatedBy      string
@@ -167,7 +169,7 @@ func (s *AdmissionService) CreateRun(ctx context.Context, request CreateRunReque
 		clientID = client.ID
 	}
 
-	fingerprint, err := invocationRequestFingerprint(request.App, request.Action, request.Input, request.CorrelationID)
+	fingerprint, err := invocationRequestFingerprint(request.App, request.Action, request.Input, request.CorrelationID, request.ScheduledFor)
 	if err != nil {
 		return Admission{}, &Fault{Kind: FaultInvalidRequest, Message: "input must be valid JSON", Err: err}
 	}
@@ -251,6 +253,9 @@ func (s *AdmissionService) CreateRun(ctx context.Context, request CreateRunReque
 		job.Payload.TriggerKind = adapter
 	}
 	job.Payload.TriggerHeaders = cloneRaw(request.TriggerHeaders)
+	if !request.ScheduledFor.IsZero() {
+		job.Payload.ScheduledFor = request.ScheduledFor.UTC().Format(time.RFC3339Nano)
+	}
 
 	job.Payload.InputSchema = inputSchema
 	job.Payload.OutputSchema, err = reader.Read(actionSpec.OutputSchema, actionSpec.OutputSchemaBody)
@@ -409,17 +414,21 @@ func digestString(value string) string {
 	return hex.EncodeToString(digest[:])
 }
 
-func invocationRequestFingerprint(app string, action string, input json.RawMessage, correlationID string) (string, error) {
+func invocationRequestFingerprint(app string, action string, input json.RawMessage, correlationID string, scheduledFor time.Time) (string, error) {
 	var decoded any
 	if err := json.Unmarshal(input, &decoded); err != nil {
 		return "", err
 	}
-	canonical, err := json.Marshal(map[string]any{
+	value := map[string]any{
 		"app":            app,
 		"action":         action,
 		"input":          decoded,
 		"correlation_id": state.CleanID(correlationID),
-	})
+	}
+	if !scheduledFor.IsZero() {
+		value["scheduled_for"] = scheduledFor.UTC().Format(time.RFC3339Nano)
+	}
+	canonical, err := json.Marshal(value)
 	if err != nil {
 		return "", err
 	}

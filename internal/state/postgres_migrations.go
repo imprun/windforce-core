@@ -379,6 +379,58 @@ CREATE TABLE IF NOT EXISTS webhook_audit (
     created_at TIMESTAMPTZ NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS trigger_definition (
+    workspace_id TEXT NOT NULL,
+    id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    enabled BOOLEAN NOT NULL DEFAULT false,
+    app_key TEXT NOT NULL,
+    action_key TEXT NOT NULL,
+    credential_ref TEXT NOT NULL DEFAULT '',
+    config JSONB NOT NULL DEFAULT '{}'::jsonb,
+    secret_config_encrypted JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_by TEXT NOT NULL,
+    updated_by TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    deleted_at TIMESTAMPTZ,
+    PRIMARY KEY (workspace_id, id)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS trigger_definition_active_name_lower_idx
+    ON trigger_definition (workspace_id, lower(name))
+    WHERE deleted_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS trigger_audit (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL,
+    trigger_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    detail TEXT NOT NULL DEFAULT '',
+    actor TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS trigger_delivery (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL,
+    trigger_id TEXT NOT NULL,
+    delivery_id TEXT NOT NULL,
+    correlation_id TEXT NOT NULL DEFAULT '',
+    state TEXT NOT NULL,
+    run_id TEXT,
+    attempt INTEGER NOT NULL DEFAULT 1,
+    error_summary TEXT NOT NULL DEFAULT '',
+    scheduled_for TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (workspace_id, trigger_id, delivery_id)
+);
+
+ALTER TABLE trigger_delivery ADD COLUMN IF NOT EXISTS correlation_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE trigger_delivery ADD COLUMN IF NOT EXISTS scheduled_for TIMESTAMPTZ;
+
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS result JSONB;
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS correlation_id TEXT;
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS env JSONB;
@@ -462,6 +514,12 @@ CREATE TABLE IF NOT EXISTS worker_registry (
 CREATE INDEX IF NOT EXISTS webhook_audit_workspace_idx
     ON webhook_audit (workspace_id, created_at DESC, id DESC);
 
+CREATE INDEX IF NOT EXISTS trigger_audit_lookup_idx
+    ON trigger_audit (workspace_id, trigger_id, created_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS trigger_delivery_lookup_idx
+    ON trigger_delivery (workspace_id, trigger_id, updated_at DESC, id DESC);
+
 CREATE INDEX IF NOT EXISTS workspace_audit_lookup_idx
     ON workspace_audit (workspace_id, created_at DESC, id DESC);
 
@@ -479,6 +537,7 @@ FROM (
     UNION SELECT workspace_id FROM input_config
     UNION SELECT workspace_id FROM control_release_history
     UNION SELECT workspace_id FROM webhook_subscription
+    UNION SELECT workspace_id FROM trigger_definition
     UNION SELECT COALESCE(NULLIF(payload->>'workspace', ''), 'default') FROM jobs
 ) discovered
 WHERE workspace_id <> ''

@@ -10,15 +10,18 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/imprun/windforce-core/internal/bundle"
 	"github.com/imprun/windforce-core/internal/catalog"
 	"github.com/imprun/windforce-core/internal/contract"
 	"github.com/imprun/windforce-core/internal/crypto"
+	"github.com/imprun/windforce-core/internal/execution"
 	"github.com/imprun/windforce-core/internal/executionbundle"
 	"github.com/imprun/windforce-core/internal/gitsource"
 	"github.com/imprun/windforce-core/internal/provisioning"
@@ -28,6 +31,7 @@ import (
 	"github.com/imprun/windforce-core/internal/server"
 	"github.com/imprun/windforce-core/internal/state"
 	"github.com/imprun/windforce-core/internal/syncer"
+	triggerpkg "github.com/imprun/windforce-core/internal/trigger"
 	"github.com/imprun/windforce-core/internal/webhook"
 	"github.com/imprun/windforce-core/internal/worker"
 )
@@ -134,8 +138,10 @@ func runServer(args []string, mode string) int {
 		fmt.Fprintln(os.Stderr, "public API rate and burst must be greater than zero")
 		return 2
 	}
+	runCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
 
-	stateStore, closeState, err := openStateStore(context.Background(), *stateBackend, *statePath, *databaseURL, *migrate)
+	stateStore, closeState, err := openStateStore(runCtx, *stateBackend, *statePath, *databaseURL, *migrate)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s state: %v\n", mode, err)
 		return 1
@@ -147,7 +153,7 @@ func runServer(args []string, mode string) int {
 		return 1
 	}
 	gitSources := gitsource.NewFileRegistry(*gitSourcesPath)
-	if err := importReleaseCatalog(context.Background(), releaseCatalog, *catalogPath, gitSources); err != nil {
+	if err := importReleaseCatalog(runCtx, releaseCatalog, *catalogPath, gitSources); err != nil {
 		fmt.Fprintf(os.Stderr, "%s release catalog import: %v\n", mode, err)
 		return 1
 	}
@@ -173,7 +179,7 @@ func runServer(args []string, mode string) int {
 			Encrypt: func(ctx context.Context, workspaceID string, value string) (string, error) {
 				return cryptoEncryptSecret(stateStore, secretKey, secretKeyPrevious, workspaceID, value)
 			},
-		}).Apply(context.Background(), docs, provisioning.Options{
+		}).Apply(runCtx, docs, provisioning.Options{
 			Workspace: contract.DefaultWorkspace,
 			Actor:     "system:provisioning",
 		})
@@ -189,6 +195,18 @@ func runServer(args []string, mode string) int {
 	}
 	bundleStore := bundle.NewLocalStore(*storeDir)
 	executionBundleStore := executionbundle.NewLocalStore(executionBundleStoreRoot(*storeDir))
+	admission := execution.NewService(stateStore, releaseCatalog, bundleStore)
+	triggerMetrics := triggerpkg.NewMetrics()
+	triggerManager := &triggerpkg.Manager{
+		Store:     stateStore,
+		Admission: admission,
+		Factories: triggerpkg.DefaultFactories(),
+		Metrics:   triggerMetrics,
+	}
+	if err := triggerManager.Reconcile(runCtx); err != nil {
+		fmt.Fprintf(os.Stderr, "%s trigger manager: %v\n", mode, err)
+		return 1
+	}
 	runtimeRunner := &runtime.Runner{
 		Store:          bundleStore,
 		ArtifactStore:  executionBundleStore,
@@ -232,10 +250,12 @@ func runServer(args []string, mode string) int {
 		JobTokenSecret:        jobTokenSecret,
 		SecretKey:             secretKey,
 		SecretKeyPrevious:     secretKeyPrevious,
-		MetricsHandler:        webhookMetrics.Handler(webhookStore),
+		MetricsHandler:        triggerMetrics.Handler(webhookMetrics.Handler(webhookStore)),
 		UIHostURL:             *uiHostURL,
 		UIHostLabel:           *uiHostLabel,
 		UIHostAccountEndpoint: *uiHostAccountEndpoint,
+		Admission:             admission,
+		TriggerManager:        triggerManager,
 	})
 
 	retention := jobRetentionPolicy{
@@ -245,7 +265,7 @@ func runServer(args []string, mode string) int {
 		Interval:   *jobRetentionInterval,
 	}
 	if retention.Enabled() {
-		go runJobRetentionLoop(context.Background(), stateStore, retention)
+		go runJobRetentionLoop(runCtx, stateStore, retention)
 	}
 
 	if standaloneMode {
@@ -270,26 +290,73 @@ func runServer(args []string, mode string) int {
 			RuntimeBindings:  runtimeBindings,
 		}
 		go func() {
-			if err := processor.RunLoop(context.Background(), *poll); err != nil {
+			if err := processor.RunLoop(runCtx, *poll); err != nil {
 				fmt.Fprintf(os.Stderr, "standalone worker: %v\n", err)
 			}
 		}()
 	}
 	go func() {
-		if err := dispatcher.RunLoop(context.Background(), *webhookDispatcherFlags.dispatchInterval); err != nil {
+		if err := dispatcher.RunLoop(runCtx, *webhookDispatcherFlags.dispatchInterval); err != nil {
 			fmt.Fprintf(os.Stderr, "%s webhook dispatcher: %v\n", mode, err)
 		}
 	}()
 	if webhookRetention.Enabled() {
-		go runWebhookRetentionLoop(context.Background(), dispatcher.Store, webhookRetention)
+		go runWebhookRetentionLoop(runCtx, dispatcher.Store, webhookRetention)
 	}
+	triggerDone := make(chan error, 1)
+	go func() {
+		err := triggerManager.Run(runCtx)
+		if err != nil {
+			stopSignals()
+		}
+		triggerDone <- err
+	}()
 
 	fmt.Fprintf(os.Stderr, "windforce-core %s listening on %s\n", mode, *addr)
-	if err := http.ListenAndServe(*addr, handler); err != nil {
-		fmt.Fprintf(os.Stderr, "%s: %v\n", mode, err)
-		return 1
+	httpServer := &http.Server{Addr: *addr, Handler: handler}
+	serverDone := make(chan error, 1)
+	go func() {
+		serverDone <- httpServer.ListenAndServe()
+	}()
+	exitCode := 0
+	select {
+	case err := <-serverDone:
+		stopSignals()
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			fmt.Fprintf(os.Stderr, "%s: %v\n", mode, err)
+			exitCode = 1
+		}
+	case <-runCtx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if err := httpServer.Shutdown(shutdownCtx); err != nil {
+			fmt.Fprintf(os.Stderr, "%s shutdown: %v\n", mode, err)
+			exitCode = 1
+			_ = httpServer.Close()
+		}
+		if err := <-serverDone; err != nil && !errors.Is(err, http.ErrServerClosed) {
+			fmt.Fprintf(os.Stderr, "%s: %v\n", mode, err)
+			exitCode = 1
+		}
 	}
-	return 0
+	select {
+	case err := <-triggerDone:
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%s trigger manager: %v\n", mode, err)
+			exitCode = 1
+		}
+	case <-time.After(20 * time.Second):
+		fmt.Fprintf(os.Stderr, "%s trigger manager shutdown timed out\n", mode)
+		exitCode = 1
+	}
+	if runCtx.Err() == nil {
+		stopSignals()
+	}
+	if err := runCtx.Err(); err != nil && !errors.Is(err, context.Canceled) {
+		fmt.Fprintf(os.Stderr, "%s: %v\n", mode, err)
+		exitCode = 1
+	}
+	return exitCode
 }
 
 func runWorker(args []string) int {

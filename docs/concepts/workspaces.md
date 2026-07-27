@@ -3,7 +3,7 @@ title: Workspaces
 description: Managed state and authorization boundaries inside one Windforce Lite instance.
 ---
 
-A workspace groups apps, releases, clients, input settings, jobs, webhooks, variables, resources, and audit records inside one Windforce Lite instance. Every workspace has an immutable ID, a display name, a lifecycle status, and optional scoped API access.
+A workspace groups apps, releases, clients, input settings, jobs, inbound triggers, outbound webhooks, variables, resources, and audit records inside one Windforce Lite instance. Every workspace has an immutable ID, a display name, a lifecycle status, and optional scoped API access.
 
 ## Identity
 
@@ -33,7 +33,7 @@ When no instance-admin token is configured, local development accepts requests w
 
 ## Lifecycle
 
-An active workspace accepts control-plane changes and new execution requests. Archiving a workspace preserves its state and audit records while blocking configuration changes, releases, webhook changes, and new Runs. Read operations, audit queries, and provisioning export remain available. Job-scoped SDK callbacks remain available so running jobs can settle.
+An active workspace accepts control-plane changes and new execution requests. Archiving a workspace preserves its state and audit records while blocking configuration changes, releases, trigger or webhook changes, and new Runs. Read operations, audit queries, and provisioning export remain available. Job-scoped SDK callbacks remain available so running jobs can settle.
 
 Workspace deletion and reactivation are not exposed. Use a separate workspace when a new active namespace is required.
 

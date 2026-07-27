@@ -16,10 +16,22 @@ type systemInfoResponse struct {
 	RuntimeConfig map[string]interface{} `json:"runtime_config"`
 }
 
-func (h *Handler) handleSystemInfo(w http.ResponseWriter, _ *http.Request, workspaceID string) {
+func (h *Handler) handleSystemInfo(w http.ResponseWriter, r *http.Request, workspaceID string) {
 	waitMilliseconds := int64(0)
 	if h.wait > 0 {
 		waitMilliseconds = h.wait.Milliseconds()
+	}
+	triggerCount := 0
+	scheduleCount := 0
+	if h.store != nil {
+		if definitions, err := h.store.ListTriggers(r.Context(), workspaceID); err == nil {
+			triggerCount = len(definitions)
+			for _, definition := range definitions {
+				if definition.Kind == "schedule" {
+					scheduleCount++
+				}
+			}
+		}
 	}
 	writeJSON(w, http.StatusOK, systemInfoResponse{
 		Service:   "windforce-lite",
@@ -29,6 +41,7 @@ func (h *Handler) handleSystemInfo(w http.ResponseWriter, _ *http.Request, works
 			"invocation_api": true,
 			"control_api":    true,
 			"worker_api":     true,
+			"trigger_api":    h.triggerManager != nil,
 			"web_ui":         true,
 			"metrics":        h.metricsHandler != nil,
 		},
@@ -51,6 +64,8 @@ func (h *Handler) handleSystemInfo(w http.ResponseWriter, _ *http.Request, works
 			"wait_ms":            waitMilliseconds,
 			"sample_root":        h.sampleRoot != "",
 			"managed_workspaces": h.managedWorkspaces,
+			"triggers_count":     triggerCount,
+			"schedules_count":    scheduleCount,
 		},
 	})
 }

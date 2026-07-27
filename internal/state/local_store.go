@@ -1069,6 +1069,15 @@ func ensureSnapshot(snapshot *Snapshot) {
 	if snapshot.WebhookAudits == nil {
 		snapshot.WebhookAudits = map[string][]webhook.Audit{}
 	}
+	if snapshot.Triggers == nil {
+		snapshot.Triggers = map[string]TriggerRecord{}
+	}
+	if snapshot.TriggerAudits == nil {
+		snapshot.TriggerAudits = map[string][]TriggerAudit{}
+	}
+	if snapshot.TriggerDeliveries == nil {
+		snapshot.TriggerDeliveries = map[string]TriggerDelivery{}
+	}
 	if snapshot.Workspaces == nil {
 		snapshot.Workspaces = map[string]Workspace{}
 	}

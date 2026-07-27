@@ -141,6 +141,7 @@ func (p *Processor) ProcessOne(ctx context.Context) (bool, error) {
 		Input:           input,
 		TriggerKind:     job.Payload.TriggerKind,
 		TriggerHeaders:  job.Payload.TriggerHeaders,
+		ScheduledFor:    job.Payload.ScheduledFor,
 		Tag:             job.Payload.Tag,
 		CreatedBy:       job.Payload.CreatedBy,
 		PermissionedAs:  job.Payload.PermissionedAs,

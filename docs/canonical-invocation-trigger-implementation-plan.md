@@ -111,12 +111,14 @@ GET  /api/v1/openapi.json
 
 ### Phase 3 — Trigger resource와 SPI
 
-1. Trigger definition, protocol config, enabled 상태, target와 credential reference의 storage/API/audit를 구현한다.
-2. `Trigger`, lifecycle registry, `TriggerEvent`와 `TriggerSubmitter` interface를 구현하고 server/standalone 시작·종료에 연결한다.
-3. Generic configured webhook adapter를 첫 구현으로 추가해 secret 검증, safe header/raw payload capture, delivery ID와 AdmissionService 직접 호출을 검증한다.
-4. Open issue [#127](https://github.com/imprun/windforce-core/issues/127)의 schedule trigger를 같은 SPI 위에 구현하고 occurrence ID를 idempotency key로 사용한다.
-5. RabbitMQ adapter를 추가해 reconnect, prefetch/concurrency, durable admission ACK, retryable NACK/requeue, terminal dead-letter와 shutdown drain을 integration test로 검증한다.
-6. External trigger authoring guide에 service principal, canonical request, replay, timeout과 error classification을 문서화한다.
+완료 추적: [#146](https://github.com/imprun/windforce-core/issues/146)
+
+- [x] Trigger definition, protocol config, enabled 상태, target와 credential reference의 storage/API/audit를 구현한다.
+- [x] `Trigger`, lifecycle registry, `TriggerEvent`와 `TriggerSubmitter` interface를 구현하고 server/standalone 시작·종료에 연결한다.
+- [x] Generic configured webhook adapter를 첫 구현으로 추가해 secret 검증, safe header/raw payload capture, delivery ID와 AdmissionService 직접 호출을 검증한다.
+- [x] Open issue [#127](https://github.com/imprun/windforce-core/issues/127)의 schedule trigger를 같은 SPI 위에 구현하고 occurrence ID를 idempotency key로 사용한다.
+- [x] RabbitMQ adapter를 추가해 reconnect, prefetch/concurrency, durable admission ACK, retryable NACK/requeue, terminal dead-letter와 shutdown drain을 integration test로 검증한다.
+- [x] External trigger authoring guide에 service principal, canonical request, replay, timeout과 error classification을 문서화한다.
 
 Built-in trigger test는 server의 HTTP listener를 거치지 않았음을 injectable fake AdmissionService로 증명한다. RabbitMQ test는 실제 broker container를 사용하되 CI에서 재현 가능한 topology와 bounded timeout을 사용한다.
 

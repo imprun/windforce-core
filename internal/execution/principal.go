@@ -13,6 +13,7 @@ const (
 	PrincipalOperator PrincipalKind = "operator"
 	PrincipalClient   PrincipalKind = "client"
 	PrincipalService  PrincipalKind = "service"
+	PrincipalTrigger  PrincipalKind = "trigger"
 )
 
 type Scope string
@@ -153,6 +154,17 @@ func OperatorPrincipal(workspace string, subject string) Principal {
 		ID:        strings.TrimSpace(subject),
 		Workspace: workspace,
 		Subject:   subject,
+	}.Normalized()
+}
+
+func TriggerPrincipal(workspace string, triggerID string, app string, action string) Principal {
+	return Principal{
+		Kind:           PrincipalTrigger,
+		ID:             strings.TrimSpace(triggerID),
+		Workspace:      workspace,
+		Subject:        "trigger:" + strings.TrimSpace(triggerID),
+		Scopes:         []Scope{ScopeRunsCreate, ScopeRunsReadOwn},
+		AllowedTargets: []string{strings.TrimSpace(app) + "/" + strings.TrimSpace(action)},
 	}.Normalized()
 }
 
