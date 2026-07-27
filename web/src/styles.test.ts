@@ -65,15 +65,21 @@ describe("provisioning layout", () => {
 });
 
 describe("workspace switcher layout", () => {
-  test("keeps the collapsed sidebar workspace context compact", () => {
+  test("keeps the workspace context compact in the topbar breadcrumb", () => {
     expect(styles).toMatch(
-      /\.sidebarCollapsed \.sidebarWorkspaceContext \.workspaceSwitcherTrigger\s*\{[^}]*width:\s*40px;[^}]*height:\s*40px;/s,
+      /\.workspaceBreadcrumb \.workspaceSwitcherTrigger\s*\{[^}]*width:\s*auto;[^}]*max-width:/s,
     );
   });
 
-  test("opens sidebar workspace popovers below their triggers", () => {
+  test("opens breadcrumb workspace popovers below their triggers", () => {
     expect(styles).toMatch(
-      /\.sidebarWorkspaceContext \.workspacePopover,[^{]+\.platformMobileNav \.workspacePopover\s*\{[^}]*top:\s*calc\(100% \+ 8px\);[^}]*bottom:\s*auto;/s,
+      /\.workspaceBreadcrumb \.workspacePopover\s*\{[^}]*top:\s*calc\(100% \+ 0\.5rem\);[^}]*bottom:\s*auto;/s,
+    );
+  });
+
+  test("pins hosted-console text to the semantic foreground", () => {
+    expect(styles).toMatch(
+      /a\[data-testid="host-console-action"\],[^{]+visited\s*\{[^}]*color:\s*var\(--foreground\);/s,
     );
   });
 });

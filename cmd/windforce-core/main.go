@@ -95,6 +95,7 @@ func runServer(args []string, mode string) int {
 	baseURL := flags.String("base-url", "", "public API base URL injected into job ctx helpers")
 	uiHostURL := flags.String("ui-host-url", strings.TrimSpace(os.Getenv("WINDFORCE_UI_HOST_URL")), "optional host console URL shown in the Web UI")
 	uiHostLabel := flags.String("ui-host-label", strings.TrimSpace(os.Getenv("WINDFORCE_UI_HOST_LABEL")), "accessible label for the optional host console action")
+	uiHostAccountEndpoint := flags.String("ui-host-account-endpoint", strings.TrimSpace(os.Getenv("WINDFORCE_UI_HOST_ACCOUNT_ENDPOINT")), "optional same-origin endpoint that presents the authenticated host account")
 	storeDir := flags.String("store", defaultStoreDir(), "source snapshot and execution bundle store directory")
 	catalogPath := flags.String("catalog", defaultCatalogPath(), "catalog JSON import path")
 	gitSourcesPath := flags.String("git-sources", defaultGitSourcesPath(), "registered git sources JSON path")
@@ -217,23 +218,24 @@ func runServer(args []string, mode string) int {
 		return 1
 	}
 	handler := server.New(server.Config{
-		Store:             stateStore,
-		Catalog:           releaseCatalog,
-		Syncer:            &syncer.Syncer{Store: bundleStore},
-		ExecutionBundles:  runtimeRunner,
-		GitSources:        gitSources,
-		PublicAPIRPS:      *publicAPIRPS,
-		PublicAPIBurst:    *publicAPIBurst,
-		ManagedWorkspaces: true,
-		AdminToken:        adminToken,
-		WorkerToken:       firstNonEmpty(tokenFromEnv(*workerTokenEnv), adminToken),
-		ArtifactStore:     executionBundleStore,
-		JobTokenSecret:    jobTokenSecret,
-		SecretKey:         secretKey,
-		SecretKeyPrevious: secretKeyPrevious,
-		MetricsHandler:    webhookMetrics.Handler(webhookStore),
-		UIHostURL:         *uiHostURL,
-		UIHostLabel:       *uiHostLabel,
+		Store:                 stateStore,
+		Catalog:               releaseCatalog,
+		Syncer:                &syncer.Syncer{Store: bundleStore},
+		ExecutionBundles:      runtimeRunner,
+		GitSources:            gitSources,
+		PublicAPIRPS:          *publicAPIRPS,
+		PublicAPIBurst:        *publicAPIBurst,
+		ManagedWorkspaces:     true,
+		AdminToken:            adminToken,
+		WorkerToken:           firstNonEmpty(tokenFromEnv(*workerTokenEnv), adminToken),
+		ArtifactStore:         executionBundleStore,
+		JobTokenSecret:        jobTokenSecret,
+		SecretKey:             secretKey,
+		SecretKeyPrevious:     secretKeyPrevious,
+		MetricsHandler:        webhookMetrics.Handler(webhookStore),
+		UIHostURL:             *uiHostURL,
+		UIHostLabel:           *uiHostLabel,
+		UIHostAccountEndpoint: *uiHostAccountEndpoint,
 	})
 
 	retention := jobRetentionPolicy{

@@ -17,12 +17,16 @@ export function WorkspacesPage() {
   const { api } = useApp();
   const state = useAsync(() => api.workspaces(), [api]);
   const [creating, setCreating] = useState(false);
+  const activeCount =
+    state.data?.items.filter((workspace) => workspace.status === "active").length || 0;
+  const archivedCount =
+    state.data?.items.filter((workspace) => workspace.status === "archived").length || 0;
 
   return (
     <Layout
       scope="instance"
-      title="Workspaces"
-      subtitle="Instance administration for workspace identity, access, and lifecycle."
+      title="Workspace administration"
+      subtitle="Create and govern the workspace boundaries available in this Windforce instance."
       actions={
         <>
           <button
@@ -42,62 +46,78 @@ export function WorkspacesPage() {
       {state.error ? <ErrorNotice message={state.error} onRetry={state.reload} /> : null}
       {state.loading && !state.data ? <Loading label="Loading workspaces…" /> : null}
       {state.data ? (
-        <Panel
-          title="Workspace registry"
-          subtitle={`${state.data.items.length} managed workspace${state.data.items.length === 1 ? "" : "s"} in this instance.`}
-        >
-          {state.data.items.length === 0 ? (
-            <EmptyState title="No workspaces registered." />
-          ) : (
-            <div className="tableWrap">
-              <table className="table workspaceTable" id="workspaceRegistry">
-                <thead>
-                  <tr>
-                    <th>Workspace</th>
-                    <th>Status</th>
-                    <th>Access token</th>
-                    <th>Updated</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {state.data.items.map((workspace) => (
-                    <tr key={workspace.id}>
-                      <td>
-                        <Link
-                          className="cellTitle tablePrimaryLink"
-                          to={`/workspaces/${encodeURIComponent(workspace.id)}`}
-                        >
-                          {workspace.name}
-                        </Link>
-                        <span className="cellSub mono">{workspace.id}</span>
-                      </td>
-                      <td>
-                        <WorkspaceStatus workspace={workspace} />
-                      </td>
-                      <td>{workspace.has_token ? "Configured" : "Not configured"}</td>
-                      <td title={formatTime(workspace.updated_at)}>
-                        <span className="cellTitle">{formatRelative(workspace.updated_at)}</span>
-                        <span className="cellSub">{workspace.updated_by}</span>
-                      </td>
-                      <td className="tableActions">
-                        <div className="workspaceTableActions">
-                          <WorkspaceActivation workspace={workspace} compact />
+        <>
+          <dl className="workspaceRegistrySummary">
+            <div>
+              <dt>Total</dt>
+              <dd>{state.data.items.length}</dd>
+            </div>
+            <div>
+              <dt>Active</dt>
+              <dd>{activeCount}</dd>
+            </div>
+            <div>
+              <dt>Archived</dt>
+              <dd>{archivedCount}</dd>
+            </div>
+          </dl>
+          <Panel
+            title="All workspaces"
+            subtitle="Select a workspace to enter its runtime, or open its administration details."
+          >
+            {state.data.items.length === 0 ? (
+              <EmptyState title="No workspaces registered." />
+            ) : (
+              <div className="tableWrap">
+                <table className="table workspaceTable" id="workspaceRegistry">
+                  <thead>
+                    <tr>
+                      <th>Workspace</th>
+                      <th>Status</th>
+                      <th>Access token</th>
+                      <th>Updated</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {state.data.items.map((workspace) => (
+                      <tr key={workspace.id}>
+                        <td>
                           <Link
-                            className="button small"
+                            className="cellTitle tablePrimaryLink"
                             to={`/workspaces/${encodeURIComponent(workspace.id)}`}
                           >
-                            Manage
+                            {workspace.name}
                           </Link>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Panel>
+                          <span className="cellSub mono">{workspace.id}</span>
+                        </td>
+                        <td>
+                          <WorkspaceStatus workspace={workspace} />
+                        </td>
+                        <td>{workspace.has_token ? "Configured" : "Not configured"}</td>
+                        <td title={formatTime(workspace.updated_at)}>
+                          <span className="cellTitle">{formatRelative(workspace.updated_at)}</span>
+                          <span className="cellSub">{workspace.updated_by}</span>
+                        </td>
+                        <td className="tableActions">
+                          <div className="workspaceTableActions">
+                            <WorkspaceActivation workspace={workspace} compact />
+                            <Link
+                              className="button small"
+                              to={`/workspaces/${encodeURIComponent(workspace.id)}`}
+                            >
+                              Manage
+                            </Link>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Panel>
+        </>
       ) : null}
 
       {creating ? (

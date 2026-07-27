@@ -106,6 +106,15 @@ the same build inside the image so the embedded assets are always rebuilt from
 source. The server serves the UI at `/ui/` with an SPA fallback for
 client-side routes. See [ADR 0004](docs/adr/0004-web-ui-rewrite.md).
 
+A hosting portal can add a single management-plane action with
+`--ui-host-url` and `--ui-host-label`. It can also provide
+`--ui-host-account-endpoint` as a same-origin absolute path. The Web UI fetches
+that endpoint with same-origin credentials and accepts only neutral
+presentation fields (`label`, optional `detail`, and fixed HTTP(S) account or
+logout actions). Windforce Core never receives the host's Identity token or
+owns provider-specific account logic. Without this contract the Web UI labels
+its browser-local API token and audit actor as `Local access`.
+
 Repository sources, external client identifiers, variables, and input settings
 can also be bootstrapped from JSON/YAML provisioning files. See
 [Provisioning](docs/concepts/provisioning.md) and

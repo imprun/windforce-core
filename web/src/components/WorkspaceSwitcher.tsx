@@ -1,12 +1,12 @@
 import { Boxes, Check, ChevronRight, ChevronsUpDown, Search } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useApp, useAsync } from "../lib/app-context";
-import { Link, useRouter } from "../lib/router";
+import { Link } from "../lib/router";
 import { filterWorkspaces, visibleWorkspaces, WORKSPACE_REGISTRY_CHANGED } from "../lib/workspaces";
+import { cn } from "../shared/lib/cn";
 
-export function WorkspaceSwitcher() {
+export function WorkspaceSwitcher({ variant = "default" }: { variant?: "default" | "breadcrumb" }) {
   const { api, settings, updateSettings } = useApp();
-  const { navigate } = useRouter();
   const state = useAsync(() => api.workspaces(), [api]);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -62,11 +62,13 @@ export function WorkspaceSwitcher() {
     setOpen(false);
     if (workspaceID === settings.workspace) return;
     updateSettings({ ...settings, workspace: workspaceID });
-    navigate("/");
   }
 
   return (
-    <div className="workspaceSwitcher" ref={rootRef}>
+    <div
+      className={cn("workspaceSwitcher", variant === "breadcrumb" && "workspaceBreadcrumb")}
+      ref={rootRef}
+    >
       <button
         className="workspaceSwitcherTrigger"
         type="button"
@@ -78,12 +80,16 @@ export function WorkspaceSwitcher() {
         title={`Workspace: ${current?.name || settings.workspace}`}
         onClick={toggle}
       >
-        <span className="workspaceSwitcherIcon" aria-hidden="true">
-          <Boxes size={17} />
-        </span>
+        {variant === "default" ? (
+          <span className="workspaceSwitcherIcon" aria-hidden="true">
+            <Boxes size={17} />
+          </span>
+        ) : null}
         <span className="workspaceSwitcherText">
           <span className="workspaceSwitcherName">{current?.name || settings.workspace}</span>
-          <span className="workspaceSwitcherID">{settings.workspace}</span>
+          {variant === "default" ? (
+            <span className="workspaceSwitcherID">{settings.workspace}</span>
+          ) : null}
         </span>
         <ChevronsUpDown className="workspaceSwitcherChevron" size={15} aria-hidden="true" />
       </button>
