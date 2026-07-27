@@ -22,6 +22,7 @@ import (
 	"github.com/imprun/windforce-core/internal/state"
 	"github.com/imprun/windforce-core/internal/syncer"
 	"github.com/imprun/windforce-core/internal/token"
+	triggerpkg "github.com/imprun/windforce-core/internal/trigger"
 )
 
 type Catalog interface {
@@ -60,6 +61,8 @@ type Config struct {
 	UIHostURL             string
 	UIHostLabel           string
 	UIHostAccountEndpoint string
+	Admission             *executionpkg.Service
+	TriggerManager        *triggerpkg.Manager
 }
 
 type Handler struct {
@@ -84,6 +87,7 @@ type Handler struct {
 	uiHostURL             string
 	uiHostLabel           string
 	uiHostAccountEndpoint string
+	triggerManager        *triggerpkg.Manager
 }
 
 type jobPrincipal struct {
@@ -150,6 +154,10 @@ func New(config Config) http.Handler {
 	if config.Syncer != nil {
 		bundleStore = config.Syncer.Store
 	}
+	admission := config.Admission
+	if admission == nil {
+		admission = executionpkg.NewService(config.Store, config.Catalog, bundleStore)
+	}
 	return &Handler{
 		store:                 config.Store,
 		catalog:               config.Catalog,
@@ -166,11 +174,12 @@ func New(config Config) http.Handler {
 		secretKeyPrevious:     config.SecretKeyPrevious,
 		sampleRoot:            config.SampleRoot,
 		wait:                  config.Wait,
-		execution:             executionpkg.NewService(config.Store, config.Catalog, bundleStore),
+		execution:             admission,
 		metricsHandler:        config.MetricsHandler,
 		uiHostURL:             uiHostURL,
 		uiHostLabel:           uiHostLabel,
 		uiHostAccountEndpoint: uiHostAccountEndpoint,
+		triggerManager:        config.TriggerManager,
 	}
 }
 
@@ -194,6 +203,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if strings.HasPrefix(r.URL.Path, "/api/v1/") {
 		if !h.publicAPILimiter.Allow(time.Now()) {
 			writeError(w, http.StatusTooManyRequests, "rate limit exceeded")
+			return
+		}
+		if h.handleTriggerIngress(w, r) {
 			return
 		}
 		if h.handleInvocationAPI(w, r) {
@@ -240,6 +252,9 @@ func (h *Handler) handleRuntimeAPI(w http.ResponseWriter, r *http.Request) bool 
 
 func (h *Handler) handleAPI(w http.ResponseWriter, r *http.Request) bool {
 	parts := splitPath(r.URL.Path)
+	if h.handleCanonicalTriggerAPI(w, r, parts) {
+		return true
+	}
 	if h.handleWorkspaceAPI(w, r, parts) {
 		return true
 	}

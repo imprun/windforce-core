@@ -14,7 +14,7 @@ It keeps the useful core of Windforce:
 - run the app entrypoint with `main(ctx)` and dispatch by action
 
 It intentionally does not include the full Windforce product surface:
-multi-tenant SaaS concerns, quota, scheduler, billing, or an operator. A small
+multi-tenant SaaS concerns, quota, billing, a workflow designer, or an operator. A small
 admin Web UI for git source registration, deployment, and deployment history is
 in scope.
 
@@ -31,10 +31,13 @@ in scope.
 - Execution Artifact Store: prepared immutable bundles keyed by SHA-256 digest
 - Worker-local cache: a disposable fetched copy of a pinned execution bundle
 - Deployment history: an audit trail of published releases
+- Trigger: a configured webhook, schedule, or RabbitMQ source that admits Runs
 
 Read [Core concepts](docs/concepts/core-concepts.md) for the exact storage,
 fingerprint, marker, Run, and Job definitions. The complete state flow is in
 [Release and execution lifecycle](docs/concepts/release-lifecycle.md).
+Configured event sources and external adapter guidance are in
+[Triggers](docs/concepts/triggers.md).
 
 ## System-to-system Invocation API
 

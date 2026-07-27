@@ -1,5 +1,5 @@
-.PHONY: help fmt test test-python-sdk test-postgres build cli-build web-deps web-install web-dev web-build web-embed web-test web-typecheck clean dev \
-	compose-up compose-db compose-server compose-worker compose-dev compose-dev-worker compose-dev-build compose-dev-logs compose-build compose-down compose-reset compose-logs compose-ps postgres-dsn \
+.PHONY: help fmt test test-python-sdk test-postgres test-rabbitmq build cli-build web-deps web-install web-dev web-build web-embed web-test web-typecheck clean dev \
+	compose-up compose-db compose-rabbitmq compose-server compose-worker compose-dev compose-dev-worker compose-dev-build compose-dev-logs compose-build compose-down compose-reset compose-logs compose-ps postgres-dsn \
 	dev-standalone dev-standalone-postgres dev-server dev-worker worker-once \
 	webhook-receiver \
 	windforce-variable-set windforce-git-token windforce-register windforce-sync windforce-deploy windforce-sample \
@@ -87,6 +87,7 @@ POSTGRES_DSN ?= $(WINDFORCE_LITE_DATABASE_URL)
 else
 POSTGRES_DSN ?= postgres://$(WINDFORCE_POSTGRES_USER)@127.0.0.1:$(WINDFORCE_POSTGRES_PORT)/$(WINDFORCE_POSTGRES_DB)?sslmode=disable
 endif
+RABBITMQ_URL ?= amqp://guest:guest@127.0.0.1:5672/
 export WINDFORCE_POSTGRES_DB
 export WINDFORCE_POSTGRES_USER
 export WINDFORCE_POSTGRES_PORT
@@ -109,6 +110,7 @@ help:
 	@echo "  test                   run go test ./..."
 	@echo "  test-python-sdk        run canonical Python Invocation SDK tests"
 	@echo "  test-postgres          run PostgreSQL integration test against docker compose"
+	@echo "  test-rabbitmq          run RabbitMQ trigger integration test against docker compose"
 	@echo "  build                  build $(BIN)"
 	@echo "  cli-build              build supported Control Plane CLI at $(CLI_BIN)"
 	@echo "  dev-standalone         run local JSON-state standalone server"
@@ -178,6 +180,9 @@ test-python-sdk:
 test-postgres: compose-db
 	WINDFORCE_LITE_POSTGRES_TEST_DSN="$(POSTGRES_DSN)" $(GO) test ./internal/state -run Postgres -count=1 -v
 
+test-rabbitmq: compose-rabbitmq
+	WINDFORCE_RABBITMQ_TEST_URL="$(RABBITMQ_URL)" $(GO) test ./internal/trigger -run RabbitMQIntegration -count=1 -v
+
 build: cli-build
 	@mkdir -p "$(BIN_DIR)"
 	$(GO) build -ldflags "-X main.version=$(VERSION)" -o "$(BIN)" $(CMD)
@@ -191,6 +196,9 @@ compose-up:
 
 compose-db:
 	$(COMPOSE) --profile pg up -d postgres
+
+compose-rabbitmq:
+	$(COMPOSE) --profile integration up -d --wait rabbitmq
 
 compose-server:
 	$(COMPOSE) --profile backend up -d server

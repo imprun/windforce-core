@@ -681,9 +681,11 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 	}
 	addWebhookControlPlanePaths(paths, workspaceID)
 	addServicePrincipalControlPlanePaths(paths, workspaceID)
+	addTriggerControlPlanePaths(paths, workspaceID)
 	schemas := controlPlaneSchemas()
 	addWebhookControlPlaneSchemas(schemas)
 	addServicePrincipalControlPlaneSchemas(schemas)
+	addTriggerControlPlaneSchemas(schemas)
 
 	return map[string]any{
 		"openapi": "3.1.0",

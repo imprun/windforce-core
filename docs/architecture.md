@@ -147,6 +147,31 @@ records the breaking transition. The non-production `wf-triggers` repository
 is implemented separately against the stable canonical OpenAPI and is not part
 of the operating rollback release set.
 
+## Trigger resources and adapters
+
+Trigger definitions are managed under `/api/w/{workspace}/triggers`. The
+definition stores the adapter kind, enabled state, target app/action, public
+protocol configuration, an optional credential reference, and encrypted
+write-only secret configuration. Local and PostgreSQL stores preserve
+configuration audit events and recent delivery outcomes without exposing
+payload or credential values.
+
+The `server` and `standalone` roles reconcile enabled definitions into
+`Initialize -> Start -> Stop` adapter instances. Configured webhook, schedule,
+and RabbitMQ adapters normalize source events into TriggerEvent and submit them
+to the same in-process AdmissionService used by the Invocation API. They never
+loop back through HTTP.
+
+The source delivery ID, schedule occurrence instant, or a stable payload digest
+becomes the principal-scoped idempotency key. Admission persists the Run and
+first Job before a broker ACK. Retryable admission failures preserve the same
+key and RabbitMQ requeues the message; terminal failures reject it for the
+queue's dead-letter policy. Schedule actions receive `WF_SCHEDULED_FOR`.
+
+External trigger processes do not load this SPI. They use a least-privilege
+`wfs_` Service Principal and the canonical `/api/v1` routes described in
+[Triggers](concepts/triggers.md).
+
 ## SDK Boundary
 
 The v0.3 reference client is `windforce-invocation` /
@@ -160,7 +185,7 @@ Core. The former execution SDK package has no v0.3 compatibility import.
 
 | Role | Responsibility |
 |---|---|
-| `server` | Control `/api/w`, Invocation `/api/v1`, Worker `/worker/v1`, embedded Web UI, Webhook Dispatcher, and retention loops |
+| `server` | Control `/api/w`, Invocation `/api/v1`, Worker `/worker/v1`, embedded Web UI, inbound Trigger adapters, outbound Webhook Dispatcher, and retention loops |
 | `worker` | Queue claim and action execution, using shared PostgreSQL state or the remote worker API selected by `--api-url` |
 | `standalone` | `server` and `worker` in one process |
 

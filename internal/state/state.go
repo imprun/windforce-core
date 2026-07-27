@@ -128,6 +128,7 @@ type JobPayload struct {
 	ObjectURI             string          `json:"objectUri,omitempty"`
 	TriggerKind           string          `json:"triggerKind,omitempty"`
 	TriggerHeaders        json.RawMessage `json:"triggerHeaders,omitempty"`
+	ScheduledFor          string          `json:"scheduledFor,omitempty"`
 	ActionSpec            contract.Action `json:"actionSpec,omitempty"`
 	InputSchema           json.RawMessage `json:"inputSchema,omitempty"`
 	OutputSchema          json.RawMessage `json:"outputSchema,omitempty"`
@@ -394,6 +395,54 @@ type WorkspaceAudit struct {
 	CreatedAt   time.Time `json:"created_at"`
 }
 
+type TriggerDefinition struct {
+	ID            string          `json:"id"`
+	WorkspaceID   string          `json:"workspace_id"`
+	Name          string          `json:"name"`
+	Kind          string          `json:"kind"`
+	Enabled       bool            `json:"enabled"`
+	AppKey        string          `json:"app"`
+	ActionKey     string          `json:"action"`
+	CredentialRef string          `json:"credential_ref,omitempty"`
+	Config        json.RawMessage `json:"config"`
+	SecretConfig  json.RawMessage `json:"-"`
+	CreatedBy     string          `json:"created_by"`
+	UpdatedBy     string          `json:"updated_by"`
+	CreatedAt     time.Time       `json:"created_at"`
+	UpdatedAt     time.Time       `json:"updated_at"`
+	DeletedAt     *time.Time      `json:"-"`
+}
+
+type TriggerRecord struct {
+	TriggerDefinition
+	SecretConfigEncrypted json.RawMessage `json:"secretConfigEncrypted,omitempty"`
+}
+
+type TriggerAudit struct {
+	ID          string    `json:"id"`
+	WorkspaceID string    `json:"workspace_id"`
+	TriggerID   string    `json:"trigger_id"`
+	Kind        string    `json:"kind"`
+	Detail      string    `json:"detail,omitempty"`
+	Actor       string    `json:"actor"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+type TriggerDelivery struct {
+	ID            string     `json:"id"`
+	WorkspaceID   string     `json:"workspace_id"`
+	TriggerID     string     `json:"trigger_id"`
+	DeliveryID    string     `json:"delivery_id"`
+	CorrelationID string     `json:"correlation_id,omitempty"`
+	State         string     `json:"state"`
+	RunID         string     `json:"run_id,omitempty"`
+	Attempt       int        `json:"attempt"`
+	ErrorSummary  string     `json:"error_summary,omitempty"`
+	ScheduledFor  *time.Time `json:"scheduled_for,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+}
+
 func (record *ClientAudit) UnmarshalJSON(data []byte) error {
 	type auditAlias ClientAudit
 	if err := json.Unmarshal(data, (*auditAlias)(record)); err != nil {
@@ -450,6 +499,9 @@ type Snapshot struct {
 	ControlPlaneEvents     map[string]controlevent.Envelope       `json:"controlPlaneEvents"`
 	WebhookDeliveries      map[string]webhook.Delivery            `json:"webhookDeliveries"`
 	WebhookAudits          map[string][]webhook.Audit             `json:"webhookAudits"`
+	Triggers               map[string]TriggerRecord               `json:"triggers"`
+	TriggerAudits          map[string][]TriggerAudit              `json:"triggerAudits"`
+	TriggerDeliveries      map[string]TriggerDelivery             `json:"triggerDeliveries"`
 	Workers                map[string]WorkerRecord                `json:"workers,omitempty"`
 	Workspaces             map[string]Workspace                   `json:"workspaces"`
 	WorkspaceAudits        []WorkspaceAudit                       `json:"workspaceAudits"`
@@ -508,6 +560,15 @@ type Store interface {
 	ListInputConfigAudit(ctx context.Context, workspaceID string, appKey string, clientID string) ([]InputConfigAudit, error)
 	ResolveInput(ctx context.Context, workspaceID string, appKey string, actionKey string, clientID string, request json.RawMessage) (json.RawMessage, error)
 	DecryptInput(ctx context.Context, workspaceID string, input json.RawMessage) (json.RawMessage, error)
+	ListTriggers(ctx context.Context, workspaceID string) ([]TriggerDefinition, error)
+	GetTrigger(ctx context.Context, workspaceID string, id string) (TriggerDefinition, error)
+	CreateTrigger(ctx context.Context, definition TriggerDefinition, actor string) (TriggerDefinition, error)
+	UpdateTrigger(ctx context.Context, definition TriggerDefinition, actor string) (TriggerDefinition, error)
+	SetTriggerEnabled(ctx context.Context, workspaceID string, id string, enabled bool, actor string) (TriggerDefinition, error)
+	DeleteTrigger(ctx context.Context, workspaceID string, id string, actor string) error
+	ListTriggerAudit(ctx context.Context, workspaceID string, id string) ([]TriggerAudit, error)
+	UpsertTriggerDelivery(ctx context.Context, delivery TriggerDelivery) (TriggerDelivery, error)
+	ListTriggerDeliveries(ctx context.Context, workspaceID string, triggerID string, limit int) ([]TriggerDelivery, error)
 	ClaimJob(ctx context.Context, workerID string, leaseTTL time.Duration) (Job, Lease, error)
 	ClaimJobForWorker(ctx context.Context, workerID string, tags []string, labels []string, leaseTTL time.Duration) (Job, Lease, error)
 	RegisterWorker(ctx context.Context, record WorkerRecord) error

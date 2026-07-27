@@ -17,6 +17,29 @@ jobs:
     name: test
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: windforce_core
+          POSTGRES_USER: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d windforce_core"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      rabbitmq:
+        image: rabbitmq:4.1-alpine
+        ports:
+          - 5672:5672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -34,6 +57,14 @@ jobs:
         run: make build
       - name: Test
         run: make test
+      - name: Test PostgreSQL storage
+        env:
+          WINDFORCE_LITE_POSTGRES_TEST_DSN: postgres://postgres@127.0.0.1:5432/windforce_core?sslmode=disable
+        run: go test ./internal/state -run Postgres -count=1 -v
+      - name: Test RabbitMQ trigger
+        env:
+          WINDFORCE_RABBITMQ_TEST_URL: amqp://guest:guest@127.0.0.1:5672/
+        run: go test ./internal/trigger -run RabbitMQIntegration -count=1 -v
 
   windows-cli:
     name: windows CLI
