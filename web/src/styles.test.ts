@@ -82,4 +82,10 @@ describe("workspace switcher layout", () => {
       /a\[data-testid="host-console-action"\],[^{]+visited\s*\{[^}]*color:\s*var\(--foreground\);/s,
     );
   });
+
+  test("keeps the hosted-console action compact in the topbar", () => {
+    expect(styles).toMatch(
+      /\.hostConsoleAction\s*\{[^}]*min-height:\s*2rem;[^}]*padding:\s*0 0\.625rem;/s,
+    );
+  });
 });

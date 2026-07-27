@@ -93,7 +93,7 @@ function HostConsoleAction({ hostConsole }: { hostConsole: HostConsoleConfig | n
   if (!hostConsole) return null;
   return (
     <a
-      className="button secondary small min-w-0 gap-2 no-underline"
+      className="button secondary small hostConsoleAction min-w-0 no-underline"
       data-testid="host-console-action"
       href={hostConsole.url}
       aria-label={hostConsole.label}
