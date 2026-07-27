@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-07-22) — issue #125. Public API 프로세스 배치는 [ADR 0012](0012-server-worker-standalone-roles.md)가 갱신한다. 별도 Public API plane, 외부 실행 식별자와 route는 [ADR 0013](0013-canonical-invocation-and-trigger-boundary.md)이 canonical Invocation API와 Run lifecycle로 갱신하며, client token과 InputConfig 결정은 유지한다.
+Superseded in part (2026-07-27) by [ADR 0013](0013-canonical-invocation-and-trigger-boundary.md). 별도 Public API plane, 외부 실행 식별자와 route는 canonical Invocation API와 Run lifecycle로 대체되었으며, client token과 InputConfig 결정은 유지한다. Original decision: Accepted (2026-07-22) — issue #125.
 
 ## Context
 

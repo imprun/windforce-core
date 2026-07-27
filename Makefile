@@ -1,10 +1,10 @@
-.PHONY: help fmt test test-postgres build cli-build web-deps web-install web-dev web-build web-embed web-test web-typecheck clean dev \
+.PHONY: help fmt test test-python-sdk test-postgres build cli-build web-deps web-install web-dev web-build web-embed web-test web-typecheck clean dev \
 	compose-up compose-db compose-server compose-worker compose-dev compose-dev-worker compose-dev-build compose-dev-logs compose-build compose-down compose-reset compose-logs compose-ps postgres-dsn \
 	dev-standalone dev-standalone-postgres dev-server dev-worker worker-once \
 	webhook-receiver \
 	windforce-variable-set windforce-git-token windforce-register windforce-sync windforce-deploy windforce-sample \
 	windforce-schema windforce-openapi windforce-control-openapi \
-	windforce-run windforce-run-wait windforce-jobs windforce-job windforce-job-result windforce-job-logs windforce-job-cancel \
+	windforce-run windforce-run-wait windforce-run-status windforce-run-result windforce-run-cancel windforce-jobs windforce-job windforce-job-result windforce-job-logs windforce-job-cancel \
 	ui-guide ui-guide-verify
 
 APP := windforce-core
@@ -57,7 +57,9 @@ WF_WORKSPACE ?= default
 WF_APP ?= echo
 WF_ACTION ?= echo
 WF_INPUT_JSON ?= {}
-WF_TIMEOUT_MS ?= 5000
+WF_TIMEOUT ?= 5s
+WF_IDEMPOTENCY_KEY ?=
+WF_RUN_ID ?=
 WF_JOB_ID ?=
 WF_JOB_STATUS ?=
 WF_TAIL_BYTES ?=
@@ -105,6 +107,7 @@ help:
 	@echo "  web-test               run Web UI unit tests"
 	@echo "  web-typecheck          type-check the Web UI"
 	@echo "  test                   run go test ./..."
+	@echo "  test-python-sdk        run canonical Python Invocation SDK tests"
 	@echo "  test-postgres          run PostgreSQL integration test against docker compose"
 	@echo "  build                  build $(BIN)"
 	@echo "  cli-build              build supported Control Plane CLI at $(CLI_BIN)"
@@ -123,8 +126,9 @@ help:
 	@echo "  windforce-schema       print WF_APP/WF_ACTION schemas from the control API"
 	@echo "  windforce-openapi      print WF_APP invocation OpenAPI from the control API"
 	@echo "  windforce-control-openapi print workspace control-plane OpenAPI"
-	@echo "  windforce-run          enqueue WF_APP/WF_ACTION with WF_INPUT_JSON"
-	@echo "  windforce-run-wait     run WF_APP/WF_ACTION and wait WF_TIMEOUT_MS"
+	@echo "  windforce-run          admit WF_APP/WF_ACTION with WF_INPUT_JSON"
+	@echo "  windforce-run-wait     admit WF_APP/WF_ACTION and wait WF_TIMEOUT"
+	@echo "  windforce-run-status/result/cancel operate on WF_RUN_ID"
 	@echo "  windforce-jobs         list jobs, optionally filtered by WF_JOB_STATUS"
 	@echo "  windforce-job/result/logs/cancel operate on WF_JOB_ID"
 	@echo "  compose-up             start server and Bun Web UI against PostgreSQL"
@@ -166,6 +170,10 @@ web-typecheck:
 
 test:
 	$(GO) test ./...
+	python -m unittest discover -s sdk/python/tests -v
+
+test-python-sdk:
+	python -m unittest discover -s sdk/python/tests -v
 
 test-postgres: compose-db
 	WINDFORCE_LITE_POSTGRES_TEST_DSN="$(POSTGRES_DSN)" $(GO) test ./internal/state -run Postgres -count=1 -v
@@ -274,10 +282,19 @@ windforce-control-openapi:
 	python tools/windforce_control.py --api-url "$(WF_API_URL)" --workspace "$(WF_WORKSPACE)" --pretty control-openapi
 
 windforce-run:
-	python tools/windforce_control.py --api-url "$(WF_API_URL)" --workspace "$(WF_WORKSPACE)" --pretty run --app "$(WF_APP)" --action "$(WF_ACTION)" --input "$(WF_INPUT_JSON)"
+	python tools/windforce_control.py --api-url "$(WF_API_URL)" --workspace "$(WF_WORKSPACE)" --pretty run --app "$(WF_APP)" --action "$(WF_ACTION)" --input "$(WF_INPUT_JSON)" $(if $(WF_IDEMPOTENCY_KEY),--idempotency-key "$(WF_IDEMPOTENCY_KEY)",)
 
 windforce-run-wait:
-	python tools/windforce_control.py --api-url "$(WF_API_URL)" --workspace "$(WF_WORKSPACE)" --pretty run-wait --app "$(WF_APP)" --action "$(WF_ACTION)" --timeout-ms "$(WF_TIMEOUT_MS)" --input "$(WF_INPUT_JSON)"
+	python tools/windforce_control.py --api-url "$(WF_API_URL)" --workspace "$(WF_WORKSPACE)" --pretty run-wait --app "$(WF_APP)" --action "$(WF_ACTION)" --timeout "$(WF_TIMEOUT)" --input "$(WF_INPUT_JSON)" $(if $(WF_IDEMPOTENCY_KEY),--idempotency-key "$(WF_IDEMPOTENCY_KEY)",)
+
+windforce-run-status:
+	python tools/windforce_control.py --api-url "$(WF_API_URL)" --workspace "$(WF_WORKSPACE)" --pretty run-status --run-id "$(WF_RUN_ID)"
+
+windforce-run-result:
+	python tools/windforce_control.py --api-url "$(WF_API_URL)" --workspace "$(WF_WORKSPACE)" --pretty run-result --run-id "$(WF_RUN_ID)"
+
+windforce-run-cancel:
+	python tools/windforce_control.py --api-url "$(WF_API_URL)" --workspace "$(WF_WORKSPACE)" --pretty run-cancel --run-id "$(WF_RUN_ID)"
 
 windforce-jobs:
 	python tools/windforce_control.py --api-url "$(WF_API_URL)" --workspace "$(WF_WORKSPACE)" --pretty jobs --status "$(WF_JOB_STATUS)"

@@ -56,12 +56,17 @@ func TestReleaseRollbackMovesActivePointerWithoutRebuildingOrChangingCandidate(t
 		Store:            store,
 		Catalog:          store,
 		ExecutionBundles: manager,
+		AdminToken:       "test-admin",
 	}))
 	defer httpServer.Close()
 
 	beforeRun := createRollbackTestRun(t, httpServer.URL, "before-rollback")
-	if beforeRun.PinnedRelease.Commit != "commit-b" {
-		t.Fatalf("run before rollback pinned %q, want commit-b", beforeRun.PinnedRelease.Commit)
+	beforeState, err := store.GetRun(ctx, beforeRun.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if beforeState.Deployment.Commit != "commit-b" {
+		t.Fatalf("run before rollback pinned %q, want commit-b", beforeState.Deployment.Commit)
 	}
 
 	rollbackBody := []byte(`{"confirm":true,"reason":"restore stable release"}`)
@@ -71,6 +76,7 @@ func TestReleaseRollbackMovesActivePointerWithoutRebuildingOrChangingCandidate(t
 	}
 	request.Header.Set("content-type", "application/json")
 	request.Header.Set("x-windforce-actor", "operator@example.test")
+	request.Header.Set("authorization", "Bearer test-admin")
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		t.Fatal(err)
@@ -117,8 +123,12 @@ func TestReleaseRollbackMovesActivePointerWithoutRebuildingOrChangingCandidate(t
 		t.Fatalf("existing run changed after rollback: run=%#v err=%v", got, err)
 	}
 	afterRun := createRollbackTestRun(t, httpServer.URL, "after-rollback")
-	if afterRun.PinnedRelease.Commit != "commit-a" {
-		t.Fatalf("run after rollback pinned %q, want commit-a", afterRun.PinnedRelease.Commit)
+	afterState, err := store.GetRun(ctx, afterRun.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if afterState.Deployment.Commit != "commit-a" {
+		t.Fatalf("run after rollback pinned %q, want commit-a", afterState.Deployment.Commit)
 	}
 	rollbackEvents := 0
 	for _, event := range after.ControlPlaneEvents {
@@ -142,7 +152,12 @@ func TestReleaseRollbackMovesActivePointerWithoutRebuildingOrChangingCandidate(t
 		t.Fatalf("rollback audit count = %d, want 1", rollbackAudits)
 	}
 
-	historyResponse, err := http.Get(httpServer.URL + "/api/w/ws-a/apps/echo/history")
+	historyRequest, err := http.NewRequest(http.MethodGet, httpServer.URL+"/api/w/ws-a/apps/echo/history", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	historyRequest.Header.Set("authorization", "Bearer test-admin")
+	historyResponse, err := http.DefaultClient.Do(historyRequest)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,10 +211,17 @@ func TestReleaseRollbackRejectsBundlelessAndAlreadyActiveReleases(t *testing.T) 
 	assertRollbackStatus(t, httpServer.URL, snapshot.History[1].ID, http.StatusConflict)
 }
 
-func createRollbackTestRun(t *testing.T, baseURL string, idempotencyKey string) executionRunView {
+func createRollbackTestRun(t *testing.T, baseURL string, idempotencyKey string) invocationRunView {
 	t.Helper()
-	body := []byte(`{"app":"echo","action":"run","input":{},"adapter":"queue","idempotency_key":"` + idempotencyKey + `"}`)
-	response, err := http.Post(baseURL+"/execution/v1/workspaces/ws-a/runs", "application/json", bytes.NewReader(body))
+	body := []byte(`{"app":"echo","action":"run","input":{}}`)
+	request, err := http.NewRequest(http.MethodPost, baseURL+"/api/v1/workspaces/ws-a/runs", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("content-type", "application/json")
+	request.Header.Set("authorization", "Bearer test-admin")
+	request.Header.Set("idempotency-key", idempotencyKey)
+	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +229,7 @@ func createRollbackTestRun(t *testing.T, baseURL string, idempotencyKey string) 
 	if response.StatusCode != http.StatusCreated {
 		t.Fatalf("create run status = %d, want 201", response.StatusCode)
 	}
-	var run executionRunView
+	var run invocationRunView
 	if err := json.NewDecoder(response.Body).Decode(&run); err != nil {
 		t.Fatal(err)
 	}
@@ -222,6 +244,7 @@ func assertRollbackStatus(t *testing.T, baseURL string, releaseID string, want i
 	}
 	request.Header.Set("content-type", "application/json")
 	request.Header.Set("x-windforce-actor", "tester")
+	request.Header.Set("authorization", "Bearer test-admin")
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		t.Fatal(err)

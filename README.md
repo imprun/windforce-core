@@ -58,9 +58,9 @@ lifecycle and idempotency boundary is Run, while Job remains the internal worker
 queue unit. See [Invocation API](docs/concepts/public-api.md) and
 [ADR 0013](docs/adr/0013-canonical-invocation-and-trigger-boundary.md).
 
-The old `/execution/v1`, `/api/v1/w/.../run`, and control-plane job admission
-routes remain only during the v0.3 migration foundation and are scheduled for
-one breaking removal after the known operating consumers are ready.
+The v0.3 boundary does not expose `/execution/v1`, `/api/v1/w/.../run`, or
+control-plane Job admission routes. Integrations use the canonical Run routes
+above; operators may still inspect internal Jobs through `/api/w`.
 
 ## Deploy
 
@@ -214,17 +214,13 @@ go run ./cmd/windforce-core standalone --dev `
   --state .tmp/state.json
 ```
 
-In another terminal, use the control-plane API to create a managed sample git
-source, sync it, enqueue a job, and read the result:
+In another terminal, create a managed sample source and invoke its Action
+through the canonical Invocation API:
 
 ```powershell
 python tools/windforce_control.py --api-url http://127.0.0.1:8080 --pretty sample --app-key sample_hello
-
-Invoke-RestMethod `
-  -Method Post `
-  -Uri http://127.0.0.1:8080/api/w/default/jobs/run/sample_hello/echo/wait?timeout_ms=5000 `
-  -ContentType application/json `
-  -Body '{"message":"hello"}'
+python tools/windforce_control.py --api-url http://127.0.0.1:8080 --pretty run-wait `
+  --app sample_hello --action echo --timeout 5s --input '{"message":"hello"}'
 ```
 
 ## Local runtime mode
@@ -238,14 +234,11 @@ go run ./cmd/windforce-core standalone --dev `
   --state .tmp/state.json
 ```
 
-Enqueue an action through the canonical control-plane HTTP API:
+Admit a Run through the canonical Invocation API:
 
 ```powershell
-Invoke-RestMethod `
-  -Method Post `
-  -Uri http://127.0.0.1:8080/api/w/default/jobs/run/echo/echo `
-  -ContentType application/json `
-  -Body '{"message":"hello"}'
+python tools/windforce_control.py --api-url http://127.0.0.1:8080 --pretty run `
+  --app echo --action echo --input '{"message":"hello"}'
 ```
 
 Separated local roles use the same state file and bundle store:
@@ -297,9 +290,6 @@ Implemented control-plane endpoints:
 - `GET /api/w/{workspace}/clients/{clientId}/input-config-audit`
 - `POST|DELETE /api/w/{workspace}/clients/{clientId}/token` (rotate or revoke the one-time client API token)
 - `GET /api/w/{workspace}/worker-tags`
-- `POST /api/w/{workspace}/jobs/run/{app}/{action}`
-- `POST /api/w/{workspace}/jobs/run/{app}/{action}/wait?timeout_ms={ms}`
-- `POST /api/w/{workspace}/jobs/webhook/{app}/{action}`
 - `GET /api/w/{workspace}/jobs?status={status}&limit={limit}`
 - `GET /api/w/{workspace}/jobs/summary`
 - `GET /api/w/{workspace}/jobs/{jobID}`
@@ -313,23 +303,22 @@ Implemented control-plane endpoints:
 - `POST /api/w/{workspace}/resources`
 - `GET /api/w/{workspace}/resources/get/p/{path}`
 
-In-tree protocol adapters call `execution.Service.CreateRun` directly. External adapters use the equivalent trusted Execution API instead of the control-plane storage model:
+All out-of-process callers, including protocol adapters, use the canonical
+Invocation API:
 
-- `POST /execution/v1/workspaces/{workspace}/runs`
-- `GET /execution/v1/workspaces/{workspace}/runs/{runId}`
-- `GET /execution/v1/workspaces/{workspace}/runs/{runId}/result`
-- `POST /execution/v1/workspaces/{workspace}/runs/{runId}/cancel`
-- `GET /execution/v1/workspaces/{workspace}/apps/{app}`
-- `GET /execution/v1/openapi.json`
+- `POST /api/v1/workspaces/{workspace}/runs`
+- `POST /api/v1/workspaces/{workspace}/runs/wait?timeout={duration}`
+- `GET /api/v1/workspaces/{workspace}/runs/{runId}`
+- `GET /api/v1/workspaces/{workspace}/runs/{runId}/result`
+- `POST /api/v1/workspaces/{workspace}/runs/{runId}/cancel`
+- `GET /api/v1/workspaces/{workspace}/apps/{app}`
+- `GET /api/v1/openapi.json`
 
-Trusted protocol adapters may include `client_id` when creating a Run. The value selects a Client Registry identity and its client-scoped input settings. Run admission rejects unknown client identities and caller-supplied values for locked input keys.
-
-External callers use the client-authenticated Public API:
-
-- `POST /api/v1/w/{workspace}/run/{app}/{action}`
-- `POST /api/v1/w/{workspace}/run/{app}/{action}/wait?timeout={duration}`
-
-Both routes require an engine-issued `wfk_` bearer and return the admitted Job identifier in `X-WF-Job-Id`. See [Public API](docs/concepts/public-api.md) for token lifecycle, input merging, and response semantics.
+Operator, `wfk_` client, and scoped `wfs_` service credentials share these
+routes. Identity is derived from the bearer token; request bodies cannot assert
+`client_id` or per-run environment. Responses expose Run ID and
+`X-WF-Run-Id`, never Job ID. See [Invocation API](docs/concepts/public-api.md)
+for credential, ownership, input-merging, and response semantics.
 
 The core script context exposes the implemented basic helpers:
 `ctx.variables`, `ctx.resources`, `ctx.state`, `ctx.http`, `ctx.logger`,
@@ -413,7 +402,7 @@ schema bytes.
 
 Action schemas are exposed to operators through the control-plane API and to
 protocol adapters through
-`GET /execution/v1/workspaces/{workspace}/apps/{app}`. Adapters translate their
+`GET /api/v1/workspaces/{workspace}/apps/{app}`. Adapters translate their
 ingress and response envelopes while Windforce keeps release and schema
 selection authoritative. The canonical app invocation schema endpoint is
 `GET /api/w/{workspace}/apps/{app}/openapi.json`.
@@ -526,7 +515,8 @@ forever. `WINDFORCE_LITE_WEBHOOK_RETENTION_INTERVAL`,
 Windforce Core has three explicit planes:
 
 - Control Plane manages sources, releases, configuration, and audit history.
-- Trigger Plane contains protocol adapters that call the Execution API.
+- Trigger Plane contains built-in adapters that call the admission service and
+  external adapters that call the Invocation API.
 - Execution Plane admits Runs, owns the PostgreSQL queue, and runs Jobs.
 
 Run admission resolves and pins the active release before a Job is enqueued.

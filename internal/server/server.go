@@ -199,9 +199,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if h.handleInvocationAPI(w, r) {
 			return
 		}
-		if h.handlePublicAPI(w, r) {
-			return
-		}
 	}
 	if h.handleWebUI(w, r) {
 		return
@@ -211,7 +208,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, status, message)
 		return
 	}
-	if h.handleExecutionAPI(w, authorizedRequest) || h.handleRuntimeAPI(w, authorizedRequest) {
+	if h.handleRuntimeAPI(w, authorizedRequest) {
 		return
 	}
 	if h.handleAPI(w, authorizedRequest) {
@@ -247,18 +244,6 @@ func (h *Handler) handleAPI(w http.ResponseWriter, r *http.Request) bool {
 		return true
 	}
 	if h.handleCanonicalWebhookAPI(w, r, parts) {
-		return true
-	}
-	if len(parts) == 7 && parts[0] == "api" && parts[1] == "w" && parts[3] == "jobs" && parts[4] == "run" && r.Method == http.MethodPost {
-		h.handleJobRun(w, r, parts[2], parts[5], parts[6], false)
-		return true
-	}
-	if len(parts) == 8 && parts[0] == "api" && parts[1] == "w" && parts[3] == "jobs" && parts[4] == "run" && parts[7] == "wait" && r.Method == http.MethodPost {
-		h.handleJobRun(w, r, parts[2], parts[5], parts[6], true)
-		return true
-	}
-	if len(parts) == 7 && parts[0] == "api" && parts[1] == "w" && parts[3] == "jobs" && parts[4] == "webhook" && r.Method == http.MethodPost {
-		h.handleJobWebhook(w, r, parts[2], parts[5], parts[6])
 		return true
 	}
 	if len(parts) == 4 && parts[0] == "api" && parts[1] == "w" && parts[3] == "jobs" && r.Method == http.MethodGet {

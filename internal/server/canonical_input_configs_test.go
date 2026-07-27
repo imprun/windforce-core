@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/imprun/windforce-core/internal/catalog"
@@ -33,10 +34,11 @@ func TestCanonicalInputConfigLifecycleAndExecutionAdmission(t *testing.T) {
 		Actions:      map[string]contract.Action{"orders": {}},
 	}
 	server := httptest.NewServer(New(Config{
-		Store: store, Catalog: inputConfigTestCatalog{deployment: deployment},
+		Store: store, Catalog: inputConfigTestCatalog{deployment: deployment}, AdminToken: "test-admin",
 	}))
 	defer server.Close()
 
+	invocationToken := ""
 	do := func(method string, path string, body string, wantStatus int, target any) []byte {
 		t.Helper()
 		req, err := http.NewRequest(method, server.URL+path, bytes.NewBufferString(body))
@@ -47,6 +49,11 @@ func TestCanonicalInputConfigLifecycleAndExecutionAdmission(t *testing.T) {
 			req.Header.Set("Content-Type", "application/json")
 		}
 		req.Header.Set("X-Windforce-Actor", "operator@example.test")
+		if strings.HasPrefix(path, "/api/v1/") {
+			req.Header.Set("Authorization", "Bearer "+invocationToken)
+		} else {
+			req.Header.Set("Authorization", "Bearer test-admin")
+		}
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatal(err)
@@ -71,6 +78,7 @@ func TestCanonicalInputConfigLifecycleAndExecutionAdmission(t *testing.T) {
 	}
 	do(http.MethodPost, "/api/w/ws-a/clients", `{"name":"Client A"}`, http.StatusCreated, &created)
 	client := created.Client
+	invocationToken = created.APIToken
 	do(http.MethodPut, "/api/w/ws-a/apps/shop/input-configs", `{"config":{"region":"kr"},"locked_keys":[]}`, http.StatusOK, nil)
 	do(http.MethodPut, "/api/w/ws-a/apps/shop/input-configs", `{"config":{"_SCRAPING_RUNTIME":{"authSession":{"serviceUrl":"http://example.invalid"}}},"locked_keys":[]}`, http.StatusBadRequest, nil)
 	do(http.MethodPut, "/api/w/ws-a/apps/shop/input-configs", `{"action_key":"orders","client_id":"`+client.ID+`","config":{"tenant":"server-only"},"locked_keys":["tenant"]}`, http.StatusOK, nil)
@@ -87,12 +95,25 @@ func TestCanonicalInputConfigLifecycleAndExecutionAdmission(t *testing.T) {
 		t.Fatalf("client configs = %#v", clientConfigs)
 	}
 
-	do(http.MethodPost, "/execution/v1/workspaces/ws-a/runs", `{"app":"shop","action":"orders","client_id":"`+client.ID+`","input":{"tenant":"spoofed"}}`, http.StatusBadRequest, nil)
-	var admitted executionRunView
-	do(http.MethodPost, "/execution/v1/workspaces/ws-a/runs", `{"app":"shop","action":"orders","client_id":"`+client.ID+`","input":{"message":"hello"}}`, http.StatusCreated, &admitted)
-	job, run, _, err := store.GetJob(context.Background(), "ws-a", admitted.JobID)
+	var admitted invocationRunView
+	do(http.MethodPost, "/api/v1/workspaces/ws-a/runs", `{"app":"shop","action":"orders","input":{"message":"hello"}}`, http.StatusCreated, &admitted)
+	run, err := store.GetRun(context.Background(), admitted.RunID)
 	if err != nil {
 		t.Fatal(err)
+	}
+	snapshot, err := store.Load(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var job state.Job
+	for _, candidate := range snapshot.Jobs {
+		if candidate.RunID == run.ID {
+			job = candidate
+			break
+		}
+	}
+	if job.ID == "" {
+		t.Fatalf("job for run %q not found", run.ID)
 	}
 	if run.ClientID != client.ID || job.Payload.ClientID != client.ID {
 		t.Fatalf("client identity run=%q job=%q want=%q", run.ClientID, job.Payload.ClientID, client.ID)

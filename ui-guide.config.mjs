@@ -182,22 +182,21 @@ async function waitForWebhookDelivery(api, subscriptionID) {
 }
 
 async function waitForClientConfigRun(clientID, apiToken) {
-  const jobsURL = `http://127.0.0.1:${port}/api/w/default/jobs`;
-  const publicURL = `http://127.0.0.1:${port}/api/v1/w/default/run/echo/echo`;
+  const runsURL = `http://127.0.0.1:${port}/api/v1/workspaces/default/runs`;
   const headers = { "authorization": `Bearer ${apiToken}`, "content-type": "application/json" };
-  const rejected = await fetch(publicURL, {
+  const rejected = await fetch(runsURL, {
     method: "POST",
     headers,
-    body: JSON.stringify({ message: "caller value" }),
+    body: JSON.stringify({ app: "echo", action: "echo", input: { message: "caller value" } }),
   });
   if (rejected.status !== 400) {
     throw new Error(`locked input was not rejected: HTTP ${rejected.status}`);
   }
 
-  const admitted = await fetch(publicURL, {
+  const admitted = await fetch(runsURL, {
     method: "POST",
     headers,
-    body: JSON.stringify({}),
+    body: JSON.stringify({ app: "echo", action: "echo", input: {} }),
   });
   if (!admitted.ok) {
     throw new Error(`client-config run admission failed: HTTP ${admitted.status} ${await admitted.text()}`);
@@ -205,7 +204,7 @@ async function waitForClientConfigRun(clientID, apiToken) {
   const run = await admitted.json();
 
   for (let attempt = 0; attempt < 60; attempt += 1) {
-    const response = await fetch(`${jobsURL}/${encodeURIComponent(run.job_id)}/result`);
+    const response = await fetch(`${runsURL}/${encodeURIComponent(run.run_id)}/result`, { headers });
     const result = await response.json();
     if (response.status === 202) {
       await sleep(250);
@@ -219,7 +218,7 @@ async function waitForClientConfigRun(clientID, apiToken) {
       throw new Error(`worker did not apply client input settings: ${JSON.stringify(result)}`);
     }
     if (result.client_id && result.client_id !== clientID) {
-      throw new Error(`public run used the wrong client: ${JSON.stringify(result)}`);
+      throw new Error(`invocation run used the wrong client: ${JSON.stringify(result)}`);
     }
     return;
   }

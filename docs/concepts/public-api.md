@@ -129,5 +129,5 @@ Run-plus-first-Job admission.
 | 429 | Instance Invocation API rate limit exceeded |
 | 503 | Admission is unavailable |
 
-The old `/api/v1/w/{workspace}/run/...` Public API remains only as a v0.3
-migration surface. New integrations must use the canonical Run routes above.
+The v0.3 server exposes no legacy Public or Execution admission routes. All
+new and migrated integrations use the canonical Run routes above.

@@ -55,7 +55,8 @@ func TestSystemInfoExposesSafeServiceConfiguration(t *testing.T) {
 	if body.Service != "windforce-lite" || body.Workspace != "default" || !body.Ready {
 		t.Fatalf("body identity = %#v", body)
 	}
-	if !body.Planes["control_api"] || !body.Planes["execution_api"] || !body.Planes["public_api"] || !body.Planes["worker_api"] || !body.Planes["web_ui"] {
+	if !body.Planes["control_api"] || !body.Planes["invocation_api"] || !body.Planes["worker_api"] || !body.Planes["web_ui"] ||
+		body.Planes["execution_api"] || body.Planes["public_api"] {
 		t.Fatalf("planes = %#v", body.Planes)
 	}
 	if !body.Backends["state_store"] {

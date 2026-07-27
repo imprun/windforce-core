@@ -43,7 +43,19 @@ func (c *Client) WorkspacePath(parts ...string) string {
 	return "/" + strings.Join(segments, "/")
 }
 
+func (c *Client) InvocationPath(parts ...string) string {
+	segments := []string{"api", "v1", "workspaces", url.PathEscape(c.Workspace)}
+	for _, part := range parts {
+		segments = append(segments, url.PathEscape(strings.TrimSpace(part)))
+	}
+	return "/" + strings.Join(segments, "/")
+}
+
 func (c *Client) DoJSON(ctx context.Context, method, path string, body any) (json.RawMessage, error) {
+	return c.DoJSONWithHeaders(ctx, method, path, body, nil)
+}
+
+func (c *Client) DoJSONWithHeaders(ctx context.Context, method, path string, body any, headers map[string]string) (json.RawMessage, error) {
 	var payload io.Reader
 	if body != nil {
 		encoded, err := json.Marshal(body)
@@ -52,7 +64,7 @@ func (c *Client) DoJSON(ctx context.Context, method, path string, body any) (jso
 		}
 		payload = bytes.NewReader(encoded)
 	}
-	data, _, err := c.do(ctx, method, path, payload, "application/json")
+	data, _, err := c.do(ctx, method, path, payload, "application/json", headers)
 	if err != nil {
 		return nil, err
 	}
@@ -70,10 +82,10 @@ func (c *Client) DoRaw(ctx context.Context, method, path, contentType string, bo
 	if body != nil {
 		payload = bytes.NewReader(body)
 	}
-	return c.do(ctx, method, path, payload, contentType)
+	return c.do(ctx, method, path, payload, contentType, nil)
 }
 
-func (c *Client) do(ctx context.Context, method, path string, body io.Reader, contentType string) ([]byte, string, error) {
+func (c *Client) do(ctx context.Context, method, path string, body io.Reader, contentType string, headers map[string]string) ([]byte, string, error) {
 	base := strings.TrimRight(strings.TrimSpace(c.BaseURL), "/")
 	if base == "" {
 		return nil, "", fmt.Errorf("control-plane API URL is required")
@@ -91,6 +103,11 @@ func (c *Client) do(ctx context.Context, method, path string, body io.Reader, co
 	}
 	if actor := strings.TrimSpace(c.Actor); actor != "" {
 		req.Header.Set("X-Windforce-Actor", actor)
+	}
+	for name, value := range headers {
+		if strings.TrimSpace(value) != "" {
+			req.Header.Set(name, value)
+		}
 	}
 	httpClient := c.HTTP
 	if httpClient == nil {

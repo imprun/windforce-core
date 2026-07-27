@@ -12,83 +12,115 @@ func buildAppOpenAPI(baseURL string, workspaceID string, deployment contract.Dep
 	sorted := append([]openAPIAction(nil), actions...)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].ActionKey < sorted[j].ActionKey })
 
-	paths := map[string]any{}
-	opSeg := newOpSegDeduper()
+	createVariants := make([]any, 0, len(sorted))
+	resultVariants := make([]any, 0, len(sorted))
 	for _, action := range sorted {
-		inputSchema := schemaOrAny(action.InputSchema)
-		outputSchema := schemaOrAny(action.OutputSchema)
-		segment := opSeg(action.ActionKey)
-		base := fmt.Sprintf("/api/w/%s/jobs/run/%s/%s", workspaceID, deployment.App, action.ActionKey)
-
-		paths[base+"/wait"] = map[string]any{
-			"post": map[string]any{
-				"operationId": opID("run", segment, "sync"),
-				"summary":     fmt.Sprintf("Run %s and wait for the result", action.ActionKey),
-				"description": "Runs the action and blocks up to the wait timeout. 200 carries the finished result; 202 means it is still running — poll GET .../jobs/{id}/result with the returned job_id.",
-				"requestBody": oapiJSONBody(inputSchema, true),
-				"responses": withErrors(map[string]any{
-					"200": oapiResponse("Finished run — status is \"completed\" or \"failed\"; result holds the action output, or the failure detail when failed.", map[string]any{
-						"type": "object",
-						"properties": map[string]any{
-							"job_id": oapiStringSchema(),
-							"status": oapiStatusSchema(),
-							"result": outputSchema,
-						},
-					}),
-					"202": oapiResponse("Still running (wait timed out) — poll GET .../jobs/{id}/result with job_id.", oapiPendingSchema()),
-				}, "400", "401", "403", "404", "422"),
+		createVariants = append(createVariants, map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"properties": map[string]any{
+				"app":            map[string]any{"type": "string", "const": deployment.App},
+				"action":         map[string]any{"type": "string", "const": action.ActionKey},
+				"input":          schemaOrAny(action.InputSchema),
+				"correlation_id": oapiStringSchema(),
 			},
-		}
-
-		paths[base] = map[string]any{
-			"post": map[string]any{
-				"operationId": opID("run", segment),
-				"summary":     fmt.Sprintf("Run %s (async)", action.ActionKey),
-				"description": "Enqueues the action and returns immediately with a job_id. Retrieve the result with GET .../jobs/{id}/result.",
-				"requestBody": oapiJSONBody(inputSchema, true),
-				"responses": withErrors(map[string]any{
-					"201": oapiJobHandleResponse(),
-				}, "400", "401", "403", "404", "422"),
-			},
-		}
-
-		paths[fmt.Sprintf("/api/w/%s/jobs/webhook/%s/%s", workspaceID, deployment.App, action.ActionKey)] = map[string]any{
-			"post": map[string]any{
-				"operationId": opID("webhook", segment),
-				"summary":     fmt.Sprintf("Invoke %s via webhook", action.ActionKey),
-				"description": "External webhook intake (ADR-0028). The raw request body is delivered to the action verbatim as ctx.trigger.raw and request headers are pinned for signature verification — the action parses and authenticates the payload itself. Unlike the run endpoints the body is not the typed action input.",
-				"requestBody": map[string]any{
-					"required": false,
-					"content":  map[string]any{"*/*": map[string]any{"schema": map[string]any{}}},
-				},
-				"responses": withErrors(map[string]any{
-					"201": oapiJobHandleResponse(),
-				}, "400", "401", "403", "404", "422"),
-			},
-		}
+			"required": []any{"app", "action", "input"},
+		})
+		resultVariants = append(resultVariants, schemaOrAny(action.OutputSchema))
+	}
+	createSchema := map[string]any{"oneOf": createVariants}
+	if len(createVariants) == 0 {
+		createSchema = map[string]any{"type": "object", "additionalProperties": false}
+	}
+	resultSchema := map[string]any{"oneOf": resultVariants}
+	if len(resultVariants) == 0 {
+		resultSchema = map[string]any{}
 	}
 
-	paths[fmt.Sprintf("/api/w/%s/jobs/{id}/result", workspaceID)] = map[string]any{
-		"get": map[string]any{
-			"operationId": "getJobResult",
-			"summary":     "Poll a job's result",
-			"parameters": []any{map[string]any{
-				"name":        "id",
-				"in":          "path",
-				"required":    true,
-				"schema":      oapiStringSchema(),
-				"description": "job_id returned by an async run",
-			}},
-			"responses": withErrors(map[string]any{
-				"200": oapiResponse("Finished run — status \"completed\" or \"failed\"; result holds the output, or the failure detail when failed.", map[string]any{
-					"type": "object",
-					"properties": map[string]any{
-						"status": oapiStatusSchema(),
-						"result": map[string]any{},
-					},
-				}),
-				"202": oapiResponse("Still running (or an unknown job_id).", oapiPendingSchema()),
-			}, "401", "403"),
+	runSchema := map[string]any{
+		"type":                 "object",
+		"additionalProperties": false,
+		"properties": map[string]any{
+			"run_id":         oapiStringSchema(),
+			"state":          map[string]any{"type": "string", "enum": []any{"queued", "running", "waiting_human", "resuming", "succeeded", "failed", "canceled", "expired"}},
+			"app":            map[string]any{"type": "string", "const": deployment.App},
+			"action":         map[string]any{"type": "string"},
+			"correlation_id": oapiStringSchema(),
+			"replayed":       oapiBooleanSchema(),
+			"created_at":     map[string]any{"type": "string", "format": "date-time"},
+			"updated_at":     map[string]any{"type": "string", "format": "date-time"},
+		},
+		"required": []any{"run_id", "state", "app", "action", "created_at", "updated_at"},
+	}
+	runResponses := withErrors(map[string]any{
+		"200": oapiResponse("Run state.", runSchema),
+		"201": oapiResponse("Run admitted.", runSchema),
+	}, "400", "401", "403", "404", "409", "422")
+	runIDParameter := oapiPathParam("run_id", "Caller-visible Run identifier.")
+	workspaceParameter := oapiPathParam("workspace", fmt.Sprintf("Workspace id. This document was generated for %q.", workspaceID))
+
+	paths := map[string]any{
+		"/api/v1/workspaces/{workspace}/runs": map[string]any{
+			"post": map[string]any{
+				"operationId": "createRun",
+				"summary":     fmt.Sprintf("Admit a %s Run", deployment.App),
+				"description": "Creates the caller-visible Run lifecycle resource. Supply Idempotency-Key as an HTTP header when retries must replay the same Run.",
+				"parameters": []any{
+					workspaceParameter,
+					oapiHeaderParam("Idempotency-Key", "Principal-scoped idempotency key.", oapiStringSchema(), false),
+				},
+				"requestBody": oapiJSONBody(createSchema, true),
+				"responses":   runResponses,
+			},
+		},
+		"/api/v1/workspaces/{workspace}/runs/wait": map[string]any{
+			"post": map[string]any{
+				"operationId": "createRunAndWait",
+				"summary":     fmt.Sprintf("Admit a %s Run and wait", deployment.App),
+				"description": "Returns the action result when the Run settles before the timeout. X-WF-Run-Id identifies the admitted Run for reconciliation.",
+				"parameters": []any{
+					workspaceParameter,
+					oapiHeaderParam("Idempotency-Key", "Principal-scoped idempotency key.", oapiStringSchema(), false),
+					oapiQueryParam("timeout", "Wait duration such as 30s.", oapiStringSchema(), false),
+				},
+				"requestBody": oapiJSONBody(createSchema, true),
+				"responses": withErrors(map[string]any{
+					"200": oapiResponse("Terminal action result.", resultSchema),
+					"202": oapiResponse("Run is still active.", runSchema),
+				}, "400", "401", "403", "404", "409", "422"),
+			},
+		},
+		"/api/v1/workspaces/{workspace}/runs/{run_id}": map[string]any{
+			"get": map[string]any{
+				"operationId": "getRun",
+				"summary":     "Get Run state",
+				"parameters":  []any{workspaceParameter, runIDParameter},
+				"responses":   runResponses,
+			},
+		},
+		"/api/v1/workspaces/{workspace}/runs/{run_id}/result": map[string]any{
+			"get": map[string]any{
+				"operationId": "getRunResult",
+				"summary":     "Get Run result",
+				"parameters":  []any{workspaceParameter, runIDParameter},
+				"responses": withErrors(map[string]any{
+					"200": oapiResponse("Terminal action result.", resultSchema),
+					"202": oapiResponse("Run is still active.", runSchema),
+				}, "401", "403", "404"),
+			},
+		},
+		"/api/v1/workspaces/{workspace}/runs/{run_id}/cancel": map[string]any{
+			"post": map[string]any{
+				"operationId": "cancelRun",
+				"summary":     "Cancel a Run",
+				"parameters":  []any{workspaceParameter, runIDParameter},
+				"requestBody": oapiJSONBody(map[string]any{
+					"type":                 "object",
+					"additionalProperties": false,
+					"properties":           map[string]any{"reason": oapiStringSchema()},
+				}, false),
+				"responses": runResponses,
+			},
 		},
 	}
 
@@ -103,19 +135,18 @@ func buildAppOpenAPI(baseURL string, workspaceID string, deployment contract.Dep
 	return map[string]any{
 		"openapi": "3.1.0",
 		"info": map[string]any{
-			"title":       deployment.App + " API",
+			"title":       deployment.App + " Invocation API",
 			"version":     version,
-			"description": "Auto-generated from windforce action input/output schemas. Actions are invoked over HTTP; the run API is asynchronous (enqueue + poll, ADR-0007). A run that FAILS is reported as status \"failed\" inside a 200 response (not an HTTP error) — HTTP 4xx covers only enqueue-time errors (auth, quota, bad request). Actions without a declared schema accept/return an unconstrained JSON body.",
+			"description": "App-specific view of the canonical Run-based Invocation API, generated from the active release action schemas.",
 		},
 		"servers":  []any{map[string]any{"url": baseURL}},
 		"security": []any{map[string]any{"bearerAuth": []any{}}},
 		"components": map[string]any{
 			"schemas": map[string]any{
 				"Error": map[string]any{
-					"type":        "object",
-					"description": "windforce's uniform error envelope.",
-					"properties":  map[string]any{"error": oapiStringSchema()},
-					"required":    []any{"error"},
+					"type":       "object",
+					"properties": map[string]any{"error": oapiStringSchema()},
+					"required":   []any{"error"},
 				},
 			},
 			"responses": appOpenAPIErrorResponses(),
@@ -123,7 +154,7 @@ func buildAppOpenAPI(baseURL string, workspaceID string, deployment contract.Dep
 				"bearerAuth": map[string]any{
 					"type":        "http",
 					"scheme":      "bearer",
-					"description": "windforce API token (Settings -> API tokens). Send as `Authorization: Bearer <token>`.",
+					"description": "Operator, workspace, client, or service-principal bearer accepted by the Invocation API.",
 				},
 			},
 		},

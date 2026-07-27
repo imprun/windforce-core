@@ -141,11 +141,11 @@ Operator, `wfk_` Client Registry, and scoped `wfs_` Service Principal
 credentials use these same routes. The Invocation response exposes Run ID and
 `X-WF-Run-Id`, never Job ID. See [Invocation API](concepts/public-api.md).
 
-`/execution/v1`, `/api/v1/w/{workspace}/run/...`, and control-plane Job
-submission remain temporary v0.3 migration surfaces. ADR 0013 removes them in
-one breaking release after Gale and the Imprun gateway are ready. The
-non-production `wf-triggers` repository is implemented against the stable
-canonical OpenAPI and is not part of the operating rollback release set.
+The v0.3 boundary removes `/execution/v1`,
+`/api/v1/w/{workspace}/run/...`, and control-plane Job submission. ADR 0013
+records the breaking transition. The non-production `wf-triggers` repository
+is implemented separately against the stable canonical OpenAPI and is not part
+of the operating rollback release set.
 
 ## SDK Boundary
 
@@ -154,14 +154,13 @@ The v0.3 reference client is `windforce-invocation` /
 wait, result, cancel, and app-description operations over `/api/v1`. SDK
 implementations are HTTP clients only. PostgreSQL schemas, Job IDs, bundle
 paths, and catalog storage are private implementation details of Windforce
-Core. The existing execution SDK remains only until the coordinated legacy
-removal.
+Core. The former execution SDK package has no v0.3 compatibility import.
 
 ## Process Roles
 
 | Role | Responsibility |
 |---|---|
-| `server` | Control `/api/w`, Invocation `/api/v1`, Worker `/worker/v1`, embedded Web UI, Webhook Dispatcher, and retention loops; legacy admission routes remain only during v0.3 migration |
+| `server` | Control `/api/w`, Invocation `/api/v1`, Worker `/worker/v1`, embedded Web UI, Webhook Dispatcher, and retention loops |
 | `worker` | Queue claim and action execution, using shared PostgreSQL state or the remote worker API selected by `--api-url` |
 | `standalone` | `server` and `worker` in one process |
 

@@ -97,7 +97,7 @@ func TestManagedWorkspaceAPIAndAuthorizationBoundary(t *testing.T) {
 	if writeArchived.StatusCode != http.StatusConflict {
 		t.Fatalf("archived write status = %d: %s", writeArchived.StatusCode, readResponse(t, writeArchived))
 	}
-	executeArchived := workspaceRequest(t, server.URL, http.MethodPost, "/execution/v1/workspaces/team-a/runs", "instance-admin", `{"app":"echo","action":"run","input":{}}`)
+	executeArchived := workspaceRequest(t, server.URL, http.MethodPost, "/api/v1/workspaces/team-a/runs", "instance-admin", `{"app":"echo","action":"run","input":{}}`)
 	if executeArchived.StatusCode != http.StatusConflict {
 		t.Fatalf("archived execution status = %d: %s", executeArchived.StatusCode, readResponse(t, executeArchived))
 	}

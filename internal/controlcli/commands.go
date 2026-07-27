@@ -220,39 +220,90 @@ func (r *runner) action(args []string) error {
 	return r.json(http.MethodGet, r.client.WorkspacePath(parts...), nil)
 }
 
-func (r *runner) job(args []string) error {
+func (r *runner) run(args []string) error {
 	if len(args) == 0 {
-		return usageError{"job requires run, list, show, result, logs, or cancel"}
+		return usageError{"run requires create, wait, show, result, or cancel"}
 	}
 	switch args[0] {
-	case "run":
+	case "create", "wait":
 		if len(args) < 3 {
-			return usageError{"usage: windforce job run <app> <action> [flags]"}
+			return usageError{"usage: windforce run " + args[0] + " <app> <action> [flags]"}
 		}
-		fs := r.flags("job run")
+		fs := r.flags("run " + args[0])
 		input := fs.String("input", "{}", "JSON input")
 		inputFile := fs.String("input-file", "", "JSON input file, or - for stdin")
-		wait := fs.Bool("wait", false, "wait for terminal result")
-		timeoutMS := fs.Int("timeout-ms", 0, "server wait timeout in milliseconds")
+		idempotencyKey := fs.String("idempotency-key", "", "principal-scoped idempotency key")
+		correlationID := fs.String("correlation-id", "", "caller correlation id")
+		timeout := fs.Duration("timeout", 0, "server wait duration")
 		if err := fs.Parse(args[3:]); err != nil {
 			return usageError{err.Error()}
 		}
-		if fs.NArg() != 0 {
-			return usageError{"usage: windforce job run <app> <action> [flags]"}
+		if fs.NArg() != 0 || (args[0] == "create" && *timeout != 0) || *timeout < 0 {
+			return usageError{"usage: windforce run " + args[0] + " <app> <action> [flags]"}
 		}
-		body, err := r.readJSON(*input, *inputFile)
+		inputValue, err := r.readJSON(*input, *inputFile)
 		if err != nil {
 			return err
 		}
-		parts := []string{"jobs", "run", args[1], args[2]}
+		body := map[string]any{
+			"app":    args[1],
+			"action": args[2],
+			"input":  inputValue,
+		}
+		if *correlationID != "" {
+			body["correlation_id"] = *correlationID
+		}
+		parts := []string{"runs"}
 		query := ""
-		if *wait {
+		if args[0] == "wait" {
 			parts = append(parts, "wait")
-			if *timeoutMS > 0 {
-				query = "?timeout_ms=" + strconv.Itoa(*timeoutMS)
+			if *timeout > 0 {
+				query = "?timeout=" + url.QueryEscape((*timeout).String())
 			}
 		}
-		return r.json(http.MethodPost, r.client.WorkspacePath(parts...)+query, body)
+		return r.jsonWithHeaders(
+			http.MethodPost,
+			r.client.InvocationPath(parts...)+query,
+			body,
+			map[string]string{"Idempotency-Key": *idempotencyKey},
+		)
+	case "show", "result", "cancel":
+		if len(args) < 2 {
+			return usageError{"usage: windforce run " + args[0] + " <run-id>"}
+		}
+		if (args[0] == "show" || args[0] == "result") && len(args) != 2 {
+			return usageError{"usage: windforce run " + args[0] + " <run-id>"}
+		}
+		parts := []string{"runs", args[1]}
+		method := http.MethodGet
+		var body any
+		if args[0] == "result" {
+			parts = append(parts, "result")
+		}
+		if args[0] == "cancel" {
+			fs := r.flags("run cancel")
+			reason := fs.String("reason", "", "cancellation reason")
+			if err := fs.Parse(args[2:]); err != nil {
+				return usageError{err.Error()}
+			}
+			if fs.NArg() != 0 {
+				return usageError{"usage: windforce run cancel <run-id> [--reason note]"}
+			}
+			method = http.MethodPost
+			parts = append(parts, "cancel")
+			body = compact(map[string]any{"reason": *reason})
+		}
+		return r.json(method, r.client.InvocationPath(parts...), body)
+	default:
+		return usageError{fmt.Sprintf("unknown run command %q", args[0])}
+	}
+}
+
+func (r *runner) job(args []string) error {
+	if len(args) == 0 {
+		return usageError{"job requires list, show, result, logs, or cancel"}
+	}
+	switch args[0] {
 	case "list":
 		fs := r.flags("job list")
 		status := fs.String("status", "", "job status")
