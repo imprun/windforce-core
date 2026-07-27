@@ -299,7 +299,11 @@ function ChangeBranchDialog({ source, onClose, onChanged }: RepositoryDialogProp
   }
 
   return (
-    <Modal title="Change tracked branch" subtitle={displayRepoURL(source.repo_url)} onClose={onClose}>
+    <Modal
+      title="Change tracked branch"
+      subtitle={displayRepoURL(source.repo_url)}
+      onClose={onClose}
+    >
       <Field label="Branch">
         <input
           value={branch}

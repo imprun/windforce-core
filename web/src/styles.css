@@ -3823,6 +3823,119 @@ textarea {
   white-space: nowrap;
 }
 
+.sheetSectionHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.sheetSectionHeading h3 {
+  margin-bottom: var(--space-1);
+}
+
+.sheetSectionHeading p,
+.triggerRoutesEmpty p,
+.triggerRouteSummary > p {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.triggerRoutesEmpty {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px dashed var(--border);
+  border-radius: var(--shape-radius-md);
+  background: var(--surface-muted);
+}
+
+.triggerRoutesEmpty > svg {
+  width: 1.125rem;
+  height: 1.125rem;
+  color: var(--primary);
+}
+
+.triggerRoutesEmpty strong {
+  display: block;
+  margin-bottom: var(--space-1);
+  font-size: 0.8125rem;
+}
+
+.triggerRouteList {
+  border-top: 1px solid var(--border);
+}
+
+.triggerRouteRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.triggerRouteSummary {
+  min-width: 0;
+}
+
+.triggerRouteTitle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.triggerRouteTitle a,
+.triggerRouteTitle strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.triggerRouteTitle a {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--primary);
+  font-family: var(--font-family-mono);
+  font-size: 0.8125rem;
+  font-weight: 620;
+}
+
+.triggerRouteTitle a svg {
+  width: 0.875rem;
+  height: 0.875rem;
+  flex: none;
+}
+
+.triggerRouteSummary > p {
+  margin-top: var(--space-1);
+}
+
+.triggerRouteSummary .triggerRouteError {
+  color: var(--critical);
+}
+
+.routeProviderValue {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2.5rem;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--shape-radius-sm);
+  background: var(--surface-muted);
+}
+
+.routeProviderValue svg {
+  width: 1rem;
+  height: 1rem;
+  color: var(--primary);
+}
+
 .triggerDeliveryTable {
   min-width: 720px;
 }
@@ -3878,6 +3991,21 @@ textarea {
   .fieldWithAction {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .sheetSectionHeading,
+  .triggerRouteRow {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .sheetSectionHeading .button,
+  .triggerRouteRow .rowActions {
+    width: 100%;
+  }
+
+  .triggerRouteRow .rowActions .button {
+    flex: 1;
   }
 }
 

@@ -471,6 +471,47 @@ export type TriggerAudit = {
   created_at: string;
 };
 
+export type HTTPRouteBindingState = "pending" | "ready" | "error" | "deleting" | "deleted";
+
+export type HTTPRouteBinding = {
+  id: string;
+  workspace_id: string;
+  trigger_id: string;
+  hostname?: string;
+  path: string;
+  visibility: "public";
+  provider: string;
+  state: HTTPRouteBindingState;
+  public_url?: string;
+  error_summary?: string;
+  generation: number;
+  observed_generation: number;
+  created_by: string;
+  updated_by: string;
+  created_at: string;
+  updated_at: string;
+  delete_requested_at?: string;
+  deleted_at?: string;
+};
+
+export type HTTPRouteBindingPayload = {
+  hostname?: string;
+  path: string;
+  visibility?: "public";
+  provider?: string;
+};
+
+export type HTTPRouteBindingAudit = {
+  id: string;
+  workspace_id: string;
+  trigger_id: string;
+  binding_id: string;
+  kind: string;
+  detail?: string;
+  actor: string;
+  created_at: string;
+};
+
 export type AuditEventQuery = {
   appKey?: string;
   clientID?: string;
@@ -795,6 +836,47 @@ export class WindforceApi {
 
   triggerAudit(id: string): Promise<{ items: TriggerAudit[] }> {
     return this.request(`/triggers/${encodeURIComponent(id)}/audit`);
+  }
+
+  httpRouteBindings(triggerID: string): Promise<{ items: HTTPRouteBinding[] }> {
+    return this.request(`/triggers/${encodeURIComponent(triggerID)}/routes`);
+  }
+
+  createHTTPRouteBinding(
+    triggerID: string,
+    payload: HTTPRouteBindingPayload,
+  ): Promise<HTTPRouteBinding> {
+    return this.request(`/triggers/${encodeURIComponent(triggerID)}/routes`, {
+      method: "POST",
+      body: payload,
+    });
+  }
+
+  updateHTTPRouteBinding(
+    triggerID: string,
+    bindingID: string,
+    payload: HTTPRouteBindingPayload,
+  ): Promise<HTTPRouteBinding> {
+    return this.request(
+      `/triggers/${encodeURIComponent(triggerID)}/routes/${encodeURIComponent(bindingID)}`,
+      { method: "PUT", body: payload },
+    );
+  }
+
+  deleteHTTPRouteBinding(triggerID: string, bindingID: string): Promise<HTTPRouteBinding> {
+    return this.request(
+      `/triggers/${encodeURIComponent(triggerID)}/routes/${encodeURIComponent(bindingID)}`,
+      { method: "DELETE" },
+    );
+  }
+
+  httpRouteBindingAudit(
+    triggerID: string,
+    bindingID: string,
+  ): Promise<{ items: HTTPRouteBindingAudit[] }> {
+    return this.request(
+      `/triggers/${encodeURIComponent(triggerID)}/routes/${encodeURIComponent(bindingID)}/audit`,
+    );
   }
 
   importProvisioning(

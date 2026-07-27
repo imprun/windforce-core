@@ -9,7 +9,7 @@ export default {
   guide: [
     "Open the App Triggers tab on a narrow screen.",
     "Choose a Trigger name to open its operational detail.",
-    "Review the safe configuration and ingress endpoint without exposing secret values.",
+    "Review the canonical ingress and provider-managed public route without exposing secret values.",
     "Scroll to inspect delivery and audit history.",
   ],
   async run({ page, capture }) {
@@ -20,6 +20,10 @@ export default {
     await page.waitForSelector("#appTriggers tbody tr");
     await page.clickText("Partner events");
     await page.waitForSelector("#triggerDetailSheet");
+    await page.waitForSelector(".triggerRoutesSection");
+    await page.evaluate(() => {
+      document.querySelector(".triggerRoutesSection")?.scrollIntoView({ block: "start" });
+    });
     await capture(this.id);
   },
 };

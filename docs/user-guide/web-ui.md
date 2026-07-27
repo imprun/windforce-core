@@ -162,6 +162,17 @@ Provisioning exports a redacted workspace snapshot and imports repeatable app, c
 2. Export the current workspace as YAML or JSON for review.
 3. Paste or load a provisioning document, run Dry-run, then Apply only after validation succeeds.
 
+## Expose a Webhook Trigger through a public route
+
+A configured Router Provider reports the friendly URL and reconciliation state without replacing the canonical Trigger ingress.
+
+![Expose a Webhook Trigger through a public route](../assets/ui/trigger-public-route.png)
+
+1. Open an App, choose Triggers, and select a Webhook Trigger.
+2. Use the canonical ingress for direct integrations in every deployment mode.
+3. When a Router Provider is configured, review the friendly public URL and its observed state.
+4. Add, edit, or delete the route independently from the Trigger definition.
+
 ## Connect the CLI and set browser access
 
 General settings shows CLI connection metadata and adapts browser access to standalone or hosted mode.
@@ -182,7 +193,7 @@ The Trigger detail sheet fills a narrow viewport while configuration, delivery h
 
 1. Open the App Triggers tab on a narrow screen.
 2. Choose a Trigger name to open its operational detail.
-3. Review the safe configuration and ingress endpoint without exposing secret values.
+3. Review the canonical ingress and provider-managed public route without exposing secret values.
 4. Scroll to inspect delivery and audit history.
 
 ## Switch workspace context

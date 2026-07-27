@@ -14,7 +14,10 @@ export function displayRepoURL(repoURL: string): string {
   if (!value) return "";
 
   if (/^(?:file:\/\/|[a-z]:[\\/]|[/\\])/i.test(value)) {
-    const segments = value.replace(/^file:\/\//i, "").split(/[\\/]+/).filter(Boolean);
+    const segments = value
+      .replace(/^file:\/\//i, "")
+      .split(/[\\/]+/)
+      .filter(Boolean);
     const leaf = (segments.at(-1) || "repository").replace(/\.git$/i, "");
     return `local/${leaf}`;
   }

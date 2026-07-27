@@ -10,6 +10,10 @@ operators / CI / clients / external adapters
                     |
                     v
        server: HTTP planes + Web UI
+          |                 |                  ^
+          |                 |                  |
+          |                 |          Router Provider
+          |                 |          (K8s or hosted)
           |                 |
           |                 +-- Webhook Dispatcher ---> signed HTTPS endpoint
           v
@@ -171,6 +175,39 @@ queue's dead-letter policy. Schedule actions receive `WF_SCHEDULED_FOR`.
 External trigger processes do not load this SPI. They use a least-privilege
 `wfs_` Service Principal and the canonical `/api/v1` routes described in
 [Triggers](concepts/triggers.md).
+
+## HTTP Route Binding and Router Provider
+
+Webhook Trigger admission and external routing are separate lifecycle
+resources. A Trigger owns signature verification, delivery idempotency, target
+selection and Run admission. An HTTP Route Binding owns portable desired
+`hostname`, `path`, `visibility`, `provider` fields and provider-reported
+`state`, `public_url`, `error_summary`, and `observed_generation`.
+
+```text
+public hostname/path
+  -> external Router Provider
+  -> POST /api/v1/workspaces/{workspace}/triggers/{trigger}/events
+  -> TriggerSubmitter
+  -> AdmissionService
+```
+
+Core exposes desired state through the Control API and never talks to a
+Kubernetes API. A self-hosted controller may create Gateway API `HTTPRoute`
+resources and rewrite to the canonical ingress service. Imprun Cloud uses its
+existing wildcard `*.cloud.imprun.dev` Gateway route and keeps alias,
+tenant/workspace authorization, DNS and certificate policy in the Cloud
+Gateway repository.
+
+Desired updates increment `generation` and return to `pending`. Provider status
+updates cannot modify desired fields, and a stale generation cannot make the
+binding `ready`. Delete uses a tombstone until provider cleanup is observed, so
+Trigger deletion cannot silently leave an external route behind. Provider
+unavailability never removes or replaces the canonical ingress.
+
+The system-to-system reconciliation specification and ownership decision are
+defined in
+[ADR 0015](adr/0015-provider-neutral-http-route-bindings.md).
 
 ## SDK Boundary
 

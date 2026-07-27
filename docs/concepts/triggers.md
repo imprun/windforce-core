@@ -92,6 +92,49 @@ This resource is inbound execution admission. It is separate from the
 Control-plane Webhook subscription resource, which sends release events out of
 Core.
 
+## Public HTTP Route Bindings
+
+The configured webhook path above is the canonical ingress and remains
+available in every deployment mode. When an external Router Provider is
+configured, an operator can attach one or more friendly public URLs without
+changing the Trigger definition:
+
+```http
+POST /api/w/{workspace}/triggers/{trigger_id}/routes
+Content-Type: application/json
+
+{
+  "hostname": "hooks.example.com",
+  "path": "/orders/events",
+  "visibility": "public",
+  "provider": "auto"
+}
+```
+
+The response begins with `state: pending`. The Router Provider reconciles the
+route and reports `ready`, `error`, or deletion completion with the desired
+`generation`. Only a current generation can become `ready`.
+
+Route Binding is provider-neutral desired and observed state. Core does not
+store Kubernetes `HTTPRoute`, Ingress, listener, certificate, DNS, namespace,
+or hosted tenant fields. A self-hosted Kubernetes controller may translate the
+binding into Gateway API resources. Imprun Cloud instead registers the alias
+inside its existing wildcard Cloud Gateway and rewrites to the cell's canonical
+ingress; it does not create one cluster `HTTPRoute` per Trigger.
+
+Deleting a public route returns a `deleting` tombstone. The Trigger and
+canonical ingress remain active while the provider removes the external route.
+Provider reconciliation uses:
+
+```text
+GET /api/w/{workspace}/http-route-bindings?include_deleted=true
+PUT /api/w/{workspace}/http-route-bindings/{binding_id}/status
+```
+
+The Web UI shows Public routes only when system info advertises a configured
+provider. Standalone without a provider shows only the canonical ingress.
+See [ADR 0015](../adr/0015-provider-neutral-http-route-bindings.md).
+
 ## Schedule
 
 ```json

@@ -1,4 +1,15 @@
-import { Cable, Clock3, Pencil, Plus, Power, PowerOff, Trash2, Webhook } from "lucide-react";
+import {
+  Cable,
+  Clock3,
+  ExternalLink,
+  Globe2,
+  Pencil,
+  Plus,
+  Power,
+  PowerOff,
+  Trash2,
+  Webhook,
+} from "lucide-react";
 import { type FormEvent, useMemo, useState } from "react";
 import {
   DefinitionList,
@@ -14,6 +25,7 @@ import {
 import { actionDisplayName } from "../lib/action-label";
 import type {
   ActionView,
+  HTTPRouteBinding,
   TriggerAudit,
   TriggerDefinition,
   TriggerDelivery,
@@ -27,6 +39,7 @@ import {
   buildTriggerPayload,
   draftFromTrigger,
   emptyTriggerDraft,
+  httpRouteProvider,
   type TriggerDraft,
   triggerConfigSummary,
   triggerKindLabel,
@@ -51,6 +64,7 @@ export function AppTriggers({
   const [selectedID, setSelectedID] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<TriggerDefinition | null>(null);
   const [busyID, setBusyID] = useState("");
+  const capabilityState = useAsync(() => api.systemInfo(), [api]);
 
   const state = useAsync(async () => {
     const definitions = (await api.triggers()).items.filter((item) => item.app === appKey);
@@ -74,6 +88,7 @@ export function AppTriggers({
     [state.data],
   );
   const selected = rows.find((row) => row.trigger.id === selectedID)?.trigger || null;
+  const routeProvider = httpRouteProvider(capabilityState.data);
 
   async function setEnabled(trigger: TriggerDefinition) {
     setBusyID(trigger.id);
@@ -251,6 +266,7 @@ export function AppTriggers({
       {selected ? (
         <TriggerDetailSheet
           trigger={selected}
+          routeProvider={routeProvider}
           onClose={() => setSelectedID(null)}
           onEdit={() => setEditor(selected)}
         />
@@ -648,21 +664,26 @@ function RabbitMQFields({
 
 function TriggerDetailSheet({
   trigger,
+  routeProvider,
   onClose,
   onEdit,
 }: {
   trigger: TriggerDefinition;
+  routeProvider: string;
   onClose: () => void;
   onEdit: () => void;
 }) {
   const { api, settings } = useApp();
   const state = useAsync(async () => {
-    const [deliveries, audit] = await Promise.all([
+    const [deliveries, audit, routes] = await Promise.all([
       api.triggerDeliveries(trigger.id),
       api.triggerAudit(trigger.id),
+      trigger.kind === "webhook" && routeProvider
+        ? api.httpRouteBindings(trigger.id)
+        : Promise.resolve({ items: [] }),
     ]);
-    return { deliveries: deliveries.items, audit: audit.items };
-  }, [api, trigger.id]);
+    return { deliveries: deliveries.items, audit: audit.items, routes: routes.items };
+  }, [api, trigger.id, trigger.kind, routeProvider]);
   const endpoint =
     trigger.kind === "webhook"
       ? `/api/v1/workspaces/${encodeURIComponent(settings.workspace)}/triggers/${encodeURIComponent(trigger.id)}/events`
@@ -698,8 +719,12 @@ function TriggerDetailSheet({
         />
         {endpoint ? (
           <div className="triggerEndpoint">
-            <p className="fieldLabel">Ingress endpoint</p>
+            <p className="fieldLabel">Canonical ingress</p>
             <code>{endpoint}</code>
+            <p className="fieldHint">
+              Always available. Public routes rewrite to this endpoint without bypassing Trigger
+              authentication or admission.
+            </p>
           </div>
         ) : null}
         <h3>Safe configuration</h3>
@@ -714,12 +739,333 @@ function TriggerDetailSheet({
       {state.loading && !state.data ? <Loading /> : null}
       {state.data ? (
         <>
+          {trigger.kind === "webhook" && routeProvider ? (
+            <HTTPRouteBindingsSection
+              trigger={trigger}
+              bindings={state.data.routes}
+              routeProvider={routeProvider}
+              onChanged={state.reload}
+            />
+          ) : null}
           <TriggerDeliveries deliveries={state.data.deliveries} />
           <TriggerAuditTrail audit={state.data.audit} />
         </>
       ) : null}
     </Sheet>
   );
+}
+
+function HTTPRouteBindingsSection({
+  trigger,
+  bindings,
+  routeProvider,
+  onChanged,
+}: {
+  trigger: TriggerDefinition;
+  bindings: HTTPRouteBinding[];
+  routeProvider: string;
+  onChanged: () => void;
+}) {
+  const { api, notify } = useApp();
+  const [editor, setEditor] = useState<HTTPRouteBinding | "new" | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<HTTPRouteBinding | null>(null);
+  const [busyID, setBusyID] = useState("");
+
+  async function deleteBinding(binding: HTTPRouteBinding) {
+    setBusyID(binding.id);
+    try {
+      await api.deleteHTTPRouteBinding(trigger.id, binding.id);
+      notify("ok", "Public route deletion requested.");
+      setDeleteTarget(null);
+      onChanged();
+    } catch (cause) {
+      notify("error", errorMessage(cause));
+    } finally {
+      setBusyID("");
+    }
+  }
+
+  return (
+    <section className="sheetSection triggerRoutesSection">
+      <div className="sheetSectionHeading">
+        <div>
+          <h3>Public routes</h3>
+          <p>
+            {routeProvider} reconciles friendly URLs to the canonical ingress. Route readiness is
+            reported asynchronously.
+          </p>
+        </div>
+        <button
+          className="button small primary"
+          type="button"
+          onClick={() => setEditor("new")}
+          aria-label="Add public route"
+        >
+          <Plus aria-hidden="true" />
+          Add
+        </button>
+      </div>
+      {bindings.length === 0 ? (
+        <div className="triggerRoutesEmpty">
+          <Globe2 aria-hidden="true" />
+          <div>
+            <strong>No public route configured.</strong>
+            <p>The canonical ingress remains available for direct integrations.</p>
+          </div>
+        </div>
+      ) : (
+        <div className="triggerRouteList">
+          {bindings.map((binding) => {
+            const deleting = Boolean(binding.delete_requested_at);
+            return (
+              <article className="triggerRouteRow" key={binding.id}>
+                <div className="triggerRouteSummary">
+                  <div className="triggerRouteTitle">
+                    <HTTPRouteBindingBadge state={binding.state} />
+                    {binding.public_url ? (
+                      <a href={binding.public_url} target="_blank" rel="noreferrer">
+                        {binding.public_url}
+                        <ExternalLink aria-hidden="true" />
+                      </a>
+                    ) : (
+                      <strong className="mono">{routeBindingAddress(binding)}</strong>
+                    )}
+                  </div>
+                  <p>
+                    <span className="mono">{binding.provider}</span>
+                    {" · "}generation {binding.generation}
+                    {" · "}updated {formatRelative(binding.updated_at)}
+                  </p>
+                  {binding.error_summary ? (
+                    <p className="triggerRouteError" role="alert">
+                      {binding.error_summary}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="rowActions">
+                  <button
+                    className="button small"
+                    type="button"
+                    onClick={() => setEditor(binding)}
+                    disabled={deleting}
+                  >
+                    <Pencil aria-hidden="true" />
+                    Edit
+                  </button>
+                  <button
+                    className="button small danger"
+                    type="button"
+                    onClick={() => setDeleteTarget(binding)}
+                    disabled={deleting || busyID === binding.id}
+                    aria-label={`Delete public route ${routeBindingAddress(binding)}`}
+                  >
+                    <Trash2 aria-hidden="true" />
+                    {deleting ? "Deleting…" : "Delete"}
+                  </button>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+      {editor ? (
+        <HTTPRouteBindingEditor
+          key={editor === "new" ? "new" : editor.id}
+          trigger={trigger}
+          routeProvider={routeProvider}
+          existing={editor === "new" ? null : editor}
+          onClose={() => setEditor(null)}
+          onSaved={() => {
+            setEditor(null);
+            onChanged();
+          }}
+        />
+      ) : null}
+      {deleteTarget ? (
+        <DeleteHTTPRouteBindingDialog
+          binding={deleteTarget}
+          busy={busyID === deleteTarget.id}
+          onClose={() => setDeleteTarget(null)}
+          onConfirm={() => void deleteBinding(deleteTarget)}
+        />
+      ) : null}
+    </section>
+  );
+}
+
+function HTTPRouteBindingEditor({
+  trigger,
+  routeProvider,
+  existing,
+  onClose,
+  onSaved,
+}: {
+  trigger: TriggerDefinition;
+  routeProvider: string;
+  existing: HTTPRouteBinding | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { api, notify } = useApp();
+  const [hostname, setHostname] = useState(existing?.hostname || "");
+  const [path, setPath] = useState(existing?.path || suggestedRoutePath(trigger));
+  const [formError, setFormError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const provider =
+    existing?.provider && existing.provider !== "auto" ? existing.provider : routeProvider;
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const normalizedPath = path.trim();
+    if (!normalizedPath.startsWith("/") || /[\\?#]/.test(normalizedPath)) {
+      setFormError("Path must start with / and cannot contain a query, fragment, or backslash.");
+      return;
+    }
+    setBusy(true);
+    setFormError("");
+    try {
+      const payload = {
+        hostname: hostname.trim() || undefined,
+        path: normalizedPath,
+        visibility: "public" as const,
+        provider,
+      };
+      if (existing) {
+        await api.updateHTTPRouteBinding(trigger.id, existing.id, payload);
+      } else {
+        await api.createHTTPRouteBinding(trigger.id, payload);
+      }
+      notify("ok", `Public route ${existing ? "updated" : "requested"}.`);
+      onSaved();
+    } catch (cause) {
+      setFormError(errorMessage(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal
+      title={existing ? "Edit public route" : "Add public route"}
+      subtitle={`${trigger.name} · The Router Provider reports readiness after reconciliation.`}
+      onClose={onClose}
+      id="httpRouteBindingEditor"
+    >
+      <form className="dialogForm" onSubmit={(event) => void submit(event)}>
+        {formError ? <ErrorNotice message={formError} /> : null}
+        <Field
+          label="Hostname"
+          hint="Optional. Leave blank to let the Router Provider assign its default hostname."
+        >
+          <input
+            className="mono"
+            value={hostname}
+            onChange={(event) => setHostname(event.target.value)}
+            placeholder="hooks.example.com"
+            autoComplete="off"
+          />
+        </Field>
+        <Field label="Path" hint="A public path that rewrites to the canonical Trigger ingress.">
+          <input
+            className="mono"
+            value={path}
+            onChange={(event) => setPath(event.target.value)}
+            placeholder="/hooks/my-app"
+            required
+          />
+        </Field>
+        <Field label="Router Provider">
+          <div className="routeProviderValue">
+            <Globe2 aria-hidden="true" />
+            <span className="mono">{provider}</span>
+          </div>
+        </Field>
+        <div className="inlineNotice">
+          The friendly route keeps the same webhook signature, body-size, idempotency, and Run
+          admission checks as the canonical ingress.
+        </div>
+        <div className="dialogFooter">
+          <span className="fieldHint">New and changed routes begin in Pending state.</span>
+          <div className="dialogFooterActions">
+            <button className="button" type="button" onClick={onClose} disabled={busy}>
+              Cancel
+            </button>
+            <button className="button primary" type="submit" disabled={busy}>
+              {busy ? "Saving…" : existing ? "Save route" : "Request route"}
+            </button>
+          </div>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function DeleteHTTPRouteBindingDialog({
+  binding,
+  busy,
+  onClose,
+  onConfirm,
+}: {
+  binding: HTTPRouteBinding;
+  busy: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Modal
+      title="Delete public route?"
+      subtitle={routeBindingAddress(binding)}
+      onClose={onClose}
+      id="deleteHTTPRouteBindingDialog"
+    >
+      <div className="inlineNotice error" role="alert">
+        The route enters Deleting until the Router Provider confirms cleanup. The Trigger and its
+        canonical ingress remain available.
+      </div>
+      <div className="dialogFooter">
+        <span />
+        <div className="dialogFooterActions">
+          <button className="button" type="button" onClick={onClose} disabled={busy}>
+            Cancel
+          </button>
+          <button className="button danger" type="button" onClick={onConfirm} disabled={busy}>
+            <Trash2 aria-hidden="true" />
+            {busy ? "Requesting…" : "Delete public route"}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function HTTPRouteBindingBadge({ state }: { state: HTTPRouteBinding["state"] }) {
+  const className =
+    state === "ready"
+      ? "badge badge-good"
+      : state === "error"
+        ? "badge badge-critical"
+        : state === "deleting"
+          ? "badge badge-warning"
+          : "badge badge-neutral";
+  return <span className={className}>{routeBindingStateLabel(state)}</span>;
+}
+
+function routeBindingStateLabel(state: HTTPRouteBinding["state"]): string {
+  if (state === "ready") return "Ready";
+  if (state === "error") return "Error";
+  if (state === "deleting") return "Deleting";
+  if (state === "deleted") return "Deleted";
+  return "Pending";
+}
+
+function routeBindingAddress(binding: Pick<HTTPRouteBinding, "hostname" | "path">): string {
+  return `${binding.hostname || "Provider hostname"}${binding.path}`;
+}
+
+function suggestedRoutePath(trigger: TriggerDefinition): string {
+  const app = trigger.app.toLowerCase().replace(/[^a-z0-9._-]+/g, "-");
+  const name = trigger.name.toLowerCase().replace(/[^a-z0-9._-]+/g, "-");
+  return `/hooks/${app}/${name}`.replace(/-+/g, "-");
 }
 
 function TriggerDeliveries({ deliveries }: { deliveries: TriggerDelivery[] }) {

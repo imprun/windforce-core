@@ -80,6 +80,7 @@ export default {
         "--webhook-allow-insecure-loopback",
         "--ui-host-url", "https://portal.example.test/console",
         "--ui-host-label", "Open host console",
+        "--http-route-provider", "ui-guide-router",
       ],
       { cwd: baseDir, stdio: "ignore" },
     );
@@ -218,6 +219,25 @@ async function seedTriggers(api, baseUrl) {
   await api(`/triggers/${encodeURIComponent(inboundWebhook.id)}/enable`, {
     method: "POST",
     headers: actorHeaders,
+  });
+  const route = await api(`/triggers/${encodeURIComponent(inboundWebhook.id)}/routes`, {
+    method: "POST",
+    headers: actorHeaders,
+    body: {
+      hostname: "hooks.example.test",
+      path: "/echo/partner-events",
+      visibility: "public",
+      provider: "ui-guide-router",
+    },
+  });
+  await api(`/http-route-bindings/${encodeURIComponent(route.id)}/status`, {
+    method: "PUT",
+    headers: { "x-windforce-actor": "provider:ui-guide-router" },
+    body: {
+      state: "ready",
+      public_url: "https://hooks.example.test/echo/partner-events",
+      observed_generation: route.generation,
+    },
   });
 
   const body = JSON.stringify({ message: "partner delivery" });

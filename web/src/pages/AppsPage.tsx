@@ -173,7 +173,9 @@ export function AppsPage() {
                         <td>
                           {source ? (
                             <>
-                              <span className="cellTitle mono">{displayRepoURL(source.repo_url)}</span>
+                              <span className="cellTitle mono">
+                                {displayRepoURL(source.repo_url)}
+                              </span>
                               <span className="cellSub mono">
                                 {source.branch || "main"}
                                 {source.subpath ? ` · ${source.subpath}` : ""}

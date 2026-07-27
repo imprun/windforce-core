@@ -4,6 +4,7 @@ import {
   buildTriggerPayload,
   draftFromTrigger,
   emptyTriggerDraft,
+  httpRouteProvider,
   triggerConfigSummary,
 } from "./triggers";
 
@@ -112,5 +113,30 @@ describe("trigger form payloads", () => {
       config: { queue: "orders.windforce" },
     });
     expect(triggerConfigSummary(trigger)).toBe("orders.windforce");
+  });
+
+  test("shows public route controls only for an advertised Router Provider", () => {
+    expect(
+      httpRouteProvider({
+        service: "windforce-core",
+        workspace: "default",
+        ready: true,
+        planes: { http_routes: true },
+        backends: { http_route_provider: true },
+        auth: {},
+        runtime_config: { http_route_provider: " kubernetes-gateway-api " },
+      }),
+    ).toBe("kubernetes-gateway-api");
+    expect(
+      httpRouteProvider({
+        service: "windforce-core",
+        workspace: "default",
+        ready: true,
+        planes: { http_routes: true },
+        backends: { http_route_provider: false },
+        auth: {},
+        runtime_config: { http_route_provider: "stale-provider" },
+      }),
+    ).toBe("");
   });
 });

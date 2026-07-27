@@ -61,6 +61,7 @@ type Config struct {
 	UIHostURL             string
 	UIHostLabel           string
 	UIHostAccountEndpoint string
+	HTTPRouteProvider     string
 	Admission             *executionpkg.Service
 	TriggerManager        *triggerpkg.Manager
 }
@@ -87,6 +88,7 @@ type Handler struct {
 	uiHostURL             string
 	uiHostLabel           string
 	uiHostAccountEndpoint string
+	httpRouteProvider     string
 	triggerManager        *triggerpkg.Manager
 }
 
@@ -179,6 +181,7 @@ func New(config Config) http.Handler {
 		uiHostURL:             uiHostURL,
 		uiHostLabel:           uiHostLabel,
 		uiHostAccountEndpoint: uiHostAccountEndpoint,
+		httpRouteProvider:     strings.ToLower(strings.TrimSpace(config.HTTPRouteProvider)),
 		triggerManager:        config.TriggerManager,
 	}
 }
@@ -252,6 +255,9 @@ func (h *Handler) handleRuntimeAPI(w http.ResponseWriter, r *http.Request) bool 
 
 func (h *Handler) handleAPI(w http.ResponseWriter, r *http.Request) bool {
 	parts := splitPath(r.URL.Path)
+	if h.handleCanonicalHTTPRouteBindingAPI(w, r, parts) {
+		return true
+	}
 	if h.handleCanonicalTriggerAPI(w, r, parts) {
 		return true
 	}

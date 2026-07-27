@@ -223,6 +223,17 @@ describe("WindforceApi Triggers", () => {
       await api.setTriggerEnabled("trg/1", true);
       await api.triggerDeliveries("trg/1");
       await api.triggerAudit("trg/1");
+      const routePayload = {
+        hostname: "hooks.example.com",
+        path: "/orders",
+        visibility: "public" as const,
+        provider: "kubernetes-gateway-api",
+      };
+      await api.httpRouteBindings("trg/1");
+      await api.createHTTPRouteBinding("trg/1", routePayload);
+      await api.updateHTTPRouteBinding("trg/1", "hrb/1", routePayload);
+      await api.httpRouteBindingAudit("trg/1", "hrb/1");
+      await api.deleteHTTPRouteBinding("trg/1", "hrb/1");
       await api.deleteTrigger("trg/1");
 
       expect(requests.map(({ url, method }) => [url, method])).toEqual([
@@ -232,9 +243,15 @@ describe("WindforceApi Triggers", () => {
         ["/api/w/ops/triggers/trg%2F1/enable", "POST"],
         ["/api/w/ops/triggers/trg%2F1/deliveries", "GET"],
         ["/api/w/ops/triggers/trg%2F1/audit", "GET"],
+        ["/api/w/ops/triggers/trg%2F1/routes", "GET"],
+        ["/api/w/ops/triggers/trg%2F1/routes", "POST"],
+        ["/api/w/ops/triggers/trg%2F1/routes/hrb%2F1", "PUT"],
+        ["/api/w/ops/triggers/trg%2F1/routes/hrb%2F1/audit", "GET"],
+        ["/api/w/ops/triggers/trg%2F1/routes/hrb%2F1", "DELETE"],
         ["/api/w/ops/triggers/trg%2F1", "DELETE"],
       ]);
       expect(JSON.parse(requests[1]!.body)).toEqual(payload);
+      expect(JSON.parse(requests[8]!.body)).toEqual(routePayload);
     } finally {
       globalThis.fetch = originalFetch;
     }

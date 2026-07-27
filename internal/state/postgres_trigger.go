@@ -165,6 +165,9 @@ RETURNING `+triggerColumns, workspaceID, strings.TrimSpace(id), normalizedActor(
 		if err != nil {
 			return triggerPostgresError(err)
 		}
+		if err := requestPostgresHTTPRouteBindingsForTrigger(ctx, tx, deleted.WorkspaceID, deleted.ID, actor); err != nil {
+			return err
+		}
 		return insertTriggerAudit(ctx, tx, deleted, "deleted", "", actor)
 	})
 }

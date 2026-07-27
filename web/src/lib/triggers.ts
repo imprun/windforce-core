@@ -1,4 +1,4 @@
-import type { TriggerDefinition, TriggerKind, TriggerPayload } from "./api";
+import type { SystemInfo, TriggerDefinition, TriggerKind, TriggerPayload } from "./api";
 
 export type TriggerDraft = {
   name: string;
@@ -176,4 +176,10 @@ export function triggerConfigSummary(trigger: TriggerDefinition): string {
   return configString(trigger.config, "input_mode", "json") === "raw"
     ? "Raw request envelope"
     : "JSON request body";
+}
+
+export function httpRouteProvider(info: SystemInfo | null | undefined): string {
+  if (!info?.backends.http_route_provider) return "";
+  const provider = info.runtime_config.http_route_provider;
+  return typeof provider === "string" ? provider.trim() : "";
 }

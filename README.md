@@ -32,12 +32,16 @@ in scope.
 - Worker-local cache: a disposable fetched copy of a pinned execution bundle
 - Deployment history: an audit trail of published releases
 - Trigger: a configured webhook, schedule, or RabbitMQ source that admits Runs
+- HTTP Route Binding: provider-neutral desired and observed state for exposing
+  a webhook Trigger through an external router
 
 Read [Core concepts](docs/concepts/core-concepts.md) for the exact storage,
 fingerprint, marker, Run, and Job definitions. The complete state flow is in
 [Release and execution lifecycle](docs/concepts/release-lifecycle.md).
 Configured event sources and external adapter guidance are in
-[Triggers](docs/concepts/triggers.md).
+[Triggers](docs/concepts/triggers.md). The external routing ownership boundary
+is recorded in
+[ADR 0015](docs/adr/0015-provider-neutral-http-route-bindings.md).
 
 ## System-to-system Invocation API
 

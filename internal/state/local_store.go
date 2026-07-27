@@ -1078,6 +1078,12 @@ func ensureSnapshot(snapshot *Snapshot) {
 	if snapshot.TriggerDeliveries == nil {
 		snapshot.TriggerDeliveries = map[string]TriggerDelivery{}
 	}
+	if snapshot.HTTPRouteBindings == nil {
+		snapshot.HTTPRouteBindings = map[string]HTTPRouteBinding{}
+	}
+	if snapshot.HTTPRouteBindingAudits == nil {
+		snapshot.HTTPRouteBindingAudits = map[string][]HTTPRouteBindingAudit{}
+	}
 	if snapshot.Workspaces == nil {
 		snapshot.Workspaces = map[string]Workspace{}
 	}
