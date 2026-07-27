@@ -71,8 +71,9 @@ func TestWebUIExposesValidatedHostConsoleConfig(t *testing.T) {
 	}
 
 	handler := New(Config{
-		UIHostURL:   "https://portal.example.test/console",
-		UIHostLabel: "Back to operations portal",
+		UIHostURL:             "https://portal.example.test/console",
+		UIHostLabel:           "Back to operations portal",
+		UIHostAccountEndpoint: "/_host/account",
 	})
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(
@@ -90,6 +91,9 @@ func TestWebUIExposesValidatedHostConsoleConfig(t *testing.T) {
 			URL   string `json:"url"`
 			Label string `json:"label"`
 		} `json:"host_console"`
+		HostAccount *struct {
+			Endpoint string `json:"endpoint"`
+		} `json:"host_account"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&config); err != nil {
 		t.Fatal(err)
@@ -99,8 +103,14 @@ func TestWebUIExposesValidatedHostConsoleConfig(t *testing.T) {
 		config.HostConsole.Label != "Back to operations portal" {
 		t.Fatalf("host console config = %#v", config.HostConsole)
 	}
+	if config.HostAccount == nil || config.HostAccount.Endpoint != "/_host/account" {
+		t.Fatalf("host account config = %#v", config.HostAccount)
+	}
 
-	invalid := New(Config{UIHostURL: "javascript:alert(1)"})
+	invalid := New(Config{
+		UIHostURL:             "javascript:alert(1)",
+		UIHostAccountEndpoint: "https://portal.example.test/me",
+	})
 	response = httptest.NewRecorder()
 	invalid.ServeHTTP(
 		response,
@@ -111,11 +121,17 @@ func TestWebUIExposesValidatedHostConsoleConfig(t *testing.T) {
 			URL   string `json:"url"`
 			Label string `json:"label"`
 		} `json:"host_console"`
+		HostAccount *struct {
+			Endpoint string `json:"endpoint"`
+		} `json:"host_account"`
 	}{}
 	if err := json.NewDecoder(response.Body).Decode(&config); err != nil {
 		t.Fatal(err)
 	}
 	if config.HostConsole != nil {
 		t.Fatalf("invalid host console was exposed: %#v", config.HostConsole)
+	}
+	if config.HostAccount != nil {
+		t.Fatalf("invalid host account was exposed: %#v", config.HostAccount)
 	}
 }

@@ -32,11 +32,11 @@ describe("UserMenu", () => {
     const user = userEvent.setup();
     renderMenu();
 
-    await user.click(screen.getByRole("button", { name: "Browser access menu for local-dev" }));
+    await user.click(screen.getByRole("button", { name: "Local access menu for local-dev" }));
 
     expect(screen.getByText(/API token not configured/)).toBeTruthy();
     expect(
-      screen.getByRole("menuitem", { name: "Clear browser access" }).getAttribute("data-disabled"),
+      screen.getByRole("menuitem", { name: "Clear local access" }).getAttribute("data-disabled"),
     ).toBeNull();
   });
 
@@ -45,9 +45,9 @@ describe("UserMenu", () => {
     localStorage.setItem("wf.token", "workspace-secret");
     renderMenu();
 
-    await user.click(screen.getByRole("button", { name: "Browser access menu for local-dev" }));
+    await user.click(screen.getByRole("button", { name: "Local access menu for local-dev" }));
 
     expect(screen.getByText(/API token configured/)).toBeTruthy();
-    expect(screen.getByRole("menuitem", { name: "Clear browser access" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Clear local access" })).toBeTruthy();
   });
 });

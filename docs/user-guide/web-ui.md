@@ -144,11 +144,11 @@ General settings shows external CLI connection metadata and stores the API token
 
 ## Switch workspace context
 
-The sidebar keeps the current workspace visible above product navigation and provides the entry point to instance workspace administration.
+The top-bar breadcrumb keeps runtime scope visible and provides the entry point to instance workspace administration.
 
 ![Switch workspace context](../assets/ui/workspace-switcher.png)
 
-1. Open the workspace control at the top of the sidebar.
+1. Open the workspace control in the top-bar breadcrumb.
 2. Select a workspace to change the active application and monitoring scope.
 3. Choose Manage workspaces to create workspaces or manage identity, access, audit, and lifecycle settings.
 
@@ -159,19 +159,18 @@ The application shell keeps every primary engine destination available from an a
 ![Navigate on a narrow screen](../assets/ui/mobile-navigation.png)
 
 1. Open the navigation menu in the top bar.
-2. Switch workspace, choose a product destination, or return to host management.
-3. Use the account control at the bottom for browser credentials.
+2. Choose a workspace-scoped product destination.
+3. Use the account control at the bottom for hosted account context or standalone local access.
 4. Close the drawer with its close control, the backdrop, or the Escape key.
 
 ## Switch workspace on a narrow screen
 
-The mobile drawer keeps workspace context separate from the compact top bar and opens the same switcher and administration menu.
+The compact top-bar breadcrumb keeps workspace context visible and opens the same switcher and administration menu.
 
 ![Switch workspace on a narrow screen](../assets/ui/workspace-switcher-mobile.png)
 
-1. Open the mobile navigation drawer.
-2. Open the workspace control below the Windforce runtime identity.
-3. Choose another workspace or open Manage workspaces without returning to desktop navigation.
+1. Open the workspace control in the top-bar breadcrumb.
+2. Choose another workspace or open Manage workspaces without opening the navigation drawer.
 
 ## Collapse the sidebar
 
@@ -189,10 +188,10 @@ The workspace registry uses an instance-administration shell without the active 
 
 ![Manage workspaces](../assets/ui/workspaces.png)
 
-1. Open the workspace switcher at the top of the sidebar.
+1. Open the workspace switcher in the top-bar breadcrumb.
 2. Choose Manage workspaces to review the instance registry.
 3. Use Switch to select a workspace for application and monitoring operations; the selected row is marked Current.
-4. Use Open current workspace to return to the active workspace console.
+4. Use the Windforce breadcrumb root to return to the active workspace console.
 5. Create a workspace or open a workspace's dedicated administration page.
 6. Use an instance-admin token for workspace lifecycle operations; workspace tokens remain scoped to one workspace.
 
@@ -213,10 +212,10 @@ Each workspace has a dedicated instance-administration page without workspace-sc
 ![Administer a workspace](../assets/ui/workspace-detail.png)
 
 1. Open Manage workspaces from the workspace switcher, then choose a workspace from the registry.
-2. Use the back button beside the workspace title to return to the registry.
+2. Use Workspaces in the instance breadcrumb to return to the registry.
 3. Use Switch to workspace to select this workspace and open its application console.
 4. Use Overview for its display name, Access for its scoped token, Audit for lifecycle history, and Lifecycle for archive controls.
-5. Return to the workspace switcher when changing the active workspace for workspace-scoped operations.
+5. Return to the runtime and use its breadcrumb when changing workspace scope.
 
 ## Configure a release webhook
 
@@ -261,20 +260,19 @@ Review app- and action-specific values applied for one external client.
 
 ## Open host management
 
-A hosted or self-managed portal can configure one explicit management action in the sidebar footer without crowding the runtime top bar.
+A hosted or self-managed portal can configure one explicit management-plane action in the top bar.
 
 ![Open host management](../assets/ui/host-console-navigation.png)
 
 1. Open the embedded Web UI from the configured host portal.
-2. Use the configured host action above the account control in the sidebar footer.
+2. Use the configured host action on the right side of the top bar.
 3. The destination label makes the management-plane boundary explicit.
 
 ## Open host management on mobile
 
-The configured return action stays with account context in the mobile drawer instead of competing with page context.
+The configured return action remains available as a compact control in the mobile top bar.
 
 ![Open host management on mobile](../assets/ui/host-console-navigation-mobile.png)
 
 1. Open the embedded Web UI on a narrow screen.
-2. Open the mobile navigation drawer.
-3. Use the labelled host action above the account control to open the configured management console.
+2. Use the labelled host action in the top bar to open the configured management console.

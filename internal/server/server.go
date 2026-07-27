@@ -40,48 +40,50 @@ type ArtifactStore interface {
 }
 
 type Config struct {
-	Store             state.Store
-	Catalog           Catalog
-	Syncer            *syncer.Syncer
-	ExecutionBundles  ExecutionBundleManager
-	GitSources        GitSourceRegistry
-	PublicAPIRPS      float64
-	PublicAPIBurst    int
-	ManagedWorkspaces bool
-	AdminToken        string
-	WorkerToken       string
-	JobTokenSecret    string
-	SecretKey         string
-	SecretKeyPrevious string
-	SampleRoot        string
-	Wait              time.Duration
-	MetricsHandler    http.Handler
-	ArtifactStore     ArtifactStore
-	UIHostURL         string
-	UIHostLabel       string
+	Store                 state.Store
+	Catalog               Catalog
+	Syncer                *syncer.Syncer
+	ExecutionBundles      ExecutionBundleManager
+	GitSources            GitSourceRegistry
+	PublicAPIRPS          float64
+	PublicAPIBurst        int
+	ManagedWorkspaces     bool
+	AdminToken            string
+	WorkerToken           string
+	JobTokenSecret        string
+	SecretKey             string
+	SecretKeyPrevious     string
+	SampleRoot            string
+	Wait                  time.Duration
+	MetricsHandler        http.Handler
+	ArtifactStore         ArtifactStore
+	UIHostURL             string
+	UIHostLabel           string
+	UIHostAccountEndpoint string
 }
 
 type Handler struct {
-	store             state.Store
-	catalog           Catalog
-	syncer            *syncer.Syncer
-	executionBundles  ExecutionBundleManager
-	gitSources        GitSourceRegistry
-	publicAPILimiter  *requestRateLimiter
-	managedWorkspaces bool
-	adminToken        string
-	workerToken       string
-	artifactStore     ArtifactStore
-	jobTokenSecret    string
-	secretKey         string
-	secretKeyPrevious string
-	sampleRoot        string
-	wait              time.Duration
-	metricsHandler    http.Handler
-	execution         *executionpkg.Service
-	syncLocks         sync.Map
-	uiHostURL         string
-	uiHostLabel       string
+	store                 state.Store
+	catalog               Catalog
+	syncer                *syncer.Syncer
+	executionBundles      ExecutionBundleManager
+	gitSources            GitSourceRegistry
+	publicAPILimiter      *requestRateLimiter
+	managedWorkspaces     bool
+	adminToken            string
+	workerToken           string
+	artifactStore         ArtifactStore
+	jobTokenSecret        string
+	secretKey             string
+	secretKeyPrevious     string
+	sampleRoot            string
+	wait                  time.Duration
+	metricsHandler        http.Handler
+	execution             *executionpkg.Service
+	syncLocks             sync.Map
+	uiHostURL             string
+	uiHostLabel           string
+	uiHostAccountEndpoint string
 }
 
 type jobPrincipal struct {
@@ -143,30 +145,32 @@ func New(config Config) http.Handler {
 		secretKey = DefaultSecretKey
 	}
 	uiHostURL, uiHostLabel := normalizeUIHost(config.UIHostURL, config.UIHostLabel)
+	uiHostAccountEndpoint := normalizeUIHostAccountEndpoint(config.UIHostAccountEndpoint)
 	var bundleStore executionpkg.BundleStore
 	if config.Syncer != nil {
 		bundleStore = config.Syncer.Store
 	}
 	return &Handler{
-		store:             config.Store,
-		catalog:           config.Catalog,
-		syncer:            config.Syncer,
-		executionBundles:  config.ExecutionBundles,
-		gitSources:        config.GitSources,
-		publicAPILimiter:  newRequestRateLimiter(config.PublicAPIRPS, config.PublicAPIBurst),
-		managedWorkspaces: config.ManagedWorkspaces,
-		adminToken:        config.AdminToken,
-		workerToken:       config.WorkerToken,
-		artifactStore:     config.ArtifactStore,
-		jobTokenSecret:    config.JobTokenSecret,
-		secretKey:         secretKey,
-		secretKeyPrevious: config.SecretKeyPrevious,
-		sampleRoot:        config.SampleRoot,
-		wait:              config.Wait,
-		execution:         executionpkg.NewService(config.Store, config.Catalog, bundleStore),
-		metricsHandler:    config.MetricsHandler,
-		uiHostURL:         uiHostURL,
-		uiHostLabel:       uiHostLabel,
+		store:                 config.Store,
+		catalog:               config.Catalog,
+		syncer:                config.Syncer,
+		executionBundles:      config.ExecutionBundles,
+		gitSources:            config.GitSources,
+		publicAPILimiter:      newRequestRateLimiter(config.PublicAPIRPS, config.PublicAPIBurst),
+		managedWorkspaces:     config.ManagedWorkspaces,
+		adminToken:            config.AdminToken,
+		workerToken:           config.WorkerToken,
+		artifactStore:         config.ArtifactStore,
+		jobTokenSecret:        config.JobTokenSecret,
+		secretKey:             secretKey,
+		secretKeyPrevious:     config.SecretKeyPrevious,
+		sampleRoot:            config.SampleRoot,
+		wait:                  config.Wait,
+		execution:             executionpkg.NewService(config.Store, config.Catalog, bundleStore),
+		metricsHandler:        config.MetricsHandler,
+		uiHostURL:             uiHostURL,
+		uiHostLabel:           uiHostLabel,
+		uiHostAccountEndpoint: uiHostAccountEndpoint,
 	}
 }
 

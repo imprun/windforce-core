@@ -8,8 +8,8 @@ export default {
   viewport: { width: 390, height: 844 },
   guide: [
     "Open the navigation menu in the top bar.",
-    "Switch workspace, choose a product destination, or return to host management.",
-    "Use the account control at the bottom for browser credentials.",
+    "Choose a workspace-scoped product destination.",
+    "Use the account control at the bottom for hosted account context or standalone local access.",
     "Close the drawer with its close control, the backdrop, or the Escape key.",
   ],
   async run({ page, capture }) {

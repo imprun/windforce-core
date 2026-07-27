@@ -38,6 +38,21 @@ func normalizeUIHost(rawURL, rawLabel string) (string, string) {
 	return target.String(), label
 }
 
+func normalizeUIHostAccountEndpoint(raw string) string {
+	target, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil ||
+		target.Path == "" ||
+		!strings.HasPrefix(target.Path, "/") ||
+		target.IsAbs() ||
+		target.Host != "" ||
+		target.User != nil ||
+		strings.HasPrefix(strings.TrimSpace(raw), "//") ||
+		target.Fragment != "" {
+		return ""
+	}
+	return target.RequestURI()
+}
+
 func (h *Handler) handleWebUI(w http.ResponseWriter, r *http.Request) bool {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		return false
@@ -61,6 +76,11 @@ func (h *Handler) handleWebUI(w http.ResponseWriter, r *http.Request) bool {
 			config["host_console"] = map[string]string{
 				"url":   h.uiHostURL,
 				"label": h.uiHostLabel,
+			}
+		}
+		if h.uiHostAccountEndpoint != "" {
+			config["host_account"] = map[string]string{
+				"endpoint": h.uiHostAccountEndpoint,
 			}
 		}
 		writeJSON(w, http.StatusOK, config)

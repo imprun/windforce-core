@@ -1,4 +1,4 @@
-import { Archive, ArrowLeft, KeyRound } from "lucide-react";
+import { Archive, KeyRound } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Layout } from "../components/Layout";
 import { DefinitionList, EmptyState, ErrorNotice, Field, Loading, Panel } from "../components/ui";
@@ -28,27 +28,16 @@ export function WorkspaceDetailPage({ workspaceID, tab }: { workspaceID: string;
   const state = useAsync(() => api.workspace(workspaceID), [api, workspaceID]);
   const activeTab = (workspaceDetailTabs.find((item) => item.key === tab)?.key ||
     "overview") as WorkspaceTab;
-  const backToWorkspaces = (
-    <Link
-      className="button iconButton topbarTitleBack"
-      to="/workspaces"
-      aria-label="Back to workspaces"
-      title="Back to workspaces"
-    >
-      <ArrowLeft size={18} aria-hidden="true" />
-    </Link>
-  );
-
   if (state.loading && !state.data) {
     return (
-      <Layout scope="instance" title="Workspace" titleLeading={backToWorkspaces}>
+      <Layout scope="instance" title="Workspace">
         <Loading label="Loading workspace…" />
       </Layout>
     );
   }
   if (state.error || !state.data) {
     return (
-      <Layout scope="instance" title="Workspace not found" titleLeading={backToWorkspaces}>
+      <Layout scope="instance" title="Workspace not found">
         <ErrorNotice message={state.error || "Workspace not found."} onRetry={state.reload} />
       </Layout>
     );
@@ -60,7 +49,6 @@ export function WorkspaceDetailPage({ workspaceID, tab }: { workspaceID: string;
       scope="instance"
       title={workspace.name}
       subtitle={`Instance workspace · ${workspace.id}`}
-      titleLeading={backToWorkspaces}
       actions={<WorkspaceActivation workspace={workspace} />}
     >
       <nav className="tabBar" aria-label="Workspace detail tabs">
