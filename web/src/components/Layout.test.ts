@@ -23,9 +23,9 @@ describe("primaryNavItems", () => {
     expect(layoutSource).toContain('<WorkspaceSwitcher variant="breadcrumb"');
   });
 
-  test("keeps hosted-console navigation topbar-only and vendor neutral", () => {
+  test("keeps hosted-console navigation workspace-scoped and vendor neutral", () => {
     expect(layoutSource).not.toContain('placement="sidebar" collapsed={collapsed}');
-    expect(layoutSource.match(/<HostConsoleAction hostConsole=/g)).toHaveLength(2);
+    expect(layoutSource.match(/<HostConsoleAction hostConsole=/g)).toHaveLength(1);
     expect(layoutSource).toContain("{hostConsole.label}");
   });
 
