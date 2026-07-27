@@ -23,13 +23,22 @@ func TestManagedWorkspaceAPIAndAuthorizationBoundary(t *testing.T) {
 	if create.StatusCode != http.StatusCreated {
 		t.Fatalf("create status = %d: %s", create.StatusCode, readResponse(t, create))
 	}
-	var created struct {
-		Workspace workspaceView `json:"workspace"`
-		APIToken  string        `json:"api_token"`
-	}
+	var created workspaceView
 	decodeResponse(t, create, &created)
-	if created.Workspace.ID != "team-a" || created.APIToken == "" || !created.Workspace.HasToken {
+	if created.ID != "team-a" {
 		t.Fatalf("create response = %#v", created)
+	}
+	issue := workspaceRequest(t, server.URL, http.MethodPost, "/api/workspaces/team-a/tokens", "instance-admin", `{"name":"CLI"}`)
+	if issue.StatusCode != http.StatusCreated {
+		t.Fatalf("issue status = %d: %s", issue.StatusCode, readResponse(t, issue))
+	}
+	var issued struct {
+		Token    workspaceTokenView `json:"token"`
+		APIToken string             `json:"api_token"`
+	}
+	decodeResponse(t, issue, &issued)
+	if issued.Token.ID == "" || issued.Token.Name != "CLI" || issued.APIToken == "" {
+		t.Fatalf("issue response = %#v", issued)
 	}
 
 	unknown := workspaceRequest(t, server.URL, http.MethodGet, "/api/w/typo/apps", "instance-admin", "")
@@ -37,26 +46,30 @@ func TestManagedWorkspaceAPIAndAuthorizationBoundary(t *testing.T) {
 		t.Fatalf("unknown workspace status = %d: %s", unknown.StatusCode, readResponse(t, unknown))
 	}
 
-	scoped := workspaceRequest(t, server.URL, http.MethodGet, "/api/w/team-a/system/info", created.APIToken, "")
+	scoped := workspaceRequest(t, server.URL, http.MethodGet, "/api/w/team-a/system/info", issued.APIToken, "")
 	if scoped.StatusCode != http.StatusOK {
 		t.Fatalf("workspace token status = %d: %s", scoped.StatusCode, readResponse(t, scoped))
 	}
-	global := workspaceRequest(t, server.URL, http.MethodGet, "/api/workspaces", created.APIToken, "")
+	global := workspaceRequest(t, server.URL, http.MethodGet, "/api/workspaces", issued.APIToken, "")
 	if global.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("workspace token global status = %d: %s", global.StatusCode, readResponse(t, global))
 	}
 
 	createB := workspaceRequest(t, server.URL, http.MethodPost, "/api/workspaces", "instance-admin", `{"id":"team-b","name":"Team B"}`)
-	var createdB struct {
+	if createB.StatusCode != http.StatusCreated {
+		t.Fatalf("create B status = %d: %s", createB.StatusCode, readResponse(t, createB))
+	}
+	issueB := workspaceRequest(t, server.URL, http.MethodPost, "/api/workspaces/team-b/tokens", "instance-admin", `{"name":"CLI"}`)
+	var issuedB struct {
 		APIToken string `json:"api_token"`
 	}
-	decodeResponse(t, createB, &createdB)
-	cross := workspaceRequest(t, server.URL, http.MethodGet, "/api/w/team-a/system/info", createdB.APIToken, "")
+	decodeResponse(t, issueB, &issuedB)
+	cross := workspaceRequest(t, server.URL, http.MethodGet, "/api/w/team-a/system/info", issuedB.APIToken, "")
 	if cross.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("cross-workspace status = %d: %s", cross.StatusCode, readResponse(t, cross))
 	}
 
-	rotate := workspaceRequest(t, server.URL, http.MethodPost, "/api/workspaces/team-a/token", "instance-admin", "")
+	rotate := workspaceRequest(t, server.URL, http.MethodPost, "/api/workspaces/team-a/tokens/"+issued.Token.ID+"/rotate", "instance-admin", "")
 	if rotate.StatusCode != http.StatusOK {
 		t.Fatalf("rotate status = %d: %s", rotate.StatusCode, readResponse(t, rotate))
 	}
@@ -64,7 +77,7 @@ func TestManagedWorkspaceAPIAndAuthorizationBoundary(t *testing.T) {
 		APIToken string `json:"api_token"`
 	}
 	decodeResponse(t, rotate, &rotated)
-	oldToken := workspaceRequest(t, server.URL, http.MethodGet, "/api/w/team-a/system/info", created.APIToken, "")
+	oldToken := workspaceRequest(t, server.URL, http.MethodGet, "/api/w/team-a/system/info", issued.APIToken, "")
 	if oldToken.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("old token status = %d: %s", oldToken.StatusCode, readResponse(t, oldToken))
 	}
@@ -89,7 +102,7 @@ func TestManagedWorkspaceAPIAndAuthorizationBoundary(t *testing.T) {
 	if updateArchived.StatusCode != http.StatusConflict {
 		t.Fatalf("archived update status = %d: %s", updateArchived.StatusCode, readResponse(t, updateArchived))
 	}
-	rotateArchived := workspaceRequest(t, server.URL, http.MethodPost, "/api/workspaces/team-a/token", "instance-admin", "")
+	rotateArchived := workspaceRequest(t, server.URL, http.MethodPost, "/api/workspaces/team-a/tokens/"+issued.Token.ID+"/rotate", "instance-admin", "")
 	if rotateArchived.StatusCode != http.StatusConflict {
 		t.Fatalf("archived token rotation status = %d: %s", rotateArchived.StatusCode, readResponse(t, rotateArchived))
 	}
@@ -102,6 +115,15 @@ func TestManagedWorkspaceAPIAndAuthorizationBoundary(t *testing.T) {
 		t.Fatalf("archived execution status = %d: %s", executeArchived.StatusCode, readResponse(t, executeArchived))
 	}
 
+	revoke := workspaceRequest(t, server.URL, http.MethodDelete, "/api/workspaces/team-a/tokens/"+issued.Token.ID, "instance-admin", "")
+	if revoke.StatusCode != http.StatusOK {
+		t.Fatalf("revoke status = %d: %s", revoke.StatusCode, readResponse(t, revoke))
+	}
+	revokedToken := workspaceRequest(t, server.URL, http.MethodGet, "/api/w/team-a/system/info", rotated.APIToken, "")
+	if revokedToken.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("revoked token status = %d: %s", revokedToken.StatusCode, readResponse(t, revokedToken))
+	}
+
 	audit := workspaceRequest(t, server.URL, http.MethodGet, "/api/workspaces/team-a/audit", "instance-admin", "")
 	if audit.StatusCode != http.StatusOK {
 		t.Fatalf("audit status = %d: %s", audit.StatusCode, readResponse(t, audit))
@@ -110,7 +132,7 @@ func TestManagedWorkspaceAPIAndAuthorizationBoundary(t *testing.T) {
 		Items []state.WorkspaceAudit `json:"items"`
 	}
 	decodeResponse(t, audit, &auditBody)
-	if len(auditBody.Items) < 3 || auditBody.Items[0].Kind != "archived" {
+	if len(auditBody.Items) < 4 || auditBody.Items[0].Kind != "token_revoked" {
 		t.Fatalf("audit response = %#v", auditBody)
 	}
 }
@@ -172,7 +194,9 @@ func TestWorkspaceManagementOpenAPI(t *testing.T) {
 		"/api/workspaces",
 		"/api/workspaces/{workspace_id}",
 		"/api/workspaces/{workspace_id}/archive",
-		"/api/workspaces/{workspace_id}/token",
+		"/api/workspaces/{workspace_id}/tokens",
+		"/api/workspaces/{workspace_id}/tokens/{token_id}",
+		"/api/workspaces/{workspace_id}/tokens/{token_id}/rotate",
 		"/api/workspaces/{workspace_id}/audit",
 	} {
 		if _, ok := paths[path]; !ok {
@@ -181,7 +205,7 @@ func TestWorkspaceManagementOpenAPI(t *testing.T) {
 	}
 
 	schemas := controlPlaneSchemas()
-	for _, name := range []string{"Workspace", "WorkspaceListResponse", "CreateWorkspaceRequest", "UpdateWorkspaceRequest", "WorkspaceTokenResult", "WorkspaceAudit"} {
+	for _, name := range []string{"Workspace", "WorkspaceListResponse", "CreateWorkspaceRequest", "UpdateWorkspaceRequest", "WorkspaceToken", "WorkspaceTokenResult", "WorkspaceTokenListResponse", "WorkspaceAudit"} {
 		if _, ok := schemas[name]; !ok {
 			t.Errorf("OpenAPI schema %q is missing", name)
 		}

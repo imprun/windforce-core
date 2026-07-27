@@ -2474,7 +2474,7 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 
 	fileCatalog := catalog.NewFileCatalog(filepath.Join(tempDir, "catalog.json"))
 	stateStore := state.NewLocalStore(filepath.Join(tempDir, "state.json"))
-	if _, err := stateStore.CreateWorkspace(context.Background(), "ws-a", "ws-a", "", "test"); err != nil {
+	if _, err := stateStore.CreateWorkspace(context.Background(), "ws-a", "ws-a", "test"); err != nil {
 		t.Fatal(err)
 	}
 	handler := New(Config{

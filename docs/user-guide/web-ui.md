@@ -132,15 +132,15 @@ Provisioning exports a redacted workspace snapshot and imports repeatable app, c
 
 ## Connect the CLI and set browser access
 
-General settings shows external CLI connection metadata and stores the API token and audit actor used by Web UI requests.
+General settings shows CLI connection metadata and adapts browser access to standalone or hosted mode.
 
 ![Connect the CLI and set browser access](../assets/ui/settings.png)
 
 1. Open Settings from the sidebar.
 2. Copy the control plane URL, workspace ID, token environment name, or complete profile command from CLI connection.
 3. Set the named environment variable to the one-time token issued from the workspace Access tab; token values are not included in copied commands.
-4. Set the API token when the control plane requires authentication.
-5. Set the audit actor recorded on releases and cancels; local development defaults to local-dev.
+4. In standalone mode, set the API token and local audit actor when required.
+5. In hosted mode, use the read-only authenticated host session instead of local token and actor inputs.
 
 ## Switch workspace context
 
@@ -150,7 +150,7 @@ The top-bar breadcrumb keeps runtime scope visible and provides the entry point 
 
 1. Open the workspace control in the top-bar breadcrumb.
 2. Select a workspace to change the active application and monitoring scope.
-3. Choose Manage workspaces to create workspaces or manage identity, access, audit, and lifecycle settings.
+3. Choose Manage workspaces to create or switch workspaces; configure the active workspace from Settings.
 
 ## Navigate on a narrow screen
 
@@ -184,7 +184,7 @@ The sidebar collapses to an icon rail so wide tables get the full viewport. The 
 
 ## Manage workspaces
 
-The workspace registry uses an instance-administration shell without the active workspace's application navigation.
+The workspace registry is limited to creating and switching workspace context.
 
 ![Manage workspaces](../assets/ui/workspaces.png)
 
@@ -192,8 +192,8 @@ The workspace registry uses an instance-administration shell without the active 
 2. Choose Manage workspaces to review the instance registry.
 3. Use Switch to select a workspace for application and monitoring operations; the selected row is marked Current.
 4. Use the Windforce breadcrumb root to return to the active workspace console.
-5. Create a workspace or open a workspace's dedicated administration page.
-6. Use an instance-admin token for workspace lifecycle operations; workspace tokens remain scoped to one workspace.
+5. Create a workspace, then switch to it before configuring its settings.
+6. Use an instance-admin token for registry operations; workspace tokens remain scoped to one workspace.
 
 ## Manage release webhooks
 
@@ -205,17 +205,17 @@ The Webhooks settings view shows each signed release receiver, its app scope, an
 2. Review each receiver's status, masked endpoint, app scope, latest delivery, and last operator update.
 3. Open a webhook name to manage its configuration and delivery history.
 
-## Administer a workspace
+## Configure the active workspace
 
-Each workspace has a dedicated instance-administration page without workspace-scoped application navigation.
+Identity and lifecycle settings stay with the active workspace instead of creating a second registry detail context.
 
-![Administer a workspace](../assets/ui/workspace-detail.png)
+![Configure the active workspace](../assets/ui/workspace-detail.png)
 
-1. Open Manage workspaces from the workspace switcher, then choose a workspace from the registry.
-2. Use Workspaces in the instance breadcrumb to return to the registry.
-3. Use Switch to workspace to select this workspace and open its application console.
-4. Use Overview for its display name, Access for its scoped token, Audit for lifecycle history, and Lifecycle for archive controls.
-5. Return to the runtime and use its breadcrumb when changing workspace scope.
+1. Switch to the workspace from Manage workspaces.
+2. Open Settings and choose Workspace to change its display name or archive it.
+3. Choose Access to issue, rotate, or revoke named workspace credentials.
+4. Open Audit and select Workspace to review identity, credential, and lifecycle events.
+5. Return to Manage workspaces only when creating or switching workspace context.
 
 ## Configure a release webhook
 
@@ -227,6 +227,18 @@ Webhook detail keeps receiver configuration, app scope, enablement, secret rotat
 2. Review its masked receiver, event type, status, and last operator update.
 3. Change its name, replace the endpoint, enable or disable delivery, or narrow the app scope.
 4. Rotate the signing secret only when the receiver can be updated immediately.
+
+## Manage workspace access
+
+Named credentials belong to the active workspace and keep issue, rotation, and revocation separate from workspace creation.
+
+![Manage workspace access](../assets/ui/workspace-access.png)
+
+1. Switch to the workspace that will own the credential.
+2. Open Settings and choose Access.
+3. Name each credential for its CLI, operator, or recovery purpose.
+4. Store the raw secret when it is shown; later views expose metadata only.
+5. Rotate or revoke one credential without interrupting the workspace's other callers.
 
 ## Inspect a webhook delivery
 

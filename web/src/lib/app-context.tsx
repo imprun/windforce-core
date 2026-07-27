@@ -10,6 +10,7 @@ import {
   useState,
 } from "react";
 import { errorMessage, loadSettings, type Settings, saveSettings, WindforceApi } from "./api";
+import { loadRuntimeConfig, type RuntimeConfig } from "./runtime-config";
 
 export type Toast = {
   id: number;
@@ -22,6 +23,7 @@ type AppContextValue = {
   updateSettings: (next: Settings) => void;
   clearLocalCredentials: () => void;
   api: WindforceApi;
+  runtimeConfig: RuntimeConfig | null;
   toasts: Toast[];
   notify: (tone: Toast["tone"], text: string) => void;
   dismissToast: (id: number) => void;
@@ -32,12 +34,27 @@ const AppContext = createContext<AppContextValue | null>(null);
 export function AppProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const [settings, setSettings] = useState<Settings>(loadSettings);
+  const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const nextToastID = useRef(1);
 
   useEffect(() => {
     saveSettings(settings);
   }, [settings]);
+
+  useEffect(() => {
+    let active = true;
+    void loadRuntimeConfig()
+      .then((config) => {
+        if (active) setRuntimeConfig(config);
+      })
+      .catch(() => {
+        if (active) setRuntimeConfig({ hostConsole: null, hostAccount: null });
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const dismissToast = useCallback((id: number) => {
     setToasts((current) => current.filter((toast) => toast.id !== id));
@@ -61,18 +78,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setSettings((current) => ({ ...current, actor: "", token: "" }));
   }, [queryClient]);
 
-  const api = useMemo(() => new WindforceApi(settings), [settings]);
+  const api = useMemo(
+    () =>
+      new WindforceApi(
+        runtimeConfig?.hostAccount ? { ...settings, token: "", actor: "" } : settings,
+      ),
+    [settings, runtimeConfig],
+  );
   const value = useMemo(
     () => ({
       settings,
       updateSettings: setSettings,
       clearLocalCredentials,
       api,
+      runtimeConfig,
       toasts,
       notify,
       dismissToast,
     }),
-    [settings, clearLocalCredentials, api, toasts, notify, dismissToast],
+    [settings, clearLocalCredentials, api, runtimeConfig, toasts, notify, dismissToast],
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

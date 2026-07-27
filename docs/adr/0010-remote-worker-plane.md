@@ -12,7 +12,7 @@ Processor가 실제로 사용하는 store 표면은 좁다: 워커 등록 3종, 
 
 ## Decision
 
-1. **경로와 인증.** 원격 워커 플레인은 `/worker/v1/*`로 버저닝한다. 인증은 워커 토큰(`--worker-token-env`, 미설정 시 admin 토큰)의 `Authorization: Bearer`다. 게이트웨이/프록시 뒤에 두는 배치에서는 프록시가 자체 크레덴셜을 교체 주입하는 패턴을 그대로 쓸 수 있다.
+1. **경로와 인증.** 원격 워커 플레인은 `/worker/v1/*`로 버저닝한다. 인증은 전용 Core worker credential(`wfr_`, `--worker-token-env`, 미설정 시 admin 토큰)의 `Authorization: Bearer`다. 게이트웨이/프록시는 이 Core-owned credential을 교환하지 않고 전달하며, Cloud API token이나 workspace credential을 worker-plane admin 권한으로 승격하지 않는다.
 2. **입력 준비는 서버가 한다(prepared claim).** `POST /worker/v1/claims`는 claim 후 서버 안에서 DecryptInput·ResolveInput까지 마친 잡을 돌려준다. `SECRET_KEY`와 복호화는 엔진 프로세스를 떠나지 않고, 준비 실패는 서버가 그 자리에서 잡을 실패 처리한 뒤 204를 돌려준다(워커는 다음 폴에서 재시도).
 3. **표면.**
    - `POST /worker/v1/workers` — 등록 {id?, group, tags, labels, slots} → {id}

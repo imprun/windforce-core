@@ -37,14 +37,14 @@ func (s *PostgresStore) GetWorkspace(ctx context.Context, workspaceID string) (W
 	return workspace, err
 }
 
-func (s *PostgresStore) CreateWorkspace(ctx context.Context, workspaceID string, name string, tokenHash string, actor string) (Workspace, error) {
+func (s *PostgresStore) CreateWorkspace(ctx context.Context, workspaceID string, name string, actor string) (Workspace, error) {
 	var created Workspace
 	err := s.withTx(ctx, func(tx pgx.Tx) error {
 		var err error
 		created, err = scanWorkspace(tx.QueryRow(ctx, `
-INSERT INTO workspace_registry (id, display_name, status, token_hash, created_by, updated_by)
-VALUES ($1, $2, $3, $4, $5, $5)
-RETURNING `+workspaceColumns, workspaceID, name, WorkspaceActive, tokenHash, actor))
+INSERT INTO workspace_registry (id, display_name, status, created_by, updated_by)
+VALUES ($1, $2, $3, $4, $4)
+RETURNING `+workspaceColumns, workspaceID, name, WorkspaceActive, actor))
 		if err != nil {
 			return workspacePostgresError(err)
 		}
@@ -106,30 +106,6 @@ WHERE id=$1 RETURNING `+workspaceColumns, workspaceID, WorkspaceArchived, actor)
 		return insertWorkspaceAudit(ctx, tx, workspaceID, "archived", "", actor)
 	})
 	return archived, err
-}
-
-func (s *PostgresStore) RotateWorkspaceToken(ctx context.Context, workspaceID string, tokenHash string, actor string) (Workspace, error) {
-	var updated Workspace
-	err := s.withTx(ctx, func(tx pgx.Tx) error {
-		current, err := scanWorkspace(tx.QueryRow(ctx, `SELECT `+workspaceColumns+` FROM workspace_registry WHERE id=$1 FOR UPDATE`, workspaceID))
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrNotFound
-		}
-		if err != nil {
-			return err
-		}
-		if current.Status == WorkspaceArchived {
-			return ErrInvalidState
-		}
-		updated, err = scanWorkspace(tx.QueryRow(ctx, `
-UPDATE workspace_registry SET token_hash=$2, updated_by=$3, updated_at=now()
-WHERE id=$1 RETURNING `+workspaceColumns, workspaceID, tokenHash, actor))
-		if err != nil {
-			return err
-		}
-		return insertWorkspaceAudit(ctx, tx, workspaceID, "token_rotated", "", actor)
-	})
-	return updated, err
 }
 
 func (s *PostgresStore) ListWorkspaceAudit(ctx context.Context, workspaceID string) ([]WorkspaceAudit, error) {

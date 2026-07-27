@@ -376,11 +376,22 @@ export type Workspace = {
   id: string;
   name: string;
   status: "active" | "archived";
-  has_token: boolean;
   created_by: string;
   updated_by: string;
   created_at: string;
   updated_at: string;
+};
+
+export type WorkspaceToken = {
+  id: string;
+  workspace_id: string;
+  name: string;
+  status: "active" | "revoked";
+  created_by: string;
+  updated_by: string;
+  created_at: string;
+  updated_at: string;
+  revoked_at?: string;
 };
 
 export type WorkspaceAudit = {
@@ -393,7 +404,7 @@ export type WorkspaceAudit = {
 };
 
 export type WorkspaceTokenResult = {
-  workspace: Workspace;
+  token: WorkspaceToken;
   api_token: string;
 };
 
@@ -727,7 +738,7 @@ export class WindforceApi {
     return this.globalRequest(`/api/workspaces/${encodeURIComponent(id)}`);
   }
 
-  createWorkspace(id: string, name: string): Promise<WorkspaceTokenResult> {
+  createWorkspace(id: string, name: string): Promise<Workspace> {
     return this.globalRequest("/api/workspaces", { method: "POST", body: { id, name } });
   }
 
@@ -744,10 +755,33 @@ export class WindforceApi {
     });
   }
 
-  rotateWorkspaceToken(id: string): Promise<WorkspaceTokenResult> {
-    return this.globalRequest(`/api/workspaces/${encodeURIComponent(id)}/token`, {
+  workspaceTokens(id: string): Promise<{ items: WorkspaceToken[] }> {
+    return this.globalRequest(`/api/workspaces/${encodeURIComponent(id)}/tokens`);
+  }
+
+  createWorkspaceToken(id: string, name: string): Promise<WorkspaceTokenResult> {
+    return this.globalRequest(`/api/workspaces/${encodeURIComponent(id)}/tokens`, {
       method: "POST",
+      body: { name },
     });
+  }
+
+  rotateWorkspaceToken(id: string, tokenID: string): Promise<WorkspaceTokenResult> {
+    return this.globalRequest(
+      `/api/workspaces/${encodeURIComponent(id)}/tokens/${encodeURIComponent(tokenID)}/rotate`,
+      {
+        method: "POST",
+      },
+    );
+  }
+
+  revokeWorkspaceToken(id: string, tokenID: string): Promise<WorkspaceToken> {
+    return this.globalRequest(
+      `/api/workspaces/${encodeURIComponent(id)}/tokens/${encodeURIComponent(tokenID)}`,
+      {
+        method: "DELETE",
+      },
+    );
   }
 
   workspaceAudit(id: string): Promise<{ items: WorkspaceAudit[] }> {

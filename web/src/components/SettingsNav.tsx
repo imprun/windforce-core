@@ -3,6 +3,16 @@ import { Link, useRouter } from "../lib/router";
 export const settingsNavItems = [
   { to: "/settings", label: "General", match: (path: string) => path === "/settings" },
   {
+    to: "/settings/workspace",
+    label: "Workspace",
+    match: (path: string) => path === "/settings/workspace",
+  },
+  {
+    to: "/settings/access",
+    label: "Access",
+    match: (path: string) => path === "/settings/access",
+  },
+  {
     to: "/settings/provisioning",
     label: "Provisioning",
     match: (path: string) => path === "/settings/provisioning",

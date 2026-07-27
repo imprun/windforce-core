@@ -3,15 +3,15 @@ export default {
   id: "workspaces",
   title: "Manage workspaces",
   description:
-    "The workspace registry uses an instance-administration shell without the active workspace's application navigation.",
+    "The workspace registry is limited to creating and switching workspace context.",
   screenshot: "docs/assets/ui/workspaces.png",
   guide: [
     "Open the workspace switcher in the top-bar breadcrumb.",
     "Choose Manage workspaces to review the instance registry.",
     "Use Switch to select a workspace for application and monitoring operations; the selected row is marked Current.",
     "Use the Windforce breadcrumb root to return to the active workspace console.",
-    "Create a workspace or open a workspace's dedicated administration page.",
-    "Use an instance-admin token for workspace lifecycle operations; workspace tokens remain scoped to one workspace.",
+    "Create a workspace, then switch to it before configuring its settings.",
+    "Use an instance-admin token for registry operations; workspace tokens remain scoped to one workspace.",
   ],
   async run({ page, capture }) {
     await page.goto();
@@ -21,6 +21,7 @@ export default {
     await page.waitForText("#workspaceRegistry", "Operations");
     await page.waitForText("#workspaceRegistry", "Current");
     await page.waitForText("#workspaceRegistry", "Switch");
+    await page.waitForText("#workspaceRegistry", "Status");
     await capture(this.id);
   },
 };

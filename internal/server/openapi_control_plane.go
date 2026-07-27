@@ -15,7 +15,7 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 				"summary":     "Create a managed workspace",
 				"requestBody": oapiJSONBody(oapiSchemaRef("CreateWorkspaceRequest"), true),
 				"responses": withErrors(map[string]any{
-					"201": oapiResponse("Created workspace and its one-time API token.", oapiSchemaRef("WorkspaceTokenResult")),
+					"201": oapiResponse("Created workspace.", oapiSchemaRef("Workspace")),
 				}, "400", "401", "403", "409"),
 			},
 		},
@@ -48,13 +48,48 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 				}, "400", "401", "403", "404", "409"),
 			},
 		},
-		"/api/workspaces/{workspace_id}/token": map[string]any{
-			"post": map[string]any{
-				"operationId": "rotateWorkspaceToken",
-				"summary":     "Rotate a workspace API token",
+		"/api/workspaces/{workspace_id}/tokens": map[string]any{
+			"get": map[string]any{
+				"operationId": "listWorkspaceTokens",
+				"summary":     "List named workspace API tokens",
 				"parameters":  []any{oapiPathParam("workspace_id", "Immutable workspace id.")},
 				"responses": withErrors(map[string]any{
-					"200": oapiResponse("Workspace and its new one-time API token.", oapiSchemaRef("WorkspaceTokenResult")),
+					"200": oapiResponse("Workspace token registry.", oapiSchemaRef("WorkspaceTokenListResponse")),
+				}, "401", "403", "404"),
+			},
+			"post": map[string]any{
+				"operationId": "createWorkspaceToken",
+				"summary":     "Create a named workspace API token",
+				"parameters":  []any{oapiPathParam("workspace_id", "Immutable workspace id.")},
+				"requestBody": oapiJSONBody(oapiSchemaRef("CreateWorkspaceTokenRequest"), true),
+				"responses": withErrors(map[string]any{
+					"201": oapiResponse("Named token and its one-time secret.", oapiSchemaRef("WorkspaceTokenResult")),
+				}, "400", "401", "403", "404", "409"),
+			},
+		},
+		"/api/workspaces/{workspace_id}/tokens/{token_id}": map[string]any{
+			"delete": map[string]any{
+				"operationId": "revokeWorkspaceToken",
+				"summary":     "Revoke a named workspace API token",
+				"parameters": []any{
+					oapiPathParam("workspace_id", "Immutable workspace id."),
+					oapiPathParam("token_id", "Workspace token id."),
+				},
+				"responses": withErrors(map[string]any{
+					"200": oapiResponse("Revoked workspace token.", oapiSchemaRef("WorkspaceToken")),
+				}, "401", "403", "404", "409"),
+			},
+		},
+		"/api/workspaces/{workspace_id}/tokens/{token_id}/rotate": map[string]any{
+			"post": map[string]any{
+				"operationId": "rotateWorkspaceToken",
+				"summary":     "Rotate a named workspace API token",
+				"parameters": []any{
+					oapiPathParam("workspace_id", "Immutable workspace id."),
+					oapiPathParam("token_id", "Workspace token id."),
+				},
+				"responses": withErrors(map[string]any{
+					"200": oapiResponse("Rotated token and its new one-time secret.", oapiSchemaRef("WorkspaceTokenResult")),
 				}, "401", "403", "404", "409"),
 			},
 		},
@@ -114,7 +149,7 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 					oapiWorkspaceParam(workspaceID),
 					oapiQueryParam("app_key", "Optional app key filter.", oapiStringSchema(), false),
 					oapiQueryParam("client_id", "Optional client id filter.", oapiStringSchema(), false),
-					oapiQueryParam("category", "Optional event category filter.", map[string]any{"type": "string", "enum": []any{"repository", "release", "client", "input_settings", "webhook"}}, false),
+					oapiQueryParam("category", "Optional event category filter.", map[string]any{"type": "string", "enum": []any{"workspace", "repository", "release", "client", "input_settings", "webhook"}}, false),
 					oapiQueryParam("actor", "Optional case-insensitive actor filter.", oapiStringSchema(), false),
 					oapiQueryParam("git_source_id", "Optional numeric git source id filter.", oapiIntegerSchema(), false),
 					oapiQueryParam("since", "RFC3339 lower bound for created_at.", oapiStringSchema(), false),
@@ -757,13 +792,12 @@ func controlPlaneSchemas() map[string]any {
 				"id":         oapiStringSchema(),
 				"name":       oapiStringSchema(),
 				"status":     map[string]any{"type": "string", "enum": []any{"active", "archived"}},
-				"has_token":  oapiBooleanSchema(),
 				"created_by": oapiStringSchema(),
 				"created_at": oapiDateTimeSchema(),
 				"updated_by": oapiStringSchema(),
 				"updated_at": oapiDateTimeSchema(),
 			},
-			"required": []any{"id", "name", "status", "has_token", "created_by", "created_at", "updated_by", "updated_at"},
+			"required": []any{"id", "name", "status", "created_by", "created_at", "updated_by", "updated_at"},
 		},
 		"CreateWorkspaceRequest": map[string]any{
 			"type": "object",
@@ -783,13 +817,38 @@ func controlPlaneSchemas() map[string]any {
 			"properties": map[string]any{"name": oapiStringSchema()},
 			"required":   []any{"name"},
 		},
+		"CreateWorkspaceTokenRequest": map[string]any{
+			"type":       "object",
+			"properties": map[string]any{"name": oapiStringSchema()},
+			"required":   []any{"name"},
+		},
+		"WorkspaceToken": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"id":           oapiStringSchema(),
+				"workspace_id": oapiStringSchema(),
+				"name":         oapiStringSchema(),
+				"status":       map[string]any{"type": "string", "enum": []any{"active", "revoked"}},
+				"created_by":   oapiStringSchema(),
+				"created_at":   oapiDateTimeSchema(),
+				"updated_by":   oapiStringSchema(),
+				"updated_at":   oapiDateTimeSchema(),
+				"revoked_at":   map[string]any{"type": []any{"string", "null"}, "format": "date-time"},
+			},
+			"required": []any{"id", "workspace_id", "name", "status", "created_by", "created_at", "updated_by", "updated_at"},
+		},
+		"WorkspaceTokenListResponse": map[string]any{
+			"type":       "object",
+			"properties": map[string]any{"items": map[string]any{"type": "array", "items": oapiSchemaRef("WorkspaceToken")}},
+			"required":   []any{"items"},
+		},
 		"WorkspaceTokenResult": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"workspace": oapiSchemaRef("Workspace"),
+				"token":     oapiSchemaRef("WorkspaceToken"),
 				"api_token": map[string]any{"type": "string", "writeOnly": true, "description": "One-time workspace API token."},
 			},
-			"required": []any{"workspace", "api_token"},
+			"required": []any{"token", "api_token"},
 		},
 		"WorkspaceAudit": map[string]any{
 			"type": "object",
@@ -973,7 +1032,7 @@ func controlPlaneSchemas() map[string]any {
 			"type": "object",
 			"properties": map[string]any{
 				"id":            oapiStringSchema(),
-				"category":      map[string]any{"type": "string", "enum": []any{"repository", "release", "client", "input_settings"}},
+				"category":      map[string]any{"type": "string", "enum": []any{"workspace", "repository", "release", "client", "input_settings", "webhook"}},
 				"kind":          oapiStringSchema(),
 				"summary":       oapiStringSchema(),
 				"detail":        oapiStringSchema(),

@@ -137,6 +137,18 @@ CREATE TABLE IF NOT EXISTS workspace_registry (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS workspace_token (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspace_registry(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    token_hash TEXT NOT NULL DEFAULT '',
+    created_by TEXT NOT NULL DEFAULT 'system',
+    updated_by TEXT NOT NULL DEFAULT 'system',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    revoked_at TIMESTAMPTZ
+);
+
 CREATE TABLE IF NOT EXISTS workspace_audit (
     id BIGSERIAL PRIMARY KEY,
     workspace_id TEXT NOT NULL,
@@ -523,6 +535,12 @@ CREATE INDEX IF NOT EXISTS trigger_delivery_lookup_idx
 CREATE INDEX IF NOT EXISTS workspace_audit_lookup_idx
     ON workspace_audit (workspace_id, created_at DESC, id DESC);
 
+CREATE UNIQUE INDEX IF NOT EXISTS workspace_token_hash_unique_idx
+    ON workspace_token (token_hash) WHERE token_hash <> '';
+
+CREATE INDEX IF NOT EXISTS workspace_token_workspace_idx
+    ON workspace_token (workspace_id, created_at DESC, id DESC);
+
 INSERT INTO workspace_registry (id, display_name, status, created_by, updated_by)
 VALUES ('default', 'Default', 'active', 'system', 'system')
 ON CONFLICT (id) DO NOTHING;
@@ -542,6 +560,24 @@ FROM (
 ) discovered
 WHERE workspace_id <> ''
 ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO workspace_token (
+    id, workspace_id, name, token_hash, created_by, updated_by, created_at, updated_at
+)
+SELECT
+    'workspace_token_legacy_' || md5(id),
+    id,
+    'Legacy access token',
+    token_hash,
+    created_by,
+    updated_by,
+    created_at,
+    updated_at
+FROM workspace_registry
+WHERE token_hash <> ''
+ON CONFLICT (id) DO NOTHING;
+
+UPDATE workspace_registry SET token_hash='' WHERE token_hash <> '';
 `); err != nil {
 		return err
 	}

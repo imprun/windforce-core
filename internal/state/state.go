@@ -376,14 +376,28 @@ type InputConfigAudit struct {
 }
 
 type Workspace struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Status    string    `json:"status"`
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Status string `json:"status"`
+	// TokenHash is retained only to migrate pre-token-registry local snapshots.
+	// New workspace credentials live in Snapshot.WorkspaceTokens.
 	TokenHash string    `json:"token_hash,omitempty"`
 	CreatedBy string    `json:"created_by"`
 	UpdatedBy string    `json:"updated_by"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type WorkspaceToken struct {
+	ID          string     `json:"id"`
+	WorkspaceID string     `json:"workspace_id"`
+	Name        string     `json:"name"`
+	TokenHash   string     `json:"token_hash,omitempty"`
+	CreatedBy   string     `json:"created_by"`
+	UpdatedBy   string     `json:"updated_by"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+	RevokedAt   *time.Time `json:"revoked_at,omitempty"`
 }
 
 type WorkspaceAudit struct {
@@ -504,16 +518,22 @@ type Snapshot struct {
 	TriggerDeliveries      map[string]TriggerDelivery             `json:"triggerDeliveries"`
 	Workers                map[string]WorkerRecord                `json:"workers,omitempty"`
 	Workspaces             map[string]Workspace                   `json:"workspaces"`
+	WorkspaceTokens        map[string]map[string]WorkspaceToken   `json:"workspaceTokens"`
 	WorkspaceAudits        []WorkspaceAudit                       `json:"workspaceAudits"`
 }
 
 type Store interface {
 	ListWorkspaces(ctx context.Context) ([]Workspace, error)
 	GetWorkspace(ctx context.Context, workspaceID string) (Workspace, error)
-	CreateWorkspace(ctx context.Context, workspaceID string, name string, tokenHash string, actor string) (Workspace, error)
+	CreateWorkspace(ctx context.Context, workspaceID string, name string, actor string) (Workspace, error)
 	UpdateWorkspace(ctx context.Context, workspaceID string, name string, actor string) (Workspace, error)
 	ArchiveWorkspace(ctx context.Context, workspaceID string, actor string) (Workspace, error)
-	RotateWorkspaceToken(ctx context.Context, workspaceID string, tokenHash string, actor string) (Workspace, error)
+	ListWorkspaceTokens(ctx context.Context, workspaceID string) ([]WorkspaceToken, error)
+	GetWorkspaceToken(ctx context.Context, workspaceID string, id string) (WorkspaceToken, error)
+	GetWorkspaceTokenByTokenHash(ctx context.Context, workspaceID string, tokenHash string) (WorkspaceToken, error)
+	CreateWorkspaceToken(ctx context.Context, workspaceID string, name string, tokenHash string, actor string) (WorkspaceToken, error)
+	RotateWorkspaceToken(ctx context.Context, workspaceID string, id string, tokenHash string, actor string) (WorkspaceToken, error)
+	RevokeWorkspaceToken(ctx context.Context, workspaceID string, id string, actor string) (WorkspaceToken, error)
 	ListWorkspaceAudit(ctx context.Context, workspaceID string) ([]WorkspaceAudit, error)
 	CreateRunAndEnqueue(ctx context.Context, run Run, job Job) error
 	GetRun(ctx context.Context, runID string) (Run, error)

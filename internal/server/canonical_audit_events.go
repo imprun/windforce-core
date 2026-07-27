@@ -66,6 +66,14 @@ func (h *Handler) handleCanonicalAuditEvents(w http.ResponseWriter, r *http.Requ
 	events := catalogAuditEvents(snapshot, workspaceID)
 
 	if h.store != nil {
+		workspaceAudit, err := h.store.ListWorkspaceAudit(r.Context(), workspaceID)
+		if err != nil {
+			writeStateError(w, err)
+			return
+		}
+		for _, record := range workspaceAudit {
+			events = append(events, newWorkspaceAuditEvent(record))
+		}
 		clients, err := h.store.ListClients(r.Context(), workspaceID)
 		if err != nil {
 			writeStateError(w, err)
@@ -192,6 +200,18 @@ func catalogAuditEvents(snapshot catalog.Snapshot, workspaceID string) []canonic
 	return events
 }
 
+func newWorkspaceAuditEvent(record state.WorkspaceAudit) canonicalAuditEvent {
+	return canonicalAuditEvent{
+		ID:        "workspace:" + record.ID,
+		Category:  "workspace",
+		Kind:      record.Kind,
+		Summary:   canonicalAuditSummary("workspace", record.Kind),
+		Detail:    record.Detail,
+		Actor:     firstNonEmpty(record.Actor, "system"),
+		CreatedAt: record.CreatedAt,
+	}
+}
+
 func newClientAuditEvent(record state.ClientAudit, clientName string) canonicalAuditEvent {
 	return canonicalAuditEvent{
 		ID:         "client:" + record.ID,
@@ -266,7 +286,7 @@ func parseCanonicalAuditQuery(r *http.Request) (canonicalAuditQuery, error) {
 		Limit:    100,
 	}
 	if query.Category != "" {
-		validCategories := map[string]bool{"repository": true, "release": true, "client": true, "input_settings": true, "webhook": true}
+		validCategories := map[string]bool{"workspace": true, "repository": true, "release": true, "client": true, "input_settings": true, "webhook": true}
 		if !validCategories[query.Category] {
 			return canonicalAuditQuery{}, fmt.Errorf("invalid audit category")
 		}
@@ -357,10 +377,18 @@ func canonicalAuditSummary(category string, kind string) string {
 		"webhook_subscription_deleted":  "Webhook subscription deleted",
 		"webhook_test_requested":        "Webhook test queued",
 		"webhook_delivery_retried":      "Webhook delivery retried",
+		"workspace_created":             "Workspace created",
+		"workspace_updated":             "Workspace updated",
+		"workspace_archived":            "Workspace archived",
+		"workspace_token_created":       "Workspace token created",
+		"workspace_token_rotated":       "Workspace token rotated",
+		"workspace_token_revoked":       "Workspace token revoked",
 	}
 	lookup := kind
 	if category == "input_settings" {
 		lookup = "input_settings_" + kind
+	} else if category == "workspace" {
+		lookup = "workspace_" + kind
 	}
 	if label := labels[lookup]; label != "" {
 		return label

@@ -264,7 +264,9 @@ Implemented control-plane endpoints:
 - `GET|POST /api/workspaces` (instance-admin workspace registry)
 - `GET|PATCH /api/workspaces/{workspaceId}`
 - `POST /api/workspaces/{workspaceId}/archive`
-- `POST /api/workspaces/{workspaceId}/token` (returns a new token once)
+- `GET|POST /api/workspaces/{workspaceId}/tokens` (list metadata or issue a named token)
+- `POST /api/workspaces/{workspaceId}/tokens/{tokenId}/rotate` (returns a replacement token once)
+- `DELETE /api/workspaces/{workspaceId}/tokens/{tokenId}` (revokes the credential)
 - `GET /api/workspaces/{workspaceId}/audit`
 - `GET /api/w/{workspace}/openapi.json` (workspace control-plane OpenAPI)
 - `GET /api/w/{workspace}/git_sources`
@@ -446,10 +448,11 @@ go run ./cmd/windforce-core worker `
 
 API token checks are optional for local development. `--admin-token-env` sets
 the instance-admin token used for global workspace lifecycle operations and
-cross-workspace administration. Creating a workspace returns its scoped API
-token once; only its SHA-256 hash is stored. A workspace token can access only
-that workspace and cannot call `/api/workspaces`. Open **Manage workspaces** from
-the workspace switcher to rotate it, or call `POST /api/workspaces/{workspaceId}/token`.
+cross-workspace administration. Workspace creation does not mint a credential.
+Issue one or more named workspace tokens explicitly from **Settings → Access**;
+only their SHA-256 hashes are stored and raw values are shown only on issue or
+rotation. A workspace token can access only that workspace and cannot call
+`/api/workspaces`. Revoking one named token does not affect the others.
 
 Worker scripts receive `WF_TOKEN` as a short-lived job token signed with
 `--job-token-secret-env`; when that flag is omitted, the admin token value is

@@ -117,14 +117,15 @@ workload 집계 대시보드. 개별 job 레코드는 다루지 않는다.
 
 ### Settings
 
-General에서 API token과 actor를 설정하고 브라우저 localStorage에 저장한다.
-현재 workspace는 사이드바의 workspace switcher에서 선택한다. 전체 workspace 생성과
-관리는 switcher의 `Manage workspaces`에서 instance admin이 수행한다. 각
-workspace 상세는 identity, access, audit, lifecycle 책임을 별도 탭으로 구분한다.
-`/workspaces` 관리 경로는 활성 workspace용 사이드바와 switcher를 렌더링하지 않으며,
-instance administration header에서 현재 workspace console로 돌아간다.
-actor는 인증 수단이 아니라 로컬 audit subject다.
-workspace token으로 인증하면 audit subject는 해당 workspace principal로 고정된다.
+standalone 모드에서는 General에서 API token과 actor를 설정하고 브라우저
+localStorage에 저장한다. hosted 모드에서는 host가 인증한 browser session과
+principal을 사용하므로 이 두 입력을 노출하거나 localStorage 값으로 덮어쓰지 않는다.
+현재 workspace는 사이드바의 workspace switcher에서 선택한다. `Manage workspaces`의
+목록은 workspace 생성과 전환만 제공한다. 선택한 workspace의 identity와 lifecycle은
+Settings > Workspace, named credential은 Settings > Access에서 관리하며 관련 기록은
+통합 Audit의 workspace category에 표시한다. actor는 인증 수단이 아니라 audit
+subject다. workspace token 또는 hosted delegation으로 인증하면 actor는 검증된
+principal에서 파생되며 브라우저 입력으로 바꿀 수 없다.
 
 ## 문구 규칙
 

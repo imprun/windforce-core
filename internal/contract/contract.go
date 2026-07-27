@@ -32,28 +32,35 @@ const (
 	ReservedLabelPrefix = "sys/"
 )
 
-// Engine-issued bearer tokens carry a "wf"-family prefix. This is a public
+// Engine-owned bearer credentials carry a "wf"-family prefix. This is a public
 // contract for fronting platforms/proxies: such a credential can only be
-// verified by the engine that minted it (the secret never leaves the
-// engine), so a proxy that cannot verify it classifies by prefix and
+// verified by the engine that minted or was configured with it (the secret
+// never leaves the engine), so a proxy that cannot verify it classifies by prefix and
 // forwards it unswapped for the engine to enforce. New token kinds MUST
 // join CellBearerTokenPrefixes and keep the family prefix; platform layers
 // must not mint tokens in the wf namespace.
 const (
-	JobTokenPrefix       = "wfjob_"
-	WorkspaceTokenPrefix = "wfw_"
-	ClientTokenPrefix    = "wfk_"
-	ServiceTokenPrefix   = "wfs_"
+	JobTokenPrefix          = "wfjob_"
+	WorkspaceTokenPrefix    = "wfw_"
+	ClientTokenPrefix       = "wfk_"
+	ServiceTokenPrefix      = "wfs_"
+	RemoteWorkerTokenPrefix = "wfr_"
 )
 
-// CellBearerTokenPrefixes lists every engine-issued bearer prefix — the
+// CellBearerTokenPrefixes lists every engine-owned bearer prefix — the
 // pass-through classification contract for fronting proxies.
 func CellBearerTokenPrefixes() []string {
-	return []string{JobTokenPrefix, WorkspaceTokenPrefix, ClientTokenPrefix, ServiceTokenPrefix}
+	return []string{
+		JobTokenPrefix,
+		WorkspaceTokenPrefix,
+		ClientTokenPrefix,
+		ServiceTokenPrefix,
+		RemoteWorkerTokenPrefix,
+	}
 }
 
-// IsCellBearerToken reports whether a presented bearer was minted by the
-// engine and therefore can only be verified by it.
+// IsCellBearerToken reports whether a presented bearer belongs to the engine
+// and therefore can only be verified by it.
 func IsCellBearerToken(token string) bool {
 	for _, prefix := range CellBearerTokenPrefixes() {
 		if strings.HasPrefix(token, prefix) {

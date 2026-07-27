@@ -8,7 +8,7 @@ export default {
   guide: [
     "Open the workspace control in the top-bar breadcrumb.",
     "Select a workspace to change the active application and monitoring scope.",
-    "Choose Manage workspaces to create workspaces or manage identity, access, audit, and lifecycle settings.",
+    "Choose Manage workspaces to create or switch workspaces; configure the active workspace from Settings.",
   ],
   async run({ page, capture }) {
     await page.goto();

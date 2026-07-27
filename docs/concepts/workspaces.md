@@ -3,7 +3,7 @@ title: Workspaces
 description: Managed state and authorization boundaries inside one Windforce Lite instance.
 ---
 
-A workspace groups apps, releases, clients, input settings, jobs, inbound triggers, outbound webhooks, variables, resources, and audit records inside one Windforce Lite instance. Every workspace has an immutable ID, a display name, a lifecycle status, and optional scoped API access.
+A workspace groups apps, releases, clients, input settings, jobs, inbound triggers, outbound webhooks, variables, resources, and audit records inside one Windforce Core instance. Every workspace has an immutable ID, a display name, a lifecycle status, and zero or more named scoped credentials.
 
 ## Identity
 
@@ -18,16 +18,16 @@ Windforce Core recognizes these API principals:
 | Principal | Scope | Credential |
 | --- | --- | --- |
 | Instance administrator | Global workspace lifecycle and every workspace | Token configured by `--admin-token-env` |
-| Workspace principal | One workspace only | Token returned once at workspace creation or rotation |
+| Workspace principal | Full operator access to one workspace only | Named `wfw_` token returned once when explicitly issued or rotated |
 | Client principal | Invocation and client-specific input settings for one client in one workspace | `wfk_` token returned once at client creation or rotation |
 | Service principal | Scoped system-to-system invocation in one workspace, optionally limited to app/action targets | `wfs_` token returned once at service-principal creation or rotation |
 | Job principal | SDK callback endpoints for one job and workspace | Short-lived job token |
 
-Workspace tokens are stored as SHA-256 hashes. The raw token is returned only when the workspace is created or its token is rotated. Rotation invalidates the current token immediately. Workspace principals cannot list, create, archive, or rotate workspaces and cannot access another workspace path.
+Workspace creation and credential issuance are separate operations. Workspace tokens are stored as SHA-256 hashes, have stable IDs and operator-supplied names, and expose the raw value only on issue or rotation. Rotation invalidates that named credential's previous secret immediately; revocation disables it without affecting other credentials. Workspace principals cannot list, create, archive, issue, rotate, or revoke workspaces and credentials, and cannot access another workspace path.
 
 ### Bearer prefix contract for fronting proxies
 
-Every bearer token the engine mints carries a `wf`-family prefix: `wfjob_` for job tokens, `wfw_` for workspace tokens, `wfk_` for client tokens, and `wfs_` for service-principal tokens. These credentials can only be verified by the engine that minted them — the signing secret and token hashes never leave the instance. A fronting platform or proxy that terminates its own authentication classifies an engine-minted bearer by this prefix and forwards it unswapped for the engine to enforce. New token kinds extend the same family; platform layers must not mint tokens in the `wf` namespace.
+Every bearer credential owned by the engine carries a `wf`-family prefix: `wfjob_` for job tokens, `wfw_` for workspace tokens, `wfk_` for client tokens, `wfs_` for service-principal tokens, and `wfr_` for the dedicated remote-worker-plane credential configured on a Cell. These credentials can only be verified by the engine that owns them — the signing secret, token hashes, and configured worker-plane secret never leave the instance. A fronting platform or proxy that terminates its own authentication classifies an engine-owned bearer by this prefix and forwards it unswapped for the engine to enforce. Hosted browser sessions may be delegated by a trusted proxy as a verified principal, but a host control-plane API token is not a Core credential and must not be exchanged merely because it reaches a Cell hostname. New token kinds extend the same family; platform layers must not repurpose Cloud credentials into the `wf` namespace.
 
 When no instance-admin token is configured, local development accepts requests without authentication. Configure an instance-admin token for any shared environment.
 
@@ -39,16 +39,14 @@ Workspace deletion and reactivation are not exposed. Use a separate workspace wh
 
 ## Operations
 
-Use the sidebar workspace switcher to change the current workspace. Open **Manage workspaces** from the same switcher to use the instance administration page with an instance-admin token:
+Use the sidebar workspace switcher to change the current workspace. Open **Manage workspaces** to create a workspace or switch the active one. The registry is intentionally limited to those two operations.
 
-The instance administration page does not render the active workspace's application navigation. Use **Back to workspace** in its header to return to the active workspace console.
+Settings applies to the active workspace:
 
-- create a workspace;
-- change its display name;
-- rotate its workspace token;
-- inspect lifecycle audit records;
-- archive an active workspace.
+- **Workspace** changes its display name and contains the lifecycle danger zone;
+- **Access** issues, rotates, and revokes named workspace tokens;
+- **Audit** includes identity, access, and lifecycle records under the `workspace` category.
 
-The administration page is instance-scoped and is separate from Settings, which applies to the currently selected workspace. Each workspace has dedicated Overview, Access, Audit, and Lifecycle tabs.
+Instance-admin authorization is still required for workspace lifecycle and credential operations. Old `/workspaces/{id}` detail links first activate that workspace, then redirect to the corresponding Settings or Audit destination.
 
 The global lifecycle API is rooted at `/api/workspaces`. Workspace resources remain rooted at `/api/w/{workspace}` and all operator, client, and service Run invocation is rooted at `/api/v1/workspaces/{workspace}`. Legacy public and execution admission paths remain only until the ADR 0013 v0.3 breaking removal.

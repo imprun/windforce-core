@@ -3,7 +3,6 @@ import type { Workspace } from "./api";
 import { filterWorkspaces, visibleWorkspaces } from "./workspaces";
 
 const base: Omit<Workspace, "id" | "name" | "status"> = {
-  has_token: false,
   created_by: "system",
   created_at: "2026-01-01T00:00:00Z",
   updated_by: "system",

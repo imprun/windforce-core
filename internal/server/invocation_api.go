@@ -110,7 +110,17 @@ func (h *Handler) authenticateInvocation(r *http.Request, workspaceID string) (e
 	if tokenValue == "" {
 		return executionpkg.Principal{}, http.StatusUnauthorized, "missing bearer token"
 	}
-	if authorized(r, h.adminToken) {
+	if h.adminToken != "" && authorized(r, h.adminToken) {
+		subject := strings.TrimSpace(r.Header.Get("X-Windforce-Actor"))
+		if subject == "" {
+			subject = "operator:admin"
+		}
+		return executionpkg.OperatorPrincipal(workspaceID, subject), 0, ""
+	}
+	isEngineCredential := strings.HasPrefix(tokenValue, contract.WorkspaceTokenPrefix) ||
+		strings.HasPrefix(tokenValue, contract.ClientTokenPrefix) ||
+		strings.HasPrefix(tokenValue, contract.ServiceTokenPrefix)
+	if !isEngineCredential && h.adminToken == "" {
 		subject := strings.TrimSpace(r.Header.Get("X-Windforce-Actor"))
 		if subject == "" {
 			subject = "operator:admin"
@@ -121,11 +131,11 @@ func (h *Handler) authenticateInvocation(r *http.Request, workspaceID string) (e
 		return executionpkg.Principal{}, http.StatusServiceUnavailable, "Invocation API is not configured"
 	}
 	if strings.HasPrefix(tokenValue, contract.WorkspaceTokenPrefix) {
-		workspace, err := h.store.GetWorkspace(r.Context(), workspaceID)
-		if err != nil || !state.WorkspaceTokenMatches(workspace, tokenValue) {
+		token, err := h.store.GetWorkspaceTokenByTokenHash(r.Context(), workspaceID, state.HashWorkspaceToken(tokenValue))
+		if err != nil {
 			return executionpkg.Principal{}, http.StatusUnauthorized, "unauthorized"
 		}
-		return executionpkg.OperatorPrincipal(workspaceID, "workspace:"+workspaceID), 0, ""
+		return executionpkg.OperatorPrincipal(workspaceID, "workspace-token:"+token.ID), 0, ""
 	}
 	if strings.HasPrefix(tokenValue, contract.ClientTokenPrefix) {
 		client, err := h.store.GetClientByTokenHash(r.Context(), workspaceID, state.HashClientToken(tokenValue))

@@ -1081,10 +1081,31 @@ func ensureSnapshot(snapshot *Snapshot) {
 	if snapshot.Workspaces == nil {
 		snapshot.Workspaces = map[string]Workspace{}
 	}
+	if snapshot.WorkspaceTokens == nil {
+		snapshot.WorkspaceTokens = map[string]map[string]WorkspaceToken{}
+	}
 	if snapshot.WorkspaceAudits == nil {
 		snapshot.WorkspaceAudits = []WorkspaceAudit{}
 	}
 	ensureLocalWorkspaces(snapshot)
+	for workspaceID, workspace := range snapshot.Workspaces {
+		if snapshot.WorkspaceTokens[workspaceID] == nil {
+			snapshot.WorkspaceTokens[workspaceID] = map[string]WorkspaceToken{}
+		}
+		if workspace.TokenHash == "" {
+			continue
+		}
+		const legacyTokenID = "workspace_token_legacy"
+		if _, exists := snapshot.WorkspaceTokens[workspaceID][legacyTokenID]; !exists {
+			snapshot.WorkspaceTokens[workspaceID][legacyTokenID] = WorkspaceToken{
+				ID: legacyTokenID, WorkspaceID: workspaceID, Name: "Legacy access token",
+				TokenHash: workspace.TokenHash, CreatedBy: workspace.CreatedBy, UpdatedBy: workspace.UpdatedBy,
+				CreatedAt: workspace.CreatedAt, UpdatedAt: workspace.UpdatedAt,
+			}
+		}
+		workspace.TokenHash = ""
+		snapshot.Workspaces[workspaceID] = workspace
+	}
 	snapshot.LegacyClients = nil
 	snapshot.LegacyClientAudits = nil
 }

@@ -116,13 +116,13 @@ func (s *LocalStore) GetWorkspace(ctx context.Context, workspaceID string) (Work
 	return workspace, nil
 }
 
-func (s *LocalStore) CreateWorkspace(ctx context.Context, workspaceID string, name string, tokenHash string, actor string) (Workspace, error) {
+func (s *LocalStore) CreateWorkspace(ctx context.Context, workspaceID string, name string, actor string) (Workspace, error) {
 	var created Workspace
 	err := s.update(ctx, func(snapshot *Snapshot, now time.Time) error {
 		if _, exists := snapshot.Workspaces[workspaceID]; exists {
 			return fmt.Errorf("%w: workspace already exists", ErrConflict)
 		}
-		created = Workspace{ID: workspaceID, Name: name, Status: WorkspaceActive, TokenHash: tokenHash, CreatedBy: actor, UpdatedBy: actor, CreatedAt: now, UpdatedAt: now}
+		created = Workspace{ID: workspaceID, Name: name, Status: WorkspaceActive, CreatedBy: actor, UpdatedBy: actor, CreatedAt: now, UpdatedAt: now}
 		snapshot.Workspaces[workspaceID] = created
 		appendLocalWorkspaceAudit(snapshot, workspaceID, "created", "", actor, now)
 		return nil
@@ -177,27 +177,6 @@ func (s *LocalStore) ArchiveWorkspace(ctx context.Context, workspaceID string, a
 		return nil
 	})
 	return archived, err
-}
-
-func (s *LocalStore) RotateWorkspaceToken(ctx context.Context, workspaceID string, tokenHash string, actor string) (Workspace, error) {
-	var updated Workspace
-	err := s.update(ctx, func(snapshot *Snapshot, now time.Time) error {
-		current, exists := snapshot.Workspaces[workspaceID]
-		if !exists {
-			return ErrNotFound
-		}
-		if current.Status == WorkspaceArchived {
-			return ErrInvalidState
-		}
-		current.TokenHash = tokenHash
-		current.UpdatedBy = actor
-		current.UpdatedAt = now
-		snapshot.Workspaces[workspaceID] = current
-		appendLocalWorkspaceAudit(snapshot, workspaceID, "token_rotated", "", actor, now)
-		updated = current
-		return nil
-	})
-	return updated, err
 }
 
 func (s *LocalStore) ListWorkspaceAudit(ctx context.Context, workspaceID string) ([]WorkspaceAudit, error) {
