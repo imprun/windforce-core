@@ -43,12 +43,13 @@ const (
 	JobTokenPrefix       = "wfjob_"
 	WorkspaceTokenPrefix = "wfw_"
 	ClientTokenPrefix    = "wfk_"
+	ServiceTokenPrefix   = "wfs_"
 )
 
 // CellBearerTokenPrefixes lists every engine-issued bearer prefix — the
 // pass-through classification contract for fronting proxies.
 func CellBearerTokenPrefixes() []string {
-	return []string{JobTokenPrefix, WorkspaceTokenPrefix, ClientTokenPrefix}
+	return []string{JobTokenPrefix, WorkspaceTokenPrefix, ClientTokenPrefix, ServiceTokenPrefix}
 }
 
 // IsCellBearerToken reports whether a presented bearer was minted by the

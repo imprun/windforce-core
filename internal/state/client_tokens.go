@@ -8,6 +8,11 @@ import (
 )
 
 func HashClientToken(value string) string {
+	return HashBearerToken(value)
+}
+
+// HashBearerToken hashes an engine-issued bearer before state persistence.
+func HashBearerToken(value string) string {
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return ""

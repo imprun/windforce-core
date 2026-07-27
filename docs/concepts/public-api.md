@@ -1,51 +1,103 @@
 ---
-title: Public API
-description: Invoke actions with workspace-scoped client credentials.
+title: Invocation API
+description: Admit and observe Runs with scoped system credentials.
 ---
 
-The Public API lets an external caller invoke an action with a Client Registry credential. A client token grants access only to public action routes in the client's workspace. It cannot call the control plane, the trusted Execution API, or another workspace.
+The Invocation API is Windforce Core's canonical system-to-system boundary.
+Operator tools, hosted gateways, product backends, existing external clients,
+and out-of-process trigger adapters use the same `/api/v1` routes. The
+authenticated principal determines permissions; the request body cannot assert
+identity.
 
-## Client tokens
+The machine-readable specification and examples are stored with the server at
+`internal/server/invocation/v1/`. A running Core serves the same OpenAPI source
+of truth from `GET /api/v1/openapi.json`.
 
-Creating a client returns a `wfk_` bearer once:
+## Principals
 
-```http
-POST /api/w/{workspace}/clients
-Authorization: Bearer <WORKSPACE_OR_ADMIN_TOKEN>
-Content-Type: application/json
+The Invocation API accepts four credential forms:
 
-{"name":"Example Client"}
+- the instance admin token, as an operator principal;
+- a `wfw_` workspace token, as an operator principal for that workspace;
+- a `wfk_` Client Registry token, with create/read-own/cancel-own/app-read
+  permissions;
+- a `wfs_` Service Principal token, with explicitly configured scopes and an
+  optional app or app/action allowlist.
+
+Service Principals are managed under
+`/api/w/{workspace}/service-principals`. Create and token-rotation responses
+return the raw `wfs_` token once. Core stores only its SHA-256 hash. Revoke the
+active token before deleting the principal.
+
+The available scopes are:
+
+```text
+runs:create
+runs:read:own
+runs:read:any
+runs:cancel:own
+runs:cancel:any
+apps:read
 ```
 
-The response contains `client` and `api_token`. The raw token is stored by the caller; Windforce Core stores only its SHA-256 hash. A Client Registry entry without an active token cannot call the Public API; issue or rotate one with `POST /api/w/{workspace}/clients/{client_id}/token`. Revoke it with `DELETE /api/w/{workspace}/clients/{client_id}/token`. Rotation and revocation invalidate the active token immediately. Revoke the active token before deleting a client.
-
-## Invoke an action
-
-Asynchronous invocation creates a Run and Job and returns immediately:
+## Admit a Run
 
 ```http
-POST /api/v1/w/{workspace}/run/{app}/{action}
-Authorization: Bearer <CLIENT_TOKEN>
+POST /api/v1/workspaces/{workspace}/runs
+Authorization: Bearer <OPERATOR_CLIENT_OR_SERVICE_TOKEN>
+Idempotency-Key: source-delivery-123
 Content-Type: application/json
 
-{"message":"hello"}
+{
+  "app": "orders",
+  "action": "ingest",
+  "input": {
+    "order_id": "order-20260727-0001"
+  },
+  "correlation_id": "gateway-request-018"
+}
 ```
 
-The response is `201 {"job_id":"..."}`. `X-WF-Job-Id` contains the same Job identifier.
+A new admission returns HTTP 201. Replaying the same `Idempotency-Key` with the
+same authenticated principal and request returns HTTP 200 and the original
+Run. Reusing the key with different app, action, input, or correlation data
+returns HTTP 409.
 
-Send `Idempotency-Key` when a caller may retry an invocation. The key is scoped to the workspace, client, app, and action. Replaying it returns the original Job identifier and result instead of admitting a second Job, including when the active release or input settings have changed since the first admission.
-
-Wait invocation keeps the HTTP request open and returns the action result body:
-
-```http
-POST /api/v1/w/{workspace}/run/{app}/{action}/wait?timeout=30s
-Authorization: Bearer <CLIENT_TOKEN>
-Content-Type: application/json
-
-{"message":"hello"}
+```json
+{
+  "run_id": "f861604b-f013-46f3-80bb-b9dcdfd9b35c",
+  "state": "queued",
+  "app": "orders",
+  "action": "ingest",
+  "correlation_id": "gateway-request-018",
+  "created_at": "2026-07-27T08:00:00Z",
+  "updated_at": "2026-07-27T08:00:00Z"
+}
 ```
 
-A completed execution returns HTTP 200 with the raw JSON result. Execution failure is also an execution result and therefore uses HTTP 200. If the wait timeout expires first, the API returns HTTP 202 with `job_id` and `status: pending`. `X-WF-Job-Id` is present after admission for every response variant.
+`Location` points to the Run status URL and `X-WF-Run-Id` contains the same Run
+ID. Invocation responses never expose Job ID, lease, attempt, stored
+credentials, or principal internals.
+
+`client_id`, `created_by`, `permissioned_as`, `env`, adapter, and trigger
+identity fields are not accepted. Client and service identity comes from the
+credential. Operator settings use InputConfig, Variable, or Resource; action
+data uses `input`.
+
+## Wait, status, result, and cancel
+
+```text
+POST /api/v1/workspaces/{workspace}/runs/wait?timeout=30s
+GET  /api/v1/workspaces/{workspace}/runs/{run_id}
+GET  /api/v1/workspaces/{workspace}/runs/{run_id}/result
+POST /api/v1/workspaces/{workspace}/runs/{run_id}/cancel
+GET  /api/v1/workspaces/{workspace}/apps/{app}
+```
+
+A completed wait or result request returns the raw Action result with HTTP 200.
+If the wait expires or the polled Run is not terminal, the API returns HTTP 202
+with the current Run representation. Read and cancel operations enforce
+read-own/cancel-own or read-any/cancel-any scope and workspace ownership.
 
 ## Input settings
 
@@ -53,26 +105,29 @@ Input settings are applied from least specific to most specific:
 
 1. app defaults for all clients;
 2. action settings for all clients;
-3. app settings for the authenticated client;
-4. action settings for the authenticated client;
-5. caller request fields that are not locked.
+3. app settings for the authenticated Client Registry entry;
+4. action settings for that client;
+5. caller input fields that are not locked.
 
-Later layers override earlier layers. A caller field named in any effective `locked_keys` list is rejected with HTTP 400; the stored operator value is not silently replaced.
-
-Admission validates the merged input against the active release's action input schema from `windforce.json` and its companion JSON Schema files. From the caller's perspective, locked properties are supplied by InputConfig and are therefore absent from the writable request contract. The merged, validated input and release schemas are pinned in the Run and Job, so a queued execution is not changed by later catalog or InputConfig updates.
+Service and operator principals do not impersonate a Client Registry entry, so
+client-specific InputConfig layers are not applied. All principals use the same
+active release resolution, schema validation, release pinning, and atomic
+Run-plus-first-Job admission.
 
 ## HTTP status policy
 
 | Status | Meaning |
 | --- | --- |
-| 200 | Wait invocation completed; the body is the action result |
-| 201 | Asynchronous invocation admitted |
-| 202 | Wait timeout expired while the Job is still pending |
-| 400 | Invalid JSON, invalid action input, or attempted locked-key override |
-| 401 | Missing, invalid, rotated, or revoked client token |
-| 404 | App or action does not exist |
-| 409 | Workspace is archived or admission conflicts |
-| 429 | Instance Public API rate limit exceeded |
-| 503 | Execution admission is unavailable |
+| 200 | Existing Run replayed, status read, cancel completed, or terminal result returned |
+| 201 | New asynchronous Run admitted |
+| 202 | Wait timeout expired or result is not terminal |
+| 400 | Request shape, app/action key, input, schema, or locked-key validation failed |
+| 401 | Authentication is missing, invalid, rotated, or revoked |
+| 403 | Principal lacks scope, ownership, workspace, or target permission |
+| 404 | Workspace, App, Action, or Run does not exist |
+| 409 | Workspace is archived, idempotency request differs, or admission conflicts |
+| 429 | Instance Invocation API rate limit exceeded |
+| 503 | Admission is unavailable |
 
-Authentication failures are recorded in the workspace Client Audit stream without storing the presented token. Authenticated admission and rejection records include the client, app, action, Job identifier when available, and replay state, but never the request input or credential. The Public API applies an instance-wide token-bucket limiter before authentication. Configure it with `--public-api-rps` and `--public-api-burst`. The `server` and `standalone` roles expose this plane; `standalone` requires no additional enablement.
+The old `/api/v1/w/{workspace}/run/...` Public API remains only as a v0.3
+migration surface. New integrations must use the canonical Run routes above.

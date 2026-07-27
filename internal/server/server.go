@@ -192,6 +192,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusTooManyRequests, "rate limit exceeded")
 			return
 		}
+		if h.handleInvocationAPI(w, r) {
+			return
+		}
 		if h.handlePublicAPI(w, r) {
 			return
 		}
@@ -324,6 +327,38 @@ func (h *Handler) handleAPI(w http.ResponseWriter, r *http.Request) bool {
 	}
 	if len(parts) == 6 && parts[0] == "api" && parts[1] == "w" && parts[3] == "clients" && parts[5] == "audit" && r.Method == http.MethodGet {
 		h.handleCanonicalClientAudit(w, r, parts[2], parts[4])
+		return true
+	}
+	if len(parts) == 4 && parts[0] == "api" && parts[1] == "w" && parts[3] == "service-principals" && r.Method == http.MethodGet {
+		h.handleCanonicalServicePrincipals(w, r, parts[2])
+		return true
+	}
+	if len(parts) == 4 && parts[0] == "api" && parts[1] == "w" && parts[3] == "service-principals" && r.Method == http.MethodPost {
+		h.handleCanonicalCreateServicePrincipal(w, r, parts[2])
+		return true
+	}
+	if len(parts) == 5 && parts[0] == "api" && parts[1] == "w" && parts[3] == "service-principals" && r.Method == http.MethodGet {
+		h.handleCanonicalServicePrincipal(w, r, parts[2], parts[4])
+		return true
+	}
+	if len(parts) == 5 && parts[0] == "api" && parts[1] == "w" && parts[3] == "service-principals" && r.Method == http.MethodPatch {
+		h.handleCanonicalUpdateServicePrincipal(w, r, parts[2], parts[4])
+		return true
+	}
+	if len(parts) == 5 && parts[0] == "api" && parts[1] == "w" && parts[3] == "service-principals" && r.Method == http.MethodDelete {
+		h.handleCanonicalDeleteServicePrincipal(w, r, parts[2], parts[4])
+		return true
+	}
+	if len(parts) == 6 && parts[0] == "api" && parts[1] == "w" && parts[3] == "service-principals" && parts[5] == "token" && r.Method == http.MethodPost {
+		h.handleCanonicalRotateServicePrincipalToken(w, r, parts[2], parts[4])
+		return true
+	}
+	if len(parts) == 6 && parts[0] == "api" && parts[1] == "w" && parts[3] == "service-principals" && parts[5] == "token" && r.Method == http.MethodDelete {
+		h.handleCanonicalRevokeServicePrincipalToken(w, r, parts[2], parts[4])
+		return true
+	}
+	if len(parts) == 6 && parts[0] == "api" && parts[1] == "w" && parts[3] == "service-principals" && parts[5] == "audit" && r.Method == http.MethodGet {
+		h.handleCanonicalServicePrincipalAudit(w, r, parts[2], parts[4])
 		return true
 	}
 	if len(parts) == 6 && parts[0] == "api" && parts[1] == "w" && parts[3] == "clients" && parts[5] == "input-configs" && r.Method == http.MethodGet {

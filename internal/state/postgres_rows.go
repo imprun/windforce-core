@@ -26,11 +26,17 @@ func scanRun(row rowScanner) (Run, error) {
 	var taskID sql.NullString
 	var correlationID sql.NullString
 	var clientID sql.NullString
+	var principalKind sql.NullString
+	var principalID sql.NullString
+	var idempotencyHash sql.NullString
+	var requestFingerprint sql.NullString
 	var expiresAt sql.NullTime
 	var env json.RawMessage
 	if err := row.Scan(
 		&run.ID, &run.Adapter, &run.App, &run.Action, &stateValue, &deployment, &run.Input,
-		&run.Output, &result, &run.Error, &taskID, &correlationID, &env, &clientID, &run.CreatedAt, &run.UpdatedAt, &expiresAt,
+		&run.Output, &result, &run.Error, &taskID, &correlationID, &env, &clientID,
+		&principalKind, &principalID, &idempotencyHash, &requestFingerprint, &run.CreatedBy, &run.PermissionedAs,
+		&run.CreatedAt, &run.UpdatedAt, &expiresAt,
 	); err != nil {
 		return Run{}, err
 	}
@@ -53,6 +59,18 @@ func scanRun(row rowScanner) (Run, error) {
 	}
 	if clientID.Valid {
 		run.ClientID = clientID.String
+	}
+	if principalKind.Valid {
+		run.PrincipalKind = principalKind.String
+	}
+	if principalID.Valid {
+		run.PrincipalID = principalID.String
+	}
+	if idempotencyHash.Valid {
+		run.IdempotencyHash = idempotencyHash.String
+	}
+	if requestFingerprint.Valid {
+		run.RequestFingerprint = requestFingerprint.String
 	}
 	if expiresAt.Valid {
 		run.ExpiresAt = &expiresAt.Time

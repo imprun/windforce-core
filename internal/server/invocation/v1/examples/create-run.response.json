@@ -1,0 +1,9 @@
+{
+  "run_id": "f861604b-f013-46f3-80bb-b9dcdfd9b35c",
+  "state": "queued",
+  "app": "orders",
+  "action": "ingest",
+  "correlation_id": "gateway-request-018",
+  "created_at": "2026-07-27T08:00:00Z",
+  "updated_at": "2026-07-27T08:00:00Z"
+}

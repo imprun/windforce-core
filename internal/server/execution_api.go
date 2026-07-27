@@ -215,6 +215,8 @@ func executionFaultStatus(err error) (int, executionpkg.FaultKind) {
 		status = http.StatusServiceUnavailable
 	case executionpkg.FaultInvalidRequest:
 		status = http.StatusBadRequest
+	case executionpkg.FaultForbidden:
+		status = http.StatusForbidden
 	case executionpkg.FaultAppNotFound, executionpkg.FaultActionNotFound:
 		status = http.StatusNotFound
 	case executionpkg.FaultRoutingConflict, executionpkg.FaultConflict:

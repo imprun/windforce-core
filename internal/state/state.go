@@ -96,6 +96,10 @@ type Run struct {
 	CreatedBy           string              `json:"createdBy,omitempty"`
 	PermissionedAs      string              `json:"permissionedAs,omitempty"`
 	ClientID            string              `json:"clientId,omitempty"`
+	PrincipalKind       string              `json:"principalKind,omitempty"`
+	PrincipalID         string              `json:"principalId,omitempty"`
+	IdempotencyHash     string              `json:"idempotencyHash,omitempty"`
+	RequestFingerprint  string              `json:"requestFingerprint,omitempty"`
 	CreatedAt           time.Time           `json:"createdAt"`
 	UpdatedAt           time.Time           `json:"updatedAt"`
 	ExpiresAt           *time.Time          `json:"expiresAt,omitempty"`
@@ -136,6 +140,8 @@ type JobPayload struct {
 	CreatedBy      string               `json:"createdBy,omitempty"`
 	PermissionedAs string               `json:"permissionedAs,omitempty"`
 	ClientID       string               `json:"clientId,omitempty"`
+	PrincipalKind  string               `json:"principalKind,omitempty"`
+	PrincipalID    string               `json:"principalId,omitempty"`
 	FlowRunID      string               `json:"flowRunId,omitempty"`
 	FlowStepID     string               `json:"flowStepId,omitempty"`
 	FlowKey        string               `json:"flowKey,omitempty"`
@@ -292,6 +298,29 @@ type Client struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
+type ServicePrincipal struct {
+	ID             string    `json:"id"`
+	WorkspaceID    string    `json:"workspace_id"`
+	Name           string    `json:"name"`
+	TokenHash      string    `json:"token_hash,omitempty"`
+	Scopes         []string  `json:"scopes"`
+	AllowedTargets []string  `json:"allowed_targets"`
+	CreatedBy      string    `json:"created_by"`
+	UpdatedBy      string    `json:"updated_by"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+type ServicePrincipalAudit struct {
+	ID                 string    `json:"id"`
+	WorkspaceID        string    `json:"workspace_id"`
+	ServicePrincipalID string    `json:"service_principal_id"`
+	Kind               string    `json:"kind"`
+	Detail             string    `json:"detail"`
+	Actor              string    `json:"actor"`
+	CreatedAt          time.Time `json:"created_at"`
+}
+
 func (client *Client) UnmarshalJSON(data []byte) error {
 	type clientAlias Client
 	if err := json.Unmarshal(data, (*clientAlias)(client)); err != nil {
@@ -398,30 +427,32 @@ type JobLog struct {
 }
 
 type Snapshot struct {
-	Sequence             int64                                 `json:"sequence"`
-	Runs                 map[string]Run                        `json:"runs"`
-	Jobs                 map[string]Job                        `json:"jobs"`
-	HumanTasks           map[string]HumanTask                  `json:"humanTasks"`
-	Events               []RunEvent                            `json:"events"`
-	JobLogs              map[string]JobLog                     `json:"jobLogs"`
-	JobState             map[string]map[string]json.RawMessage `json:"jobState"`
-	Variables            map[string]map[string]Variable        `json:"variables"`
-	Resources            map[string]map[string]Resource        `json:"resources"`
-	Clients              map[string]map[string]Client          `json:"clients"`
-	ClientAudits         map[string][]ClientAudit              `json:"clientAudits"`
-	ClientTokenVersion   int                                   `json:"clientTokenVersion,omitempty"`
-	InputConfigs         map[string]map[string]InputConfig     `json:"inputConfigs"`
-	InputConfigAudits    map[string][]InputConfigAudit         `json:"inputConfigAudits"`
-	LegacyClients        map[string]map[string]Client          `json:"apiClients,omitempty"`
-	LegacyClientAudits   map[string][]ClientAudit              `json:"apiClientAudits,omitempty"`
-	ReleaseCatalog       catalog.Snapshot                      `json:"releaseCatalog"`
-	WebhookSubscriptions map[string]WebhookSubscriptionRecord  `json:"webhookSubscriptions"`
-	ControlPlaneEvents   map[string]controlevent.Envelope      `json:"controlPlaneEvents"`
-	WebhookDeliveries    map[string]webhook.Delivery           `json:"webhookDeliveries"`
-	WebhookAudits        map[string][]webhook.Audit            `json:"webhookAudits"`
-	Workers              map[string]WorkerRecord               `json:"workers,omitempty"`
-	Workspaces           map[string]Workspace                  `json:"workspaces"`
-	WorkspaceAudits      []WorkspaceAudit                      `json:"workspaceAudits"`
+	Sequence               int64                                  `json:"sequence"`
+	Runs                   map[string]Run                         `json:"runs"`
+	Jobs                   map[string]Job                         `json:"jobs"`
+	HumanTasks             map[string]HumanTask                   `json:"humanTasks"`
+	Events                 []RunEvent                             `json:"events"`
+	JobLogs                map[string]JobLog                      `json:"jobLogs"`
+	JobState               map[string]map[string]json.RawMessage  `json:"jobState"`
+	Variables              map[string]map[string]Variable         `json:"variables"`
+	Resources              map[string]map[string]Resource         `json:"resources"`
+	Clients                map[string]map[string]Client           `json:"clients"`
+	ClientAudits           map[string][]ClientAudit               `json:"clientAudits"`
+	ClientTokenVersion     int                                    `json:"clientTokenVersion,omitempty"`
+	ServicePrincipals      map[string]map[string]ServicePrincipal `json:"servicePrincipals"`
+	ServicePrincipalAudits map[string][]ServicePrincipalAudit     `json:"servicePrincipalAudits"`
+	InputConfigs           map[string]map[string]InputConfig      `json:"inputConfigs"`
+	InputConfigAudits      map[string][]InputConfigAudit          `json:"inputConfigAudits"`
+	LegacyClients          map[string]map[string]Client           `json:"apiClients,omitempty"`
+	LegacyClientAudits     map[string][]ClientAudit               `json:"apiClientAudits,omitempty"`
+	ReleaseCatalog         catalog.Snapshot                       `json:"releaseCatalog"`
+	WebhookSubscriptions   map[string]WebhookSubscriptionRecord   `json:"webhookSubscriptions"`
+	ControlPlaneEvents     map[string]controlevent.Envelope       `json:"controlPlaneEvents"`
+	WebhookDeliveries      map[string]webhook.Delivery            `json:"webhookDeliveries"`
+	WebhookAudits          map[string][]webhook.Audit             `json:"webhookAudits"`
+	Workers                map[string]WorkerRecord                `json:"workers,omitempty"`
+	Workspaces             map[string]Workspace                   `json:"workspaces"`
+	WorkspaceAudits        []WorkspaceAudit                       `json:"workspaceAudits"`
 }
 
 type Store interface {
@@ -461,6 +492,15 @@ type Store interface {
 	DeleteClient(ctx context.Context, workspaceID string, id string, actor string) error
 	AppendClientAudit(ctx context.Context, workspaceID string, id string, kind string, detail string, actor string) error
 	ListClientAudit(ctx context.Context, workspaceID string, id string) ([]ClientAudit, error)
+	ListServicePrincipals(ctx context.Context, workspaceID string) ([]ServicePrincipal, error)
+	GetServicePrincipal(ctx context.Context, workspaceID string, id string) (ServicePrincipal, error)
+	GetServicePrincipalByTokenHash(ctx context.Context, workspaceID string, tokenHash string) (ServicePrincipal, error)
+	CreateServicePrincipal(ctx context.Context, principal ServicePrincipal, tokenHash string, actor string) (ServicePrincipal, error)
+	UpdateServicePrincipal(ctx context.Context, principal ServicePrincipal, actor string) (ServicePrincipal, error)
+	RotateServicePrincipalToken(ctx context.Context, workspaceID string, id string, tokenHash string, actor string) (ServicePrincipal, error)
+	RevokeServicePrincipalToken(ctx context.Context, workspaceID string, id string, actor string) (ServicePrincipal, error)
+	DeleteServicePrincipal(ctx context.Context, workspaceID string, id string, actor string) error
+	ListServicePrincipalAudit(ctx context.Context, workspaceID string, id string) ([]ServicePrincipalAudit, error)
 	ListInputConfigsForApp(ctx context.Context, workspaceID string, appKey string) ([]InputConfig, error)
 	ListInputConfigsForClient(ctx context.Context, workspaceID string, clientID string) ([]InputConfig, error)
 	SetInputConfig(ctx context.Context, config InputConfig, actor string) (InputConfig, error)
@@ -584,6 +624,8 @@ func NewActionJob(run Run, input json.RawMessage) Job {
 			CreatedBy:             actorCreatedBy(run),
 			PermissionedAs:        actorPermissionedAs(run),
 			ClientID:              run.ClientID,
+			PrincipalKind:         run.PrincipalKind,
+			PrincipalID:           run.PrincipalID,
 		},
 	}
 }

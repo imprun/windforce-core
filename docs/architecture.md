@@ -1,9 +1,9 @@
 ---
 title: Architecture
-description: Control, Trigger, and Execution Plane ownership in Windforce Lite.
+description: Control, Invocation, Trigger, and Worker Plane ownership in Windforce Core.
 ---
 
-Windforce Core separates deployment management, protocol ingress, and action execution into planes with package and HTTP contracts. Those contracts are deployed through three process roles: `server`, `worker`, and `standalone`.
+Windforce Core separates deployment management, Run invocation, protocol ingress, and worker execution into planes with package boundaries and system-to-system HTTP specifications. Those boundaries are deployed through three process roles: `server`, `worker`, and `standalone`.
 
 ```text
 operators / CI / clients / external adapters
@@ -90,14 +90,21 @@ its inbound protocol and compatibility policy:
 - correlation and idempotency metadata
 - mapping the generic run result to a protocol response
 
-In-tree adapters running in the server call `execution.Service.CreateRun` in-process. External adapters and other languages call the versioned Execution API through an execution SDK. Both transports preserve the same `CreateRunRequest` semantics. Adapters do not write queue tables or read catalog files.
+In-tree adapters running in the server call `AdmissionService` in-process.
+External adapters and other languages call the versioned Invocation API with a
+scoped `wfs_` Service Principal. Both transports preserve the same principal
+authorization, release resolution, schema validation, idempotency, and durable
+Run admission semantics. Adapters do not write queue tables or read catalog
+files.
 
-## Execution Plane
+## Invocation and Execution Plane
 
-The Execution Plane owns run admission, the PostgreSQL queue, runtime workers,
-execution results, and job-scoped runtime callbacks. Its public HTTP contract is
-rooted at `/execution/v1`; workers receive the Execution API as `WF_API_URL` for
-state, variable, and resource callbacks.
+The Invocation Plane owns caller authentication, Run admission, caller-visible
+status/result/cancel, and app/action schema discovery. Its system-to-system HTTP
+specification is rooted at `/api/v1`. The internal Execution Plane owns the
+PostgreSQL Job queue, runtime workers, execution results, and job-scoped runtime
+callbacks. Workers use `/worker/v1` and job callback APIs; they do not use the
+Invocation API for claim or completion.
 
 Run admission performs one atomic decision:
 
@@ -112,39 +119,55 @@ A Run is the stable caller-visible invocation. A Job is an internal execution
 attempt. Workers execute only the deployment pinned in the Job payload; they do
 not resolve the active catalog again.
 
-## Execution API
+## Invocation API
 
-- `POST /execution/v1/workspaces/{workspace}/runs`
-- `GET /execution/v1/workspaces/{workspace}/runs/{run_id}`
-- `GET /execution/v1/workspaces/{workspace}/runs/{run_id}/result`
-- `POST /execution/v1/workspaces/{workspace}/runs/{run_id}/cancel`
-- `GET /execution/v1/workspaces/{workspace}/apps/{app}`
-- `GET /execution/v1/openapi.json`
+- `POST /api/v1/workspaces/{workspace}/runs`
+- `POST /api/v1/workspaces/{workspace}/runs/wait`
+- `GET /api/v1/workspaces/{workspace}/runs/{run_id}`
+- `GET /api/v1/workspaces/{workspace}/runs/{run_id}/result`
+- `POST /api/v1/workspaces/{workspace}/runs/{run_id}/cancel`
+- `GET /api/v1/workspaces/{workspace}/apps/{app}`
+- `GET /api/v1/openapi.json`
 
-`Idempotency-Key` or `idempotency_key` scopes duplicate suppression to a
-workspace, app, and action. Replaying the same key returns the existing Run.
+`Idempotency-Key` scopes duplicate suppression to the authenticated principal.
+Replaying the same key and request returns the existing Run; changing app,
+action, input, or correlation data returns a conflict.
 
 The app description endpoint returns the active release and materialized action
 schemas. Protocol adapters use it to generate their own customer-facing API
 documentation without mounting the Windforce catalog.
 
-## Public API Plane
+Operator, `wfk_` Client Registry, and scoped `wfs_` Service Principal
+credentials use these same routes. The Invocation response exposes Run ID and
+`X-WF-Run-Id`, never Job ID. See [Invocation API](concepts/public-api.md).
 
-The Public API Plane is rooted at `/api/v1/w/{workspace}` and accepts only engine-issued `wfk_` client bearer tokens. It maps an authenticated client to client-scoped input settings, applies admission through the Execution Plane, and never writes the queue or catalog directly. Its async and wait routes return the admitted Job identifier in `X-WF-Job-Id`; an idempotent replay preserves that Job identifier, and the wait route returns its action result as the response body. See [Public API](concepts/public-api.md).
+`/execution/v1`, `/api/v1/w/{workspace}/run/...`, and control-plane Job
+submission remain temporary v0.3 migration surfaces. ADR 0013 removes them in
+one breaking release after Gale and the Imprun gateway are ready. The
+non-production `wf-triggers` repository is implemented against the stable
+canonical OpenAPI and is not part of the operating rollback release set.
 
 ## SDK Boundary
 
-The Python package under `sdk/python` is the reference execution client. It
-provides create, status, wait, result, cancel, and app-description operations.
-SDK implementations are HTTP clients only. PostgreSQL schemas, bundle paths,
-and catalog storage are private implementation details of Windforce Core.
+The v0.3 reference client is `windforce-invocation` /
+`windforce_invocation.WindforceInvocationClient`. It provides create, status,
+wait, result, cancel, and app-description operations over `/api/v1`. SDK
+implementations are HTTP clients only. PostgreSQL schemas, Job IDs, bundle
+paths, and catalog storage are private implementation details of Windforce
+Core. The existing execution SDK remains only until the coordinated legacy
+removal.
 
 ## Process Roles
 
 | Role | Responsibility |
 |---|---|
-| `server` | Control `/api/w`, trusted execution `/execution/v1`, public `/api/v1`, worker `/worker/v1`, embedded Web UI, Webhook Dispatcher, and retention loops |
+| `server` | Control `/api/w`, Invocation `/api/v1`, Worker `/worker/v1`, embedded Web UI, Webhook Dispatcher, and retention loops; legacy admission routes remain only during v0.3 migration |
 | `worker` | Queue claim and action execution, using shared PostgreSQL state or the remote worker API selected by `--api-url` |
 | `standalone` | `server` and `worker` in one process |
 
-The HTTP plane boundaries separate caller trust and API contracts, not processes. Server replicas expose every HTTP plane and may safely run the dispatcher concurrently. Internal package boundaries remain independent so an adapter can move between in-process and HTTP deployment without changing admission semantics.
+The HTTP plane boundaries separate ownership and system-to-system specifications,
+not processes. Principal scopes, rather than separate public/trusted URL trees,
+separate caller authority. Server replicas expose every HTTP plane and may
+safely run the dispatcher concurrently. Internal package boundaries remain
+independent so an adapter can move between in-process and HTTP deployment
+without changing admission semantics.

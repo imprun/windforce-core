@@ -31,6 +31,12 @@ CREATE TABLE IF NOT EXISTS runs (
     correlation_id TEXT,
     env JSONB,
     client_id TEXT,
+    principal_kind TEXT,
+    principal_id TEXT,
+    idempotency_hash TEXT,
+    request_fingerprint TEXT,
+    created_by TEXT NOT NULL DEFAULT 'system',
+    permissioned_as TEXT NOT NULL DEFAULT 'system',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     expires_at TIMESTAMPTZ
@@ -205,6 +211,33 @@ CREATE TABLE IF NOT EXISTS client_registry_audit (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS service_principal (
+    workspace_id TEXT NOT NULL,
+    id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    token_hash TEXT NOT NULL DEFAULT '',
+    scopes TEXT[] NOT NULL DEFAULT '{}',
+    allowed_targets TEXT[] NOT NULL DEFAULT '{}',
+    created_by TEXT NOT NULL,
+    updated_by TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (workspace_id, id)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS service_principal_active_token_idx
+    ON service_principal (workspace_id, token_hash) WHERE token_hash <> '';
+
+CREATE TABLE IF NOT EXISTS service_principal_audit (
+    id BIGSERIAL PRIMARY KEY,
+    workspace_id TEXT NOT NULL,
+    service_principal_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    detail TEXT NOT NULL DEFAULT '',
+    actor TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS input_config (
     workspace_id TEXT NOT NULL,
     app_key TEXT NOT NULL,
@@ -350,6 +383,12 @@ ALTER TABLE runs ADD COLUMN IF NOT EXISTS result JSONB;
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS correlation_id TEXT;
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS env JSONB;
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS client_id TEXT;
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS principal_kind TEXT;
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS principal_id TEXT;
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS idempotency_hash TEXT;
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS request_fingerprint TEXT;
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS created_by TEXT NOT NULL DEFAULT 'system';
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS permissioned_as TEXT NOT NULL DEFAULT 'system';
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ;
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS canceled_by TEXT;
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS canceled_reason TEXT;
