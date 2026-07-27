@@ -414,6 +414,63 @@ export type WebhookDeliveryQuery = {
   cursor?: string;
 };
 
+export type TriggerKind = "webhook" | "schedule" | "rabbitmq";
+
+export type TriggerDefinition = {
+  id: string;
+  workspace_id: string;
+  name: string;
+  kind: TriggerKind;
+  enabled: boolean;
+  app: string;
+  action: string;
+  credential_ref?: string;
+  config: Record<string, unknown>;
+  has_secret: boolean;
+  created_by: string;
+  updated_by: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type TriggerPayload = {
+  name: string;
+  kind: TriggerKind;
+  enabled?: boolean;
+  app: string;
+  action: string;
+  credential_ref?: string;
+  config: Record<string, unknown>;
+  secret_config?: Record<string, unknown>;
+};
+
+export type TriggerDeliveryState = "admitted" | "retryable" | "terminal";
+
+export type TriggerDelivery = {
+  id: string;
+  workspace_id: string;
+  trigger_id: string;
+  delivery_id: string;
+  correlation_id?: string;
+  state: TriggerDeliveryState;
+  run_id?: string;
+  attempt: number;
+  error_summary?: string;
+  scheduled_for?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type TriggerAudit = {
+  id: string;
+  workspace_id: string;
+  trigger_id: string;
+  kind: string;
+  detail?: string;
+  actor: string;
+  created_at: string;
+};
+
 export type AuditEventQuery = {
   appKey?: string;
   clientID?: string;
@@ -704,6 +761,40 @@ export class WindforceApi {
 
   retryWebhookDelivery(id: string): Promise<WebhookDeliveryDetail> {
     return this.request(`/webhook-deliveries/${encodeURIComponent(id)}/retry`, { method: "POST" });
+  }
+
+  triggers(): Promise<{ items: TriggerDefinition[] }> {
+    return this.request("/triggers");
+  }
+
+  trigger(id: string): Promise<TriggerDefinition> {
+    return this.request(`/triggers/${encodeURIComponent(id)}`);
+  }
+
+  createTrigger(payload: TriggerPayload): Promise<TriggerDefinition> {
+    return this.request("/triggers", { method: "POST", body: payload });
+  }
+
+  updateTrigger(id: string, payload: TriggerPayload): Promise<TriggerDefinition> {
+    return this.request(`/triggers/${encodeURIComponent(id)}`, { method: "PUT", body: payload });
+  }
+
+  setTriggerEnabled(id: string, enabled: boolean): Promise<TriggerDefinition> {
+    return this.request(`/triggers/${encodeURIComponent(id)}/${enabled ? "enable" : "disable"}`, {
+      method: "POST",
+    });
+  }
+
+  async deleteTrigger(id: string): Promise<void> {
+    await this.request(`/triggers/${encodeURIComponent(id)}`, { method: "DELETE" });
+  }
+
+  triggerDeliveries(id: string): Promise<{ items: TriggerDelivery[] }> {
+    return this.request(`/triggers/${encodeURIComponent(id)}/deliveries`);
+  }
+
+  triggerAudit(id: string): Promise<{ items: TriggerAudit[] }> {
+    return this.request(`/triggers/${encodeURIComponent(id)}/audit`);
   }
 
   importProvisioning(

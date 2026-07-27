@@ -13,6 +13,7 @@ import {
   ReleaseStateBadge,
 } from "../components/ui";
 import { AppInputSettings } from "../features/AppInputSettings";
+import { AppTriggers } from "../features/AppTriggers";
 import { AuditEventTable } from "../features/AuditEventTable";
 import { PublishReleaseDialog } from "../features/PublishReleaseDialog";
 import { RepositorySettings } from "../features/RepositorySettings";
@@ -37,6 +38,7 @@ import { describeSchema, formatSchemaValue, type SchemaField } from "../lib/sche
 const tabs = [
   { key: "overview", label: "Overview" },
   { key: "docs", label: "Docs" },
+  { key: "triggers", label: "Triggers" },
   { key: "input-settings", label: "Input Settings" },
   { key: "monitoring", label: "Monitoring" },
   { key: "repository", label: "Repository" },
@@ -170,6 +172,16 @@ export function AppDetailPage({
           section={section}
           actionKey={actionKey}
         />
+      ) : null}
+      {activeTab === "triggers" && app && detail ? (
+        <AppTriggers sourceID={sourceID} appKey={app.app_key} actions={detail.actions} />
+      ) : null}
+      {activeTab === "triggers" && (!app || !detail) ? (
+        <Panel title="Triggers" subtitle="Inbound sources that admit Runs for this App.">
+          <EmptyState title="Publish an App release before adding a Trigger.">
+            <p>A Trigger needs an Action target from the active release.</p>
+          </EmptyState>
+        </Panel>
       ) : null}
       {activeTab === "input-settings" && detail ? (
         <AppInputSettings
