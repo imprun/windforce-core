@@ -736,13 +736,17 @@ func (h *Handler) authorizeAPIRequest(r *http.Request) (*http.Request, int, stri
 		return r, http.StatusUnauthorized, "unauthorized"
 	}
 	workspace, err := h.store.GetWorkspace(r.Context(), workspaceID)
-	if err != nil || !state.WorkspaceTokenMatches(workspace, bearerToken) {
+	if err != nil {
+		return r, http.StatusUnauthorized, "unauthorized"
+	}
+	token, err := h.store.GetWorkspaceTokenByTokenHash(r.Context(), workspaceID, state.HashWorkspaceToken(bearerToken))
+	if err != nil {
 		return r, http.StatusUnauthorized, "unauthorized"
 	}
 	if workspace.Status == state.WorkspaceArchived && workspaceRequestChangesState(r) {
 		return r, http.StatusConflict, "workspace is archived"
 	}
-	principal := &workspacePrincipal{Workspace: workspaceID, Subject: "workspace:" + workspaceID}
+	principal := &workspacePrincipal{Workspace: workspaceID, Subject: "workspace-token:" + token.ID}
 	return r.WithContext(context.WithValue(r.Context(), workspacePrincipalContextKey{}, principal)), 0, ""
 }
 

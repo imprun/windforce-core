@@ -2,7 +2,10 @@ import { readFile } from "node:fs/promises";
 import { describe, expect, test } from "vitest";
 
 const registrySource = await readFile(new URL("./WorkspacesPage.tsx", import.meta.url), "utf8");
-const detailSource = await readFile(new URL("./WorkspaceDetailPage.tsx", import.meta.url), "utf8");
+const settingsSource = await readFile(
+  new URL("./WorkspaceSettingsPage.tsx", import.meta.url),
+  "utf8",
+);
 const adminSource = await readFile(
   new URL("../features/WorkspaceAdmin.tsx", import.meta.url),
   "utf8",
@@ -13,23 +16,14 @@ describe("workspace administration shell", () => {
     expect(registrySource).toContain('scope="instance"');
   });
 
-  test("uses the instance shell for detail, loading, and error states", () => {
-    expect(detailSource.match(/scope="instance"/g)?.length).toBe(3);
-  });
-
-  test("uses the shared instance breadcrumb instead of duplicate back controls", () => {
-    expect(detailSource).not.toContain("backToWorkspaces");
-    expect(detailSource).not.toContain("titleLeading=");
-  });
-
-  test("offers workspace switching from registry and detail administration", () => {
+  test("offers workspace switching only from the registry", () => {
     expect(registrySource).toContain("<WorkspaceActivation workspace={workspace} compact />");
-    expect(detailSource).toContain("actions={<WorkspaceActivation workspace={workspace} />}");
     expect(adminSource).toContain("updateSettings({ ...settings, workspace: workspace.id })");
     expect(adminSource).toContain('navigate("/")');
+    expect(registrySource).not.toContain("Manage");
   });
 
   test("uses a constrained identity grid", () => {
-    expect(detailSource).toContain('className="workspaceIdentityFacts"');
+    expect(settingsSource).toContain('className="workspaceIdentityFacts"');
   });
 });

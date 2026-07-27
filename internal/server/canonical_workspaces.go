@@ -15,7 +15,6 @@ type workspaceView struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
 	Status    string `json:"status"`
-	HasToken  bool   `json:"has_token"`
 	CreatedBy string `json:"created_by"`
 	UpdatedBy string `json:"updated_by"`
 	CreatedAt string `json:"created_at"`
@@ -24,10 +23,36 @@ type workspaceView struct {
 
 func workspaceResponse(workspace state.Workspace) workspaceView {
 	return workspaceView{
-		ID: workspace.ID, Name: workspace.Name, Status: workspace.Status, HasToken: workspace.TokenHash != "",
+		ID: workspace.ID, Name: workspace.Name, Status: workspace.Status,
 		CreatedBy: workspace.CreatedBy, UpdatedBy: workspace.UpdatedBy,
 		CreatedAt: workspace.CreatedAt.UTC().Format(timeLayout), UpdatedAt: workspace.UpdatedAt.UTC().Format(timeLayout),
 	}
+}
+
+type workspaceTokenView struct {
+	ID          string  `json:"id"`
+	WorkspaceID string  `json:"workspace_id"`
+	Name        string  `json:"name"`
+	Status      string  `json:"status"`
+	CreatedBy   string  `json:"created_by"`
+	UpdatedBy   string  `json:"updated_by"`
+	CreatedAt   string  `json:"created_at"`
+	UpdatedAt   string  `json:"updated_at"`
+	RevokedAt   *string `json:"revoked_at,omitempty"`
+}
+
+func workspaceTokenResponse(token state.WorkspaceToken) workspaceTokenView {
+	view := workspaceTokenView{
+		ID: token.ID, WorkspaceID: token.WorkspaceID, Name: token.Name,
+		Status: "active", CreatedBy: token.CreatedBy, UpdatedBy: token.UpdatedBy,
+		CreatedAt: token.CreatedAt.UTC().Format(timeLayout), UpdatedAt: token.UpdatedAt.UTC().Format(timeLayout),
+	}
+	if token.RevokedAt != nil {
+		value := token.RevokedAt.UTC().Format(timeLayout)
+		view.Status = "revoked"
+		view.RevokedAt = &value
+	}
+	return view
 }
 
 const timeLayout = "2006-01-02T15:04:05.000000000Z07:00"
@@ -72,17 +97,12 @@ func (h *Handler) handleWorkspaceAPI(w http.ResponseWriter, r *http.Request, par
 			writeError(w, http.StatusBadRequest, "workspace name is required and must be at most 100 characters")
 			return true
 		}
-		token, err := newWorkspaceToken()
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "could not generate workspace token")
-			return true
-		}
-		workspace, err := h.store.CreateWorkspace(r.Context(), request.ID, request.Name, state.HashWorkspaceToken(token), requestActorOrSystem(r))
+		workspace, err := h.store.CreateWorkspace(r.Context(), request.ID, request.Name, requestActorOrSystem(r))
 		if err != nil {
 			writeStateError(w, err)
 			return true
 		}
-		writeJSON(w, http.StatusCreated, map[string]any{"workspace": workspaceResponse(workspace), "api_token": token})
+		writeJSON(w, http.StatusCreated, workspaceResponse(workspace))
 		return true
 	}
 	if len(parts) < 3 {
@@ -128,18 +148,72 @@ func (h *Handler) handleWorkspaceAPI(w http.ResponseWriter, r *http.Request, par
 		writeJSON(w, http.StatusOK, workspaceResponse(workspace))
 		return true
 	}
-	if len(parts) == 4 && parts[3] == "token" && r.Method == http.MethodPost {
+	if len(parts) == 4 && parts[3] == "tokens" && r.Method == http.MethodGet {
+		items, err := h.store.ListWorkspaceTokens(r.Context(), workspaceID)
+		if err != nil {
+			writeStateError(w, err)
+			return true
+		}
+		views := make([]workspaceTokenView, 0, len(items))
+		for _, item := range items {
+			views = append(views, workspaceTokenResponse(item))
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"items": views})
+		return true
+	}
+	if len(parts) == 4 && parts[3] == "tokens" && r.Method == http.MethodPost {
+		var request struct {
+			Name string `json:"name"`
+		}
+		if err := readRequiredJSON(r, &request); err != nil {
+			writeError(w, http.StatusBadRequest, "valid token JSON is required")
+			return true
+		}
+		request.Name = strings.TrimSpace(request.Name)
+		if request.Name == "" || len(request.Name) > 100 {
+			writeError(w, http.StatusBadRequest, "token name is required and must be at most 100 characters")
+			return true
+		}
 		token, err := newWorkspaceToken()
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "could not generate workspace token")
 			return true
 		}
-		workspace, err := h.store.RotateWorkspaceToken(r.Context(), workspaceID, state.HashWorkspaceToken(token), requestActorOrSystem(r))
+		created, err := h.store.CreateWorkspaceToken(
+			r.Context(), workspaceID, request.Name, state.HashWorkspaceToken(token), requestActorOrSystem(r),
+		)
 		if err != nil {
 			writeStateError(w, err)
 			return true
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"workspace": workspaceResponse(workspace), "api_token": token})
+		writeJSON(w, http.StatusCreated, map[string]any{"token": workspaceTokenResponse(created), "api_token": token})
+		return true
+	}
+	if len(parts) == 6 && parts[3] == "tokens" && parts[5] == "rotate" && r.Method == http.MethodPost {
+		token, err := newWorkspaceToken()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "could not generate workspace token")
+			return true
+		}
+		updated, err := h.store.RotateWorkspaceToken(
+			r.Context(), workspaceID, strings.TrimSpace(parts[4]), state.HashWorkspaceToken(token), requestActorOrSystem(r),
+		)
+		if err != nil {
+			writeStateError(w, err)
+			return true
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"token": workspaceTokenResponse(updated), "api_token": token})
+		return true
+	}
+	if len(parts) == 5 && parts[3] == "tokens" && r.Method == http.MethodDelete {
+		updated, err := h.store.RevokeWorkspaceToken(
+			r.Context(), workspaceID, strings.TrimSpace(parts[4]), requestActorOrSystem(r),
+		)
+		if err != nil {
+			writeStateError(w, err)
+			return true
+		}
+		writeJSON(w, http.StatusOK, workspaceTokenResponse(updated))
 		return true
 	}
 	if len(parts) == 4 && parts[3] == "audit" && r.Method == http.MethodGet {

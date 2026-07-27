@@ -15,7 +15,7 @@ func TestLocalTriggerLifecycleEncryptsSecretsAndAudits(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state.json")
 	store := NewLocalStore(path)
 	store.SecretKey = "test-trigger-secret-key"
-	if _, err := store.CreateWorkspace(ctx, "ws", "Workspace", "", "tester"); err != nil {
+	if _, err := store.CreateWorkspace(ctx, "ws", "Workspace", "tester"); err != nil {
 		t.Fatal(err)
 	}
 	created, err := store.CreateTrigger(ctx, TriggerDefinition{
@@ -69,7 +69,7 @@ func TestLocalTriggerNameIsUniquePerWorkspace(t *testing.T) {
 	ctx := context.Background()
 	store := NewLocalStore(filepath.Join(t.TempDir(), "state.json"))
 	store.SecretKey = "test-trigger-secret-key"
-	if _, err := store.CreateWorkspace(ctx, "ws", "Workspace", "", "tester"); err != nil {
+	if _, err := store.CreateWorkspace(ctx, "ws", "Workspace", "tester"); err != nil {
 		t.Fatal(err)
 	}
 	base := TriggerDefinition{

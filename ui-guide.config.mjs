@@ -213,7 +213,7 @@ async function waitForClientConfigRun(clientID, apiToken) {
     if (!response.ok) {
       throw new Error(`client-config run failed: HTTP ${response.status} ${JSON.stringify(result)}`);
     }
-    const output = result.output ?? result.result;
+    const output = result.output ?? result.result ?? result;
     if (output?.input?.message !== "configured for Example Retailer") {
       throw new Error(`worker did not apply client input settings: ${JSON.stringify(result)}`);
     }

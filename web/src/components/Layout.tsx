@@ -24,12 +24,7 @@ import { type ReactNode, useEffect, useState } from "react";
 import { useApp } from "../lib/app-context";
 import { type HostAccount, loadHostAccount } from "../lib/host-account";
 import { Link, useRouter } from "../lib/router";
-import {
-  type HostAccountConfig,
-  type HostConsoleConfig,
-  loadRuntimeConfig,
-  type RuntimeConfig,
-} from "../lib/runtime-config";
+import type { HostAccountConfig, HostConsoleConfig } from "../lib/runtime-config";
 import { cn } from "../shared/lib/cn";
 import { useThemeStore } from "../shared/lib/theme";
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
@@ -427,30 +422,12 @@ export function Layout({
   titleLeading?: ReactNode;
 }) {
   const { path } = useRouter();
-  const { toasts, dismissToast } = useApp();
+  const { toasts, dismissToast, runtimeConfig } = useApp();
   const [collapsed, setCollapsed] = useState(loadCollapsed);
-  const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig>({
-    hostConsole: null,
-    hostAccount: null,
-  });
 
   useEffect(() => {
     globalThis.localStorage?.setItem("wf.sidebarCollapsed", String(collapsed));
   }, [collapsed]);
-
-  useEffect(() => {
-    let active = true;
-    void loadRuntimeConfig()
-      .then((config) => {
-        if (active) setRuntimeConfig(config);
-      })
-      .catch(() => {
-        if (active) setRuntimeConfig({ hostConsole: null, hostAccount: null });
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
 
   if (scope === "instance") {
     const isRegistry = path === "/workspaces";
@@ -496,7 +473,7 @@ export function Layout({
           </nav>
           <div className="flex shrink-0 items-center gap-2">
             <ThemeToggle />
-            <AccountContext hostAccount={runtimeConfig.hostAccount} />
+            <AccountContext hostAccount={runtimeConfig?.hostAccount || null} />
           </div>
         </header>
         <main className="mx-auto w-full max-w-[var(--content-max-width)] px-4 py-6 sm:px-6">
@@ -568,7 +545,7 @@ export function Layout({
           )}
         >
           <AccountContext
-            hostAccount={runtimeConfig.hostAccount}
+            hostAccount={runtimeConfig?.hostAccount || null}
             placement="sidebar"
             collapsed={collapsed}
           />
@@ -578,7 +555,7 @@ export function Layout({
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-[var(--shell-header-height)] shrink-0 items-center justify-between gap-3 border-b border-border bg-background px-4 sm:px-6">
           <div className="flex min-w-0 items-center gap-2">
-            <MobileNavigation path={path} hostAccount={runtimeConfig.hostAccount} />
+            <MobileNavigation path={path} hostAccount={runtimeConfig?.hostAccount || null} />
             <button
               className="icon-control hidden md:inline-flex"
               id="sidebarToggle"
@@ -600,7 +577,7 @@ export function Layout({
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <HostConsoleAction hostConsole={runtimeConfig.hostConsole} />
+            <HostConsoleAction hostConsole={runtimeConfig?.hostConsole || null} />
             <ThemeToggle />
           </div>
         </header>

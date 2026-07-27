@@ -3,14 +3,14 @@ export default {
   id: "settings",
   title: "Connect the CLI and set browser access",
   description:
-    "General settings shows external CLI connection metadata and stores the API token and audit actor used by Web UI requests.",
+    "General settings shows CLI connection metadata and adapts browser access to standalone or hosted mode.",
   screenshot: "docs/assets/ui/settings.png",
   guide: [
     "Open Settings from the sidebar.",
     "Copy the control plane URL, workspace ID, token environment name, or complete profile command from CLI connection.",
     "Set the named environment variable to the one-time token issued from the workspace Access tab; token values are not included in copied commands.",
-    "Set the API token when the control plane requires authentication.",
-    "Set the audit actor recorded on releases and cancels; local development defaults to local-dev.",
+    "In standalone mode, set the API token and local audit actor when required.",
+    "In hosted mode, use the read-only authenticated host session instead of local token and actor inputs.",
   ],
   async run({ page, capture }) {
     await page.goto();

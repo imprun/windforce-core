@@ -31,7 +31,7 @@ func TestCanonicalTriggerCRUDDoesNotReturnSecrets(t *testing.T) {
 	ctx := context.Background()
 	store := state.NewLocalStore(filepath.Join(t.TempDir(), "state.json"))
 	store.SecretKey = "test-trigger-secret-key"
-	if _, err := store.CreateWorkspace(ctx, "ws", "Workspace", "", "tester"); err != nil {
+	if _, err := store.CreateWorkspace(ctx, "ws", "Workspace", "tester"); err != nil {
 		t.Fatal(err)
 	}
 	handler := New(Config{
@@ -115,7 +115,7 @@ func TestWebhookTriggerIngressUsesSignatureWithoutAPIBearer(t *testing.T) {
 	ctx := context.Background()
 	store := state.NewLocalStore(filepath.Join(t.TempDir(), "state.json"))
 	store.SecretKey = "test-trigger-secret-key"
-	if _, err := store.CreateWorkspace(ctx, "ws", "Workspace", "", "tester"); err != nil {
+	if _, err := store.CreateWorkspace(ctx, "ws", "Workspace", "tester"); err != nil {
 		t.Fatal(err)
 	}
 	definition, err := store.CreateTrigger(ctx, state.TriggerDefinition{

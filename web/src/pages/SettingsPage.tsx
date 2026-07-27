@@ -12,12 +12,13 @@ export function cliProfileCommand(apiURL: string, workspace: string): string {
 }
 
 export function SettingsPage() {
-  const { settings, updateSettings, notify } = useApp();
+  const { settings, updateSettings, notify, runtimeConfig } = useApp();
   const [token, setToken] = useState(settings.token);
   const [actor, setActor] = useState(settings.actor);
   const [health, setHealth] = useState<string>("checking…");
   const apiURL = globalThis.location?.origin || "";
   const profileCommand = cliProfileCommand(apiURL, settings.workspace);
+  const hosted = Boolean(runtimeConfig?.hostAccount);
 
   useEffect(() => {
     setToken(settings.token);
@@ -55,15 +56,17 @@ export function SettingsPage() {
       title="Settings"
       subtitle="CLI connection details, browser authentication, and audit context."
       actions={
-        <button
-          className="button primary"
-          type="button"
-          id="saveSettings"
-          disabled={!dirty}
-          onClick={handleSave}
-        >
-          Save settings
-        </button>
+        hosted ? null : (
+          <button
+            className="button primary"
+            type="button"
+            id="saveSettings"
+            disabled={!dirty}
+            onClick={handleSave}
+          >
+            Save settings
+          </button>
+        )
       }
     >
       <SettingsNav />
@@ -80,7 +83,7 @@ export function SettingsPage() {
           </Field>
           <Field
             label="Token environment"
-            hint="Set this variable to the one-time token issued from the workspace Access tab."
+            hint="Set this variable to a named token issued from Settings → Access."
           >
             <CopyableSetting label="token environment variable" value={CLI_TOKEN_ENV} />
           </Field>
@@ -95,44 +98,61 @@ export function SettingsPage() {
         </Field>
       </Panel>
 
-      <Panel
-        title="Browser API access"
-        subtitle="Credential used by this Web UI for requests in the active workspace."
-      >
-        <div className="formGrid">
-          <Field
-            label="API token"
-            hint="Paste the workspace token here only when this browser must authenticate its requests."
+      {hosted ? (
+        <Panel
+          title="Hosted browser access"
+          subtitle="This browser is authenticated by the hosting platform."
+        >
+          <DefinitionList
+            items={[
+              ["Authentication", "Managed by host"],
+              ["Audit actor", "Derived from the authenticated host principal"],
+              ["Control plane", health],
+            ]}
+          />
+        </Panel>
+      ) : (
+        <>
+          <Panel
+            title="Browser API access"
+            subtitle="Credential used by this Web UI for requests in the active workspace."
           >
-            <input
-              id="settingsToken"
-              type="password"
-              value={token}
-              onChange={(event) => setToken(event.target.value)}
-              autoComplete="off"
-            />
-          </Field>
-        </div>
-        <DefinitionList items={[["Status", health]]} />
-      </Panel>
+            <div className="formGrid">
+              <Field
+                label="API token"
+                hint="Paste a workspace token here only when this browser must authenticate its requests."
+              >
+                <input
+                  id="settingsToken"
+                  type="password"
+                  value={token}
+                  onChange={(event) => setToken(event.target.value)}
+                  autoComplete="off"
+                />
+              </Field>
+            </div>
+            <DefinitionList items={[["Status", health]]} />
+          </Panel>
 
-      <Panel
-        title="Audit actor"
-        subtitle="Recorded as the subject of releases, cancels, and other state changes. Not an authentication credential."
-      >
-        <div className="formGrid">
-          <Field
-            label="Actor"
-            hint="With real authentication the actor comes from the request principal; local development defaults to local-dev."
+          <Panel
+            title="Audit actor"
+            subtitle="Recorded as the subject of local state changes. Not an authentication credential."
           >
-            <input
-              id="settingsActor"
-              value={actor}
-              onChange={(event) => setActor(event.target.value)}
-            />
-          </Field>
-        </div>
-      </Panel>
+            <div className="formGrid">
+              <Field
+                label="Actor"
+                hint="Standalone development defaults to local-dev; authenticated principals override this value."
+              >
+                <input
+                  id="settingsActor"
+                  value={actor}
+                  onChange={(event) => setActor(event.target.value)}
+                />
+              </Field>
+            </div>
+          </Panel>
+        </>
+      )}
     </Layout>
   );
 }

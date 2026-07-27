@@ -11,7 +11,9 @@ import { SettingsPage } from "./pages/SettingsPage";
 import { WebhookCreatePage } from "./pages/WebhookCreatePage";
 import { WebhookDetailPage } from "./pages/WebhookDetailPage";
 import { WebhookSettingsPage } from "./pages/WebhookSettingsPage";
+import { WorkspaceAccessSettingsPage } from "./pages/WorkspaceAccessSettingsPage";
 import { WorkspaceDetailPage } from "./pages/WorkspaceDetailPage";
+import { WorkspaceSettingsPage } from "./pages/WorkspaceSettingsPage";
 import { WorkspacesPage } from "./pages/WorkspacesPage";
 
 export function App() {
@@ -68,6 +70,8 @@ export function App() {
   }
   if (matchRoute("/settings/webhooks", path)) return <WebhookSettingsPage />;
   if (matchRoute("/settings/workspaces", path)) return <WorkspacesPage />;
+  if (matchRoute("/settings/workspace", path)) return <WorkspaceSettingsPage />;
+  if (matchRoute("/settings/access", path)) return <WorkspaceAccessSettingsPage />;
   if (matchRoute("/settings/info", path)) return <SettingsInfoPage />;
   if (matchRoute("/settings/provisioning", path)) return <ProvisioningPage />;
   if (matchRoute("/provisioning", path)) return <ProvisioningPage />;

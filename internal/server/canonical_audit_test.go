@@ -130,6 +130,9 @@ func TestCanonicalAuditEventsAggregateAndFilter(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := store.CreateWorkspace(ctx, "ws-a", "Workspace A", actor); err != nil {
+		t.Fatal(err)
+	}
 	client, err := store.CreateClient(ctx, "ws-a", "Client A", state.HashClientToken("external-secret"), actor)
 	if err != nil {
 		t.Fatal(err)
@@ -174,7 +177,7 @@ func TestCanonicalAuditEventsAggregateAndFilter(t *testing.T) {
 			releaseEvents++
 		}
 	}
-	for _, category := range []string{"repository", "release", "client", "input_settings"} {
+	for _, category := range []string{"workspace", "repository", "release", "client", "input_settings"} {
 		if !categories[category] {
 			t.Fatalf("missing category %q in %#v", category, all)
 		}
@@ -191,6 +194,10 @@ func TestCanonicalAuditEventsAggregateAndFilter(t *testing.T) {
 	clientEvents := get("/api/w/ws-a/audit-events?client_id=" + client.ID)
 	if len(clientEvents) != 2 {
 		t.Fatalf("client events = %#v, want client registration and input settings", clientEvents)
+	}
+	workspaceEvents := get("/api/w/ws-a/audit-events?category=workspace")
+	if len(workspaceEvents) != 1 || workspaceEvents[0].Summary != "Workspace created" {
+		t.Fatalf("workspace events = %#v, want workspace creation", workspaceEvents)
 	}
 }
 

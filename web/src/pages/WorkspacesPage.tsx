@@ -2,15 +2,9 @@ import { Plus, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { Layout } from "../components/Layout";
 import { EmptyState, ErrorNotice, Field, Loading, Modal, Panel } from "../components/ui";
-import {
-  OneTimeWorkspaceToken,
-  WorkspaceActivation,
-  WorkspaceStatus,
-} from "../features/WorkspaceAdmin";
+import { WorkspaceActivation, WorkspaceStatus } from "../features/WorkspaceAdmin";
 import { errorMessage } from "../lib/api";
 import { useApp, useAsync } from "../lib/app-context";
-import { formatRelative, formatTime } from "../lib/format";
-import { Link } from "../lib/router";
 import { notifyWorkspaceRegistryChanged } from "../lib/workspaces";
 
 export function WorkspacesPage() {
@@ -25,8 +19,8 @@ export function WorkspacesPage() {
   return (
     <Layout
       scope="instance"
-      title="Workspace administration"
-      subtitle="Create and govern the workspace boundaries available in this Windforce instance."
+      title="Workspaces"
+      subtitle="Create a workspace or switch the active execution context."
       actions={
         <>
           <button
@@ -63,7 +57,7 @@ export function WorkspacesPage() {
           </dl>
           <Panel
             title="All workspaces"
-            subtitle="Select a workspace to enter its runtime, or open its administration details."
+            subtitle="Workspace settings are available after switching into that workspace."
           >
             {state.data.items.length === 0 ? (
               <EmptyState title="No workspaces registered." />
@@ -74,41 +68,21 @@ export function WorkspacesPage() {
                     <tr>
                       <th>Workspace</th>
                       <th>Status</th>
-                      <th>Access token</th>
-                      <th>Updated</th>
-                      <th>Actions</th>
+                      <th>Switch</th>
                     </tr>
                   </thead>
                   <tbody>
                     {state.data.items.map((workspace) => (
                       <tr key={workspace.id}>
                         <td>
-                          <Link
-                            className="cellTitle tablePrimaryLink"
-                            to={`/workspaces/${encodeURIComponent(workspace.id)}`}
-                          >
-                            {workspace.name}
-                          </Link>
+                          <span className="cellTitle">{workspace.name}</span>
                           <span className="cellSub mono">{workspace.id}</span>
                         </td>
                         <td>
                           <WorkspaceStatus workspace={workspace} />
                         </td>
-                        <td>{workspace.has_token ? "Configured" : "Not configured"}</td>
-                        <td title={formatTime(workspace.updated_at)}>
-                          <span className="cellTitle">{formatRelative(workspace.updated_at)}</span>
-                          <span className="cellSub">{workspace.updated_by}</span>
-                        </td>
                         <td className="tableActions">
-                          <div className="workspaceTableActions">
-                            <WorkspaceActivation workspace={workspace} compact />
-                            <Link
-                              className="button small"
-                              to={`/workspaces/${encodeURIComponent(workspace.id)}`}
-                            >
-                              Manage
-                            </Link>
-                          </div>
+                          <WorkspaceActivation workspace={workspace} compact />
                         </td>
                       </tr>
                     ))}
@@ -143,7 +117,6 @@ function CreateWorkspaceDialog({
   const { api, notify } = useApp();
   const [id, setID] = useState("");
   const [name, setName] = useState("");
-  const [token, setToken] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -152,9 +125,9 @@ function CreateWorkspaceDialog({
     setError("");
     try {
       const result = await api.createWorkspace(id.trim(), name.trim());
-      setToken(result.api_token);
       onCreated();
-      notify("ok", `Workspace ${result.workspace.id} created.`);
+      notify("ok", `Workspace ${result.id} created. Switch to it to configure access.`);
+      onClose();
     } catch (cause) {
       setError(errorMessage(cause));
     } finally {
@@ -164,48 +137,36 @@ function CreateWorkspaceDialog({
 
   return (
     <Modal
-      title={token ? "Workspace created" : "Create workspace"}
-      subtitle={
-        token
-          ? "Store the workspace token now; it will not be shown again."
-          : "Workspace IDs are permanent routing identifiers."
-      }
+      title="Create workspace"
+      subtitle="Workspace IDs are permanent routing identifiers. Access tokens are created separately."
       onClose={onClose}
     >
       {error ? <ErrorNotice message={error} /> : null}
-      {token ? (
-        <OneTimeWorkspaceToken token={token} />
-      ) : (
-        <div className="dialogForm">
-          <Field
-            label="Workspace ID"
-            hint="Lowercase letters, digits, and hyphens. Cannot be changed later."
+      <div className="dialogForm">
+        <Field
+          label="Workspace ID"
+          hint="Lowercase letters, digits, and hyphens. Cannot be changed later."
+        >
+          <input value={id} onChange={(event) => setID(event.target.value)} placeholder="team-a" />
+        </Field>
+        <Field label="Display name">
+          <input
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            placeholder="Team A"
+          />
+        </Field>
+        <div className="dialogFooter">
+          <button
+            className="button primary"
+            type="button"
+            disabled={saving || !id.trim() || !name.trim()}
+            onClick={create}
           >
-            <input
-              value={id}
-              onChange={(event) => setID(event.target.value)}
-              placeholder="team-a"
-            />
-          </Field>
-          <Field label="Display name">
-            <input
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="Team A"
-            />
-          </Field>
-          <div className="dialogFooter">
-            <button
-              className="button primary"
-              type="button"
-              disabled={saving || !id.trim() || !name.trim()}
-              onClick={create}
-            >
-              {saving ? "Creating…" : "Create workspace"}
-            </button>
-          </div>
+            {saving ? "Creating…" : "Create workspace"}
+          </button>
         </div>
-      )}
+      </div>
     </Modal>
   );
 }

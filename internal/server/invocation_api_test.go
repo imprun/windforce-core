@@ -20,7 +20,7 @@ import (
 func TestInvocationAPIPrincipalAuthorizationAndIdempotency(t *testing.T) {
 	ctx := context.Background()
 	store := state.NewLocalStore(filepath.Join(t.TempDir(), "state.json"))
-	if _, err := store.CreateWorkspace(ctx, "ws-a", "Workspace A", "", "admin"); err != nil {
+	if _, err := store.CreateWorkspace(ctx, "ws-a", "Workspace A", "admin"); err != nil {
 		t.Fatal(err)
 	}
 	deployment := contract.Deployment{
@@ -68,6 +68,12 @@ func TestInvocationAPIPrincipalAuthorizationAndIdempotency(t *testing.T) {
 	client, err := store.CreateClient(ctx, "ws-a", "client", state.HashClientToken(clientToken), "admin")
 	if err != nil {
 		t.Fatal(err)
+	}
+	devRequest := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/ws-a/runs", nil)
+	devRequest.Header.Set("Authorization", "Bearer "+clientToken)
+	devPrincipal, status, message := (&Handler{store: store}).authenticateInvocation(devRequest, "ws-a")
+	if status != 0 || message != "" || devPrincipal.Kind != executionpkg.PrincipalClient || devPrincipal.ID != client.ID {
+		t.Fatalf("dev client principal = %#v, status=%d message=%q", devPrincipal, status, message)
 	}
 	server := httptest.NewServer(New(Config{Store: store, Catalog: store, AdminToken: "admin-secret"}))
 	defer server.Close()

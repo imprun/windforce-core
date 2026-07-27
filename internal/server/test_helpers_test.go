@@ -15,7 +15,7 @@ const testExecutionBundleDigest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 func admitTestRun(t *testing.T, store *state.LocalStore, baseURL string, workspace string, app string, action string, input string) invocationRunView {
 	t.Helper()
 	if _, err := store.GetWorkspace(context.Background(), workspace); err != nil {
-		if _, createErr := store.CreateWorkspace(context.Background(), workspace, workspace, "", "test"); createErr != nil {
+		if _, createErr := store.CreateWorkspace(context.Background(), workspace, workspace, "test"); createErr != nil {
 			t.Fatal(createErr)
 		}
 	}

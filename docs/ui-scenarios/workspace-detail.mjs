@@ -1,25 +1,23 @@
 export default {
   order: 11,
   id: "workspace-detail",
-  title: "Administer a workspace",
+  title: "Configure the active workspace",
   description:
-    "Each workspace has a dedicated instance-administration page without workspace-scoped application navigation.",
+    "Identity and lifecycle settings stay with the active workspace instead of creating a second registry detail context.",
   screenshot: "docs/assets/ui/workspace-detail.png",
   guide: [
-    "Open Manage workspaces from the workspace switcher, then choose a workspace from the registry.",
-    "Use Workspaces in the instance breadcrumb to return to the registry.",
-    "Use Switch to workspace to select this workspace and open its application console.",
-    "Use Overview for its display name, Access for its scoped token, Audit for lifecycle history, and Lifecycle for archive controls.",
-    "Return to the runtime and use its breadcrumb when changing workspace scope.",
+    "Switch to the workspace from Manage workspaces.",
+    "Open Settings and choose Workspace to change its display name or archive it.",
+    "Choose Access to issue, rotate, or revoke named workspace credentials.",
+    "Open Audit and select Workspace to review identity, credential, and lifecycle events.",
+    "Return to Manage workspaces only when creating or switching workspace context.",
   ],
   async run({ page, capture }) {
     await page.goto();
-    await page.click("[data-testid='workspace-topbar-context'] .workspaceSwitcherTrigger");
-    await page.click("[data-testid='workspace-topbar-context'] .workspaceManageLink");
-    await page.waitForSelector("#workspaceRegistry tbody tr");
-    await page.clickText("Operations");
+    await page.clickText("Settings");
+    await page.click("a[href$='/settings/workspace']");
     await page.waitForText("main", "Workspace identity");
-    await page.waitForText(".topbarActions", "Switch to workspace");
+    await page.waitForText("main", "Workspace lifecycle");
     await capture(this.id);
   },
 };
