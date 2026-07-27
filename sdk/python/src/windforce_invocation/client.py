@@ -5,11 +5,11 @@ import json
 import time
 from typing import Any, Mapping, Sequence
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
 
-TERMINAL_STATES = frozenset({"SUCCEEDED", "FAILED", "CANCELED", "EXPIRED"})
+TERMINAL_STATES = frozenset({"succeeded", "failed", "canceled", "expired"})
 
 
 class WindforceAPIError(RuntimeError):
@@ -39,28 +39,31 @@ class Run:
     state: str
     app: str
     action: str
-    job_id: str = ""
     correlation_id: str = ""
     replayed: bool = False
-    pinned_release: Mapping[str, Any] | None = None
     raw: Mapping[str, Any] | None = None
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> "Run":
         return cls(
             run_id=str(value.get("run_id") or ""),
-            job_id=str(value.get("job_id") or ""),
-            state=str(value.get("state") or "").upper(),
+            state=str(value.get("state") or "").lower(),
             app=str(value.get("app") or ""),
             action=str(value.get("action") or ""),
             correlation_id=str(value.get("correlation_id") or ""),
             replayed=bool(value.get("replayed")),
-            pinned_release=value.get("pinned_release") if isinstance(value.get("pinned_release"), Mapping) else None,
             raw=dict(value),
         )
 
 
-class WindforceExecutionClient:
+@dataclass(frozen=True)
+class InvocationResult:
+    run_id: str
+    value: Any
+    completed: bool
+
+
+class WindforceInvocationClient:
     def __init__(
         self,
         base_url: str,
@@ -82,37 +85,45 @@ class WindforceExecutionClient:
         app: str,
         action: str,
         input: Any,
-        adapter: str = "",
-        trigger_kind: str = "",
-        trigger_headers: Mapping[str, Any] | None = None,
         correlation_id: str = "",
         idempotency_key: str = "",
-        client_id: str = "",
-        env: Sequence[str] = (),
     ) -> Run:
-        payload: dict[str, Any] = {
-            "app": str(app),
-            "action": str(action),
-            "input": input,
-        }
-        optional = {
-            "adapter": adapter,
-            "trigger_kind": trigger_kind,
-            "correlation_id": correlation_id,
-            "idempotency_key": idempotency_key,
-            "client_id": client_id,
-        }
-        payload.update({key: value for key, value in optional.items() if str(value).strip()})
-        if trigger_headers:
-            payload["trigger_headers"] = dict(trigger_headers)
-        if env:
-            payload["env"] = [str(value) for value in env]
-        response = self._request("POST", self._workspace_path("runs"), payload)
-        return Run.from_dict(response)
+        payload = self._create_payload(app, action, input, correlation_id)
+        response = self._request(
+            "POST",
+            self._workspace_path("runs"),
+            payload,
+            headers=_idempotency_headers(idempotency_key),
+        )
+        return Run.from_dict(_require_mapping(response))
+
+    def create_run_and_wait(
+        self,
+        *,
+        app: str,
+        action: str,
+        input: Any,
+        timeout_seconds: float = 30,
+        correlation_id: str = "",
+        idempotency_key: str = "",
+    ) -> InvocationResult:
+        timeout_seconds = max(0.0, float(timeout_seconds))
+        query = urlencode({"timeout": f"{timeout_seconds:g}s"})
+        response, status, response_headers = self._request_with_metadata(
+            "POST",
+            self._workspace_path("runs", "wait") + "?" + query,
+            self._create_payload(app, action, input, correlation_id),
+            headers=_idempotency_headers(idempotency_key),
+            accepted_statuses=(200, 202),
+        )
+        run_id = _header_value(response_headers, "X-WF-Run-Id")
+        if not run_id and isinstance(response, Mapping):
+            run_id = str(response.get("run_id") or "")
+        return InvocationResult(run_id=run_id, value=response, completed=status == 200)
 
     def get_run(self, run_id: str) -> Run:
         response = self._request("GET", self._workspace_path("runs", run_id))
-        return Run.from_dict(response)
+        return Run.from_dict(_require_mapping(response))
 
     def wait(self, run_id: str, *, timeout_seconds: float) -> Run:
         timeout_seconds = max(0.0, float(timeout_seconds))
@@ -126,23 +137,34 @@ class WindforceExecutionClient:
             last = self.get_run(run_id)
         return last
 
-    def get_result(self, run_id: str) -> Mapping[str, Any]:
-        return self._request("GET", self._workspace_path("runs", run_id, "result"), accepted_statuses=(200, 202))
+    def get_result(self, run_id: str) -> Any:
+        return self._request(
+            "GET",
+            self._workspace_path("runs", run_id, "result"),
+            accepted_statuses=(200, 202),
+        )
 
     def cancel(self, run_id: str, *, reason: str = "") -> Run:
         response = self._request("POST", self._workspace_path("runs", run_id, "cancel"), {"reason": reason})
-        return Run.from_dict(response)
+        return Run.from_dict(_require_mapping(response))
 
     def describe_app(self, app: str) -> Mapping[str, Any]:
-        return self._request("GET", self._workspace_path("apps", app))
+        return _require_mapping(self._request("GET", self._workspace_path("apps", app)))
 
     def ready(self) -> bool:
-        response = self._request("GET", "/readyz")
+        response = _require_mapping(self._request("GET", "/readyz"))
         return response.get("ready") is True
+
+    @staticmethod
+    def _create_payload(app: str, action: str, input: Any, correlation_id: str) -> dict[str, Any]:
+        payload = {"app": str(app), "action": str(action), "input": input}
+        if str(correlation_id).strip():
+            payload["correlation_id"] = str(correlation_id)
+        return payload
 
     def _workspace_path(self, *segments: str) -> str:
         encoded = [quote(self.workspace, safe=""), *(quote(str(value), safe="") for value in segments)]
-        return "/execution/v1/workspaces/" + "/".join(encoded)
+        return "/api/v1/workspaces/" + "/".join(encoded)
 
     def _request(
         self,
@@ -150,20 +172,43 @@ class WindforceExecutionClient:
         path: str,
         payload: Any = None,
         *,
+        headers: Mapping[str, str] | None = None,
         accepted_statuses: Sequence[int] = (200, 201),
-    ) -> Mapping[str, Any]:
+    ) -> Any:
+        value, _, _ = self._request_with_metadata(
+            method,
+            path,
+            payload,
+            headers=headers,
+            accepted_statuses=accepted_statuses,
+        )
+        return value
+
+    def _request_with_metadata(
+        self,
+        method: str,
+        path: str,
+        payload: Any = None,
+        *,
+        headers: Mapping[str, str] | None = None,
+        accepted_statuses: Sequence[int] = (200, 201),
+    ) -> tuple[Any, int, Mapping[str, str]]:
         body = None
-        headers = {"Accept": "application/json"}
+        request_headers = {"Accept": "application/json"}
         if payload is not None:
             body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-            headers["Content-Type"] = "application/json; charset=utf-8"
+            request_headers["Content-Type"] = "application/json; charset=utf-8"
         if self.token:
-            headers["Authorization"] = "Bearer " + self.token
-        request = Request(self.base_url + path, data=body, headers=headers, method=method)
+            request_headers["Authorization"] = "Bearer " + self.token
+        for name, value in (headers or {}).items():
+            if str(value).strip():
+                request_headers[str(name)] = str(value)
+        request = Request(self.base_url + path, data=body, headers=request_headers, method=method)
         try:
             with urlopen(request, timeout=self.request_timeout_seconds) as response:
                 status = int(response.status)
                 value = _decode_response(response.read())
+                response_headers = dict(response.headers.items())
         except HTTPError as exc:
             value = _decode_response(exc.read())
             code, message = _api_error(value, str(exc.reason))
@@ -173,9 +218,26 @@ class WindforceExecutionClient:
         if status not in accepted_statuses:
             code, message = _api_error(value, f"unexpected HTTP status {status}")
             raise WindforceAPIError(status, code, message, value)
-        if not isinstance(value, Mapping):
-            raise WindforceTransportError("Windforce response is not a JSON object")
-        return value
+        return value, status, response_headers
+
+
+def _idempotency_headers(value: str) -> Mapping[str, str]:
+    value = str(value).strip()
+    return {"Idempotency-Key": value} if value else {}
+
+
+def _header_value(headers: Mapping[str, str], name: str) -> str:
+    expected = name.casefold()
+    for header_name, value in headers.items():
+        if str(header_name).casefold() == expected:
+            return str(value)
+    return ""
+
+
+def _require_mapping(value: Any) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping):
+        raise WindforceTransportError("Windforce response is not a JSON object")
+    return value
 
 
 def _decode_response(data: bytes) -> Any:

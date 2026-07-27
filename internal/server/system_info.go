@@ -28,8 +28,6 @@ func (h *Handler) handleSystemInfo(w http.ResponseWriter, _ *http.Request, works
 		Planes: map[string]bool{
 			"invocation_api": true,
 			"control_api":    true,
-			"execution_api":  true,
-			"public_api":     true,
 			"worker_api":     true,
 			"web_ui":         true,
 			"metrics":        h.metricsHandler != nil,

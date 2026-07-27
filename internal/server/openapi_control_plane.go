@@ -599,49 +599,6 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 				}, "401", "403", "404"),
 			},
 		},
-		"/api/w/{workspace}/jobs/run/{app}/{action}": map[string]any{
-			"post": map[string]any{
-				"operationId": "runJob",
-				"summary":     "Enqueue an action job",
-				"parameters":  []any{oapiWorkspaceParam(workspaceID), oapiPathParam("app", "App key."), oapiPathParam("action", "Action key.")},
-				"requestBody": oapiJSONBody(oapiSchemaRef("JobInput"), true),
-				"responses": withErrors(map[string]any{
-					"201": oapiResponse("Job enqueued.", oapiSchemaRef("JobHandleResponse")),
-				}, "400", "401", "403", "404", "409", "413"),
-			},
-		},
-		"/api/w/{workspace}/jobs/run/{app}/{action}/wait": map[string]any{
-			"post": map[string]any{
-				"operationId": "runJobAndWait",
-				"summary":     "Enqueue an action job and wait for completion",
-				"parameters": []any{
-					oapiWorkspaceParam(workspaceID),
-					oapiPathParam("app", "App key."),
-					oapiPathParam("action", "Action key."),
-					oapiQueryParam("timeout_ms", "Wait timeout in milliseconds. The server caps this at its maximum wait timeout.", oapiIntegerSchema(), false),
-				},
-				"requestBody": oapiJSONBody(oapiSchemaRef("JobInput"), true),
-				"responses": withErrors(map[string]any{
-					"200": oapiResponse("Finished job result.", oapiSchemaRef("JobWaitResultResponse")),
-					"202": oapiResponse("Job is still pending.", oapiSchemaRef("JobPendingResponse")),
-				}, "400", "401", "403", "404", "409", "413"),
-			},
-		},
-		"/api/w/{workspace}/jobs/webhook/{app}/{action}": map[string]any{
-			"post": map[string]any{
-				"operationId": "webhookJob",
-				"summary":     "Enqueue an action job from a raw webhook payload",
-				"description": "The raw request body is delivered to the action as trigger raw payload, with denylisted and size-capped request headers pinned on the job.",
-				"parameters":  []any{oapiWorkspaceParam(workspaceID), oapiPathParam("app", "App key."), oapiPathParam("action", "Action key.")},
-				"requestBody": map[string]any{
-					"required": false,
-					"content":  map[string]any{"*/*": map[string]any{"schema": map[string]any{}}},
-				},
-				"responses": withErrors(map[string]any{
-					"201": oapiResponse("Job enqueued.", oapiSchemaRef("JobHandleResponse")),
-				}, "400", "401", "403", "404", "409", "413"),
-			},
-		},
 		"/api/w/{workspace}/jobs": map[string]any{
 			"get": map[string]any{
 				"operationId": "listJobs",
@@ -1397,16 +1354,6 @@ func controlPlaneSchemas() map[string]any {
 			},
 			"required": []any{"path"},
 		},
-		"JobInput": map[string]any{
-			"type":                 "object",
-			"description":          "Action input JSON object. The top-level __wf_enc key is reserved.",
-			"additionalProperties": true,
-		},
-		"JobHandleResponse": map[string]any{
-			"type":       "object",
-			"properties": map[string]any{"job_id": oapiStringSchema()},
-			"required":   []any{"job_id"},
-		},
 		"JobPendingResponse": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -1414,15 +1361,6 @@ func controlPlaneSchemas() map[string]any {
 				"status": oapiStringSchema(),
 			},
 			"required": []any{"status"},
-		},
-		"JobWaitResultResponse": map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"job_id": oapiStringSchema(),
-				"status": oapiStringSchema(),
-				"result": oapiSchemaRef("JSONValue"),
-			},
-			"required": []any{"job_id", "status", "result"},
 		},
 		"JobResultResponse": map[string]any{
 			"type": "object",

@@ -114,6 +114,8 @@ func (r *runner) command(args []string) error {
 		return r.app(args[1:])
 	case "action":
 		return r.action(args[1:])
+	case "run":
+		return r.run(args[1:])
 	case "job":
 		return r.job(args[1:])
 	case "provisioning":
@@ -142,6 +144,14 @@ func (r *runner) command(args []string) error {
 
 func (r *runner) json(method, path string, body any) error {
 	result, err := r.client.DoJSON(context.Background(), method, path, body)
+	if err != nil {
+		return err
+	}
+	return r.outputJSON(result)
+}
+
+func (r *runner) jsonWithHeaders(method, path string, body any, headers map[string]string) error {
+	result, err := r.client.DoJSONWithHeaders(context.Background(), method, path, body, headers)
 	if err != nil {
 		return err
 	}
@@ -329,7 +339,8 @@ Commands:
   source list|register|probe|sync|deploy
   app list|show|history|source|openapi
   action show|schema
-  job run|list|show|result|logs|cancel
+  run create|wait|show|result|cancel
+  job list|show|result|logs|cancel
   provisioning export|apply
   openapi
   version`)

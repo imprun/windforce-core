@@ -91,7 +91,9 @@ export function ClientDialog({
   async function revokeToken() {
     if (!client || !hasToken) return;
     if (
-      !window.confirm("Revoke this client token? Public API calls will stop working immediately.")
+      !window.confirm(
+        "Revoke this client token? Invocation API calls will stop working immediately.",
+      )
     ) {
       return;
     }
@@ -174,7 +176,7 @@ export function ClientDialog({
           <input maxLength={200} value={name} onChange={(event) => setName(event.target.value)} />
         </Field>
         {client ? (
-          <Field label="Public API token">
+          <Field label="Invocation API token">
             <div>
               <p>{hasToken ? "Active" : "Not issued"}</p>
               <div className="dialogFooterActions">

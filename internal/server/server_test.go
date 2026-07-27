@@ -199,26 +199,14 @@ func TestCanonicalJobListDoesNotLeakResultOrLogs(t *testing.T) {
 	server := httptest.NewServer(New(Config{Store: store, Catalog: fileCatalog}))
 	defer server.Close()
 
-	resp, err := http.Post(server.URL+"/api/w/ws-a/jobs/run/echo/echo", "application/json", bytes.NewBufferString(`{"message":"hello"}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusCreated {
-		t.Fatalf("run status = %d, want %d", resp.StatusCode, http.StatusCreated)
-	}
-	var runResponse struct {
-		JobID string `json:"job_id"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&runResponse); err != nil {
-		t.Fatal(err)
-	}
+	runResponse := admitTestRun(t, store, server.URL, "ws-a", "echo", "echo", `{"message":"hello"}`)
+	admittedJob := testJobForRun(t, store, runResponse.RunID)
 	claimed, lease, err := store.ClaimJob(context.Background(), "worker-a", 0)
 	if err != nil {
 		t.Fatalf("ClaimJob returned error: %v", err)
 	}
-	if claimed.ID != runResponse.JobID {
-		t.Fatalf("claimed job = %q, want %q", claimed.ID, runResponse.JobID)
+	if claimed.ID != admittedJob.ID {
+		t.Fatalf("claimed job = %q, want %q", claimed.ID, admittedJob.ID)
 	}
 	if err := store.CompleteJobSucceeded(context.Background(), lease, contract.JobResult{
 		JobID:      claimed.ID,
@@ -951,28 +939,13 @@ func TestCanonicalJobRunStatusAndResultAPI(t *testing.T) {
 	server := httptest.NewServer(New(Config{Store: store, Catalog: fileCatalog}))
 	defer server.Close()
 
-	resp, err := http.Post(server.URL+"/api/w/ws-a/jobs/run/echo/echo", "application/json", bytes.NewBufferString(`{"message":"hello"}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusCreated {
-		t.Fatalf("run status = %d, want %d", resp.StatusCode, http.StatusCreated)
-	}
-	var runResponse struct {
-		JobID string `json:"job_id"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&runResponse); err != nil {
-		t.Fatal(err)
-	}
-	if runResponse.JobID == "" {
-		t.Fatalf("missing job id")
-	}
-	if !isCanonicalUUID(runResponse.JobID) {
-		t.Fatalf("job id = %q, want UUID", runResponse.JobID)
+	runResponse := admitTestRun(t, store, server.URL, "ws-a", "echo", "echo", `{"message":"hello"}`)
+	admittedJob := testJobForRun(t, store, runResponse.RunID)
+	if !isCanonicalUUID(admittedJob.ID) {
+		t.Fatalf("job id = %q, want UUID", admittedJob.ID)
 	}
 
-	statusResp, err := http.Get(server.URL + "/api/w/ws-a/jobs/" + runResponse.JobID)
+	statusResp, err := http.Get(server.URL + "/api/w/ws-a/jobs/" + admittedJob.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -984,13 +957,13 @@ func TestCanonicalJobRunStatusAndResultAPI(t *testing.T) {
 	if err := json.NewDecoder(statusResp.Body).Decode(&statusBody); err != nil {
 		t.Fatal(err)
 	}
-	if statusBody["id"] != runResponse.JobID || statusBody["state"] != "queued" || statusBody["app_key"] != "echo" ||
-		statusBody["action_key"] != "echo" || statusBody["trigger_kind"] != "api" || statusBody["entrypoint"] != "main.ts" ||
+	if statusBody["id"] != admittedJob.ID || statusBody["state"] != "queued" || statusBody["app_key"] != "echo" ||
+		statusBody["action_key"] != "echo" || statusBody["trigger_kind"] != "http" || statusBody["entrypoint"] != "main.ts" ||
 		statusBody["git_source_id"] != float64(1) || statusBody["timeout_s"] != float64(45) {
 		t.Fatalf("job status = %#v", statusBody)
 	}
 
-	resultResp, err := http.Get(server.URL + "/api/w/ws-a/jobs/" + runResponse.JobID + "/result")
+	resultResp, err := http.Get(server.URL + "/api/w/ws-a/jobs/" + admittedJob.ID + "/result")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1003,8 +976,8 @@ func TestCanonicalJobRunStatusAndResultAPI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ClaimJob returned error: %v", err)
 	}
-	if claimed.ID != runResponse.JobID {
-		t.Fatalf("claimed job = %q, want %q", claimed.ID, runResponse.JobID)
+	if claimed.ID != admittedJob.ID {
+		t.Fatalf("claimed job = %q, want %q", claimed.ID, admittedJob.ID)
 	}
 	if err := store.CompleteJobSucceeded(context.Background(), lease, contract.JobResult{
 		JobID:      claimed.ID,
@@ -1017,7 +990,7 @@ func TestCanonicalJobRunStatusAndResultAPI(t *testing.T) {
 		t.Fatalf("CompleteJobSucceeded returned error: %v", err)
 	}
 
-	doneResp, err := http.Get(server.URL + "/api/w/ws-a/jobs/" + runResponse.JobID + "/result")
+	doneResp, err := http.Get(server.URL + "/api/w/ws-a/jobs/" + admittedJob.ID + "/result")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1042,7 +1015,7 @@ func TestCanonicalJobRunStatusAndResultAPI(t *testing.T) {
 		t.Fatalf("done result = %#v result=%s", doneBody, doneBody.Result)
 	}
 
-	doneStatusResp, err := http.Get(server.URL + "/api/w/ws-a/jobs/" + runResponse.JobID)
+	doneStatusResp, err := http.Get(server.URL + "/api/w/ws-a/jobs/" + admittedJob.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1099,7 +1072,7 @@ func TestCanonicalJobRunStatusAndResultAPI(t *testing.T) {
 	if err := json.NewDecoder(listResp.Body).Decode(&listBody); err != nil {
 		t.Fatal(err)
 	}
-	if len(listBody.Items) != 1 || listBody.Items[0].ID != runResponse.JobID ||
+	if len(listBody.Items) != 1 || listBody.Items[0].ID != admittedJob.ID ||
 		listBody.Items[0].GitSourceID != 1 ||
 		listBody.Items[0].Status != "success" || !listBody.Items[0].Completed ||
 		listBody.Items[0].Worker != "worker-a" {
@@ -1121,26 +1094,14 @@ func TestCanonicalJobRunStatusAndResultAPI(t *testing.T) {
 		t.Fatalf("failed filter status = %d, want %d", failedFilterResp.StatusCode, http.StatusBadRequest)
 	}
 
-	failResp, err := http.Post(server.URL+"/api/w/ws-a/jobs/run/echo/echo", "application/json", bytes.NewBufferString(`{"message":"fail"}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer failResp.Body.Close()
-	if failResp.StatusCode != http.StatusCreated {
-		t.Fatalf("failed run enqueue status = %d, want %d", failResp.StatusCode, http.StatusCreated)
-	}
-	var failRunResponse struct {
-		JobID string `json:"job_id"`
-	}
-	if err := json.NewDecoder(failResp.Body).Decode(&failRunResponse); err != nil {
-		t.Fatal(err)
-	}
+	failRunResponse := admitTestRun(t, store, server.URL, "ws-a", "echo", "echo", `{"message":"fail"}`)
+	failedJob := testJobForRun(t, store, failRunResponse.RunID)
 	failedClaim, failedLease, err := store.ClaimJob(context.Background(), "worker-a", 0)
 	if err != nil {
 		t.Fatalf("ClaimJob for failed run returned error: %v", err)
 	}
-	if failedClaim.ID != failRunResponse.JobID {
-		t.Fatalf("claimed failed job = %q, want %q", failedClaim.ID, failRunResponse.JobID)
+	if failedClaim.ID != failedJob.ID {
+		t.Fatalf("claimed failed job = %q, want %q", failedClaim.ID, failedJob.ID)
 	}
 	if err := store.CompleteJobFailed(context.Background(), failedLease, contract.JobResult{
 		JobID:      failedClaim.ID,
@@ -1152,7 +1113,7 @@ func TestCanonicalJobRunStatusAndResultAPI(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("CompleteJobFailed returned error: %v", err)
 	}
-	failedResultResp, err := http.Get(server.URL + "/api/w/ws-a/jobs/" + failRunResponse.JobID + "/result")
+	failedResultResp, err := http.Get(server.URL + "/api/w/ws-a/jobs/" + failedJob.ID + "/result")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1200,7 +1161,13 @@ func TestCanonicalJobRunStatusAndResultAPI(t *testing.T) {
 		t.Fatalf("summary body = %#v", summaryBody)
 	}
 
-	waitResp, err := http.Post(server.URL+"/api/w/ws-a/jobs/run/echo/echo/wait?timeout_ms=0", "application/json", bytes.NewBufferString(`{}`))
+	waitReq, err := http.NewRequest(http.MethodPost, server.URL+"/api/v1/workspaces/ws-a/runs/wait?timeout=0s", bytes.NewBufferString(`{"app":"echo","action":"echo","input":{}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitReq.Header.Set("Content-Type", "application/json")
+	waitReq.Header.Set("Authorization", "Bearer test-operator")
+	waitResp, err := http.DefaultClient.Do(waitReq)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1210,195 +1177,9 @@ func TestCanonicalJobRunStatusAndResultAPI(t *testing.T) {
 	}
 }
 
-func TestCanonicalJobWebhookAPI(t *testing.T) {
-	tempDir := t.TempDir()
-	store := state.NewLocalStore(filepath.Join(tempDir, "state.json"))
-	fileCatalog := catalog.NewFileCatalog(filepath.Join(tempDir, "catalog.json"))
-	if err := fileCatalog.UpsertDeployment(context.Background(), contract.Deployment{
-		Workspace:    "ws-a",
-		GitSourceID:  "source-a",
-		App:          "echo",
-		Commit:       "commit-a",
-		BundleDigest: testExecutionBundleDigest,
-		Actions: map[string]contract.Action{
-			"echo": {Action: "echo", Command: []string{"helper"}},
-		},
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	server := httptest.NewServer(New(Config{Store: store, Catalog: fileCatalog}))
-	defer server.Close()
-
-	req, err := http.NewRequest(http.MethodPost, server.URL+"/api/w/ws-a/jobs/webhook/echo/echo", bytes.NewBufferString(`{"event":"push"}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	req.Header.Set("Content-Type", "text/plain")
-	req.Header.Set("X-Hub-Signature-256", "sha256=abc")
-	req.Header.Set("Authorization", "Bearer secret")
-	req.Header.Set("Cookie", "session=secret")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusCreated {
-		t.Fatalf("webhook status = %d, want %d", resp.StatusCode, http.StatusCreated)
-	}
-	var webhookResponse struct {
-		JobID string `json:"job_id"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&webhookResponse); err != nil {
-		t.Fatal(err)
-	}
-	if webhookResponse.JobID == "" {
-		t.Fatalf("missing job id")
-	}
-	job, _, found, err := store.GetJob(context.Background(), "ws-a", webhookResponse.JobID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !found {
-		t.Fatalf("webhook job not found")
-	}
-	if job.Payload.TriggerKind != "webhook" {
-		t.Fatalf("trigger kind = %q, want webhook", job.Payload.TriggerKind)
-	}
-	var raw string
-	if err := json.Unmarshal(job.Payload.Input, &raw); err != nil {
-		t.Fatalf("webhook input is not a JSON string: %v input=%s", err, job.Payload.Input)
-	}
-	if raw != `{"event":"push"}` {
-		t.Fatalf("webhook raw = %q", raw)
-	}
-	var headers map[string]string
-	if err := json.Unmarshal(job.Payload.TriggerHeaders, &headers); err != nil {
-		t.Fatalf("webhook headers are not JSON: %v headers=%s", err, job.Payload.TriggerHeaders)
-	}
-	if headers["X-Hub-Signature-256"] != "sha256=abc" {
-		t.Fatalf("signature header missing: %#v", headers)
-	}
-	if _, ok := headers["Authorization"]; ok {
-		t.Fatalf("authorization header should be denied: %#v", headers)
-	}
-	if _, ok := headers["Cookie"]; ok {
-		t.Fatalf("cookie header should be denied: %#v", headers)
-	}
-
-	rawReq, err := http.NewRequest(http.MethodPost, server.URL+"/api/w/ws-a/jobs/webhook/echo/echo", bytes.NewBufferString(`not-json <xml/>`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	rawResp, err := http.DefaultClient.Do(rawReq)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rawResp.Body.Close()
-	if rawResp.StatusCode != http.StatusCreated {
-		t.Fatalf("raw webhook status = %d, want %d", rawResp.StatusCode, http.StatusCreated)
-	}
-	var rawWebhookResponse struct {
-		JobID string `json:"job_id"`
-	}
-	if err := json.NewDecoder(rawResp.Body).Decode(&rawWebhookResponse); err != nil {
-		t.Fatal(err)
-	}
-	rawJob, _, found, err := store.GetJob(context.Background(), "ws-a", rawWebhookResponse.JobID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !found {
-		t.Fatalf("raw webhook job not found")
-	}
-	if err := json.Unmarshal(rawJob.Payload.Input, &raw); err != nil {
-		t.Fatalf("raw webhook input is not a JSON string: %v input=%s", err, rawJob.Payload.Input)
-	}
-	if raw != `not-json <xml/>` {
-		t.Fatalf("raw webhook payload = %q", raw)
-	}
-}
-
-func TestCanonicalJobRunBodyValidationMatchesCanonicalAPI(t *testing.T) {
-	tempDir := t.TempDir()
-	store := state.NewLocalStore(filepath.Join(tempDir, "state.json"))
-	fileCatalog := catalog.NewFileCatalog(filepath.Join(tempDir, "catalog.json"))
-	if err := fileCatalog.UpsertDeployment(context.Background(), contract.Deployment{
-		Workspace:    "ws-a",
-		App:          "echo",
-		Commit:       "commit-a",
-		BundleDigest: testExecutionBundleDigest,
-		Actions: map[string]contract.Action{
-			"echo": {Action: "echo", Command: []string{"helper"}},
-		},
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	server := httptest.NewServer(New(Config{Store: store, Catalog: fileCatalog}))
-	defer server.Close()
-
-	for _, body := range []string{`[1,2,3]`, `"a string"`, `42`, `null`, `{not json`} {
-		resp, err := http.Post(server.URL+"/api/w/ws-a/jobs/run/echo/echo", "application/json", bytes.NewBufferString(body))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if resp.StatusCode != http.StatusBadRequest {
-			_ = resp.Body.Close()
-			t.Fatalf("run body %s status = %d, want %d", body, resp.StatusCode, http.StatusBadRequest)
-		}
-		_ = resp.Body.Close()
-	}
-
-	reservedResp, err := http.Post(server.URL+"/api/w/ws-a/jobs/run/echo/echo", "application/json", bytes.NewBufferString(`{"__wf_enc":true}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer reservedResp.Body.Close()
-	var reservedBody struct {
-		Error string `json:"error"`
-	}
-	if err := json.NewDecoder(reservedResp.Body).Decode(&reservedBody); err != nil {
-		t.Fatal(err)
-	}
-	if reservedResp.StatusCode != http.StatusBadRequest || reservedBody.Error != `"__wf_enc" is a reserved top-level input key` {
-		t.Fatalf("reserved input response = %d %#v, want reserved-key 400", reservedResp.StatusCode, reservedBody)
-	}
-
-	emptyResp, err := http.Post(server.URL+"/api/w/ws-a/jobs/run/echo/echo", "application/json", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer emptyResp.Body.Close()
-	if emptyResp.StatusCode != http.StatusCreated {
-		t.Fatalf("empty body status = %d, want %d", emptyResp.StatusCode, http.StatusCreated)
-	}
-	var created struct {
-		JobID string `json:"job_id"`
-	}
-	if err := json.NewDecoder(emptyResp.Body).Decode(&created); err != nil {
-		t.Fatal(err)
-	}
-	job, _, found, err := store.GetJob(context.Background(), "ws-a", created.JobID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !found || !bytes.Equal(bytes.TrimSpace(job.Payload.Input), []byte(`{}`)) {
-		t.Fatalf("empty body job input = found:%v input:%s", found, job.Payload.Input)
-	}
-
-	oversize := bytes.Repeat([]byte("a"), maxRunBodyBytes+1024)
-	for _, path := range []string{"/api/w/ws-a/jobs/run/echo/echo", "/api/w/ws-a/jobs/webhook/echo/echo"} {
-		resp, err := http.Post(server.URL+path, "application/json", bytes.NewReader(oversize))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if resp.StatusCode != http.StatusRequestEntityTooLarge {
-			_ = resp.Body.Close()
-			t.Fatalf("oversize %s status = %d, want %d", path, resp.StatusCode, http.StatusRequestEntityTooLarge)
-		}
-		_ = resp.Body.Close()
-	}
+func TestLegacyControlPlaneWebhookAdmissionIsNotExposed(t *testing.T) {
+	handler := New(Config{Store: state.NewLocalStore(filepath.Join(t.TempDir(), "state.json"))})
+	assertHandlerMethodStatus(t, handler, http.MethodPost, "/api/w/ws-a/jobs/webhook/echo/echo", http.StatusNotFound)
 }
 
 func TestCanonicalJobCancelAPI(t *testing.T) {
@@ -1421,22 +1202,10 @@ func TestCanonicalJobCancelAPI(t *testing.T) {
 	server := httptest.NewServer(New(Config{Store: store, Catalog: fileCatalog}))
 	defer server.Close()
 
-	runResp, err := http.Post(server.URL+"/api/w/ws-a/jobs/run/echo/echo", "application/json", bytes.NewBufferString(`{}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer runResp.Body.Close()
-	var runBody struct {
-		JobID string `json:"job_id"`
-	}
-	if err := json.NewDecoder(runResp.Body).Decode(&runBody); err != nil {
-		t.Fatal(err)
-	}
-	if runBody.JobID == "" {
-		t.Fatalf("missing job id")
-	}
+	runBody := admitTestRun(t, store, server.URL, "ws-a", "echo", "echo", `{}`)
+	admittedJob := testJobForRun(t, store, runBody.RunID)
 
-	cancelReq, err := http.NewRequest(http.MethodPost, server.URL+"/api/w/ws-a/jobs/"+runBody.JobID+"/cancel", bytes.NewBufferString(`{"reason":"operator canceled"}`))
+	cancelReq, err := http.NewRequest(http.MethodPost, server.URL+"/api/w/ws-a/jobs/"+admittedJob.ID+"/cancel", bytes.NewBufferString(`{"reason":"operator canceled"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1458,7 +1227,7 @@ func TestCanonicalJobCancelAPI(t *testing.T) {
 		t.Fatalf("cancel body = %#v", cancelBody)
 	}
 
-	resultResp, err := http.Get(server.URL + "/api/w/ws-a/jobs/" + runBody.JobID + "/result")
+	resultResp, err := http.Get(server.URL + "/api/w/ws-a/jobs/" + admittedJob.ID + "/result")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1477,7 +1246,7 @@ func TestCanonicalJobCancelAPI(t *testing.T) {
 		t.Fatalf("result body = %#v result=%s", resultBody, resultBody.Result)
 	}
 
-	statusResp, err := http.Get(server.URL + "/api/w/ws-a/jobs/" + runBody.JobID)
+	statusResp, err := http.Get(server.URL + "/api/w/ws-a/jobs/" + admittedJob.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1501,7 +1270,7 @@ func TestCanonicalJobCancelAPI(t *testing.T) {
 		t.Fatalf("canceled_reason = %v, want operator canceled", statusBody.CanceledReason)
 	}
 
-	secondCancelResp, err := http.Post(server.URL+"/api/w/ws-a/jobs/"+runBody.JobID+"/cancel", "application/json", bytes.NewBufferString(`{`))
+	secondCancelResp, err := http.Post(server.URL+"/api/w/ws-a/jobs/"+admittedJob.ID+"/cancel", "application/json", bytes.NewBufferString(`{`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1618,9 +1387,6 @@ func TestCanonicalControlPlaneOpenAPIExposesSchemaDiscovery(t *testing.T) {
 		"/api/w/{workspace}/variables/p/{path}",
 		"/api/w/{workspace}/resources",
 		"/api/w/{workspace}/resources/get/p/{path}",
-		"/api/w/{workspace}/jobs/run/{app}/{action}",
-		"/api/w/{workspace}/jobs/run/{app}/{action}/wait",
-		"/api/w/{workspace}/jobs/webhook/{app}/{action}",
 		"/api/w/{workspace}/jobs",
 		"/api/w/{workspace}/jobs/summary",
 		"/api/w/{workspace}/jobs/{jobId}",
@@ -1630,6 +1396,15 @@ func TestCanonicalControlPlaneOpenAPIExposesSchemaDiscovery(t *testing.T) {
 	} {
 		if paths[path] == nil {
 			t.Fatalf("control-plane path %s missing: %#v", path, paths)
+		}
+	}
+	for _, path := range []string{
+		"/api/w/{workspace}/jobs/run/{app}/{action}",
+		"/api/w/{workspace}/jobs/run/{app}/{action}/wait",
+		"/api/w/{workspace}/jobs/webhook/{app}/{action}",
+	} {
+		if paths[path] != nil {
+			t.Fatalf("legacy admission path %s must not be advertised", path)
 		}
 	}
 
@@ -1826,10 +1601,7 @@ func TestCanonicalControlPlaneOpenAPIExposesSchemaDiscovery(t *testing.T) {
 		"SetVariableRequest",
 		"VariableValueResponse",
 		"SetResourceRequest",
-		"JobInput",
-		"JobHandleResponse",
 		"JobPendingResponse",
-		"JobWaitResultResponse",
 		"JobResultResponse",
 		"JobStatus",
 		"JobListItem",
@@ -1840,6 +1612,11 @@ func TestCanonicalControlPlaneOpenAPIExposesSchemaDiscovery(t *testing.T) {
 	} {
 		if schemas[schemaName] == nil {
 			t.Fatalf("schema %s missing", schemaName)
+		}
+	}
+	for _, schemaName := range []string{"JobInput", "JobHandleResponse", "JobWaitResultResponse"} {
+		if schemas[schemaName] != nil {
+			t.Fatalf("legacy admission schema %s must not be advertised", schemaName)
 		}
 	}
 	jobStatus := schemas["JobStatus"].(map[string]any)["properties"].(map[string]any)
@@ -1878,8 +1655,9 @@ func TestCanonicalControlPlaneNotFoundMessagesMatchCanonicalAPI(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	store := state.NewLocalStore(filepath.Join(tempDir, "state.json"))
 	server := httptest.NewServer(New(Config{
-		Store:   state.NewLocalStore(filepath.Join(tempDir, "state.json")),
+		Store:   store,
 		Catalog: fileCatalog,
 	}))
 	defer server.Close()
@@ -1969,10 +1747,8 @@ func TestLegacyV1ControlPlaneRoutesAreNotExposed(t *testing.T) {
 func TestLegacyCoreTriggerRouteIsNotExposed(t *testing.T) {
 	tempDir := t.TempDir()
 	fileCatalog := catalog.NewFileCatalog(filepath.Join(tempDir, "catalog.json"))
-	server := httptest.NewServer(New(Config{
-		Store:   state.NewLocalStore(filepath.Join(tempDir, "state.json")),
-		Catalog: fileCatalog,
-	}))
+	store := state.NewLocalStore(filepath.Join(tempDir, "state.json"))
+	server := httptest.NewServer(New(Config{Store: store, Catalog: fileCatalog}))
 	defer server.Close()
 
 	resp, err := http.Post(server.URL+"/v1/apps/echo/actions/echo", "application/json", bytes.NewBufferString(`{}`))
@@ -2154,10 +1930,8 @@ func TestCanonicalControlPlaneUsesMaterializedActionSchemas(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	server := httptest.NewServer(New(Config{
-		Store:   state.NewLocalStore(filepath.Join(tempDir, "state.json")),
-		Catalog: fileCatalog,
-	}))
+	store := state.NewLocalStore(filepath.Join(tempDir, "state.json"))
+	server := httptest.NewServer(New(Config{Store: store, Catalog: fileCatalog}))
 	defer server.Close()
 
 	actionResp, err := http.Get(server.URL + "/api/w/ws-a/apps/echo/actions/echo")
@@ -2223,33 +1997,26 @@ func TestCanonicalControlPlaneUsesMaterializedActionSchemas(t *testing.T) {
 		t.Fatal(err)
 	}
 	paths := openAPIBody["paths"].(map[string]any)
-	runWait := paths["/api/w/ws-a/jobs/run/echo/echo/wait"].(map[string]any)["post"].(map[string]any)
+	runWait := paths["/api/v1/workspaces/{workspace}/runs/wait"].(map[string]any)["post"].(map[string]any)
 	requestSchema := runWait["requestBody"].(map[string]any)["content"].(map[string]any)["application/json"].(map[string]any)["schema"].(map[string]any)
-	if requestSchema["properties"].(map[string]any)["message"] == nil {
+	variant := requestSchema["oneOf"].([]any)[0].(map[string]any)
+	input := variant["properties"].(map[string]any)["input"].(map[string]any)
+	if input["properties"].(map[string]any)["message"] == nil {
 		t.Fatalf("openapi request schema = %#v", requestSchema)
 	}
+	createRun := paths["/api/v1/workspaces/{workspace}/runs"].(map[string]any)["post"].(map[string]any)
+	runSchema := createRun["responses"].(map[string]any)["201"].(map[string]any)["content"].(map[string]any)["application/json"].(map[string]any)["schema"]
+	runSchemaJSON, err := json.Marshal(runSchema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(runSchemaJSON, []byte(`"waiting_human"`)) || !bytes.Contains(runSchemaJSON, []byte(`"resuming"`)) {
+		t.Fatalf("openapi Run states = %s", runSchemaJSON)
+	}
 
-	runReq, err := http.NewRequest(http.MethodPost, server.URL+"/api/w/ws-a/jobs/run/echo/echo", bytes.NewBufferString(`{"message":"hello"}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	runReq.Header.Set("Content-Type", "application/json")
-	runReq.Header.Set("X-Windforce-Actor", "runner@example.test")
-	runResp, err := http.DefaultClient.Do(runReq)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer runResp.Body.Close()
-	if runResp.StatusCode != http.StatusCreated {
-		t.Fatalf("run status = %d, want %d", runResp.StatusCode, http.StatusCreated)
-	}
-	var runBody struct {
-		JobID string `json:"job_id"`
-	}
-	if err := json.NewDecoder(runResp.Body).Decode(&runBody); err != nil {
-		t.Fatal(err)
-	}
-	statusResp, err := http.Get(server.URL + "/api/w/ws-a/jobs/" + runBody.JobID)
+	runBody := admitTestRun(t, store, server.URL, "ws-a", "echo", "echo", `{"message":"hello"}`)
+	job := testJobForRun(t, store, runBody.RunID)
+	statusResp, err := http.Get(server.URL + "/api/w/ws-a/jobs/" + job.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2270,8 +2037,8 @@ func TestCanonicalControlPlaneUsesMaterializedActionSchemas(t *testing.T) {
 		!bytes.Contains(statusBody.OutputSchema, []byte(`"ok"`)) {
 		t.Fatalf("job schemas = input:%s output:%s", statusBody.InputSchema, statusBody.OutputSchema)
 	}
-	if statusBody.CreatedBy != "runner@example.test" || statusBody.PermissionedAs != "runner@example.test" {
-		t.Fatalf("job actor = %q/%q, want runner@example.test", statusBody.CreatedBy, statusBody.PermissionedAs)
+	if statusBody.CreatedBy != "operator:admin" || statusBody.PermissionedAs != "operator:admin" {
+		t.Fatalf("job actor = %q/%q, want operator:admin", statusBody.CreatedBy, statusBody.PermissionedAs)
 	}
 }
 
@@ -2707,6 +2474,9 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 
 	fileCatalog := catalog.NewFileCatalog(filepath.Join(tempDir, "catalog.json"))
 	stateStore := state.NewLocalStore(filepath.Join(tempDir, "state.json"))
+	if _, err := stateStore.CreateWorkspace(context.Background(), "ws-a", "ws-a", "", "test"); err != nil {
+		t.Fatal(err)
+	}
 	handler := New(Config{
 		Store:            stateStore,
 		Catalog:          fileCatalog,
@@ -2725,7 +2495,13 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 	if invalidAppResp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("invalid app status = %d, want %d", invalidAppResp.StatusCode, http.StatusBadRequest)
 	}
-	invalidRunResp, err := http.Post(server.URL+"/api/w/ws-a/jobs/run/bad-app/echo", "application/json", bytes.NewBufferString(`{}`))
+	invalidRunReq, err := http.NewRequest(http.MethodPost, server.URL+"/api/v1/workspaces/ws-a/runs", bytes.NewBufferString(`{"app":"bad-app","action":"echo","input":{}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	invalidRunReq.Header.Set("Content-Type", "application/json")
+	invalidRunReq.Header.Set("Authorization", "Bearer test-operator")
+	invalidRunResp, err := http.DefaultClient.Do(invalidRunReq)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3173,27 +2949,9 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 		t.Fatalf("worker tags = %#v, want only default", workerTags.Tags)
 	}
 
-	runReq, err := http.NewRequest(http.MethodPost, server.URL+"/api/w/ws-a/jobs/run/echo/echo", bytes.NewBufferString(`{"message":"hello"}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	runReq.Header.Set("Content-Type", "application/json")
-	runReq.Header.Set("X-Windforce-Actor", "runner@example.test")
-	runResp, err := http.DefaultClient.Do(runReq)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer runResp.Body.Close()
-	if runResp.StatusCode != http.StatusCreated {
-		t.Fatalf("run status = %d, want %d", runResp.StatusCode, http.StatusCreated)
-	}
-	var runBody struct {
-		JobID string `json:"job_id"`
-	}
-	if err := json.NewDecoder(runResp.Body).Decode(&runBody); err != nil {
-		t.Fatal(err)
-	}
-	statusResp, err := http.Get(server.URL + "/api/w/ws-a/jobs/" + runBody.JobID)
+	runBody := admitTestRun(t, stateStore, server.URL, "ws-a", "echo", "echo", `{"message":"hello"}`)
+	admittedJob := testJobForRun(t, stateStore, runBody.RunID)
+	statusResp, err := http.Get(server.URL + "/api/w/ws-a/jobs/" + admittedJob.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3220,8 +2978,8 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 		statusBody.CommitSha != syncBody.Commit ||
 		statusBody.Entrypoint != "main.ts" ||
 		statusBody.Tag != "default" ||
-		statusBody.CreatedBy != "runner@example.test" ||
-		statusBody.PermissionedAs != "runner@example.test" {
+		statusBody.CreatedBy != "operator:admin" ||
+		statusBody.PermissionedAs != "operator:admin" {
 		t.Fatalf("status body = %#v input_schema:%s output_schema:%s input:%s", statusBody, statusBody.InputSchema, statusBody.OutputSchema, statusBody.Input)
 	}
 
@@ -3247,48 +3005,35 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 		t.Fatalf("openapi version = %#v", openAPIBody["openapi"])
 	}
 	infoDescription := openAPIBody["info"].(map[string]any)["description"].(string)
-	if !bytes.Contains([]byte(infoDescription), []byte(`status "failed"`)) ||
-		!bytes.Contains([]byte(infoDescription), []byte("enqueue-time errors")) {
+	if !bytes.Contains([]byte(infoDescription), []byte("canonical Run-based Invocation API")) {
 		t.Fatalf("openapi info description = %q", infoDescription)
 	}
 	if serverURL := openAPIBody["servers"].([]any)[0].(map[string]any)["url"]; serverURL != "https://api.example.test" {
 		t.Fatalf("openapi server url = %#v", serverURL)
 	}
 	paths := openAPIBody["paths"].(map[string]any)
-	runWait := paths["/api/w/ws-a/jobs/run/echo/echo/wait"].(map[string]any)["post"].(map[string]any)
+	runWait := paths["/api/v1/workspaces/{workspace}/runs/wait"].(map[string]any)["post"].(map[string]any)
 	requestSchema := runWait["requestBody"].(map[string]any)["content"].(map[string]any)["application/json"].(map[string]any)["schema"].(map[string]any)
-	properties := requestSchema["properties"].(map[string]any)
-	if properties["message"] == nil {
+	variant := requestSchema["oneOf"].([]any)[0].(map[string]any)
+	inputProperties := variant["properties"].(map[string]any)["input"].(map[string]any)["properties"].(map[string]any)
+	if inputProperties["message"] == nil {
 		t.Fatalf("openapi request schema missing message: %#v", requestSchema)
 	}
-	statusEnum := runWait["responses"].(map[string]any)["200"].(map[string]any)["content"].(map[string]any)["application/json"].(map[string]any)["schema"].(map[string]any)["properties"].(map[string]any)["status"].(map[string]any)["enum"].([]any)
-	if fmt.Sprint(statusEnum) != "[completed failed canceled]" {
-		t.Fatalf("openapi status enum = %#v", statusEnum)
-	}
-	if paths["/api/w/ws-a/jobs/run/echo/echo"] == nil || paths["/api/w/ws-a/jobs/webhook/echo/echo"] == nil ||
-		paths["/api/w/ws-a/jobs/{id}/result"] == nil {
+	if paths["/api/v1/workspaces/{workspace}/runs"] == nil ||
+		paths["/api/v1/workspaces/{workspace}/runs/{run_id}/result"] == nil ||
+		paths["/api/v1/workspaces/{workspace}/runs/{run_id}/cancel"] == nil {
 		t.Fatalf("openapi paths missing: %#v", paths)
 	}
-	resultResponses := paths["/api/w/ws-a/jobs/{id}/result"].(map[string]any)["get"].(map[string]any)["responses"].(map[string]any)
+	resultResponses := paths["/api/v1/workspaces/{workspace}/runs/{run_id}/result"].(map[string]any)["get"].(map[string]any)["responses"].(map[string]any)
 	if resultResponses["401"] == nil || resultResponses["403"] == nil {
 		t.Fatalf("openapi result poll must document canonical auth failures: %#v", resultResponses)
 	}
-	if resultResponses["404"] != nil {
-		t.Fatalf("openapi result poll must match canonical app OpenAPI without 404: %#v", resultResponses)
+	if resultResponses["404"] == nil {
+		t.Fatalf("openapi result lookup must document missing Runs: %#v", resultResponses)
 	}
 	appResponses := openAPIBody["components"].(map[string]any)["responses"].(map[string]any)
-	if appResponses["Conflict"] != nil || appResponses["RequestEntityTooLarge"] != nil {
-		t.Fatalf("app openapi responses must match canonical invocation components: %#v", appResponses)
-	}
-	webhook := paths["/api/w/ws-a/jobs/webhook/echo/echo"].(map[string]any)["post"].(map[string]any)
-	webhookDescription := webhook["description"].(string)
-	if !bytes.Contains([]byte(webhookDescription), []byte("ctx.trigger.raw")) ||
-		!bytes.Contains([]byte(webhookDescription), []byte("request headers are pinned")) {
-		t.Fatalf("webhook description = %q", webhookDescription)
-	}
-	webhookSchema := webhook["requestBody"].(map[string]any)["content"].(map[string]any)["*/*"].(map[string]any)["schema"].(map[string]any)
-	if len(webhookSchema) != 0 {
-		t.Fatalf("webhook schema should be permissive: %#v", webhookSchema)
+	if appResponses["Conflict"] == nil {
+		t.Fatalf("app OpenAPI must document invocation conflicts: %#v", appResponses)
 	}
 
 	sourceResp, err := http.Get(server.URL + "/api/w/ws-a/apps/echo/source")
@@ -3434,7 +3179,7 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 		*resyncedSources[0].LastSyncedCommit != resyncBody.Commit {
 		t.Fatalf("resynced sources = %#v, want latest synchronized commit %q", resyncedSources, resyncBody.Commit)
 	}
-	pinnedResp, err := http.Get(server.URL + "/api/w/ws-a/jobs/" + runBody.JobID)
+	pinnedResp, err := http.Get(server.URL + "/api/w/ws-a/jobs/" + admittedJob.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -4158,20 +3903,11 @@ func TestCanonicalJobRunAllowsTagOverrideWithLabels(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	server := httptest.NewServer(New(Config{
-		Store:   state.NewLocalStore(filepath.Join(tempDir, "state.json")),
-		Catalog: fileCatalog,
-	}))
+	store := state.NewLocalStore(filepath.Join(tempDir, "state.json"))
+	server := httptest.NewServer(New(Config{Store: store, Catalog: fileCatalog}))
 	defer server.Close()
 
-	runResp, err := http.Post(server.URL+"/api/w/ws-a/jobs/run/echo/echo", "application/json", bytes.NewBufferString(`{}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = runResp.Body.Close()
-	if runResp.StatusCode != http.StatusCreated {
-		t.Fatalf("run status = %d, want %d", runResp.StatusCode, http.StatusCreated)
-	}
+	_ = admitTestRun(t, store, server.URL, "ws-a", "echo", "echo", `{}`)
 
 	patchReq, err := http.NewRequest(http.MethodPatch, server.URL+"/api/w/ws-a/apps/echo", bytes.NewBufferString(`{"tag_override":"app-blue"}`))
 	if err != nil {
@@ -4187,16 +3923,9 @@ func TestCanonicalJobRunAllowsTagOverrideWithLabels(t *testing.T) {
 		t.Fatalf("patch status = %d, want %d", patchResp.StatusCode, http.StatusOK)
 	}
 
-	secondResp, err := http.Post(server.URL+"/api/w/ws-a/jobs/run/echo/echo", "application/json", bytes.NewBufferString(`{}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = secondResp.Body.Close()
 	// Tags and labels are orthogonal claim dimensions (ADR 0009): an explicit
 	// tag override no longer conflicts with capability labels.
-	if secondResp.StatusCode != http.StatusCreated {
-		t.Fatalf("run with tag override and labels = %d, want %d", secondResp.StatusCode, http.StatusCreated)
-	}
+	_ = admitTestRun(t, store, server.URL, "ws-a", "echo", "echo", `{}`)
 }
 
 func TestCanonicalDeploymentModelPreservesStoredValues(t *testing.T) {
@@ -4233,22 +3962,10 @@ func TestCanonicalJobRunPinsTagAndRequeueUsesCurrentEffectiveTag(t *testing.T) {
 	}))
 	defer server.Close()
 
-	runResp, err := http.Post(server.URL+"/api/w/ws-a/jobs/run/echo/echo", "application/json", bytes.NewBufferString(`{"message":"hello"}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer runResp.Body.Close()
-	if runResp.StatusCode != http.StatusCreated {
-		t.Fatalf("run status = %d, want %d", runResp.StatusCode, http.StatusCreated)
-	}
-	var runBody struct {
-		JobID string `json:"job_id"`
-	}
-	if err := json.NewDecoder(runResp.Body).Decode(&runBody); err != nil {
-		t.Fatal(err)
-	}
+	runBody := admitTestRun(t, store, server.URL, "ws-a", "echo", "echo", `{"message":"hello"}`)
+	admittedJob := testJobForRun(t, store, runBody.RunID)
 
-	statusResp, err := http.Get(server.URL + "/api/w/ws-a/jobs/" + runBody.JobID)
+	statusResp, err := http.Get(server.URL + "/api/w/ws-a/jobs/" + admittedJob.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -4295,7 +4012,7 @@ func TestCanonicalJobRunPinsTagAndRequeueUsesCurrentEffectiveTag(t *testing.T) {
 		t.Fatalf("requeued = %d, want 1", requeueBody.Requeued)
 	}
 
-	statusResp, err = http.Get(server.URL + "/api/w/ws-a/jobs/" + runBody.JobID)
+	statusResp, err = http.Get(server.URL + "/api/w/ws-a/jobs/" + admittedJob.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -4339,7 +4056,7 @@ func TestCanonicalJobRunPinsTagAndRequeueUsesCurrentEffectiveTag(t *testing.T) {
 		t.Fatalf("action requeued = %d, want 1", requeueBody.Requeued)
 	}
 
-	statusResp, err = http.Get(server.URL + "/api/w/ws-a/jobs/" + runBody.JobID)
+	statusResp, err = http.Get(server.URL + "/api/w/ws-a/jobs/" + admittedJob.ID)
 	if err != nil {
 		t.Fatal(err)
 	}

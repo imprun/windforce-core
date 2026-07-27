@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Small CLI for the windforce-core control-plane API.
+"""Small CLI for the windforce-core Control Plane and Invocation APIs.
 
-The server owns the contract. This tool only calls the `/api/w/{workspace}/...`
-control-plane endpoints so local development follows the real flow:
-validate and register git source -> deploy current commit -> inspect materialized schemas.
+The server owns the system-to-system specification. Management commands call
+`/api/w/{workspace}/...`; Run admission and lifecycle call the canonical
+`/api/v1/workspaces/{workspace}/...` Invocation API.
 """
 
 from __future__ import annotations
@@ -190,24 +190,35 @@ def main(argv: list[str] | None = None) -> int:
     webhook_retry.add_argument("--delivery-id", required=True)
     webhook_retry.set_defaults(func=cmd_webhook_retry)
 
-    run = sub.add_parser("run", help="enqueue an action job")
+    run = sub.add_parser("run", help="admit a Run")
     run.add_argument("--app", required=True)
     run.add_argument("--action", required=True)
+    run.add_argument("--correlation-id", default="")
+    run.add_argument("--idempotency-key", default="")
     add_json_input_args(run)
     run.set_defaults(func=cmd_run)
 
-    run_wait = sub.add_parser("run-wait", help="run an action and wait for a terminal result")
+    run_wait = sub.add_parser("run-wait", help="admit a Run and wait for a terminal result")
     run_wait.add_argument("--app", required=True)
     run_wait.add_argument("--action", required=True)
-    run_wait.add_argument("--timeout-ms", type=int, default=None)
+    run_wait.add_argument("--timeout", default="")
+    run_wait.add_argument("--correlation-id", default="")
+    run_wait.add_argument("--idempotency-key", default="")
     add_json_input_args(run_wait)
     run_wait.set_defaults(func=cmd_run_wait)
 
-    webhook = sub.add_parser("webhook", help="invoke an action through the webhook route")
-    webhook.add_argument("--app", required=True)
-    webhook.add_argument("--action", required=True)
-    add_json_input_args(webhook)
-    webhook.set_defaults(func=cmd_webhook)
+    run_status = sub.add_parser("run-status", help="get one Run")
+    run_status.add_argument("--run-id", required=True)
+    run_status.set_defaults(func=cmd_run_status)
+
+    run_result = sub.add_parser("run-result", help="get or poll one Run result")
+    run_result.add_argument("--run-id", required=True)
+    run_result.set_defaults(func=cmd_run_result)
+
+    run_cancel = sub.add_parser("run-cancel", help="cancel one Run")
+    run_cancel.add_argument("--run-id", required=True)
+    run_cancel.add_argument("--reason", default="")
+    run_cancel.set_defaults(func=cmd_run_cancel)
 
     jobs = sub.add_parser("jobs", help="list jobs")
     jobs.add_argument("--status", default="")
@@ -626,27 +637,59 @@ def cmd_run(args: argparse.Namespace) -> Any:
     return request(
         args,
         "POST",
-        f"/api/w/{quote_path(args.workspace)}/jobs/run/{quote_path(args.app)}/{quote_path(args.action)}",
-        load_json_body(args),
+        f"/api/v1/workspaces/{quote_path(args.workspace)}/runs",
+        compact(
+            {
+                "app": args.app,
+                "action": args.action,
+                "input": load_json_body(args),
+                "correlation_id": args.correlation_id,
+            }
+        ),
+        {"Idempotency-Key": args.idempotency_key},
     )
 
 
 def cmd_run_wait(args: argparse.Namespace) -> Any:
-    query = query_string({"timeout_ms": args.timeout_ms})
+    query = query_string({"timeout": args.timeout})
     return request(
         args,
         "POST",
-        f"/api/w/{quote_path(args.workspace)}/jobs/run/{quote_path(args.app)}/{quote_path(args.action)}/wait{query}",
-        load_json_body(args),
+        f"/api/v1/workspaces/{quote_path(args.workspace)}/runs/wait{query}",
+        compact(
+            {
+                "app": args.app,
+                "action": args.action,
+                "input": load_json_body(args),
+                "correlation_id": args.correlation_id,
+            }
+        ),
+        {"Idempotency-Key": args.idempotency_key},
     )
 
 
-def cmd_webhook(args: argparse.Namespace) -> Any:
+def cmd_run_status(args: argparse.Namespace) -> Any:
+    return request(
+        args,
+        "GET",
+        f"/api/v1/workspaces/{quote_path(args.workspace)}/runs/{quote_path(args.run_id)}",
+    )
+
+
+def cmd_run_result(args: argparse.Namespace) -> Any:
+    return request(
+        args,
+        "GET",
+        f"/api/v1/workspaces/{quote_path(args.workspace)}/runs/{quote_path(args.run_id)}/result",
+    )
+
+
+def cmd_run_cancel(args: argparse.Namespace) -> Any:
     return request(
         args,
         "POST",
-        f"/api/w/{quote_path(args.workspace)}/jobs/webhook/{quote_path(args.app)}/{quote_path(args.action)}",
-        load_json_body(args),
+        f"/api/v1/workspaces/{quote_path(args.workspace)}/runs/{quote_path(args.run_id)}/cancel",
+        compact({"reason": args.reason}),
     )
 
 
@@ -762,12 +805,21 @@ def get_schema(args: argparse.Namespace) -> dict[str, Any]:
     return payload
 
 
-def request(args: argparse.Namespace, method: str, path: str, body: Any | None = None) -> Any:
+def request(
+    args: argparse.Namespace,
+    method: str,
+    path: str,
+    body: Any | None = None,
+    extra_headers: dict[str, str] | None = None,
+) -> Any:
     url = args.api_url.rstrip("/") + path
     data = None
     if body is not None:
         data = json.dumps(body).encode("utf-8")
     headers = request_headers(args, body is not None)
+    for name, value in (extra_headers or {}).items():
+        if str(value).strip():
+            headers[name] = str(value)
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
         with urllib.request.urlopen(req, timeout=60) as response:

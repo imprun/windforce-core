@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -12,7 +11,6 @@ import (
 	"time"
 
 	"github.com/imprun/windforce-core/internal/contract"
-	executionpkg "github.com/imprun/windforce-core/internal/execution"
 	"github.com/imprun/windforce-core/internal/state"
 )
 
@@ -67,68 +65,6 @@ func (h *Handler) handleJobSummary(w http.ResponseWriter, r *http.Request, works
 		return
 	}
 	writeJSON(w, http.StatusOK, summary)
-}
-
-func (h *Handler) handleJobRun(w http.ResponseWriter, r *http.Request, workspaceID string, app string, action string, wait bool) {
-	timeout := time.Duration(0)
-	if wait {
-		var ok bool
-		timeout, ok = parseRunWaitTimeout(w, r)
-		if !ok {
-			return
-		}
-	}
-	job, ok := h.enqueueJobRun(w, r, workspaceID, app, action)
-	if !ok {
-		return
-	}
-	if !wait {
-		writeJSON(w, http.StatusCreated, map[string]string{"job_id": job.ID})
-		return
-	}
-	h.waitForJobResult(w, r, workspaceID, job.ID, timeout)
-}
-
-func (h *Handler) handleJobWebhook(w http.ResponseWriter, r *http.Request, workspaceID string, app string, action string) {
-	input, ok := readWebhookRaw(w, r)
-	if !ok {
-		return
-	}
-	triggerHeaders := captureWebhookHeaders(r)
-	job, ok := h.enqueueJob(w, r, workspaceID, app, action, "webhook", input, triggerHeaders)
-	if !ok {
-		return
-	}
-	writeJSON(w, http.StatusCreated, map[string]string{"job_id": job.ID})
-}
-
-func (h *Handler) enqueueJobRun(w http.ResponseWriter, r *http.Request, workspaceID string, app string, action string) (state.Job, bool) {
-	input, ok := readRunInput(w, r)
-	if !ok {
-		return state.Job{}, false
-	}
-	return h.enqueueJob(w, r, workspaceID, app, action, "api", input, nil)
-}
-
-func (h *Handler) enqueueJob(w http.ResponseWriter, r *http.Request, workspaceID string, app string, action string, triggerKind string, input json.RawMessage, triggerHeaders json.RawMessage) (state.Job, bool) {
-	actor := requestActorSubject(r)
-	admission, err := h.execution.CreateRun(r.Context(), executionpkg.CreateRunRequest{
-		Workspace:      workspaceID,
-		App:            app,
-		Action:         action,
-		Input:          input,
-		Adapter:        "http",
-		TriggerKind:    triggerKind,
-		TriggerHeaders: triggerHeaders,
-		CorrelationID:  r.Header.Get("X-Request-ID"),
-		CreatedBy:      actor,
-		PermissionedAs: actor,
-	})
-	if err != nil {
-		writeLegacyExecutionFault(w, err)
-		return state.Job{}, false
-	}
-	return admission.Job, true
 }
 
 func (h *Handler) handleJobStatus(w http.ResponseWriter, r *http.Request, workspaceID string, jobID string) {
@@ -191,39 +127,6 @@ func (h *Handler) handleJobCancel(w http.ResponseWriter, r *http.Request, worksp
 	writeJSON(w, http.StatusOK, result)
 }
 
-func (h *Handler) waitForJobResult(w http.ResponseWriter, r *http.Request, workspaceID string, jobID string, timeout time.Duration) {
-	deadline := time.Now().Add(timeout)
-	for {
-		job, run, found, err := h.store.GetJob(r.Context(), workspaceID, jobID)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		if !found {
-			writeError(w, http.StatusNotFound, "job not found")
-			return
-		}
-		status, result, done := jobResult(job, run)
-		if done {
-			writeJSON(w, http.StatusOK, map[string]any{"job_id": jobID, "status": status, "result": result})
-			return
-		}
-		if !time.Now().Before(deadline) {
-			writeJSON(w, http.StatusAccepted, map[string]string{"job_id": jobID, "status": "pending"})
-			return
-		}
-		sleep := 50 * time.Millisecond
-		if remaining := time.Until(deadline); remaining < sleep {
-			sleep = remaining
-		}
-		select {
-		case <-r.Context().Done():
-			return
-		case <-time.After(sleep):
-		}
-	}
-}
-
 func (h *Handler) handleJobLogs(w http.ResponseWriter, r *http.Request, workspaceID string, jobID string) {
 	if h.store == nil {
 		writeError(w, http.StatusServiceUnavailable, "state store is not configured")
@@ -250,32 +153,6 @@ func (h *Handler) handleJobLogs(w http.ResponseWriter, r *http.Request, workspac
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)
-}
-
-func (h *Handler) waitForRun(ctx context.Context, runID string) state.Run {
-	run, err := h.store.GetRun(ctx, runID)
-	if err != nil || h.wait <= 0 || state.IsSettledForTrigger(run) {
-		return run
-	}
-	waitCtx, cancel := context.WithTimeout(ctx, h.wait)
-	defer cancel()
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-waitCtx.Done():
-			run, _ = h.store.GetRun(context.Background(), runID)
-			return run
-		case <-ticker.C:
-			current, err := h.store.GetRun(waitCtx, runID)
-			if err == nil {
-				run = current
-				if state.IsSettledForTrigger(run) {
-					return run
-				}
-			}
-		}
-	}
 }
 
 type jobStatusResponse struct {
@@ -512,10 +389,6 @@ func stringPtr(value string) *string {
 }
 
 const maxTailBytes = 1048576
-const (
-	defaultRunWaitTimeout = 30 * time.Second
-	maxRunWaitTimeout     = 30 * time.Second
-)
 
 func parseTailBytes(raw string) (int, error) {
 	raw = strings.TrimSpace(raw)
@@ -530,23 +403,6 @@ func parseTailBytes(raw string) (int, error) {
 		return 0, errors.New("tail_bytes exceeds server limit")
 	}
 	return int(value), nil
-}
-
-func parseRunWaitTimeout(w http.ResponseWriter, r *http.Request) (time.Duration, bool) {
-	raw := strings.TrimSpace(r.URL.Query().Get("timeout_ms"))
-	if raw == "" {
-		return defaultRunWaitTimeout, true
-	}
-	value, err := strconv.ParseInt(raw, 10, 64)
-	if err != nil || value < 0 {
-		writeError(w, http.StatusBadRequest, "timeout_ms must be a non-negative integer")
-		return 0, false
-	}
-	timeout := time.Duration(value) * time.Millisecond
-	if timeout > maxRunWaitTimeout {
-		timeout = maxRunWaitTimeout
-	}
-	return timeout, true
 }
 
 const (

@@ -1,15 +1,17 @@
 from .client import (
+    InvocationResult,
     Run,
     WindforceAPIError,
-    WindforceExecutionClient,
+    WindforceInvocationClient,
     WindforceTimeoutError,
     WindforceTransportError,
 )
 
 __all__ = [
+    "InvocationResult",
     "Run",
     "WindforceAPIError",
-    "WindforceExecutionClient",
+    "WindforceInvocationClient",
     "WindforceTimeoutError",
     "WindforceTransportError",
 ]

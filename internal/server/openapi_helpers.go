@@ -3,8 +3,6 @@ package server
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
-	"strings"
 )
 
 func schemaOrAny(schema json.RawMessage) any {
@@ -94,6 +92,16 @@ func oapiQueryParam(name string, description string, schema map[string]any, requ
 	}
 }
 
+func oapiHeaderParam(name string, description string, schema map[string]any, required bool) map[string]any {
+	return map[string]any{
+		"name":        name,
+		"in":          "header",
+		"required":    required,
+		"description": description,
+		"schema":      schema,
+	}
+}
+
 func openAPISecuritySchemes() map[string]any {
 	return map[string]any{
 		"bearerAuth": map[string]any{
@@ -171,55 +179,7 @@ func appOpenAPIErrorResponses() map[string]any {
 		"Unauthorized":  body("Missing or invalid API token."),
 		"Forbidden":     body("Not a member of the workspace, or the workspace is suspended/offboarded."),
 		"NotFound":      body("App or action not found."),
+		"Conflict":      body("A conflicting Run or idempotency request prevented admission."),
 		"QuotaExceeded": body("Workspace concurrency or daily-run quota reached."),
-	}
-}
-
-func oapiJobHandleResponse() map[string]any {
-	return oapiResponse("Job enqueued", map[string]any{
-		"type":       "object",
-		"properties": map[string]any{"job_id": oapiStringSchema()},
-		"required":   []any{"job_id"},
-	})
-}
-
-func oapiPendingSchema() map[string]any {
-	return map[string]any{
-		"type":       "object",
-		"properties": map[string]any{"job_id": oapiStringSchema(), "status": oapiStringSchema()},
-	}
-}
-
-func sanitizeIdent(value string) string {
-	var builder strings.Builder
-	for _, item := range value {
-		switch {
-		case item >= 'a' && item <= 'z', item >= 'A' && item <= 'Z', item >= '0' && item <= '9':
-			builder.WriteRune(item)
-		default:
-			builder.WriteByte('_')
-		}
-	}
-	return builder.String()
-}
-
-func opID(parts ...string) string {
-	segments := make([]string, len(parts))
-	for index, part := range parts {
-		segments[index] = sanitizeIdent(part)
-	}
-	return strings.Join(segments, "_")
-}
-
-func newOpSegDeduper() func(string) string {
-	used := map[string]bool{}
-	return func(key string) string {
-		base := sanitizeIdent(key)
-		segment := base
-		for index := 2; used[segment]; index++ {
-			segment = fmt.Sprintf("%s_%d", base, index)
-		}
-		used[segment] = true
-		return segment
 	}
 }

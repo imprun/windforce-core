@@ -91,9 +91,9 @@ Release can be attempted again.
 
 ## 4. Admit a Run
 
-Protocol adapters submit `workspace`, `app`, `action`, and input to the
-Execution API. The Execution API owns admission; an adapter does not read the
-release catalog or write queue tables.
+Out-of-process protocol adapters submit `workspace`, `app`, `action`, and input
+to the Invocation API. Built-in adapters call the same admission service
+in-process. An adapter does not read the release catalog or write queue tables.
 
 Admission performs one atomic decision:
 

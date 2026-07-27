@@ -16,6 +16,10 @@ import (
 
 const invocationRunIDHeader = "X-WF-Run-Id"
 const maxInvocationIdempotencyKeyBytes = 200
+const (
+	defaultInvocationWaitTimeout = 30 * time.Second
+	maxInvocationWaitTimeout     = 30 * time.Second
+)
 
 type invocationCreateRunRequest struct {
 	App           string          `json:"app"`
@@ -302,15 +306,15 @@ func (h *Handler) waitForInvocationRun(w http.ResponseWriter, r *http.Request, w
 func parseInvocationWaitTimeout(w http.ResponseWriter, r *http.Request) (time.Duration, bool) {
 	raw := strings.TrimSpace(r.URL.Query().Get("timeout"))
 	if raw == "" {
-		return defaultRunWaitTimeout, true
+		return defaultInvocationWaitTimeout, true
 	}
 	timeout, err := time.ParseDuration(raw)
 	if err != nil || timeout < 0 {
 		writeInvocationError(w, http.StatusBadRequest, string(executionpkg.FaultInvalidRequest), "timeout must be a non-negative duration")
 		return 0, false
 	}
-	if timeout > maxRunWaitTimeout {
-		timeout = maxRunWaitTimeout
+	if timeout > maxInvocationWaitTimeout {
+		timeout = maxInvocationWaitTimeout
 	}
 	return timeout, true
 }
@@ -374,8 +378,26 @@ func newInvocationRunView(run state.Run, replayed bool) invocationRunView {
 }
 
 func writeInvocationFault(w http.ResponseWriter, err error) {
-	status, kind := executionFaultStatus(err)
+	status, kind := invocationFaultStatus(err)
 	writeInvocationError(w, status, string(kind), err.Error())
+}
+
+func invocationFaultStatus(err error) (int, executionpkg.FaultKind) {
+	status := http.StatusInternalServerError
+	kind := executionpkg.FaultKindOf(err)
+	switch kind {
+	case executionpkg.FaultUnavailable:
+		status = http.StatusServiceUnavailable
+	case executionpkg.FaultInvalidRequest:
+		status = http.StatusBadRequest
+	case executionpkg.FaultForbidden:
+		status = http.StatusForbidden
+	case executionpkg.FaultAppNotFound, executionpkg.FaultActionNotFound:
+		status = http.StatusNotFound
+	case executionpkg.FaultRoutingConflict, executionpkg.FaultConflict:
+		status = http.StatusConflict
+	}
+	return status, kind
 }
 
 func writeInvocationStateError(w http.ResponseWriter, err error) {

@@ -10,22 +10,32 @@ import (
 	"testing"
 )
 
-func TestRunJobWaitUsesControlPlaneContract(t *testing.T) {
+func TestRunWaitUsesCanonicalInvocationSpecification(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/w/team/jobs/run/demo/health/wait" || r.URL.Query().Get("timeout_ms") != "5000" {
+		if r.URL.Path != "/api/v1/workspaces/team/runs/wait" || r.URL.Query().Get("timeout") != "5s" {
 			t.Fatalf("request URL = %s", r.URL.String())
 		}
+		if r.Header.Get("Idempotency-Key") != "request-1" {
+			t.Fatalf("idempotency header = %q", r.Header.Get("Idempotency-Key"))
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body["app"] != "demo" || body["action"] != "health" || body["correlation_id"] != "trace-1" {
+			t.Fatalf("request body = %#v", body)
+		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"status":"succeeded"}`))
+		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
 	defer server.Close()
 
 	var stdout, stderr bytes.Buffer
-	exit := Run([]string{"--api-url", server.URL, "--workspace", "team", "job", "run", "demo", "health", "--wait", "--timeout-ms", "5000", "--input", `{"ping":true}`}, strings.NewReader(""), &stdout, &stderr)
+	exit := Run([]string{"--api-url", server.URL, "--workspace", "team", "run", "wait", "demo", "health", "--timeout", "5s", "--idempotency-key", "request-1", "--correlation-id", "trace-1", "--input", `{"ping":true}`}, strings.NewReader(""), &stdout, &stderr)
 	if exit != ExitOK {
 		t.Fatalf("exit=%d stderr=%s", exit, stderr.String())
 	}
-	if strings.TrimSpace(stdout.String()) != `{"status":"succeeded"}` {
+	if strings.TrimSpace(stdout.String()) != `{"ok":true}` {
 		t.Fatalf("stdout=%s", stdout.String())
 	}
 }
@@ -83,7 +93,8 @@ func TestRunRejectsUnexpectedArgumentsBeforeRequest(t *testing.T) {
 		"source register":     {"--api-url", server.URL, "source", "register", "--name", "demo", "--repo-url", "https://example.test/repo.git", "unexpected"},
 		"source probe":        {"--api-url", server.URL, "source", "probe", "--repo-url", "https://example.test/repo.git", "unexpected"},
 		"source deploy":       {"--api-url", server.URL, "source", "deploy", "12", "unexpected"},
-		"job run":             {"--api-url", server.URL, "job", "run", "demo", "health", "unexpected"},
+		"run create":          {"--api-url", server.URL, "run", "create", "demo", "health", "unexpected"},
+		"run show":            {"--api-url", server.URL, "run", "show", "run-1", "unexpected"},
 		"job list":            {"--api-url", server.URL, "job", "list", "unexpected"},
 		"job show":            {"--api-url", server.URL, "job", "show", "job-1", "unexpected"},
 		"job result":          {"--api-url", server.URL, "job", "result", "job-1", "unexpected"},

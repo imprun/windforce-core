@@ -96,12 +96,16 @@ GET  /api/v1/openapi.json
 
 ### Phase 2 — v0.3.0 legacy 제거와 SDK 교체
 
-1. `windforce-invocation`/`windforce_invocation.WindforceInvocationClient`를 canonical SDK로 추가한다.
-2. Control CLI와 embedded examples를 canonical route와 Run ID로 이전한다.
-3. `/execution/v1` handler/OpenAPI, `/api/v1/w/.../run[/wait]`, `/api/w/.../jobs/run[/wait]`과 `/api/w/.../jobs/webhook` submission handler를 삭제한다.
-4. Legacy-only request/view code, `job_id`, `X-WF-Job-Id` 외부 응답과 execution SDK package를 삭제한다.
-5. `/api/w`의 operator Run/Job 조회·로그·강제 취소와 `/worker/v1`은 유지하되 새로운 Run admission을 제공하지 않음을 통신 규격 test로 고정한다.
-6. README, architecture, concepts와 generated OpenAPI에서 legacy 경로와 별도 Public/Execution plane 설명을 제거한다.
+- [x] `windforce-invocation`/`windforce_invocation.WindforceInvocationClient`를 canonical SDK로 추가한다.
+- [x] Control CLI와 embedded examples를 canonical route와 Run ID로 이전한다.
+- [x] `/execution/v1` handler/OpenAPI, `/api/v1/w/.../run[/wait]`, `/api/w/.../jobs/run[/wait]`과 `/api/w/.../jobs/webhook` submission handler를 삭제한다.
+- [x] Legacy-only request/view code, `job_id`, `X-WF-Job-Id` 외부 응답과 execution SDK package를 삭제한다.
+- [x] `/api/w`의 operator Run/Job 조회·로그·강제 취소와 `/worker/v1`은 유지하되 새로운 Run admission을 제공하지 않음을 통신 규격 test로 고정한다.
+- [x] README, architecture, concepts와 generated OpenAPI에서 legacy 경로와 별도 Public/Execution plane 설명을 제거한다.
+
+구현 추적: issue #142. Phase 2는 Core 저장소와 canonical SDK까지를
+안정화하며 Gale, Imprun gateway, dhworker의 소비자 이전이나 배포는 각 저장소의
+후속 phase가 소유한다.
 
 완료 gate는 release candidate에 legacy route, Execution OpenAPI와 `windforce_execution` import가 존재하지 않고 canonical JSON/OpenAPI/SDK에 Job ID가 노출되지 않는 것이다.
 

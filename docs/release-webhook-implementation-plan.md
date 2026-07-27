@@ -91,7 +91,7 @@ type TransactionalReleaseStore interface {
 ```
 
 - PostgreSQL backend에서 active release catalog와 release history를 source of truth로 만든다.
-- Execution API와 Control Plane 조회는 같은 release store를 사용한다.
+- Invocation API와 Control Plane 조회는 같은 release store를 사용한다.
 - local backend는 하나의 lock과 atomic snapshot replace로 같은 service contract를 구현한다. 다중 process 원자성은 PostgreSQL backend만 보장한다.
 - 현재 catalog와 release history를 PostgreSQL로 옮기는 idempotent import 검증 경로를 제공한다.
 - transaction 실패로 참조되지 않는 materialized bundle을 찾고 정리할 수 있게 bundle reference 조회와 retention을 추가한다.
@@ -100,7 +100,7 @@ type TransactionalReleaseStore interface {
 
 - PostgreSQL integration test가 active release, history, source marker와 audit의 원자성을 검증한다.
 - 각 write 단계에서 의도적으로 실패시켜 부분 갱신이 남지 않음을 검증한다.
-- Execution API가 PostgreSQL active release를 resolve하고 기존 self-pin 동작을 유지한다.
+- Invocation API가 PostgreSQL active release를 resolve하고 기존 self-pin 동작을 유지한다.
 - 동일 catalog snapshot을 import해도 release/history가 중복되지 않는다.
 - local backend와 PostgreSQL backend가 같은 release publication contract test를 통과한다.
 
