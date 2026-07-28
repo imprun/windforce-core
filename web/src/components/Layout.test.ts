@@ -35,8 +35,9 @@ describe("primaryNavItems", () => {
     expect(layoutSource).not.toContain(">Browser access<");
   });
 
-  test("uses a language-neutral globe for the locale switcher", () => {
-    expect(layoutSource).toContain("<Globe2 size={16}");
+  test("uses a Korean and Latin glyph for the locale switcher", () => {
+    expect(layoutSource).toContain("가/A");
+    expect(layoutSource).not.toContain("<Globe2");
     expect(layoutSource).not.toContain("<Languages");
   });
 });
