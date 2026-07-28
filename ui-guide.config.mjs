@@ -174,6 +174,8 @@ async function seedTriggers(api, baseUrl) {
       kind: "webhook",
       app: "echo",
       action: "echo",
+      completion: { mode: "poll" },
+      response: { mode: "async" },
       config: {
         signature_header: "X-WF-Signature-256",
         delivery_id_header: "X-WF-Delivery-Id",
@@ -191,6 +193,7 @@ async function seedTriggers(api, baseUrl) {
       kind: "schedule",
       app: "echo",
       action: "echo",
+      completion: { mode: "poll" },
       config: {
         cron: "0 9 * * *",
         timezone: "Asia/Seoul",
@@ -206,6 +209,7 @@ async function seedTriggers(api, baseUrl) {
       kind: "rabbitmq",
       app: "echo",
       action: "echo",
+      completion: { mode: "none" },
       config: {
         queue: "orders.windforce",
         prefetch: 8,

@@ -1,8 +1,81 @@
-import { X } from "lucide-react";
-import { Dialog as DialogPrimitive } from "radix-ui";
+import { Check, ChevronDown, X } from "lucide-react";
+import { Dialog as DialogPrimitive, Select as SelectPrimitive } from "radix-ui";
 import type { ReactNode } from "react";
 import type { ProbeResult } from "../lib/api";
 import { formatJSON } from "../lib/format";
+
+const emptySelectValue = "__imprun_empty_select_value__";
+
+export type SelectOption<T extends string = string> = {
+  value: T;
+  label: string;
+  description?: string;
+};
+
+export function SelectControl<T extends string>({
+  value,
+  options,
+  onChange,
+  placeholder = "Select",
+  ariaLabel,
+  id,
+  disabled,
+  className,
+}: {
+  value: T;
+  options: readonly SelectOption<T>[];
+  onChange: (value: T) => void;
+  placeholder?: string;
+  ariaLabel?: string;
+  id?: string;
+  disabled?: boolean;
+  className?: string;
+}) {
+  return (
+    <SelectPrimitive.Root
+      value={value || emptySelectValue}
+      onValueChange={(next) => onChange((next === emptySelectValue ? "" : next) as T)}
+      disabled={disabled}
+    >
+      <SelectPrimitive.Trigger
+        className={className ? `selectControl ${className}` : "selectControl"}
+        aria-label={ariaLabel}
+        id={id}
+      >
+        <SelectPrimitive.Value placeholder={placeholder} />
+        <SelectPrimitive.Icon asChild>
+          <ChevronDown aria-hidden="true" />
+        </SelectPrimitive.Icon>
+      </SelectPrimitive.Trigger>
+      <SelectPrimitive.Portal>
+        <SelectPrimitive.Content
+          className="selectContent"
+          position="popper"
+          sideOffset={6}
+          collisionPadding={12}
+        >
+          <SelectPrimitive.Viewport className="selectViewport">
+            {options.map((option) => (
+              <SelectPrimitive.Item
+                className="selectItem"
+                key={option.value || emptySelectValue}
+                value={option.value || emptySelectValue}
+              >
+                <span className="selectItemCopy">
+                  <SelectPrimitive.ItemText>{option.label}</SelectPrimitive.ItemText>
+                  {option.description ? <small>{option.description}</small> : null}
+                </span>
+                <SelectPrimitive.ItemIndicator asChild>
+                  <Check aria-hidden="true" />
+                </SelectPrimitive.ItemIndicator>
+              </SelectPrimitive.Item>
+            ))}
+          </SelectPrimitive.Viewport>
+        </SelectPrimitive.Content>
+      </SelectPrimitive.Portal>
+    </SelectPrimitive.Root>
+  );
+}
 
 export function ReleaseStateBadge({
   released,

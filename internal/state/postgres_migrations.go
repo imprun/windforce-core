@@ -398,10 +398,12 @@ CREATE TABLE IF NOT EXISTS trigger_definition (
     kind TEXT NOT NULL,
     enabled BOOLEAN NOT NULL DEFAULT false,
     app_key TEXT NOT NULL,
-    action_key TEXT NOT NULL,
-    credential_ref TEXT NOT NULL DEFAULT '',
-    config JSONB NOT NULL DEFAULT '{}'::jsonb,
-    secret_config_encrypted JSONB NOT NULL DEFAULT '{}'::jsonb,
+      action_key TEXT NOT NULL,
+      credential_ref TEXT NOT NULL DEFAULT '',
+      config JSONB NOT NULL DEFAULT '{}'::jsonb,
+      completion JSONB NOT NULL DEFAULT '{"mode":"none"}'::jsonb,
+      response JSONB NOT NULL DEFAULT '{"mode":"async"}'::jsonb,
+      secret_config_encrypted JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_by TEXT NOT NULL,
     updated_by TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -432,10 +434,19 @@ CREATE TABLE IF NOT EXISTS trigger_delivery (
     correlation_id TEXT NOT NULL DEFAULT '',
     state TEXT NOT NULL,
     run_id TEXT,
-    attempt INTEGER NOT NULL DEFAULT 1,
-    error_summary TEXT NOT NULL DEFAULT '',
-    scheduled_for TIMESTAMPTZ,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      attempt INTEGER NOT NULL DEFAULT 1,
+      error_summary TEXT NOT NULL DEFAULT '',
+      scheduled_for TIMESTAMPTZ,
+      completion JSONB NOT NULL DEFAULT '{"mode":"none"}'::jsonb,
+      completion_state TEXT NOT NULL DEFAULT 'ignored',
+      completion_attempt INTEGER NOT NULL DEFAULT 0,
+      completion_next_attempt_at TIMESTAMPTZ,
+      completion_lease_owner TEXT,
+      completion_lease_expires_at TIMESTAMPTZ,
+      completion_response_status INTEGER,
+      completion_error_summary TEXT NOT NULL DEFAULT '',
+      completion_completed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (workspace_id, trigger_id, delivery_id)
 );
@@ -477,8 +488,19 @@ CREATE TABLE IF NOT EXISTS http_route_binding_audit (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-ALTER TABLE trigger_delivery ADD COLUMN IF NOT EXISTS correlation_id TEXT NOT NULL DEFAULT '';
-ALTER TABLE trigger_delivery ADD COLUMN IF NOT EXISTS scheduled_for TIMESTAMPTZ;
+  ALTER TABLE trigger_delivery ADD COLUMN IF NOT EXISTS correlation_id TEXT NOT NULL DEFAULT '';
+  ALTER TABLE trigger_delivery ADD COLUMN IF NOT EXISTS scheduled_for TIMESTAMPTZ;
+  ALTER TABLE trigger_definition ADD COLUMN IF NOT EXISTS completion JSONB NOT NULL DEFAULT '{"mode":"none"}'::jsonb;
+  ALTER TABLE trigger_definition ADD COLUMN IF NOT EXISTS response JSONB NOT NULL DEFAULT '{"mode":"async"}'::jsonb;
+  ALTER TABLE trigger_delivery ADD COLUMN IF NOT EXISTS completion JSONB NOT NULL DEFAULT '{"mode":"none"}'::jsonb;
+  ALTER TABLE trigger_delivery ADD COLUMN IF NOT EXISTS completion_state TEXT NOT NULL DEFAULT 'ignored';
+  ALTER TABLE trigger_delivery ADD COLUMN IF NOT EXISTS completion_attempt INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE trigger_delivery ADD COLUMN IF NOT EXISTS completion_next_attempt_at TIMESTAMPTZ;
+  ALTER TABLE trigger_delivery ADD COLUMN IF NOT EXISTS completion_lease_owner TEXT;
+  ALTER TABLE trigger_delivery ADD COLUMN IF NOT EXISTS completion_lease_expires_at TIMESTAMPTZ;
+  ALTER TABLE trigger_delivery ADD COLUMN IF NOT EXISTS completion_response_status INTEGER;
+  ALTER TABLE trigger_delivery ADD COLUMN IF NOT EXISTS completion_error_summary TEXT NOT NULL DEFAULT '';
+  ALTER TABLE trigger_delivery ADD COLUMN IF NOT EXISTS completion_completed_at TIMESTAMPTZ;
 
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS result JSONB;
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS correlation_id TEXT;
@@ -566,8 +588,16 @@ CREATE INDEX IF NOT EXISTS webhook_audit_workspace_idx
 CREATE INDEX IF NOT EXISTS trigger_audit_lookup_idx
     ON trigger_audit (workspace_id, trigger_id, created_at DESC, id DESC);
 
-CREATE INDEX IF NOT EXISTS trigger_delivery_lookup_idx
-    ON trigger_delivery (workspace_id, trigger_id, updated_at DESC, id DESC);
+  CREATE INDEX IF NOT EXISTS trigger_delivery_lookup_idx
+      ON trigger_delivery (workspace_id, trigger_id, updated_at DESC, id DESC);
+
+  CREATE INDEX IF NOT EXISTS trigger_delivery_completion_claim_idx
+      ON trigger_delivery (completion_next_attempt_at, created_at, id)
+      WHERE completion_state IN ('pending', 'retrying');
+
+  CREATE INDEX IF NOT EXISTS trigger_delivery_completion_lease_idx
+      ON trigger_delivery (completion_lease_expires_at, id)
+      WHERE completion_state = 'delivering';
 
 CREATE INDEX IF NOT EXISTS http_route_binding_trigger_idx
     ON http_route_binding (workspace_id, trigger_id, created_at, id);

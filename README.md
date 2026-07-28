@@ -41,7 +41,9 @@ fingerprint, marker, Run, and Job definitions. The complete state flow is in
 Configured event sources and external adapter guidance are in
 [Triggers](docs/concepts/triggers.md). The external routing ownership boundary
 is recorded in
-[ADR 0015](docs/adr/0015-provider-neutral-http-route-bindings.md).
+[ADR 0015](docs/adr/0015-provider-neutral-http-route-bindings.md), and explicit
+Trigger result polling, callback, publish, and HTTP wait behavior is recorded in
+[ADR 0016](docs/adr/0016-trigger-completion-and-response-policy.md).
 
 ## System-to-system Invocation API
 

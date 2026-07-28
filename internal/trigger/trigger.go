@@ -139,6 +139,7 @@ func (s *Submitter) record(ctx context.Context, definition state.TriggerDefiniti
 		CorrelationID: event.CorrelationID,
 		State:         result.State,
 		RunID:         result.RunID,
+		Completion:    definition.Completion,
 	}
 	if !event.ScheduledFor.IsZero() {
 		scheduledFor := event.ScheduledFor.UTC()

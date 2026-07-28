@@ -10,36 +10,41 @@ import (
 	"strings"
 	"time"
 
+	executionpkg "github.com/imprun/windforce-core/internal/execution"
 	"github.com/imprun/windforce-core/internal/state"
 	triggerpkg "github.com/imprun/windforce-core/internal/trigger"
 )
 
 type canonicalTriggerRequest struct {
-	Name          string          `json:"name"`
-	Kind          string          `json:"kind"`
-	Enabled       *bool           `json:"enabled,omitempty"`
-	AppKey        string          `json:"app"`
-	ActionKey     string          `json:"action"`
-	CredentialRef string          `json:"credential_ref,omitempty"`
-	Config        json.RawMessage `json:"config"`
-	SecretConfig  json.RawMessage `json:"secret_config,omitempty"`
+	Name          string                         `json:"name"`
+	Kind          string                         `json:"kind"`
+	Enabled       *bool                          `json:"enabled,omitempty"`
+	AppKey        string                         `json:"app"`
+	ActionKey     string                         `json:"action"`
+	CredentialRef string                         `json:"credential_ref,omitempty"`
+	Config        json.RawMessage                `json:"config"`
+	Completion    *state.TriggerCompletionPolicy `json:"completion"`
+	Response      *state.TriggerResponsePolicy   `json:"response,omitempty"`
+	SecretConfig  json.RawMessage                `json:"secret_config,omitempty"`
 }
 
 type canonicalTrigger struct {
-	ID            string          `json:"id"`
-	WorkspaceID   string          `json:"workspace_id"`
-	Name          string          `json:"name"`
-	Kind          string          `json:"kind"`
-	Enabled       bool            `json:"enabled"`
-	AppKey        string          `json:"app"`
-	ActionKey     string          `json:"action"`
-	CredentialRef string          `json:"credential_ref,omitempty"`
-	Config        json.RawMessage `json:"config"`
-	HasSecret     bool            `json:"has_secret"`
-	CreatedBy     string          `json:"created_by"`
-	UpdatedBy     string          `json:"updated_by"`
-	CreatedAt     time.Time       `json:"created_at"`
-	UpdatedAt     time.Time       `json:"updated_at"`
+	ID            string                        `json:"id"`
+	WorkspaceID   string                        `json:"workspace_id"`
+	Name          string                        `json:"name"`
+	Kind          string                        `json:"kind"`
+	Enabled       bool                          `json:"enabled"`
+	AppKey        string                        `json:"app"`
+	ActionKey     string                        `json:"action"`
+	CredentialRef string                        `json:"credential_ref,omitempty"`
+	Config        json.RawMessage               `json:"config"`
+	Completion    state.TriggerCompletionPolicy `json:"completion"`
+	Response      state.TriggerResponsePolicy   `json:"response"`
+	HasSecret     bool                          `json:"has_secret"`
+	CreatedBy     string                        `json:"created_by"`
+	UpdatedBy     string                        `json:"updated_by"`
+	CreatedAt     time.Time                     `json:"created_at"`
+	UpdatedAt     time.Time                     `json:"updated_at"`
 }
 
 func (h *Handler) handleCanonicalTriggerAPI(w http.ResponseWriter, r *http.Request, parts []string) bool {
@@ -104,6 +109,7 @@ func (h *Handler) handleCanonicalCreateTrigger(w http.ResponseWriter, r *http.Re
 		enabled = *request.Enabled
 	}
 	definition := triggerDefinitionFromRequest(workspaceID, "", request, enabled)
+	definition.SecretConfig = sanitizeTriggerCompletionSecrets(definition.SecretConfig, definition.Completion.Mode)
 	if err := triggerpkg.ValidateDefinition(definition); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -132,20 +138,19 @@ func (h *Handler) handleCanonicalUpdateTrigger(w http.ResponseWriter, r *http.Re
 		enabled = *request.Enabled
 	}
 	definition := triggerDefinitionFromRequest(workspaceID, id, request, enabled)
-	preserveSecret := len(request.SecretConfig) == 0 && definition.Kind == existing.Kind
-	if len(definition.SecretConfig) == 0 {
-		definition.SecretConfig = existing.SecretConfig
+	existingSecret := existing.SecretConfig
+	if definition.Kind != existing.Kind {
+		existingSecret = nil
 	}
-	if err := triggerpkg.ValidateDefinition(definition); err != nil {
+	mergedSecret, err := mergeTriggerSecretConfig(existingSecret, request.SecretConfig)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if len(request.SecretConfig) == 0 {
-		if preserveSecret {
-			definition.SecretConfig = nil
-		} else {
-			definition.SecretConfig = json.RawMessage("null")
-		}
+	definition.SecretConfig = sanitizeTriggerCompletionSecrets(mergedSecret, definition.Completion.Mode)
+	if err := triggerpkg.ValidateDefinition(definition); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
 	}
 	updated, err := h.store.UpdateTrigger(r.Context(), definition, requestActorSubjectUTF8(r))
 	if err != nil {
@@ -190,7 +195,13 @@ func (h *Handler) handleCanonicalTriggerDeliveries(w http.ResponseWriter, r *htt
 		writeStateError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+	safe := make([]state.TriggerDelivery, 0, len(items))
+	for _, item := range items {
+		item.CompletionLeaseOwner = ""
+		item.CompletionLeaseExpiresAt = nil
+		safe = append(safe, item)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": safe})
 }
 
 func (h *Handler) handleTriggerIngress(w http.ResponseWriter, r *http.Request) bool {
@@ -233,9 +244,21 @@ func (h *Handler) handleTriggerIngress(w http.ResponseWriter, r *http.Request) b
 	})
 	switch {
 	case submission.State == triggerpkg.DeliveryAdmitted:
+		statusURL := "/api/v1/workspaces/" + parts[3] + "/runs/" + submission.RunID
+		resultURL := statusURL + "/result"
+		w.Header().Set("Location", statusURL)
+		w.Header().Set("X-WF-Run-Id", submission.RunID)
+		definition, err := h.store.GetTrigger(r.Context(), parts[3], parts[5])
+		if err == nil && definition.Response.Mode == state.TriggerResponseWait {
+			principal := executionpkg.TriggerPrincipal(definition.WorkspaceID, definition.ID, definition.AppKey, definition.ActionKey)
+			h.waitForInvocationRun(w, r, definition.WorkspaceID, submission.RunID, principal, time.Duration(definition.Response.TimeoutSeconds)*time.Second)
+			return true
+		}
 		writeJSON(w, http.StatusAccepted, map[string]any{
-			"run_id":   submission.RunID,
-			"replayed": submission.Replayed,
+			"run_id":     submission.RunID,
+			"replayed":   submission.Replayed,
+			"status_url": statusURL,
+			"result_url": resultURL,
 		})
 	case errors.Is(submission.Err, triggerpkg.ErrUnauthorized):
 		writeError(w, http.StatusUnauthorized, "invalid webhook signature")
@@ -264,11 +287,15 @@ func readCanonicalTriggerRequest(w http.ResponseWriter, r *http.Request) (canoni
 	if len(request.Config) == 0 {
 		request.Config = json.RawMessage("{}")
 	}
+	if request.Completion == nil {
+		writeError(w, http.StatusBadRequest, "completion is required; choose none, poll, callback, or publish")
+		return canonicalTriggerRequest{}, false
+	}
 	return request, true
 }
 
 func triggerDefinitionFromRequest(workspaceID string, id string, request canonicalTriggerRequest, enabled bool) state.TriggerDefinition {
-	return state.TriggerDefinition{
+	definition := state.TriggerDefinition{
 		ID:            id,
 		WorkspaceID:   workspaceID,
 		Name:          strings.TrimSpace(request.Name),
@@ -280,6 +307,13 @@ func triggerDefinitionFromRequest(workspaceID string, id string, request canonic
 		Config:        append(json.RawMessage(nil), request.Config...),
 		SecretConfig:  append(json.RawMessage(nil), request.SecretConfig...),
 	}
+	if request.Completion != nil {
+		definition.Completion = *request.Completion
+	}
+	if request.Response != nil {
+		definition.Response = *request.Response
+	}
+	return definition
 }
 
 func canonicalTriggerFrom(definition state.TriggerDefinition) canonicalTrigger {
@@ -293,6 +327,8 @@ func canonicalTriggerFrom(definition state.TriggerDefinition) canonicalTrigger {
 		ActionKey:     definition.ActionKey,
 		CredentialRef: definition.CredentialRef,
 		Config:        append(json.RawMessage(nil), definition.Config...),
+		Completion:    definition.Completion,
+		Response:      definition.Response,
 		HasSecret:     hasTriggerSecret(definition.SecretConfig),
 		CreatedBy:     definition.CreatedBy,
 		UpdatedBy:     definition.UpdatedBy,
@@ -304,6 +340,81 @@ func canonicalTriggerFrom(definition state.TriggerDefinition) canonicalTrigger {
 func hasTriggerSecret(value json.RawMessage) bool {
 	value = bytes.TrimSpace(value)
 	return len(value) > 0 && !bytes.Equal(value, []byte("null")) && !bytes.Equal(value, []byte("{}"))
+}
+
+func mergeTriggerSecretConfig(existing json.RawMessage, patch json.RawMessage) (json.RawMessage, error) {
+	var target map[string]any
+	if len(bytes.TrimSpace(existing)) == 0 || bytes.Equal(bytes.TrimSpace(existing), []byte("null")) {
+		target = map[string]any{}
+	} else if err := json.Unmarshal(existing, &target); err != nil {
+		return nil, errors.New("stored trigger secret config is invalid")
+	}
+	if len(bytes.TrimSpace(patch)) == 0 {
+		if len(target) == 0 {
+			return json.RawMessage("null"), nil
+		}
+		return json.Marshal(target)
+	}
+	var updates map[string]any
+	if err := json.Unmarshal(patch, &updates); err != nil {
+		return nil, errors.New("secret_config must be a JSON object")
+	}
+	mergeSecretObject(target, updates)
+	if len(target) == 0 {
+		return json.RawMessage("null"), nil
+	}
+	return json.Marshal(target)
+}
+
+func mergeSecretObject(target map[string]any, updates map[string]any) {
+	for key, update := range updates {
+		if update == nil {
+			delete(target, key)
+			continue
+		}
+		updateObject, updateIsObject := update.(map[string]any)
+		currentObject, currentIsObject := target[key].(map[string]any)
+		if updateIsObject {
+			if !currentIsObject {
+				currentObject = map[string]any{}
+			}
+			mergeSecretObject(currentObject, updateObject)
+			if len(currentObject) == 0 {
+				delete(target, key)
+			} else {
+				target[key] = currentObject
+			}
+			continue
+		}
+		target[key] = update
+	}
+}
+
+func sanitizeTriggerCompletionSecrets(raw json.RawMessage, mode string) json.RawMessage {
+	var value map[string]any
+	if json.Unmarshal(raw, &value) != nil {
+		return raw
+	}
+	completionSecrets, ok := value["completion"].(map[string]any)
+	if !ok {
+		return raw
+	}
+	switch mode {
+	case state.TriggerCompletionModeCallback:
+		delete(completionSecrets, "rabbitmq_url")
+	case state.TriggerCompletionModePublish:
+		delete(completionSecrets, "signing_secret")
+	default:
+		delete(value, "completion")
+	}
+	if len(completionSecrets) == 0 {
+		delete(value, "completion")
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return raw
+	}
+	return encoded
 }
 
 func (h *Handler) reconcileTriggers() {

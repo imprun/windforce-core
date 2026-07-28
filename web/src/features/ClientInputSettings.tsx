@@ -1,6 +1,6 @@
 import { Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { EmptyState, ErrorNotice, Loading, Modal, Panel } from "../components/ui";
+import { EmptyState, ErrorNotice, Loading, Modal, Panel, SelectControl } from "../components/ui";
 import { actionDisplayName } from "../lib/action-label";
 import type { AppSummary, Client, InputConfig } from "../lib/api";
 import { useApp, useAsync } from "../lib/app-context";
@@ -90,17 +90,12 @@ function ClientInputSettingsSummary({
         actions={
           apps.length ? (
             <div className="inlineActions">
-              <select
+              <SelectControl
                 value={selectedApp}
-                aria-label="App for new input settings"
-                onChange={(event) => setSelectedApp(event.target.value)}
-              >
-                {apps.map((app) => (
-                  <option key={app.app_key} value={app.app_key}>
-                    {app.app_key}
-                  </option>
-                ))}
-              </select>
+                ariaLabel="App for new input settings"
+                onChange={setSelectedApp}
+                options={apps.map((app) => ({ value: app.app_key, label: app.app_key }))}
+              />
               <button
                 className="button primary"
                 type="button"

@@ -1,6 +1,6 @@
 import { BookOpen, Lock, Plus, Save, Trash2, Unlock } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Field, Modal } from "../components/ui";
+import { Field, Modal, SelectControl } from "../components/ui";
 import { actionDisplayName } from "../lib/action-label";
 import {
   type ActionView,
@@ -188,33 +188,32 @@ export function InputConfigDialog({
           {fixedClientID !== undefined ? (
             <input value={fixedClientLabel} disabled />
           ) : (
-            <select
+            <SelectControl
               value={clientID}
               disabled={identityLocked}
-              onChange={(event) => setClientID(event.target.value)}
-            >
-              <option value="">All clients (default)</option>
-              {clients.map((client) => (
-                <option key={client.id} value={client.id}>
-                  {client.name}
-                </option>
-              ))}
-            </select>
+              onChange={setClientID}
+              ariaLabel="Client scope"
+              options={[
+                { value: "", label: "All clients (default)" },
+                ...clients.map((client) => ({ value: client.id, label: client.name })),
+              ]}
+            />
           )}
         </Field>
         <Field label="Action scope">
-          <select
+          <SelectControl
             value={actionKey}
             disabled={identityLocked}
-            onChange={(event) => setActionKey(event.target.value)}
-          >
-            <option value="">All actions (app default)</option>
-            {actions.map((action) => (
-              <option key={action.action_key} value={action.action_key}>
-                {actionDisplayName(action.display_name) || action.action_key} · {action.action_key}
-              </option>
-            ))}
-          </select>
+            onChange={setActionKey}
+            ariaLabel="Action scope"
+            options={[
+              { value: "", label: "All actions (app default)" },
+              ...actions.map((action) => ({
+                value: action.action_key,
+                label: `${actionDisplayName(action.display_name) || action.action_key} · ${action.action_key}`,
+              })),
+            ]}
+          />
         </Field>
       </div>
 
@@ -254,11 +253,10 @@ export function InputConfigDialog({
               <div className="inputConfigKeyField">
                 <label htmlFor={`input-setting-key-${index}`}>Setting key</label>
                 {actionKey && !schemaState.loading && definitions.length > 0 ? (
-                  <select
+                  <SelectControl
                     id={`input-setting-key-${index}`}
                     value={custom ? "__custom__" : row.key}
-                    onChange={(event) => {
-                      const key = event.target.value;
+                    onChange={(key) => {
                       if (key === "__custom__") {
                         updateRow(index, {
                           key: definition ? "" : row.key,
@@ -274,31 +272,22 @@ export function InputConfigDialog({
                         valueText: selected ? formatInputSettingExample(selected.example) : "",
                       });
                     }}
-                    aria-label={`Setting key ${index + 1}`}
-                  >
-                    <option value="">Select a documented key</option>
-                    {operatorDefinitions.length > 0 ? (
-                      <optgroup label="Operator settings">
-                        {operatorDefinitions.map((candidate) => (
-                          <option value={candidate.key} key={candidate.key}>
-                            {candidate.title ? `${candidate.title} · ` : ""}
-                            {candidate.key}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ) : null}
-                    {requestDefinitions.length > 0 ? (
-                      <optgroup label="Request fields">
-                        {requestDefinitions.map((candidate) => (
-                          <option value={candidate.key} key={candidate.key}>
-                            {candidate.title ? `${candidate.title} · ` : ""}
-                            {candidate.key}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ) : null}
-                    <option value="__custom__">Custom key…</option>
-                  </select>
+                    ariaLabel={`Setting key ${index + 1}`}
+                    options={[
+                      { value: "", label: "Select a documented key" },
+                      ...operatorDefinitions.map((candidate) => ({
+                        value: candidate.key,
+                        label: `${candidate.title ? `${candidate.title} · ` : ""}${candidate.key}`,
+                        description: "Operator setting",
+                      })),
+                      ...requestDefinitions.map((candidate) => ({
+                        value: candidate.key,
+                        label: `${candidate.title ? `${candidate.title} · ` : ""}${candidate.key}`,
+                        description: "Request field",
+                      })),
+                      { value: "__custom__", label: "Custom key…" },
+                    ]}
+                  />
                 ) : (
                   <input
                     id={`input-setting-key-${index}`}
@@ -433,22 +422,20 @@ function InputSettingValueEditor({
   }
   if (definition?.enumValues?.length) {
     return (
-      <select
+      <SelectControl
         id={id}
         className="mono"
         value={normalizedEnumValue(row.valueText, definition.enumValues)}
-        onChange={(event) => onChange(event.target.value)}
-      >
-        <option value="">Select an allowed value</option>
-        {definition.enumValues.map((value) => {
-          const encoded = formatInputSettingExample(value);
-          return (
-            <option value={encoded} key={encoded}>
-              {formatSchemaValue(value)}
-            </option>
-          );
-        })}
-      </select>
+        onChange={onChange}
+        ariaLabel="Allowed value"
+        options={[
+          { value: "", label: "Select an allowed value" },
+          ...definition.enumValues.map((value) => ({
+            value: formatInputSettingExample(value),
+            label: formatSchemaValue(value),
+          })),
+        ]}
+      />
     );
   }
   if (definition?.type === "boolean") {

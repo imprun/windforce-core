@@ -172,6 +172,13 @@ first Job before a broker ACK. Retryable admission failures preserve the same
 key and RabbitMQ requeues the message; terminal failures reject it for the
 queue's dead-letter policy. Schedule actions receive `WF_SCHEDULED_FOR`.
 
+Every Trigger pins an explicit completion policy on its TriggerDelivery:
+authenticated Invocation API polling, signed HTTP callback, confirmed RabbitMQ
+publish, or deliberate no output. A separate Webhook response policy chooses
+immediate 202 or a bounded synchronous wait. Terminal Run completion is
+dispatched durably without exposing the internal Job ID. See
+[ADR 0016](adr/0016-trigger-completion-and-response-policy.md).
+
 External trigger processes do not load this SPI. They use a least-privilege
 `wfs_` Service Principal and the canonical `/api/v1` routes described in
 [Triggers](concepts/triggers.md).

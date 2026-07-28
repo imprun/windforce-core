@@ -231,6 +231,11 @@ func runServer(args []string, mode string) int {
 		fmt.Fprintf(os.Stderr, "%s webhook dispatcher: %v\n", mode, err)
 		return 1
 	}
+	completionDispatcher, err := newTriggerCompletionDispatcher(stateStore, webhookDispatcherFlags)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s trigger completion dispatcher: %v\n", mode, err)
+		return 1
+	}
 	webhookRetention, err := webhookRetentionFromFlags(webhookDispatcherFlags)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s webhook retention: %v\n", mode, err)
@@ -300,6 +305,11 @@ func runServer(args []string, mode string) int {
 	go func() {
 		if err := dispatcher.RunLoop(runCtx, *webhookDispatcherFlags.dispatchInterval); err != nil {
 			fmt.Fprintf(os.Stderr, "%s webhook dispatcher: %v\n", mode, err)
+		}
+	}()
+	go func() {
+		if err := completionDispatcher.RunLoop(runCtx, *webhookDispatcherFlags.dispatchInterval); err != nil {
+			fmt.Fprintf(os.Stderr, "%s trigger completion dispatcher: %v\n", mode, err)
 		}
 	}()
 	if webhookRetention.Enabled() {

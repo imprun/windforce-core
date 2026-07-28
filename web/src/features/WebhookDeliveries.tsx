@@ -1,6 +1,6 @@
 import { RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { EmptyState, ErrorNotice, Loading, Panel } from "../components/ui";
+import { EmptyState, ErrorNotice, Loading, Panel, SelectControl } from "../components/ui";
 import type { WebhookDeliveryDetail, WebhookDeliveryState, WebhookSubscription } from "../lib/api";
 import { errorMessage } from "../lib/api";
 import { useApp, useAsync } from "../lib/app-context";
@@ -88,18 +88,20 @@ export function WebhookDeliveries({ subscription }: { subscription: WebhookSubsc
       <div className="deliveryToolbar">
         <label className="filterField">
           <span>Status</span>
-          <select
+          <SelectControl
             value={filter}
-            onChange={(event) => setFilter(event.target.value as WebhookDeliveryState | "")}
-          >
-            <option value="">All statuses</option>
-            <option value="pending">Pending</option>
-            <option value="delivering">Delivering</option>
-            <option value="retrying">Retrying</option>
-            <option value="succeeded">Delivered</option>
-            <option value="failed">Failed</option>
-            <option value="canceled">Canceled</option>
-          </select>
+            onChange={setFilter}
+            ariaLabel="Webhook delivery status"
+            options={[
+              { value: "", label: "All statuses" },
+              { value: "pending", label: "Pending" },
+              { value: "delivering", label: "Delivering" },
+              { value: "retrying", label: "Retrying" },
+              { value: "succeeded", label: "Delivered" },
+              { value: "failed", label: "Failed" },
+              { value: "canceled", label: "Canceled" },
+            ]}
+          />
         </label>
         <span className="fieldHint">
           {deliveries.length} delivery record{deliveries.length === 1 ? "" : "s"} loaded

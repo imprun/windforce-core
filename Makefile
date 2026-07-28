@@ -181,7 +181,7 @@ test-postgres: compose-db
 	WINDFORCE_LITE_POSTGRES_TEST_DSN="$(POSTGRES_DSN)" $(GO) test ./internal/state -run Postgres -count=1 -v
 
 test-rabbitmq: compose-rabbitmq
-	WINDFORCE_RABBITMQ_TEST_URL="$(RABBITMQ_URL)" $(GO) test ./internal/trigger -run RabbitMQIntegration -count=1 -v
+	WINDFORCE_RABBITMQ_TEST_URL="$(RABBITMQ_URL)" $(GO) test ./internal/trigger ./internal/completion -run RabbitMQ -count=1 -v
 
 build: cli-build
 	@mkdir -p "$(BIN_DIR)"

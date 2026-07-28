@@ -18,6 +18,8 @@ function triggerFixture(overrides: Partial<TriggerDefinition> = {}): TriggerDefi
     app: "orders",
     action: "ingest",
     config: {},
+    completion: { mode: "poll" },
+    response: { mode: "async" },
     has_secret: false,
     created_by: "operator",
     updated_by: "operator",
@@ -49,6 +51,8 @@ describe("trigger form payloads", () => {
           correlation_header: "X-WF-Correlation-Id",
           input_mode: "json",
         },
+        completion: { mode: "poll" },
+        response: { mode: "async" },
         secret_config: { secret: "secret-value" },
       },
     });
@@ -68,6 +72,59 @@ describe("trigger form payloads", () => {
     expect(result.payload?.enabled).toBe(true);
     expect(result.payload?.secret_config).toBeUndefined();
     expect(result.payload?.config.input_mode).toBe("raw");
+  });
+
+  test("wires signed callback completion separately from the webhook response", () => {
+    const draft = {
+      ...emptyTriggerDraft(),
+      name: "Partner orders",
+      action: "ingest",
+      webhookSecret: "source-secret",
+      completionMode: "callback" as const,
+      callbackEndpoint: "https://partner.example.test/completions",
+      callbackSigningSecret: "callback-secret",
+      responseMode: "wait" as const,
+      responseTimeout: "45",
+    };
+
+    expect(buildTriggerPayload(draft, "orders").payload).toMatchObject({
+      completion: {
+        mode: "callback",
+        callback: { endpoint: "https://partner.example.test/completions" },
+      },
+      response: { mode: "wait", timeout_seconds: 45 },
+      secret_config: {
+        secret: "source-secret",
+        completion: { signing_secret: "callback-secret" },
+      },
+    });
+  });
+
+  test("requires a new secret when switching an existing Trigger to publish completion", () => {
+    const trigger = triggerFixture({ completion: { mode: "poll" }, has_secret: true });
+    const draft = {
+      ...draftFromTrigger(trigger),
+      completionMode: "publish" as const,
+      publishExchange: "windforce.events",
+      publishRoutingKey: "orders.completed",
+    };
+
+    expect(buildTriggerPayload(draft, "orders", trigger).error).toContain("RabbitMQ URL");
+    expect(
+      buildTriggerPayload(
+        { ...draft, publishRabbitMQURL: "amqps://broker.example.test/vhost" },
+        "orders",
+        trigger,
+      ).payload,
+    ).toMatchObject({
+      completion: {
+        mode: "publish",
+        publish: { exchange: "windforce.events", routing_key: "orders.completed" },
+      },
+      secret_config: {
+        completion: { rabbitmq_url: "amqps://broker.example.test/vhost" },
+      },
+    });
   });
 
   test("parses schedule input and validates malformed JSON", () => {

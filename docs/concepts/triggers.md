@@ -43,8 +43,10 @@ GET    /api/w/{workspace}/triggers/{trigger_id}/audit
 GET    /api/w/{workspace}/triggers/{trigger_id}/deliveries
 ```
 
-Create definitions disabled, verify the target and delivery policy, and enable
-them explicitly. `secret_config` is write-only and encrypted at rest. A
+Create definitions disabled, verify the target and completion policy, and
+enable them explicitly. Every request must choose `completion: poll`,
+`callback`, `publish`, or deliberate `none`. `secret_config` is a nested
+write-only patch encrypted at rest. A
 representation exposes only `has_secret`; audit details and metrics never
 contain secret material or payload values.
 
@@ -56,6 +58,12 @@ contain secret material or payload values.
   "kind": "webhook",
   "app": "orders",
   "action": "ingest",
+  "completion": {
+    "mode": "poll"
+  },
+  "response": {
+    "mode": "async"
+  },
   "config": {
     "signature_header": "X-WF-Signature-256",
     "delivery_id_header": "X-WF-Delivery-Id",
@@ -79,9 +87,16 @@ Content-Type: application/json
 
 The configured HMAC is the ingress credential; this exact route does not use a
 Control or Invocation bearer token. Missing or invalid signatures return 401.
-Admission returns 202 with `run_id` and `replayed`. The request body is bounded
-to 1 MiB. Authorization, cookie, and signature headers are excluded from safe
-metadata.
+Async admission returns 202 with `run_id`, `replayed`, `status_url`, and
+`result_url`, plus `Location` and `X-WF-Run-Id` headers. The status and result
+URLs are authenticated Invocation API resources; the ingress HMAC does not
+grant workspace read access. Use a workspace access token or operator session
+for polling; a least-privilege external partner should normally use `wait` or a
+signed callback instead. A Webhook can use `response.mode: wait`
+with `timeout_seconds` from 1 through 60. A completed wait returns the raw
+Action result; a timeout still returns 202 for the admitted Run. The request
+body is bounded to 1 MiB. Authorization, cookie, and signature headers are
+excluded from safe metadata.
 
 Use `input_mode: raw` only when the Action expects a JSON envelope containing
 `raw_base64` and `content_type`. If no delivery header is present, Core derives
@@ -135,6 +150,75 @@ The Web UI shows Public routes only when system info advertises a configured
 provider. Standalone without a provider shows only the canonical ingress.
 See [ADR 0015](../adr/0015-provider-neutral-http-route-bindings.md).
 
+## Completion output
+
+The source, admission, and completion stages are separate:
+
+```text
+Webhook / Schedule / RabbitMQ source
+  -> AdmissionService
+  -> Run
+  -> terminal result
+  -> poll | signed callback | RabbitMQ publish | none
+```
+
+`poll` marks the Trigger delivery result available through:
+
+```http
+GET /api/v1/workspaces/{workspace}/runs/{run_id}
+GET /api/v1/workspaces/{workspace}/runs/{run_id}/result
+Authorization: Bearer <workspace access token>
+```
+
+`callback` pins a non-secret endpoint and uses a write-only signing secret:
+
+```json
+{
+  "completion": {
+    "mode": "callback",
+    "callback": {
+      "endpoint": "https://partner.example.com/windforce/completions"
+    }
+  },
+  "secret_config": {
+    "completion": {
+      "signing_secret": "replace-with-a-random-secret"
+    }
+  }
+}
+```
+
+Core signs the exact JSON completion envelope with the standard
+`X-Windforce-Timestamp` and `X-Windforce-Signature` headers and retries
+retryable failures. The envelope identifies the source delivery and Run, never
+the internal Job.
+
+`publish` pins the exchange and routing key and stores the broker URL
+write-only:
+
+```json
+{
+  "completion": {
+    "mode": "publish",
+    "publish": {
+      "exchange": "windforce.events",
+      "routing_key": "orders.completed"
+    }
+  },
+  "secret_config": {
+    "completion": {
+      "rabbitmq_url": "amqps://user:password@broker/vhost"
+    }
+  }
+}
+```
+
+The message is persistent, uses the Trigger delivery ID as `message_id`, and is
+considered delivered only after publisher confirmation. An unroutable mandatory
+publish is terminal. Use `none` only when operators need the Run but the source
+integration does not consume a result. See
+[ADR 0016](../adr/0016-trigger-completion-and-response-policy.md).
+
 ## Schedule
 
 ```json
@@ -143,6 +227,9 @@ See [ADR 0015](../adr/0015-provider-neutral-http-route-bindings.md).
   "kind": "schedule",
   "app": "orders",
   "action": "reconcile",
+  "completion": {
+    "mode": "poll"
+  },
   "config": {
     "cron": "0 9 * * *",
     "timezone": "Asia/Seoul",
@@ -171,6 +258,13 @@ ID; no catch-up burst is generated.
   "kind": "rabbitmq",
   "app": "orders",
   "action": "ingest",
+  "completion": {
+    "mode": "publish",
+    "publish": {
+      "exchange": "windforce.events",
+      "routing_key": "orders.completed"
+    }
+  },
   "config": {
     "queue": "orders.windforce",
     "prefetch": 8,
@@ -179,7 +273,10 @@ ID; no catch-up burst is generated.
     "input_mode": "json"
   },
   "secret_config": {
-    "url": "amqps://user:password@rabbitmq.example.test/vhost"
+    "url": "amqps://user:password@rabbitmq.example.test/vhost",
+    "completion": {
+      "rabbitmq_url": "amqps://user:password@rabbitmq.example.test/vhost"
+    }
   }
 }
 ```

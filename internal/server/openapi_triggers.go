@@ -179,7 +179,7 @@ func addTriggerControlPlanePaths(paths map[string]any, workspaceID string) {
 		"post": map[string]any{
 			"operationId": "deliverWebhookTrigger",
 			"summary":     "Deliver a signed event to a webhook trigger",
-			"description": "Authentication is the configured HMAC-SHA256 signature header, not the control-plane bearer token.",
+			"description": "Authentication is the configured HMAC-SHA256 signature header, not the control-plane bearer token. Async responses identify authenticated Invocation API status and result resources. A Trigger response policy may instead wait and return the raw Action result.",
 			"security":    []any{},
 			"parameters":  triggerParameters,
 			"requestBody": map[string]any{
@@ -189,7 +189,11 @@ func addTriggerControlPlanePaths(paths map[string]any, workspaceID string) {
 				},
 			},
 			"responses": withErrors(map[string]any{
-				"202": oapiResponse("Event admitted.", oapiSchemaRef("TriggerAdmissionResponse")),
+				"200": map[string]any{
+					"description": "Trigger configured to wait and the Run completed; body is the raw Action result.",
+					"content":     map[string]any{"application/json": map[string]any{"schema": map[string]any{}}},
+				},
+				"202": oapiResponse("Event admitted, or wait timeout reached.", oapiSchemaRef("TriggerAdmissionResponse")),
 			}, "400", "401", "404", "413", "429", "503"),
 		},
 	}
@@ -206,6 +210,8 @@ func addTriggerControlPlaneSchemas(schemas map[string]any) {
 		"action":         oapiStringSchema(),
 		"credential_ref": oapiStringSchema(),
 		"config":         map[string]any{"type": "object", "additionalProperties": true},
+		"completion":     oapiSchemaRef("TriggerCompletionPolicy"),
+		"response":       oapiSchemaRef("TriggerResponsePolicy"),
 		"has_secret":     oapiBooleanSchema(),
 		"created_by":     oapiStringSchema(),
 		"updated_by":     oapiStringSchema(),
@@ -214,12 +220,12 @@ func addTriggerControlPlaneSchemas(schemas map[string]any) {
 	}
 	schemas["Trigger"] = map[string]any{
 		"type":       "object",
-		"required":   []any{"id", "workspace_id", "name", "kind", "enabled", "app", "action", "config", "has_secret", "created_at", "updated_at"},
+		"required":   []any{"id", "workspace_id", "name", "kind", "enabled", "app", "action", "config", "completion", "response", "has_secret", "created_at", "updated_at"},
 		"properties": triggerProperties,
 	}
 	schemas["TriggerRequest"] = map[string]any{
 		"type":     "object",
-		"required": []any{"name", "kind", "app", "action", "config"},
+		"required": []any{"name", "kind", "app", "action", "config", "completion"},
 		"properties": map[string]any{
 			"name":           oapiStringSchema(),
 			"kind":           map[string]any{"type": "string", "enum": []any{"webhook", "schedule", "rabbitmq"}},
@@ -228,12 +234,43 @@ func addTriggerControlPlaneSchemas(schemas map[string]any) {
 			"action":         oapiStringSchema(),
 			"credential_ref": oapiStringSchema(),
 			"config":         map[string]any{"type": "object", "additionalProperties": true},
+			"completion":     oapiSchemaRef("TriggerCompletionPolicy"),
+			"response":       oapiSchemaRef("TriggerResponsePolicy"),
 			"secret_config": map[string]any{
 				"type":                 "object",
-				"description":          "Write-only adapter secret configuration. Never returned or audited.",
+				"description":          "Write-only nested secret patch for the source adapter and completion output. Never returned or audited.",
 				"writeOnly":            true,
 				"additionalProperties": true,
 			},
+		},
+	}
+	schemas["TriggerCompletionPolicy"] = map[string]any{
+		"type":        "object",
+		"description": "Pinned per Trigger delivery at admission. none is deliberate; poll exposes the Invocation API result; callback and publish use durable retries.",
+		"required":    []any{"mode"},
+		"properties": map[string]any{
+			"mode": map[string]any{"type": "string", "enum": []any{"none", "poll", "callback", "publish"}},
+			"callback": map[string]any{
+				"type":       "object",
+				"required":   []any{"endpoint"},
+				"properties": map[string]any{"endpoint": map[string]any{"type": "string", "format": "uri"}},
+			},
+			"publish": map[string]any{
+				"type":     "object",
+				"required": []any{"routing_key"},
+				"properties": map[string]any{
+					"exchange": oapiStringSchema(), "routing_key": oapiStringSchema(),
+				},
+			},
+		},
+	}
+	schemas["TriggerResponsePolicy"] = map[string]any{
+		"type":        "object",
+		"description": "HTTP ingress response behavior. wait is valid only for webhook Triggers and is capped at 60 seconds.",
+		"required":    []any{"mode"},
+		"properties": map[string]any{
+			"mode":            map[string]any{"type": "string", "enum": []any{"async", "wait"}},
+			"timeout_seconds": map[string]any{"type": "integer", "minimum": 1, "maximum": 60},
 		},
 	}
 	schemas["TriggerListResponse"] = map[string]any{
@@ -257,14 +294,24 @@ func addTriggerControlPlaneSchemas(schemas map[string]any) {
 	}
 	schemas["TriggerDelivery"] = map[string]any{
 		"type":     "object",
-		"required": []any{"id", "workspace_id", "trigger_id", "delivery_id", "state", "attempt", "created_at", "updated_at"},
+		"required": []any{"id", "workspace_id", "trigger_id", "delivery_id", "state", "attempt", "completion", "completion_state", "completion_attempt", "created_at", "updated_at"},
 		"properties": map[string]any{
 			"id": oapiStringSchema(), "workspace_id": oapiStringSchema(), "trigger_id": oapiStringSchema(), "delivery_id": oapiStringSchema(),
 			"correlation_id": oapiStringSchema(), "run_id": oapiStringSchema(), "state": oapiStringSchema(),
 			"attempt": oapiIntegerSchema(), "error_summary": oapiStringSchema(),
 			"scheduled_for": map[string]any{"type": []any{"string", "null"}, "format": "date-time"},
-			"created_at":    map[string]any{"type": "string", "format": "date-time"},
-			"updated_at":    map[string]any{"type": "string", "format": "date-time"},
+			"completion":    oapiSchemaRef("TriggerCompletionPolicy"),
+			"completion_state": map[string]any{
+				"type": "string",
+				"enum": []any{"waiting", "ignored", "available", "pending", "delivering", "retrying", "succeeded", "failed"},
+			},
+			"completion_attempt":         oapiIntegerSchema(),
+			"completion_next_attempt_at": map[string]any{"type": []any{"string", "null"}, "format": "date-time"},
+			"completion_response_status": oapiIntegerSchema(),
+			"completion_error_summary":   oapiStringSchema(),
+			"completion_completed_at":    map[string]any{"type": []any{"string", "null"}, "format": "date-time"},
+			"created_at":                 map[string]any{"type": "string", "format": "date-time"},
+			"updated_at":                 map[string]any{"type": "string", "format": "date-time"},
 		},
 	}
 	schemas["TriggerDeliveryListResponse"] = map[string]any{
@@ -274,9 +321,10 @@ func addTriggerControlPlaneSchemas(schemas map[string]any) {
 	}
 	schemas["TriggerAdmissionResponse"] = map[string]any{
 		"type":     "object",
-		"required": []any{"run_id", "replayed"},
+		"required": []any{"run_id", "replayed", "status_url", "result_url"},
 		"properties": map[string]any{
 			"run_id": oapiStringSchema(), "replayed": oapiBooleanSchema(),
+			"status_url": oapiStringSchema(), "result_url": oapiStringSchema(),
 		},
 	}
 	schemas["HTTPRouteBinding"] = map[string]any{

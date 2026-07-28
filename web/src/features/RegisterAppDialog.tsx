@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Field, Modal, ProbeNotice } from "../components/ui";
+import { Field, Modal, ProbeNotice, SelectControl } from "../components/ui";
 import {
   errorMessage,
   type GitSource,
@@ -167,14 +167,16 @@ export function RegisterAppDialog({
           />
         </Field>
         <Field label="Git auth">
-          <select
+          <SelectControl
             value={authMethod}
-            onChange={(event) => setAuthMethod(event.target.value as GitAuthMethod)}
-          >
-            <option value="none">Public (no credential)</option>
-            <option value="pat">Access token</option>
-            <option value="basic">Username + password</option>
-          </select>
+            onChange={setAuthMethod}
+            ariaLabel="Git authentication"
+            options={[
+              { value: "none", label: "Public (no credential)" },
+              { value: "pat", label: "Access token" },
+              { value: "basic", label: "Username + password" },
+            ]}
+          />
         </Field>
         {authMethod === "pat" ? (
           <Field
