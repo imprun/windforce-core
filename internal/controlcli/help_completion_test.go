@@ -41,6 +41,24 @@ func TestWFAuthLogoutHelpExplainsRemoteRevocationBoundary(t *testing.T) {
 	}
 }
 
+func TestWFContextDeleteHelpExplainsCredentialAndCurrentContextSafety(t *testing.T) {
+	t.Setenv("WF_CONFIG", t.TempDir())
+	var stdout, stderr bytes.Buffer
+	exit := RunWF(
+		[]string{"context", "delete", "--help"},
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+	)
+	if exit != ExitOK ||
+		!strings.Contains(stdout.String(), "wf context delete <name> --yes") ||
+		!strings.Contains(stdout.String(), "logged out first") ||
+		!strings.Contains(stdout.String(), "Select another context") ||
+		stderr.Len() != 0 {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
+	}
+}
+
 func TestWFVersionDoesNotRequireConfigurationOrAuthentication(t *testing.T) {
 	for _, args := range [][]string{{"version"}, {"--version"}} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
@@ -73,7 +91,8 @@ func TestWFCompletionDoesNotRequireConfigurationOrAuthentication(t *testing.T) {
 				&stdout,
 				&stderr,
 			)
-			if exit != ExitOK || !strings.Contains(stdout.String(), test.want) {
+			if exit != ExitOK || !strings.Contains(stdout.String(), test.want) ||
+				(test.shell != "zsh" && !strings.Contains(stdout.String(), "delete")) {
 				t.Fatalf("exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
 			}
 		})

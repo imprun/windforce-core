@@ -59,7 +59,7 @@ account: account-label
 auth_type: oauth2-device
 ```
 
-The account selects a host credential. The context selects a routing target and workspace. Changing a workspace does not create another login, and changing an account does not mutate a Cell.
+The account selects a host credential. The context selects a routing target and workspace. Changing a workspace does not create another login, and changing an account does not mutate a Cell. Logout clears every context sharing the same host credential, while context deletion requires prior logout and explicit confirmation.
 
 ## App publish workflow
 
@@ -108,7 +108,7 @@ Direct token login, status, logout, credential-store isolation, account switchin
 - Add release history, activation, rollback, and canonical Run commands.
 - Keep low-level source and Job commands available for advanced operations.
 
-Exact-commit `wf app publish`, workspace list/view/use, release list/view/activate/rollback, and Run watch/result are implemented. Workspace switching verifies access before mutating the context. The server rejects a Sync or Publish race before candidate mutation or release activation, and a successful publication returns the immutable release ID. A direct-Cell integration test now exercises a real Git remote through publish, release inspection, worker claim/completion, Run watch, and result retrieval in one workflow. Hosted discovery across multiple Cells remains a platform concern and is still open.
+Exact-commit `wf app publish`, safe context deletion, workspace list/view/use, release list/view/activate/rollback, and Run watch/result are implemented. Workspace switching verifies access before mutating the context. The server rejects a Sync or Publish race before candidate mutation or release activation, and a successful publication returns the immutable release ID. A direct-Cell integration test now exercises a real Git remote through publish, release inspection, worker claim/completion, Run watch, and result retrieval in one workflow. Hosted discovery across multiple Cells remains a platform concern and is still open.
 
 ### M5 — Distribution and live verification
 

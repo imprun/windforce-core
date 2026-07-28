@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 )
@@ -302,10 +303,18 @@ func (r *runner) authLogout(args []string) error {
 			return fmt.Errorf("delete credential: %w", err)
 		}
 	}
-	profile := r.config.Profiles[r.resolved.ProfileName]
-	profile.Account = ""
-	profile.AuthType = ""
-	r.config.Profiles[r.resolved.ProfileName] = profile
+	clearedContexts := make([]string, 0, 1)
+	for name, profile := range r.config.Profiles {
+		profileKey, keyErr := credentialKey(profile)
+		if keyErr != nil || profileKey != key {
+			continue
+		}
+		profile.Account = ""
+		profile.AuthType = ""
+		r.config.Profiles[name] = profile
+		clearedContexts = append(clearedContexts, name)
+	}
+	sort.Strings(clearedContexts)
 	if err := saveConfig(r.configPath, r.config); err != nil {
 		if found && !remoteRevoked {
 			_ = r.store.Set(key, credential)
@@ -317,6 +326,7 @@ func (r *runner) authLogout(args []string) error {
 	}
 	return r.outputJSON(map[string]any{
 		"context":            r.resolved.ProfileName,
+		"contexts_cleared":   clearedContexts,
 		"credential_removed": found,
 		"logged_out":         true,
 		"remote_revoked":     remoteRevoked,

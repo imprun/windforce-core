@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -123,6 +124,14 @@ func resolveProfile(config ConfigFile, selected string, overrides Profile) (reso
 }
 
 func resolveProfileFor(program programConfig, config ConfigFile, selected string, overrides Profile) (resolvedConfig, error) {
+	return resolveProfileForMode(program, config, selected, overrides, true)
+}
+
+func resolveProfileForLogout(program programConfig, config ConfigFile, selected string, overrides Profile) (resolvedConfig, error) {
+	return resolveProfileForMode(program, config, selected, overrides, false)
+}
+
+func resolveProfileForMode(program programConfig, config ConfigFile, selected string, overrides Profile, validateAPIURL bool) (resolvedConfig, error) {
 	contextValues := []string{selected, os.Getenv(program.ContextEnv)}
 	if program.Name == wfProgram.Name {
 		contextValues = append(contextValues, os.Getenv("WF_PROFILE"), os.Getenv("WINDFORCE_PROFILE"))
@@ -155,6 +164,15 @@ func resolveProfileFor(program programConfig, config ConfigFile, selected string
 	profile.Workspace = firstNonEmpty(workspaceValues...)
 	profile.Actor = firstNonEmpty(actorValues...)
 	profile.TokenEnv = firstNonEmpty(tokenEnvValues...)
+	if validateAPIURL {
+		normalizedAPIURL, err := normalizeAPIBaseURL(profile.APIURL)
+		if err != nil {
+			return resolvedConfig{}, err
+		}
+		profile.APIURL = normalizedAPIURL
+	} else {
+		profile.APIURL = strings.TrimSpace(profile.APIURL)
+	}
 	token := firstNonEmpty(os.Getenv("WF_TOKEN"))
 	if program.Name != wfProgram.Name {
 		token = ""
@@ -163,6 +181,42 @@ func resolveProfileFor(program programConfig, config ConfigFile, selected string
 		token = firstNonEmpty(token, os.Getenv(profile.TokenEnv))
 	}
 	return resolvedConfig{ProfileName: name, Profile: profile, Token: token}, nil
+}
+
+func normalizeAPIBaseURL(raw string) (string, error) {
+	target, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || target == nil {
+		return "", fmt.Errorf("invalid API URL: use an http:// or https:// URL with a host")
+	}
+	scheme := strings.ToLower(target.Scheme)
+	if target.Opaque != "" ||
+		(scheme != "http" && scheme != "https") ||
+		target.Host == "" {
+		return "", fmt.Errorf("invalid API URL: use an http:// or https:// URL with a host")
+	}
+	target.Scheme = scheme
+	if target.User != nil {
+		return "", fmt.Errorf("invalid API URL: embedded credentials are not allowed")
+	}
+	if target.RawQuery != "" || target.Fragment != "" {
+		return "", fmt.Errorf("invalid API URL: query parameters and fragments are not allowed")
+	}
+	if scheme == "http" && !isLoopbackHost(target.Hostname()) {
+		return "", fmt.Errorf("invalid API URL: HTTPS is required except for loopback development")
+	}
+	return strings.TrimRight(target.String(), "/"), nil
+}
+
+func apiURLOrigin(raw string) (string, error) {
+	normalized, err := normalizeAPIBaseURL(raw)
+	if err != nil {
+		return "", err
+	}
+	target, err := url.Parse(normalized)
+	if err != nil {
+		return "", fmt.Errorf("invalid API URL: use an http:// or https:// URL with a host")
+	}
+	return strings.ToLower(target.Scheme) + "://" + strings.ToLower(target.Host), nil
 }
 
 func firstNonEmpty(values ...string) string {

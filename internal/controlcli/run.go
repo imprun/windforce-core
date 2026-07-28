@@ -204,7 +204,14 @@ func runWithProgramDependencies(
 		}
 		return ExitOK
 	}
-	resolved, err := resolveProfileFor(program, config, profileName, overrides)
+	resolve := resolveProfileFor
+	if program.Name == wfProgram.Name &&
+		len(remaining) >= 2 &&
+		remaining[0] == "auth" &&
+		remaining[1] == "logout" {
+		resolve = resolveProfileForLogout
+	}
+	resolved, err := resolve(program, config, profileName, overrides)
 	if err != nil {
 		writeError(stderr, err)
 		return ExitConfig
@@ -514,7 +521,7 @@ the command.
 
 COMMANDS
   auth login|switch|status|logout
-  context list|show|set|use
+  context list|show|set|use|delete
   workspace list|show|view|use
   source list|register|probe|sync|publish
   app publish|list|show|history|source|openapi

@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 type sourceDeployRequest struct {
@@ -22,7 +23,7 @@ type sourceDeployRequest struct {
 func (r *runner) profile(path string, config ConfigFile, args []string) error {
 	noun := r.profileNoun()
 	if len(args) == 0 {
-		return usageError{noun + " requires list, show, use, or set"}
+		return usageError{noun + " requires list, show, use, set, or delete"}
 	}
 	switch args[0] {
 	case "list":
@@ -68,7 +69,8 @@ func (r *runner) profile(path string, config ConfigFile, args []string) error {
 		}
 		name := strings.TrimSpace(args[1])
 		fs := r.flags("profile set")
-		profile := config.Profiles[name]
+		original, existed := config.Profiles[name]
+		profile := original
 		fs.StringVar(&profile.APIURL, "api-url", profile.APIURL, "control-plane API base URL")
 		fs.StringVar(&profile.Workspace, "workspace", firstNonEmpty(profile.Workspace, defaultWorkspace), "workspace id")
 		fs.StringVar(&profile.Actor, "actor", profile.Actor, "actor subject")
@@ -80,8 +82,39 @@ func (r *runner) profile(path string, config ConfigFile, args []string) error {
 		if fs.NArg() != 0 {
 			return usageError{"usage: windforce profile set <name> [flags]"}
 		}
-		if name == "" || profile.APIURL == "" {
-			return usageError{noun + " name and --api-url are required"}
+		if err := validateContextName(args[1], noun); err != nil {
+			return err
+		}
+		normalizedAPIURL, err := normalizeAPIBaseURL(profile.APIURL)
+		if err != nil {
+			return usageError{err.Error()}
+		}
+		profile.APIURL = normalizedAPIURL
+		if existed && (original.Account != "" || original.AuthType != "") {
+			originalOrigin, originalErr := apiURLOrigin(original.APIURL)
+			updatedOrigin, updatedErr := apiURLOrigin(profile.APIURL)
+			if originalErr != nil || updatedErr != nil || originalOrigin != updatedOrigin {
+				return fmt.Errorf(
+					"%s %q is authenticated; run %s %s %q auth logout before changing its host",
+					noun,
+					name,
+					r.program,
+					r.profileSelector(),
+					name,
+				)
+			}
+		}
+		profile.Workspace = strings.TrimSpace(profile.Workspace)
+		profile.Actor = strings.TrimSpace(profile.Actor)
+		profile.TokenEnv = strings.TrimSpace(profile.TokenEnv)
+		if profile.Workspace == "" || strings.ContainsAny(profile.Workspace, "\x00\r\n") {
+			return usageError{"--workspace must not be empty or contain control characters"}
+		}
+		if strings.ContainsAny(profile.Actor, "\x00\r\n") {
+			return usageError{"--actor must not contain control characters"}
+		}
+		if profile.TokenEnv != "" && !validEnvironmentName(profile.TokenEnv) {
+			return usageError{"--token-env must be a portable environment variable name"}
 		}
 		config.Profiles[name] = profile
 		if *makeCurrent || config.CurrentProfile == "" {
@@ -91,9 +124,75 @@ func (r *runner) profile(path string, config ConfigFile, args []string) error {
 			return err
 		}
 		return r.outputJSON(map[string]any{"name": name, "current": config.CurrentProfile == name, "api_url": profile.APIURL, "workspace": profile.Workspace, "actor": profile.Actor, "token_env": profile.TokenEnv, "account": profile.Account, "auth_type": profile.AuthType})
+	case "delete":
+		if len(args) < 2 {
+			return usageError{"usage: windforce profile delete <name> --yes"}
+		}
+		name := strings.TrimSpace(args[1])
+		if err := validateContextName(args[1], noun); err != nil {
+			return err
+		}
+		fs := r.flags("profile delete")
+		yes := fs.Bool("yes", false, "confirm removal of the non-secret "+noun)
+		if err := fs.Parse(args[2:]); err != nil {
+			return usageError{err.Error()}
+		}
+		if fs.NArg() != 0 {
+			return usageError{"usage: windforce profile delete <name> --yes"}
+		}
+		profile, ok := config.Profiles[name]
+		if !ok {
+			return fmt.Errorf("%s %q does not exist", noun, name)
+		}
+		if profile.Account != "" || profile.AuthType != "" {
+			return fmt.Errorf("%s %q is authenticated; run %s %s %q auth logout before deleting it", noun, name, r.program, r.profileSelector(), name)
+		}
+		if config.CurrentProfile == name && len(config.Profiles) > 1 {
+			return usageError{fmt.Sprintf("select another %s before deleting the current one", noun)}
+		}
+		if !*yes {
+			return usageError{"--yes is required to delete the " + noun}
+		}
+		delete(config.Profiles, name)
+		if config.CurrentProfile == name {
+			config.CurrentProfile = ""
+		}
+		if err := saveConfig(path, config); err != nil {
+			return err
+		}
+		currentKey := "current_profile"
+		if r.contextCommand {
+			currentKey = "current_context"
+		}
+		return r.outputJSON(map[string]any{"name": name, "deleted": true, currentKey: config.CurrentProfile})
 	default:
 		return usageError{fmt.Sprintf("unknown %s command %q", noun, args[0])}
 	}
+}
+
+func validateContextName(raw, noun string) error {
+	name := strings.TrimSpace(raw)
+	if name == "" ||
+		name != raw ||
+		len(name) > 128 ||
+		strings.HasPrefix(name, "-") ||
+		strings.IndexFunc(name, unicode.IsControl) >= 0 {
+		return usageError{noun + " name must be 1-128 characters, must not start with '-', and must not contain surrounding whitespace or control characters"}
+	}
+	return nil
+}
+
+func validEnvironmentName(name string) bool {
+	for index, char := range name {
+		if (char >= 'A' && char <= 'Z') ||
+			(char >= 'a' && char <= 'z') ||
+			char == '_' ||
+			(index > 0 && char >= '0' && char <= '9') {
+			continue
+		}
+		return false
+	}
+	return name != ""
 }
 
 func (r *runner) profileNoun() string {
@@ -101,6 +200,13 @@ func (r *runner) profileNoun() string {
 		return "context"
 	}
 	return "profile"
+}
+
+func (r *runner) profileSelector() string {
+	if r.contextCommand {
+		return "--context"
+	}
+	return "--profile"
 }
 
 func (r *runner) defaultProfileTokenEnv() string {

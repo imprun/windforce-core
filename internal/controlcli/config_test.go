@@ -2,6 +2,7 @@ package controlcli
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -53,5 +54,39 @@ func TestResolveWFContextUsesWFOverridesFirst(t *testing.T) {
 	if resolved.ProfileName != "hosted" || resolved.APIURL != "https://cell.example" ||
 		resolved.Workspace != "team" || resolved.Token != "process-secret" {
 		t.Fatalf("resolved = %#v", resolved)
+	}
+}
+
+func TestNormalizeAPIBaseURLRejectsUnsafeOrAmbiguousTargets(t *testing.T) {
+	for _, raw := range []string{
+		"not-a-url",
+		"ftp://cell.example.test",
+		"https://operator:secret@cell.example.test",
+		"https://cell.example.test/path?token=secret",
+		"https://cell.example.test/path#fragment",
+		"https://cell.example.test/%zz",
+		"http://192.0.2.10:18091",
+	} {
+		t.Run(raw, func(t *testing.T) {
+			_, err := normalizeAPIBaseURL(raw)
+			if err == nil {
+				t.Fatalf("normalizeAPIBaseURL(%q) succeeded", raw)
+			}
+			if strings.Contains(err.Error(), "secret") {
+				t.Fatalf("unsafe URL value leaked in error: %q", err)
+			}
+		})
+	}
+
+	normalized, err := normalizeAPIBaseURL("HTTPS://Cloud.Example.Test/t/acme/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if normalized != "https://Cloud.Example.Test/t/acme" {
+		t.Fatalf("normalized URL = %q", normalized)
+	}
+	normalized, err = normalizeAPIBaseURL("http://127.0.0.1:18091/")
+	if err != nil || normalized != "http://127.0.0.1:18091" {
+		t.Fatalf("loopback URL = %q, %v", normalized, err)
 	}
 }

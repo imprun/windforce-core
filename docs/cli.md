@@ -125,9 +125,11 @@ wf app list --summary
 
 Use `wf context list`, `wf context show`, and `wf context use <name>` to inspect or select contexts. `wf auth switch <account>` selects another credential already stored for the same host and verifies it before changing the context. `WF_CONFIG` selects an explicit configuration file. When the new default configuration does not exist, `wf` can read the legacy `windforce` profile file; the next context change writes the new `wf` configuration.
 
+Context creation rejects malformed API URLs, non-loopback HTTP, embedded URL credentials, query strings, fragments, control characters, and non-portable token-environment names before writing configuration. An authenticated context cannot be retargeted to another origin until it is logged out, preventing an unreachable credential from being orphaned. Use `wf context delete <name> --yes` to remove non-secret context metadata. An authenticated context must be logged out first, and another context must be selected before deleting the current context when alternatives exist.
+
 Both login modes validate the credential against the selected workspace before storing it. If the system credential store is unavailable, login fails without writing a plaintext fallback. If hosted Device Authorization succeeds but the workspace probe or local commit fails, `wf` revokes the unused refresh token before returning the error.
 
-For a hosted account, `wf auth logout` first revokes the CLI refresh token at the provider and removes local state only after revocation succeeds. If the provider is unavailable, the credential remains available for a retry; use `wf auth logout --local-only` only when intentionally abandoning remote revocation. Credentials written by an older `wf` are supported by discovering the revocation endpoint from their stored issuer. Direct Cell credentials have no generic remote revocation contract and are removed locally.
+For a hosted account, `wf auth logout` first revokes the CLI refresh token at the provider and removes local state only after revocation succeeds. If the provider is unavailable, the credential remains available for a retry; use `wf auth logout --local-only` only when intentionally abandoning remote revocation. Credentials written by an older `wf` are supported by discovering the revocation endpoint from their stored issuer. Direct Cell credentials have no generic remote revocation contract and are removed locally. Logging out clears every local context that references the same host and account so no context falsely reports a deleted credential.
 
 CLI token revocation does not end the central Identity browser session. Use the product's explicit central logout flow when that separate session must end.
 
@@ -349,6 +351,7 @@ JSON API errors are written to standard error. This preserves the automation con
 - `Git worktree has uncommitted changes`: commit the intended files. Use `--allow-dirty` only when deliberately publishing committed `HEAD`.
 - `409 Conflict` with `expected_commit`: push `HEAD` to the selected remote branch and retry. The CLI will not publish a different branch tip.
 - `secure credential storage is unavailable`: restore Windows Credential Manager, macOS Keychain, or Linux Secret Service. The client does not fall back to a plaintext token file.
+- `invalid API URL` for an older context: run `wf --context <name> auth logout`, then `wf context delete <name> --yes`. Use logout's `--local-only` override only if hosted revocation cannot be completed.
 - A redirected API response is rejected. Configure the context with the final canonical Cell URL instead of relying on an HTTP redirect.
 
 Diagnostics and JSON errors redact credential fields, Bearer values, OAuth codes, and Windforce token prefixes before writing standard error.

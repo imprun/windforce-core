@@ -41,7 +41,8 @@ USAGE
   wf context list
   wf context show [name]
   wf context set <name> --api-url <url> [flags]
-  wf context use <name>`,
+  wf context use <name>
+  wf context delete <name> --yes`,
 	"context set": `Create or update a connection context.
 
 USAGE
@@ -52,6 +53,14 @@ FLAGS
   --actor string      Direct Cell audit actor
   --token-env string  Compatibility bearer-token environment variable name
   --use               Select the context after saving`,
+	"context delete": `Delete one non-secret Cell connection context.
+
+An authenticated context must be logged out first so its credential lifecycle
+is explicit. Select another context before deleting the current one when more
+than one context exists.
+
+USAGE
+  wf context delete <name> --yes`,
 	"workspace": `Inspect and select a workspace in the current context.
 
 USAGE

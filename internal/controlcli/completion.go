@@ -9,7 +9,7 @@ import (
 var wfCompletionCommands = map[string][]string{
 	"":             {"auth", "context", "workspace", "source", "app", "release", "action", "run", "job", "provisioning", "api", "openapi", "completion", "version", "help"},
 	"auth":         {"login", "switch", "status", "logout"},
-	"context":      {"list", "show", "set", "use"},
+	"context":      {"list", "show", "set", "use", "delete"},
 	"workspace":    {"list", "show", "view", "use"},
 	"source":       {"list", "register", "probe", "sync", "publish"},
 	"app":          {"publish", "list", "show", "history", "source", "openapi"},
@@ -48,7 +48,7 @@ const wfBashCompletion = `_wf_complete() {
   else
     case "${group}" in
       auth) words="login switch status logout" ;;
-      context) words="list show set use" ;;
+      context) words="list show set use delete" ;;
       workspace) words="list show view use" ;;
       source) words="list register probe sync publish" ;;
       app) words="publish list show history source openapi" ;;
@@ -107,7 +107,7 @@ const wfPowerShellCompletion = `Register-ArgumentCompleter -Native -CommandName 
   $tokens = @($commandAst.CommandElements | ForEach-Object { $_.Value })
   $groups = @{
     auth = @('login','switch','status','logout')
-    context = @('list','show','set','use')
+    context = @('list','show','set','use','delete')
     workspace = @('list','show','view','use')
     source = @('list','register','probe','sync','publish')
     app = @('publish','list','show','history','source','openapi')

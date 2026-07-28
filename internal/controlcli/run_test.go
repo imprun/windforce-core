@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -304,6 +305,229 @@ func TestWFOutputFlagsWorkAfterTheCommand(t *testing.T) {
 	)
 	if exit != ExitOK || !strings.Contains(stdout.String(), "{\n  \"") {
 		t.Fatalf("post-command --pretty exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
+	}
+}
+
+func TestWFContextSetRejectsUnsafeMetadata(t *testing.T) {
+	tests := []struct {
+		name   string
+		args   []string
+		secret string
+	}{
+		{
+			name:   "embedded URL credential",
+			args:   []string{"context", "set", "unsafe", "--api-url", "https://operator:secret@cell.example.test"},
+			secret: "secret",
+		},
+		{
+			name:   "URL query",
+			args:   []string{"context", "set", "unsafe", "--api-url", "https://cell.example.test/t/acme?token=secret"},
+			secret: "secret",
+		},
+		{
+			name: "invalid context name",
+			args: []string{"context", "set", "-unsafe", "--api-url", "https://cell.example.test"},
+		},
+		{
+			name: "invalid workspace",
+			args: []string{"context", "set", "unsafe", "--api-url", "https://cell.example.test", "--workspace", "team\nother"},
+		},
+		{
+			name: "invalid actor",
+			args: []string{"context", "set", "unsafe", "--api-url", "https://cell.example.test", "--actor", "actor\r\ninjected"},
+		},
+		{
+			name: "non-portable token environment",
+			args: []string{"context", "set", "unsafe", "--api-url", "https://cell.example.test", "--token-env", "BAD-NAME"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.json")
+			t.Setenv("WF_CONFIG", path)
+			var stdout, stderr bytes.Buffer
+			exit := RunWF(test.args, strings.NewReader(""), &stdout, &stderr)
+			if exit != ExitUsage {
+				t.Fatalf("exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
+			}
+			if test.secret != "" && strings.Contains(stderr.String(), test.secret) {
+				t.Fatalf("unsafe metadata leaked in error: %q", stderr.String())
+			}
+			if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("invalid context wrote configuration: %v", err)
+			}
+		})
+	}
+}
+
+func TestWFContextDeleteRequiresExplicitSafeLifecycle(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	t.Setenv("WF_CONFIG", path)
+	run := func(args ...string) (int, string, string) {
+		t.Helper()
+		var stdout, stderr bytes.Buffer
+		exit := RunWF(args, strings.NewReader(""), &stdout, &stderr)
+		return exit, stdout.String(), stderr.String()
+	}
+
+	if exit, _, stderr := run("context", "set", "first", "--api-url", "https://first.example.test", "--use"); exit != ExitOK {
+		t.Fatalf("set first exit=%d stderr=%q", exit, stderr)
+	}
+	if exit, _, stderr := run("context", "set", "second", "--api-url", "https://second.example.test"); exit != ExitOK {
+		t.Fatalf("set second exit=%d stderr=%q", exit, stderr)
+	}
+	if exit, _, stderr := run("context", "delete", "first", "--yes"); exit != ExitUsage || !strings.Contains(stderr, "select another context") {
+		t.Fatalf("delete current exit=%d stderr=%q", exit, stderr)
+	}
+	if exit, _, stderr := run("context", "use", "second"); exit != ExitOK {
+		t.Fatalf("use second exit=%d stderr=%q", exit, stderr)
+	}
+	if exit, _, stderr := run("context", "delete", "first"); exit != ExitUsage || !strings.Contains(stderr, "--yes is required") {
+		t.Fatalf("unconfirmed delete exit=%d stderr=%q", exit, stderr)
+	}
+	if exit, stdout, stderr := run("context", "delete", "first", "--yes"); exit != ExitOK || !strings.Contains(stdout, `"deleted":true`) {
+		t.Fatalf("delete first exit=%d stdout=%q stderr=%q", exit, stdout, stderr)
+	}
+
+	config, err := loadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := config.Profiles["first"]; exists || config.CurrentProfile != "second" {
+		t.Fatalf("config after delete = %#v", config)
+	}
+	second := config.Profiles["second"]
+	second.Account = "operator"
+	second.AuthType = authTypeToken
+	config.Profiles["second"] = second
+	if err := saveConfig(path, config); err != nil {
+		t.Fatal(err)
+	}
+	if exit, _, stderr := run(
+		"context", "set", "second",
+		"--api-url", "https://changed.example.test",
+	); exit != ExitConfig || !strings.Contains(stderr, `wf --context "second" auth logout`) {
+		t.Fatalf("authenticated host change exit=%d stderr=%q", exit, stderr)
+	}
+	config, err = loadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.Profiles["second"].APIURL != "https://second.example.test" {
+		t.Fatalf("authenticated host changed despite rejection: %#v", config.Profiles["second"])
+	}
+	if exit, _, stderr := run("context", "delete", "second", "--yes"); exit != ExitConfig ||
+		!strings.Contains(stderr, `wf --context "second" auth logout`) {
+		t.Fatalf("authenticated delete exit=%d stderr=%q", exit, stderr)
+	}
+}
+
+func TestWFAuthLogoutClearsEveryContextSharingTheCredential(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	t.Setenv("WF_CONFIG", path)
+	config := ConfigFile{
+		CurrentProfile: "first",
+		Profiles: map[string]Profile{
+			"first": {
+				APIURL: "https://cell.example.test/t/one", Workspace: "one",
+				Account: "operator", AuthType: authTypeToken,
+			},
+			"second": {
+				APIURL: "https://cell.example.test/t/two", Workspace: "two",
+				Account: "operator", AuthType: authTypeToken,
+			},
+			"other": {
+				APIURL: "https://other.example.test", Workspace: "other",
+				Account: "operator", AuthType: authTypeToken,
+			},
+		},
+	}
+	if err := saveConfig(path, config); err != nil {
+		t.Fatal(err)
+	}
+	key, err := credentialKey(config.Profiles["first"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := &memoryCredentialStore{values: map[string]string{key: "direct-secret"}}
+	var stdout, stderr bytes.Buffer
+	exit := RunWFWithCredentialStore(
+		[]string{"auth", "logout"},
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+		store,
+	)
+	if exit != ExitOK || !strings.Contains(stdout.String(), `"contexts_cleared":["first","second"]`) {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
+	}
+	if len(store.values) != 0 {
+		t.Fatalf("credential was not removed: %#v", store.values)
+	}
+	config, err = loadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"first", "second"} {
+		if profile := config.Profiles[name]; profile.Account != "" || profile.AuthType != "" {
+			t.Fatalf("%s context still references credential: %#v", name, profile)
+		}
+	}
+	if profile := config.Profiles["other"]; profile.Account != "operator" || profile.AuthType != authTypeToken {
+		t.Fatalf("unrelated context was changed: %#v", profile)
+	}
+}
+
+func TestWFAuthLogoutCanCleanAnUnsafeLegacyContextLocally(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	t.Setenv("WF_CONFIG", path)
+	profile := Profile{
+		APIURL:    "https://cell.example.test/path?legacy=1",
+		Workspace: "default",
+		Account:   "operator",
+		AuthType:  authTypeToken,
+	}
+	config := ConfigFile{
+		CurrentProfile: "legacy",
+		Profiles:       map[string]Profile{"legacy": profile},
+	}
+	if err := saveConfig(path, config); err != nil {
+		t.Fatal(err)
+	}
+	key, err := credentialKey(profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := &memoryCredentialStore{values: map[string]string{key: "direct-secret"}}
+	var stdout, stderr bytes.Buffer
+	exit := RunWFWithCredentialStore(
+		[]string{"auth", "logout", "--local-only"},
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+		store,
+	)
+	if exit != ExitOK || len(store.values) != 0 {
+		t.Fatalf("logout exit=%d credentials=%#v stderr=%q", exit, store.values, stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	exit = RunWF(
+		[]string{"context", "delete", "legacy", "--yes"},
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+	)
+	if exit != ExitOK {
+		t.Fatalf("delete exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
+	}
+	config, err = loadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(config.Profiles) != 0 || config.CurrentProfile != "" {
+		t.Fatalf("legacy context survived cleanup: %#v", config)
 	}
 }
 
