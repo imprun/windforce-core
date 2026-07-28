@@ -11,11 +11,16 @@ import (
 
 func (r *runner) auth(args []string) error {
 	if len(args) == 0 {
-		return usageError{"auth requires login, status, or logout"}
+		return usageError{"auth requires login, switch, status, or logout"}
 	}
 	switch args[0] {
 	case "login":
 		return r.authLogin(args[1:])
+	case "switch":
+		if len(args) != 2 {
+			return usageError{"usage: wf auth switch <account>"}
+		}
+		return r.authSwitch(args[1])
 	case "status":
 		if len(args) != 1 {
 			return usageError{"usage: wf auth status"}
@@ -29,6 +34,75 @@ func (r *runner) auth(args []string) error {
 	default:
 		return usageError{fmt.Sprintf("unknown auth command %q", args[0])}
 	}
+}
+
+func (r *runner) authSwitch(account string) error {
+	account = strings.TrimSpace(account)
+	if account == "" || strings.ContainsAny(account, "/\\\x00\r\n") {
+		return usageError{"account must be a non-empty label without slashes or newlines"}
+	}
+	if r.store == nil {
+		return fmt.Errorf("secure credential storage is unavailable")
+	}
+	if r.resolved.ProfileName == "" {
+		return fmt.Errorf("select or create a context before switching accounts")
+	}
+
+	profile := r.resolved.Profile
+	profile.Account = account
+	key, err := credentialKey(profile)
+	if err != nil {
+		return err
+	}
+	raw, found, err := r.store.Get(key)
+	if err != nil {
+		return fmt.Errorf("read credential store: %w", err)
+	}
+	if !found || strings.TrimSpace(raw) == "" {
+		return fmt.Errorf("account %q has no stored credential for this host; run wf auth login --account %s", account, account)
+	}
+
+	accessToken := strings.TrimSpace(raw)
+	authType := authTypeToken
+	credential, hosted, err := decodeStoredCredential(accessToken)
+	if err != nil {
+		return err
+	}
+	if hosted {
+		authType = authTypeOAuth2Device
+		if time.Until(credential.ExpiresAt) <= refreshBeforeExpiry {
+			credential, err = r.refreshStoredCredential(context.Background(), credential)
+			if err != nil {
+				return err
+			}
+			encoded, err := encodeStoredCredential(credential)
+			if err != nil {
+				return err
+			}
+			if err := r.store.Set(key, encoded); err != nil {
+				return fmt.Errorf("write refreshed credential: %w", err)
+			}
+		}
+		accessToken = credential.AccessToken
+	}
+	if err := r.probe(accessToken); err != nil {
+		return fmt.Errorf("verify account %q: %w", account, err)
+	}
+
+	updated := r.config.Profiles[r.resolved.ProfileName]
+	updated.Account = account
+	updated.AuthType = authType
+	r.config.Profiles[r.resolved.ProfileName] = updated
+	if err := saveConfig(r.configPath, r.config); err != nil {
+		return err
+	}
+	return r.outputJSON(map[string]any{
+		"account":       account,
+		"authenticated": true,
+		"auth_type":     authType,
+		"context":       r.resolved.ProfileName,
+		"workspace":     r.resolved.Workspace,
+	})
 }
 
 func (r *runner) authLogin(args []string) error {

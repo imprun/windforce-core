@@ -10,11 +10,13 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type sourceDeployRequest struct {
-	Confirm bool   `json:"confirm"`
-	Message string `json:"message,omitempty"`
+	Confirm        bool   `json:"confirm"`
+	Message        string `json:"message,omitempty"`
+	ExpectedCommit string `json:"expected_commit,omitempty"`
 }
 
 func (r *runner) profile(path string, config ConfigFile, args []string) error {
@@ -119,23 +121,32 @@ func (r *runner) source(args []string) error {
 		}
 		return r.json(http.MethodGet, r.client.WorkspacePath("git_sources"), nil)
 	case "sync":
-		if len(args) != 2 {
-			return usageError{"usage: windforce source sync <source-id>"}
+		if len(args) < 2 {
+			return usageError{"usage: windforce source sync <source-id> [--expected-commit sha]"}
 		}
-		return r.json(http.MethodPost, r.client.WorkspacePath("git_sources", args[1], "sync"), nil)
+		fs := r.flags("source sync")
+		expectedCommit := fs.String("expected-commit", "", "require the remote branch to resolve to this commit")
+		if err := fs.Parse(args[2:]); err != nil {
+			return usageError{err.Error()}
+		}
+		if fs.NArg() != 0 {
+			return usageError{"usage: windforce source sync <source-id> [--expected-commit sha]"}
+		}
+		return r.json(http.MethodPost, r.client.WorkspacePath("git_sources", args[1], "sync"), compact(map[string]any{"expected_commit": *expectedCommit}))
 	case "deploy", "publish":
 		if len(args) < 2 {
 			return usageError{"usage: windforce source " + args[0] + " <source-id> [--message note]"}
 		}
 		fs := r.flags("source " + args[0])
 		message := fs.String("message", "", "audit note")
+		expectedCommit := fs.String("expected-commit", "", "require the latest synchronized candidate to match this commit")
 		if err := fs.Parse(args[2:]); err != nil {
 			return usageError{err.Error()}
 		}
 		if fs.NArg() != 0 {
 			return usageError{"usage: windforce source " + args[0] + " <source-id> [--message note]"}
 		}
-		body := sourceDeployRequest{Confirm: true, Message: *message}
+		body := sourceDeployRequest{Confirm: true, Message: *message, ExpectedCommit: *expectedCommit}
 		return r.json(http.MethodPost, r.client.WorkspacePath("git_sources", args[1], "deploy"), body)
 	case "register", "probe":
 		return r.sourceRegistration(args[0], args[1:])
@@ -190,9 +201,11 @@ func (r *runner) sourceRegistration(command string, args []string) error {
 
 func (r *runner) app(args []string) error {
 	if len(args) == 0 {
-		return usageError{"app requires list, show, history, source, or openapi"}
+		return usageError{"app requires publish, list, show, history, source, or openapi"}
 	}
 	switch args[0] {
+	case "publish":
+		return r.appPublish(args[1:])
 	case "list":
 		fs := r.flags("app list")
 		summary := fs.Bool("summary", false, "return summary rows")
@@ -237,7 +250,7 @@ func (r *runner) action(args []string) error {
 
 func (r *runner) run(args []string) error {
 	if len(args) == 0 {
-		return usageError{"run requires create, wait, show, result, or cancel"}
+		return usageError{"run requires create, wait, show, watch, result, or cancel"}
 	}
 	switch args[0] {
 	case "create", "wait":
@@ -282,11 +295,27 @@ func (r *runner) run(args []string) error {
 			body,
 			map[string]string{"Idempotency-Key": *idempotencyKey},
 		)
-	case "show", "result", "cancel":
+	case "watch":
+		if len(args) < 2 {
+			return usageError{"usage: " + r.program + " run watch <run-id> [flags]"}
+		}
+		fs := r.flags("run watch")
+		interval := fs.Duration("interval", 2*time.Second, "status polling interval")
+		timeout := fs.Duration("timeout", 10*time.Minute, "maximum wait duration")
+		resultOnly := fs.Bool("result", false, "print the Run result after success")
+		quiet := fs.Bool("quiet", false, "suppress state-change progress")
+		if err := fs.Parse(args[2:]); err != nil {
+			return usageError{err.Error()}
+		}
+		if fs.NArg() != 0 {
+			return usageError{"usage: " + r.program + " run watch <run-id> [flags]"}
+		}
+		return r.watchRun(args[1], *interval, *timeout, *resultOnly, *quiet)
+	case "show", "view", "result", "cancel":
 		if len(args) < 2 {
 			return usageError{"usage: windforce run " + args[0] + " <run-id>"}
 		}
-		if (args[0] == "show" || args[0] == "result") && len(args) != 2 {
+		if (args[0] == "show" || args[0] == "view" || args[0] == "result") && len(args) != 2 {
 			return usageError{"usage: windforce run " + args[0] + " <run-id>"}
 		}
 		parts := []string{"runs", args[1]}

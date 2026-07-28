@@ -30,7 +30,7 @@ type ExecutionBundleManager interface {
 	ValidateExecutionBundle(ctx context.Context, deployment contract.Deployment) error
 }
 
-func (h *Handler) syncGitSourceRevision(w http.ResponseWriter, r *http.Request, workspaceID string, source gitsourcepkg.Source) (catalog.ReleaseCandidate, bool) {
+func (h *Handler) syncGitSourceRevision(w http.ResponseWriter, r *http.Request, workspaceID string, source gitsourcepkg.Source, expectedCommit string) (catalog.ReleaseCandidate, bool) {
 	operationCtx, release, err := h.acquireGitSourceOperation(r.Context(), workspaceID, source)
 	if err != nil {
 		writeSourceOperationError(w, err)
@@ -56,6 +56,10 @@ func (h *Handler) syncGitSourceRevision(w http.ResponseWriter, r *http.Request, 
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return catalog.ReleaseCandidate{}, false
 	}
+	if expectedCommit != "" && deployment.Commit != expectedCommit {
+		writeError(w, http.StatusConflict, "remote branch does not resolve to expected_commit")
+		return catalog.ReleaseCandidate{}, false
+	}
 	candidateStore, ok := h.catalog.(catalog.ReleaseCandidateStore)
 	if !ok {
 		writeError(w, http.StatusServiceUnavailable, "synchronized source store is not configured")
@@ -77,7 +81,7 @@ func (h *Handler) syncGitSourceRevision(w http.ResponseWriter, r *http.Request, 
 	return candidate, true
 }
 
-func (h *Handler) deployLatestGitSourceRevision(w http.ResponseWriter, r *http.Request, workspaceID string, source gitsourcepkg.Source, audit gitSourceOperationAudit) (contract.Deployment, bool) {
+func (h *Handler) deployLatestGitSourceRevision(w http.ResponseWriter, r *http.Request, workspaceID string, source gitsourcepkg.Source, expectedCommit string, audit gitSourceOperationAudit) (contract.Deployment, bool) {
 	operationCtx, release, err := h.acquireGitSourceOperation(r.Context(), workspaceID, source)
 	if err != nil {
 		writeSourceOperationError(w, err)
@@ -98,7 +102,11 @@ func (h *Handler) deployLatestGitSourceRevision(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return contract.Deployment{}, false
 	}
-	if err := catalog.ValidateReleaseCandidate(candidate, workspaceID, source.ID, candidate.Deployment.Commit); err != nil {
+	candidateCommit := candidate.Deployment.Commit
+	if expectedCommit != "" {
+		candidateCommit = expectedCommit
+	}
+	if err := catalog.ValidateReleaseCandidate(candidate, workspaceID, source.ID, candidateCommit); err != nil {
 		writeError(w, http.StatusConflict, err.Error())
 		return contract.Deployment{}, false
 	}

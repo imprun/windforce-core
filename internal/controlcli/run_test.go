@@ -163,7 +163,21 @@ func TestRunMapsAPIStatusToStableExitCode(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	exit := Run([]string{"--api-url", server.URL, "app", "list"}, strings.NewReader(""), &stdout, &stderr)
-	if exit != ExitAPIClient || !strings.Contains(stderr.String(), "unauthorized") {
+	if exit != ExitAuth || !strings.Contains(stderr.String(), "unauthorized") {
+		t.Fatalf("exit=%d stderr=%s", exit, stderr.String())
+	}
+}
+
+func TestRunMapsAuthorizationFailureToStableExitCode(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"error":"forbidden"}`))
+	}))
+	defer server.Close()
+
+	var stdout, stderr bytes.Buffer
+	exit := Run([]string{"--api-url", server.URL, "app", "list"}, strings.NewReader(""), &stdout, &stderr)
+	if exit != ExitForbidden || !strings.Contains(stderr.String(), "forbidden") {
 		t.Fatalf("exit=%d stderr=%s", exit, stderr.String())
 	}
 }

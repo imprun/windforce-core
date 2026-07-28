@@ -20,8 +20,11 @@ import (
 
 const (
 	ExitOK        = 0
+	ExitFailure   = 1
 	ExitUsage     = 2
 	ExitConfig    = 3
+	ExitAuth      = 4
+	ExitForbidden = 5
 	ExitTransport = 10
 	ExitAPIClient = 20
 	ExitAPIServer = 21
@@ -41,11 +44,19 @@ type runner struct {
 	config         ConfigFile
 	resolved       resolvedConfig
 	client         *controlplane.Client
+	outputFields   string
+	jqExpression   string
+	outputTemplate string
+	humanOutput    bool
 }
 
 type usageError struct{ message string }
 
+type commandFailure struct{ message string }
+
 func (e usageError) Error() string { return e.message }
+
+func (e commandFailure) Error() string { return e.message }
 
 func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	return runWithProgram(legacyProgram, args, stdin, stdout, stderr)
@@ -70,6 +81,9 @@ func runWithProgram(program programConfig, args []string, stdin io.Reader, stdou
 	var profileName string
 	var overrides Profile
 	var pretty bool
+	var outputFields string
+	var jqExpression string
+	var outputTemplate string
 	var timeout time.Duration
 	global.StringVar(&profileName, "profile", "", "connection profile")
 	if program.Name == wfProgram.Name {
@@ -80,6 +94,9 @@ func runWithProgram(program programConfig, args []string, stdin io.Reader, stdou
 	global.StringVar(&overrides.Actor, "actor", "", "actor sent as X-Windforce-Actor")
 	global.StringVar(&overrides.TokenEnv, "token-env", "", "environment variable containing the bearer token")
 	global.BoolVar(&pretty, "pretty", false, "pretty-print JSON")
+	global.StringVar(&outputFields, "json", "", "select comma-separated JSON fields, or *")
+	global.StringVar(&jqExpression, "jq", "", "filter JSON output with a jq expression")
+	global.StringVar(&outputTemplate, "template", "", "format output with a Go template")
 	global.DurationVar(&timeout, "request-timeout", 60*time.Second, "HTTP request timeout")
 	if err := global.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -92,6 +109,46 @@ func runWithProgram(program programConfig, args []string, stdin io.Reader, stdou
 	if len(remaining) == 0 {
 		printUsage(stderr, program.Name)
 		return ExitUsage
+	}
+	if jqExpression != "" && outputTemplate != "" {
+		writeError(stderr, usageError{"--jq and --template are mutually exclusive"})
+		return ExitUsage
+	}
+	if (jqExpression != "" || outputTemplate != "") && outputFields == "" {
+		outputFields = "*"
+	}
+	if helpPath, requested := requestedCommandHelp(remaining); requested {
+		if program.Name != legacyProgram.Name || remaining[0] != "help" {
+			if !printCommandHelp(stdout, program.Name, helpPath) {
+				writeError(stderr, fmt.Errorf("unknown help topic %q", strings.Join(helpPath, " ")))
+				return ExitUsage
+			}
+			return ExitOK
+		}
+	}
+	if program.Name == wfProgram.Name && remaining[0] == "completion" {
+		if len(remaining) != 2 {
+			writeError(stderr, usageError{"usage: wf completion bash|zsh|fish|powershell"})
+			return ExitUsage
+		}
+		if err := writeCompletion(stdout, remaining[1]); err != nil {
+			var usage usageError
+			if errors.As(err, &usage) {
+				writeError(stderr, err)
+				return ExitUsage
+			}
+			writeError(stderr, err)
+			return ExitConfig
+		}
+		return ExitOK
+	}
+	if remaining[0] == "version" {
+		if len(remaining) != 1 {
+			writeError(stderr, usageError{"usage: " + program.Name + " version"})
+			return ExitUsage
+		}
+		_, _ = fmt.Fprintln(stdout, Version)
+		return ExitOK
 	}
 
 	path, err := configPathFor(program)
@@ -107,6 +164,8 @@ func runWithProgram(program programConfig, args []string, stdin io.Reader, stdou
 	r := &runner{
 		stdin: stdin, stdout: stdout, stderr: stderr, pretty: pretty, program: program.Name,
 		store: store, configPath: path, config: config,
+		outputFields: outputFields, jqExpression: jqExpression, outputTemplate: outputTemplate,
+		humanOutput: isTerminalOutput(stdout) && !pretty && outputFields == "" && jqExpression == "" && outputTemplate == "",
 	}
 	if remaining[0] == "profile" || (program.Name == wfProgram.Name && remaining[0] == "context") {
 		r.contextCommand = remaining[0] == "context"
@@ -128,7 +187,12 @@ func runWithProgram(program programConfig, args []string, stdin io.Reader, stdou
 	r.resolved = resolved
 	r.client = &controlplane.Client{
 		BaseURL: resolved.APIURL, Workspace: resolved.Workspace, Actor: resolved.Actor,
-		Token: resolved.Token, HTTP: &http.Client{Timeout: timeout},
+		Token: resolved.Token, HTTP: &http.Client{
+			Timeout: timeout,
+			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
 	}
 	if program.Name == wfProgram.Name && remaining[0] == "auth" {
 		if err := r.auth(remaining[1:]); err != nil {
@@ -154,6 +218,10 @@ func (r *runner) command(args []string) error {
 		return r.source(args[1:])
 	case "app":
 		return r.app(args[1:])
+	case "workspace":
+		return r.workspace(args[1:])
+	case "release":
+		return r.release(args[1:])
 	case "action":
 		return r.action(args[1:])
 	case "run":
@@ -162,22 +230,20 @@ func (r *runner) command(args []string) error {
 		return r.job(args[1:])
 	case "provisioning":
 		return r.provisioning(args[1:])
+	case "api":
+		return r.api(args[1:])
 	case "openapi":
 		if len(args) != 1 {
 			return usageError{"usage: windforce openapi"}
 		}
 		return r.json(http.MethodGet, r.client.WorkspacePath("openapi.json"), nil)
-	case "version":
-		if len(args) != 1 {
-			return usageError{"usage: windforce version"}
-		}
-		_, err := fmt.Fprintln(r.stdout, Version)
-		return err
 	case "help", "--help", "-h":
-		if len(args) != 1 {
+		if r.program == legacyProgram.Name && len(args) != 1 {
 			return usageError{"usage: windforce help"}
 		}
-		printUsage(r.stdout, r.program)
+		if !printCommandHelp(r.stdout, r.program, args[1:]) {
+			return usageError{fmt.Sprintf("unknown help topic %q", strings.Join(args[1:], " "))}
+		}
 		return nil
 	default:
 		return usageError{fmt.Sprintf("unknown command %q", args[0])}
@@ -215,38 +281,25 @@ func (r *runner) raw(method, path, contentType string, body []byte) error {
 }
 
 func (r *runner) outputJSON(value any) error {
-	var data []byte
-	var err error
-	if raw, ok := value.(json.RawMessage); ok {
-		if r.pretty {
-			var decoded any
-			if err = json.Unmarshal(raw, &decoded); err == nil {
-				data, err = json.MarshalIndent(decoded, "", "  ")
-			}
-		} else {
-			data = raw
-		}
-	} else if r.pretty {
-		data, err = json.MarshalIndent(value, "", "  ")
-	} else {
-		data, err = json.Marshal(value)
-	}
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprintln(r.stdout, string(data))
-	return err
+	return r.writeOutput(value)
 }
 
 func (r *runner) finishError(err error) int {
 	var apiErr *controlplane.APIError
 	var usage usageError
+	var failure commandFailure
 	switch {
 	case errors.As(err, &apiErr):
 		if json.Valid(apiErr.Body) {
 			_ = r.outputErrorJSON(apiErr.Body)
 		} else {
 			writeError(r.stderr, err)
+		}
+		switch apiErr.StatusCode {
+		case http.StatusUnauthorized:
+			return ExitAuth
+		case http.StatusForbidden:
+			return ExitForbidden
 		}
 		if apiErr.StatusCode >= 500 {
 			return ExitAPIServer
@@ -262,6 +315,9 @@ func (r *runner) finishError(err error) int {
 		}
 		writeError(r.stderr, usageError{message: message})
 		return ExitUsage
+	case errors.As(err, &failure):
+		writeError(r.stderr, failure)
+		return ExitFailure
 	default:
 		writeError(r.stderr, err)
 		return ExitTransport
@@ -269,6 +325,7 @@ func (r *runner) finishError(err error) int {
 }
 
 func (r *runner) outputErrorJSON(data []byte) error {
+	data = redactErrorJSON(data)
 	if r.pretty {
 		var value any
 		if err := json.Unmarshal(data, &value); err == nil {
@@ -376,37 +433,43 @@ func query(values url.Values) string {
 	}
 	return "?" + values.Encode()
 }
-func writeError(writer io.Writer, err error) { _, _ = fmt.Fprintln(writer, err) }
+func writeError(writer io.Writer, err error) {
+	_, _ = fmt.Fprintln(writer, redactDiagnostic(err.Error()))
+}
 
 func printUsage(writer io.Writer, program string) {
 	if program == wfProgram.Name {
 		fmt.Fprintln(writer, `usage: wf [global flags] <command>
 
-Global flags: --context, --api-url, --workspace, --actor, --token-env, --pretty
+Global flags: --context, --api-url, --workspace, --actor, --token-env, --json, --jq, --template, --pretty
 
 Commands:
-  auth login|status|logout
+  auth login|switch|status|logout
   context list|show|set|use
+  workspace list|show|view|use
   source list|register|probe|sync|publish
-  app list|show|history|source|openapi
+  app publish|list|show|history|source|openapi
+  release list|view|activate|rollback
   action show|schema
-  run create|wait|show|result|cancel
+  run create|wait|show|watch|result|cancel
   job list|show|result|logs|cancel
   provisioning export|apply
+  api
   openapi
   version`)
 		return
 	}
 	fmt.Fprintln(writer, `usage: windforce [global flags] <command>
 
-Global flags: --profile, --api-url, --workspace, --actor, --token-env, --pretty
+Global flags: --profile, --api-url, --workspace, --actor, --token-env, --json, --jq, --template, --pretty
 
 Commands:
   profile list|show|set|use
   source list|register|probe|sync|deploy
-  app list|show|history|source|openapi
+  app publish|list|show|history|source|openapi
+  release list|view|activate|rollback
   action show|schema
-  run create|wait|show|result|cancel
+  run create|wait|show|watch|result|cancel
   job list|show|result|logs|cancel
   provisioning export|apply
   openapi

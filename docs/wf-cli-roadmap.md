@@ -3,7 +3,7 @@ title: wf CLI roadmap
 description: Product contract and delivery gates for the thin Windforce workspace client.
 ---
 
-This roadmap records the 2026-07-28 delivery target for `wf`. The quality benchmark is GitHub CLI: predictable command discovery, secure browser authentication, useful terminal output, stable automation output, cross-platform installation, actionable failures, and complete help. It does not mean copying GitHub-specific commands or shipping a Windforce runtime inside the client.
+This roadmap records the 2026-07-29 delivery target for `wf`. The quality benchmark is GitHub CLI: predictable command discovery, secure browser authentication, useful terminal output, stable automation output, cross-platform installation, actionable failures, and complete help. It does not mean copying GitHub-specific commands or shipping a Windforce runtime inside the client.
 
 ## Product boundary
 
@@ -51,10 +51,10 @@ The CLI stores only the refreshable hosted credential in the operating-system cr
 A context is non-secret metadata:
 
 ```yaml
-name: gale
-host: cloud.imprun.dev
-cell: gale-7c35
-api_url: https://gale-7c35.cloud.imprun.dev
+name: hosted-cell
+host: platform.example.test
+cell: cell-east-1
+api_url: https://cell-east-1.platform.example.test
 workspace: default
 account: account-label
 ```
@@ -90,6 +90,13 @@ The server remains authoritative for source access, validation, preparation, art
 - Add `--json`, filtering, templates, `NO_COLOR`, paging policy, prompts, and shell completion.
 - Stabilize exit codes and safe diagnostic categories.
 
+Terminal-aware labels and tables, deterministic redirected JSON,
+`--json <fields>`, `--jq`, `--template`, authentication and authorization exit
+codes, offline command help, and Bash/Zsh/Fish/PowerShell completion are now
+implemented. Paging is intentionally disabled until a bounded large-result
+workflow needs it. The client emits no color today, so `NO_COLOR` and
+non-terminal output are decoration-free.
+
 ### M3 — Authentication
 
 - Implement secure credential-store abstraction and explicit environment-token precedence.
@@ -97,7 +104,14 @@ The server remains authoritative for source access, validation, preparation, art
 - Add provider discovery and hosted browser or device authorization without product-specific code in Core.
 - Verify token refresh, revocation, multiple accounts, headless automation, and redaction.
 
-Direct token login, status, logout, credential-store isolation, and `WF_TOKEN` precedence are implemented. Hosted targets can now advertise a secretless Device Authorization client through `/.well-known/wf-cli.json`; `wf auth login` discovers the issuer, opens the external browser or prints the verification URL, stores the refreshable credential securely, validates workspace access, and refreshes the access token before expiry. Remote token revocation, an explicit account-switch command, and full live hosted verification remain open.
+Direct token login, status, logout, credential-store isolation, account
+switching, and `WF_TOKEN` precedence are implemented. Hosted targets can now
+advertise a secretless Device Authorization client through
+`/.well-known/wf-cli.json`; `wf auth login` discovers the issuer, opens the
+external browser or prints the verification URL, stores the refreshable
+credential securely, validates workspace access, and refreshes the access
+token before expiry. Remote token revocation and full live hosted verification
+remain open.
 
 ### M4 — Workspace and app workflows
 
@@ -106,12 +120,23 @@ Direct token login, status, logout, credential-store isolation, and `WF_TOKEN` p
 - Add release history, activation, rollback, and canonical Run commands.
 - Keep low-level source and Job commands available for advanced operations.
 
+Exact-commit `wf app publish`, workspace list/view/use, release
+list/view/activate/rollback, and Run watch/result are implemented. Workspace
+switching verifies access before mutating the context. The server rejects a
+Sync or Publish race before candidate mutation or release activation. Hosted
+discovery across multiple Cells remains a platform concern and is still open.
+
 ### M5 — Distribution and live verification
 
 - Publish signed checksums and host-specific archives for Windows, macOS, and Linux.
 - Add installer and package-manager channels only after archive verification is stable.
 - Test upgrades without losing contexts or credentials.
 - Exercise direct standalone and hosted Cell paths end to end.
+
+Cross-platform archives, checksums, and smoke commands are configured. Tagged
+releases additionally create and verify a keyless Sigstore bundle for the
+checksum file. A new tag and real hosted/direct Cell verification are still
+required before this milestone is complete.
 
 ## Completion gates
 
