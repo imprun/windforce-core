@@ -29,7 +29,10 @@ export default {
       const targetRect = target.getBoundingClientRect();
       return {
         topDelta: Math.abs(nameRect.top - targetRect.top),
+        leftDelta: Math.abs(nameRect.left - targetRect.left),
+        widthDelta: Math.abs(nameRect.width - targetRect.width),
         heightDelta: Math.abs(nameRect.height - targetRect.height),
+        stacked: targetRect.top >= nameRect.bottom,
         targetWraps:
           targetValue instanceof HTMLElement
             ? targetValue.scrollHeight > targetValue.clientHeight
@@ -39,9 +42,11 @@ export default {
     });
     if (
       !fieldLayout ||
-      fieldLayout.topDelta > 1 ||
       fieldLayout.heightDelta > 1 ||
-      fieldLayout.targetWraps !== false
+      fieldLayout.targetWraps !== false ||
+      (fieldLayout.stacked
+        ? fieldLayout.leftDelta > 1 || fieldLayout.widthDelta > 1
+        : fieldLayout.topDelta > 1)
     ) {
       throw new Error(`Trigger identity fields are misaligned: ${JSON.stringify(fieldLayout)}`);
     }
