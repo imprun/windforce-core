@@ -1,6 +1,7 @@
 import { Check, Copy } from "lucide-react";
 import { useState } from "react";
 import { Modal } from "../components/ui";
+import { translate } from "../shared/i18n";
 
 export function WebhookSecretDialog({
   secret,
@@ -30,8 +31,8 @@ export function WebhookSecretDialog({
 
   return (
     <Modal
-      title="Save the signing secret"
-      subtitle="Windforce will not show this value again after this dialog is closed."
+      title={translate("webhook.saveSigningSecret")}
+      subtitle={translate("webhook.secretShownOnce")}
       onClose={onClose}
       id="webhookSecretDialog"
     >
@@ -39,20 +40,21 @@ export function WebhookSecretDialog({
         <code id="webhookSigningSecret">{secret}</code>
         <button className="button" type="button" onClick={copySecret}>
           {copied ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}
-          {copied ? "Copied" : "Copy secret"}
+          {copied ? translate("common.copied") : translate("webhook.copySecret")}
         </button>
       </div>
       <div className="inlineNotice warning">
-        Configure the receiving service with this secret to verify the{" "}
-        <span className="mono">X-Windforce-Signature</span> header.
+        {translate("webhook.configureReceiver")} <span className="mono">X-Windforce-Signature</span>{" "}
+        header.
       </div>
       {notificationCenterSourceKey ? (
         <div className="notificationCenterHandoff">
           <div>
-            <strong>Notification Center source</strong>
+            <strong>{translate("webhook.notificationCenterSource")}</strong>
             <p>
-              Open source <span className="mono">{notificationCenterSourceKey}</span> and paste this
-              body into the signing secret completion request.
+              {translate("webhook.openSourcePrefix")}{" "}
+              <span className="mono">{notificationCenterSourceKey}</span>{" "}
+              {translate("webhook.openSourceSuffix")}
             </p>
             <code>POST /api/v1/admin/sources/{notificationCenterSourceKey}/signing-secret</code>
           </div>
@@ -63,14 +65,16 @@ export function WebhookSecretDialog({
             ) : (
               <Copy size={16} aria-hidden="true" />
             )}
-            {completionCopied ? "Copied" : "Copy Notification Center body"}
+            {completionCopied
+              ? translate("common.copied")
+              : translate("webhook.copyNotificationCenterBody")}
           </button>
         </div>
       ) : null}
       <footer className="dialogFooter webhookSecretFooter">
-        <span className="fieldHint">Closing this dialog does not disable the webhook.</span>
+        <span className="fieldHint">{translate("webhook.closeDoesNotDisable")}</span>
         <button className="button primary" type="button" onClick={onClose}>
-          I saved the secret
+          {translate("webhook.savedSecret")}
         </button>
       </footer>
     </Modal>

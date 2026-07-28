@@ -1,3 +1,5 @@
+import { type TranslationKey, translate } from "../shared/i18n";
+
 export type Settings = {
   workspace: string;
   token: string;
@@ -579,21 +581,43 @@ export type PatchSourcePayload = {
   creds_ref?: string;
 };
 
+export type ApiErrorCode =
+  | "http.bad_request"
+  | "http.unauthorized"
+  | "http.forbidden"
+  | "http.not_found"
+  | "http.conflict"
+  | "http.rate_limited"
+  | "http.server_error"
+  | `server.${string}`;
+
 export class ApiError extends Error {
   constructor(
-    message: string,
+    readonly code: ApiErrorCode,
     readonly status: number,
+    readonly detail: string,
+    readonly data?: unknown,
   ) {
-    super(message);
+    super(detail);
+    this.name = "ApiError";
   }
 }
 
 export function errorMessage(cause: unknown): string {
-  if (cause instanceof ApiError && cause.status === 401) {
-    return "Unauthorized — check the API token in Settings.";
-  }
+  if (cause instanceof ApiError) return translate(apiErrorTranslationKey(cause.status));
+  if (cause instanceof TypeError) return translate("apiError.network");
   if (cause instanceof Error) return cause.message;
-  return String(cause);
+  return translate("apiError.unexpected");
+}
+
+function apiErrorTranslationKey(status: number): TranslationKey {
+  if (status === 400 || status === 422) return "apiError.badRequest";
+  if (status === 401) return "apiError.unauthorized";
+  if (status === 403) return "apiError.forbidden";
+  if (status === 404) return "apiError.notFound";
+  if (status === 409) return "apiError.conflict";
+  if (status === 429) return "apiError.rateLimited";
+  return "apiError.server";
 }
 
 function isLegacyHeaderValueSafe(value: string): boolean {
@@ -1018,14 +1042,7 @@ export class WindforceApi {
     });
     const text = await response.text();
     if (!response.ok) {
-      let message = `${response.status} ${response.statusText}`;
-      try {
-        const payload = JSON.parse(text) as { error?: string };
-        if (payload?.error) message = payload.error;
-      } catch {
-        if (text) message = text;
-      }
-      throw new ApiError(message, response.status);
+      throw apiError(response, text);
     }
     if (!text) return undefined as T;
     try {
@@ -1050,7 +1067,7 @@ export class WindforceApi {
       body: options.body,
     });
     const text = await response.text();
-    if (!response.ok) throw new ApiError(apiErrorMessage(response, text), response.status);
+    if (!response.ok) throw apiError(response, text);
     if (!text) return undefined as T;
     return JSON.parse(text) as T;
   }
@@ -1062,7 +1079,7 @@ export class WindforceApi {
     setActorHeaders(headers, this.settings.actor);
     const response = await fetch(this.workspaceURL(path), { headers });
     const text = await response.text();
-    if (!response.ok) throw new ApiError(apiErrorMessage(response, text), response.status);
+    if (!response.ok) throw apiError(response, text);
     return text;
   }
 
@@ -1072,13 +1089,40 @@ export class WindforceApi {
   }
 }
 
-function apiErrorMessage(response: Response, text: string): string {
-  let message = `${response.status} ${response.statusText}`;
+function apiError(response: Response, text: string): ApiError {
+  let detail = `${response.status} ${response.statusText}`;
+  let data: unknown;
+  let serverCode = "";
   try {
-    const payload = JSON.parse(text) as { error?: string };
-    if (payload?.error) message = payload.error;
+    data = JSON.parse(text) as unknown;
+    if (data && typeof data === "object") {
+      const payload = data as {
+        code?: unknown;
+        message?: unknown;
+        error?: unknown;
+      };
+      if (typeof payload.code === "string") serverCode = payload.code;
+      if (typeof payload.message === "string") detail = payload.message;
+      if (typeof payload.error === "string") detail = payload.error;
+      if (payload.error && typeof payload.error === "object") {
+        const nested = payload.error as { code?: unknown; message?: unknown };
+        if (typeof nested.code === "string") serverCode = nested.code;
+        if (typeof nested.message === "string") detail = nested.message;
+      }
+    }
   } catch {
-    if (text) message = text;
+    if (text) detail = text;
   }
-  return message;
+  const code = serverCode ? (`server.${serverCode}` as const) : httpErrorCode(response.status);
+  return new ApiError(code, response.status, detail, data);
+}
+
+function httpErrorCode(status: number): ApiErrorCode {
+  if (status === 400 || status === 422) return "http.bad_request";
+  if (status === 401) return "http.unauthorized";
+  if (status === 403) return "http.forbidden";
+  if (status === 404) return "http.not_found";
+  if (status === 409) return "http.conflict";
+  if (status === 429) return "http.rate_limited";
+  return "http.server_error";
 }

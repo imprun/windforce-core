@@ -5,6 +5,7 @@ import type { AppSummary, WebhookSubscription } from "../lib/api";
 import { errorMessage, webhookAppKeys } from "../lib/api";
 import { useApp } from "../lib/app-context";
 import { formatTime } from "../lib/format";
+import { translate } from "../shared/i18n";
 import { WebhookSecretDialog } from "./WebhookSecretDialog";
 import { WebhookSubscriptionStatus, webhookEventLabel } from "./WebhookStatus";
 
@@ -50,7 +51,7 @@ export function WebhookOverview({ subscription, apps, onUpdated, onDeleted }: Pr
           app_key: appKey,
           git_source_id: 0,
           commit_sha: "",
-          entrypoint: "App is not currently registered",
+          entrypoint: translate("webhook.appNotRegistered"),
           tag: "",
           timeout_s: 0,
           script_lang: "",
@@ -80,11 +81,11 @@ export function WebhookOverview({ subscription, apps, onUpdated, onDeleted }: Pr
     const normalizedName = name.trim();
     const nextApps = scope === "all" ? [] : selectedApps;
     if (!normalizedName) {
-      setError("Name is required.");
+      setError(translate("webhook.validation.name"));
       return;
     }
     if (scope === "selected" && nextApps.length === 0) {
-      setError("Select at least one app or change the scope to all apps.");
+      setError(translate("webhook.validation.appScope"));
       return;
     }
     const payload: Parameters<typeof api.updateWebhookSubscription>[1] = {};
@@ -94,7 +95,7 @@ export function WebhookOverview({ subscription, apps, onUpdated, onDeleted }: Pr
     if (JSON.stringify(nextApps) !== JSON.stringify(webhookAppKeys(subscription)))
       payload.app_keys = nextApps;
     if (Object.keys(payload).length === 0) {
-      notify("info", "No webhook settings changed.");
+      notify("info", translate("webhook.noSettingsChanged"));
       return;
     }
     setBusy(true);
@@ -102,7 +103,7 @@ export function WebhookOverview({ subscription, apps, onUpdated, onDeleted }: Pr
     try {
       const result = await api.updateWebhookSubscription(subscription.id, payload);
       onUpdated(result.subscription);
-      notify("ok", `Saved webhook ${result.subscription.name}.`);
+      notify("ok", translate("webhook.saved", { name: result.subscription.name }));
     } catch (cause) {
       setError(errorMessage(cause));
     } finally {
@@ -120,7 +121,7 @@ export function WebhookOverview({ subscription, apps, onUpdated, onDeleted }: Pr
       setRotateOpen(false);
       onUpdated(result.subscription);
       setSecret(result.signing_secret || "");
-      notify("ok", "Rotated the webhook signing secret.");
+      notify("ok", translate("webhook.secretRotated"));
     } catch (cause) {
       setError(errorMessage(cause));
     } finally {
@@ -133,7 +134,7 @@ export function WebhookOverview({ subscription, apps, onUpdated, onDeleted }: Pr
     setError("");
     try {
       await api.deleteWebhookSubscription(subscription.id);
-      notify("ok", `Deleted webhook ${subscription.name}.`);
+      notify("ok", translate("webhook.deleted", { name: subscription.name }));
       onDeleted();
     } catch (cause) {
       setError(errorMessage(cause));
@@ -145,39 +146,41 @@ export function WebhookOverview({ subscription, apps, onUpdated, onDeleted }: Pr
   return (
     <div className="webhookDetailStack">
       <Panel
-        title="Configuration"
-        subtitle="Delivery scope and receiver settings used for future release events."
+        title={translate("webhook.configuration")}
+        subtitle={translate("webhook.configurationHint")}
       >
         <div className="webhookConfigSummary">
           <div>
-            <span className="fieldLabel">Status</span>
+            <span className="fieldLabel">{translate("common.status")}</span>
             <WebhookSubscriptionStatus enabled={subscription.enabled} deleted={deleted} />
           </div>
           <div>
-            <span className="fieldLabel">Receiver host</span>
+            <span className="fieldLabel">{translate("webhook.receiverHost")}</span>
             <strong className="mono">{subscription.endpoint_summary}</strong>
-            <span className="fieldHint">Full paths and query strings are hidden after save.</span>
+            <span className="fieldHint">{translate("webhook.pathsHidden")}</span>
           </div>
           <div>
-            <span className="fieldLabel">Events</span>
+            <span className="fieldLabel">{translate("webhook.events")}</span>
             <strong>{(subscription.event_types || []).map(webhookEventLabel).join(", ")}</strong>
             <span className="fieldHint mono">{(subscription.event_types || []).join(", ")}</span>
           </div>
           <div>
-            <span className="fieldLabel">Last updated</span>
+            <span className="fieldLabel">{translate("webhook.lastUpdated")}</span>
             <strong>{formatTime(subscription.updated_at)}</strong>
-            <span className="fieldHint">by {subscription.updated_by || "system"}</span>
+            <span className="fieldHint">
+              {translate("common.by", {
+                actor: subscription.updated_by || translate("common.system"),
+              })}
+            </span>
           </div>
         </div>
 
         {deleted ? (
-          <div className="inlineNotice warning">
-            Deleted webhooks are read-only. Delivery and audit history remain available.
-          </div>
+          <div className="inlineNotice warning">{translate("webhook.deletedReadOnly")}</div>
         ) : (
           <form className="webhookEditForm" onSubmit={save}>
             <div className="formGrid">
-              <Field label="Name" hint="Shown in operations, delivery history, and audit events.">
+              <Field label={translate("common.name")} hint={translate("webhook.editNameHint")}>
                 <input
                   id="webhookEditName"
                   maxLength={200}
@@ -186,8 +189,8 @@ export function WebhookOverview({ subscription, apps, onUpdated, onDeleted }: Pr
                 />
               </Field>
               <Field
-                label="Replace endpoint URL"
-                hint="Leave blank to keep the current receiver. Enter a new full URL to rotate the hidden path or query."
+                label={translate("webhook.replaceEndpoint")}
+                hint={translate("webhook.replaceEndpointHint")}
               >
                 <input
                   id="webhookEditEndpoint"
@@ -206,30 +209,27 @@ export function WebhookOverview({ subscription, apps, onUpdated, onDeleted }: Pr
                 onChange={(event) => setEnabled(event.target.checked)}
               />
               <span>
-                <strong>Enable deliveries</strong>
-                <small>
-                  Disabled subscriptions keep their configuration and history but do not receive new
-                  events.
-                </small>
+                <strong>{translate("webhook.enableDeliveries")}</strong>
+                <small>{translate("webhook.enableDeliveriesHint")}</small>
               </span>
             </label>
 
             <fieldset className="webhookScopeFieldset">
-              <legend>App scope</legend>
+              <legend>{translate("webhook.appScope")}</legend>
               <div className="segmented webhookScopeMode">
                 <button
                   type="button"
                   className={scope === "all" ? "segment active" : "segment"}
                   onClick={() => setScope("all")}
                 >
-                  All apps
+                  {translate("webhook.allApps")}
                 </button>
                 <button
                   type="button"
                   className={scope === "selected" ? "segment active" : "segment"}
                   onClick={() => setScope("selected")}
                 >
-                  Selected apps
+                  {translate("webhook.selectedApps")}
                 </button>
               </div>
               {scope === "selected" ? (
@@ -237,8 +237,8 @@ export function WebhookOverview({ subscription, apps, onUpdated, onDeleted }: Pr
                   <label className="scopeSearch">
                     <Search size={16} aria-hidden="true" />
                     <input
-                      aria-label="Filter apps"
-                      placeholder="Filter apps…"
+                      aria-label={translate("webhook.filterApps")}
+                      placeholder={translate("webhook.filterApps")}
                       value={search}
                       onChange={(event) => setSearch(event.target.value)}
                     />
@@ -260,7 +260,7 @@ export function WebhookOverview({ subscription, apps, onUpdated, onDeleted }: Pr
                   </div>
                 </div>
               ) : (
-                <p className="fieldHint">Receive release events for every app in this workspace.</p>
+                <p className="fieldHint">{translate("webhook.receiveEveryApp")}</p>
               )}
             </fieldset>
             {error ? <ErrorNotice message={error} /> : null}
@@ -271,7 +271,7 @@ export function WebhookOverview({ subscription, apps, onUpdated, onDeleted }: Pr
                 disabled={busy}
                 id="saveWebhookButton"
               >
-                {busy ? "Saving…" : "Save changes"}
+                {busy ? translate("common.saving") : translate("common.saveChanges")}
               </button>
             </div>
           </form>
@@ -279,40 +279,36 @@ export function WebhookOverview({ subscription, apps, onUpdated, onDeleted }: Pr
       </Panel>
 
       <Panel
-        title="Signing secret"
-        subtitle="Receivers use this secret to verify that a request came from Windforce."
+        title={translate("webhook.signingSecret")}
+        subtitle={translate("webhook.signingSecretHint")}
       >
         <div className="webhookSecurityRow">
           <div className="securityIdentity">
             <KeyRound size={18} aria-hidden="true" />
             <div>
               <strong>
-                {subscription.has_signing_secret ? "Signing enabled" : "No signing secret"}
+                {subscription.has_signing_secret
+                  ? translate("webhook.signingEnabled")
+                  : translate("webhook.noSigningSecret")}
               </strong>
-              <p>
-                The stored secret cannot be read. Rotation immediately invalidates the current
-                secret.
-              </p>
+              <p>{translate("webhook.rotationHint")}</p>
             </div>
           </div>
           {!deleted ? (
             <button className="button" type="button" onClick={() => setRotateOpen(true)}>
-              Rotate secret
+              {translate("webhook.rotateSecret")}
             </button>
           ) : null}
         </div>
       </Panel>
 
       {!deleted ? (
-        <Panel
-          title="Delete webhook"
-          subtitle="Stop future deliveries while retaining delivery and audit history."
-        >
+        <Panel title={translate("webhook.delete")} subtitle={translate("webhook.deleteHint")}>
           <div className="dangerZoneRow">
-            <p>Deletion cannot be undone from the console.</p>
+            <p>{translate("webhook.deleteIrreversible")}</p>
             <button className="button danger" type="button" onClick={() => setDeleteOpen(true)}>
               <Trash2 size={16} aria-hidden="true" />
-              Delete webhook
+              {translate("webhook.delete")}
             </button>
           </div>
         </Panel>
@@ -320,27 +316,27 @@ export function WebhookOverview({ subscription, apps, onUpdated, onDeleted }: Pr
 
       {rotateOpen ? (
         <Modal
-          title="Rotate signing secret?"
-          subtitle="The current receiver will fail verification until it is configured with the new secret."
+          title={translate("webhook.rotateConfirm")}
+          subtitle={translate("webhook.rotateConfirmHint")}
           onClose={() => setRotateOpen(false)}
         >
           <div className="dialogFooter">
             <button className="button" type="button" onClick={() => setRotateOpen(false)}>
-              Cancel
+              {translate("common.cancel")}
             </button>
             <button className="button primary" type="button" disabled={busy} onClick={rotateSecret}>
-              {busy ? "Rotating…" : "Rotate secret"}
+              {busy ? translate("webhook.rotating") : translate("webhook.rotateSecret")}
             </button>
           </div>
         </Modal>
       ) : null}
       {deleteOpen ? (
         <Modal
-          title="Delete webhook?"
-          subtitle="Future releases will no longer create deliveries for this receiver."
+          title={translate("webhook.deleteConfirm")}
+          subtitle={translate("webhook.deleteConfirmHint")}
           onClose={() => setDeleteOpen(false)}
         >
-          <Field label={`Type ${subscription.name} to confirm`}>
+          <Field label={translate("webhook.typeToConfirm", { name: subscription.name })}>
             <input
               value={deleteConfirmation}
               onChange={(event) => setDeleteConfirmation(event.target.value)}
@@ -348,7 +344,7 @@ export function WebhookOverview({ subscription, apps, onUpdated, onDeleted }: Pr
           </Field>
           <div className="dialogFooter">
             <button className="button" type="button" onClick={() => setDeleteOpen(false)}>
-              Cancel
+              {translate("common.cancel")}
             </button>
             <button
               className="button danger"
@@ -356,7 +352,7 @@ export function WebhookOverview({ subscription, apps, onUpdated, onDeleted }: Pr
               disabled={busy || deleteConfirmation !== subscription.name}
               onClick={remove}
             >
-              {busy ? "Deleting…" : "Delete webhook"}
+              {busy ? translate("common.deleting") : translate("webhook.delete")}
             </button>
           </div>
         </Modal>

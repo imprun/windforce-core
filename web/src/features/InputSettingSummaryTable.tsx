@@ -2,6 +2,7 @@ import { ChevronLeft, ChevronRight, Lock } from "lucide-react";
 import { formatRelative, formatTime } from "../lib/format";
 import type { InputSettingGroup } from "../lib/input-setting-groups";
 import { Link } from "../lib/router";
+import { translate } from "../shared/i18n";
 
 export type InputSettingSummaryRow = {
   group: InputSettingGroup;
@@ -31,11 +32,11 @@ export function InputSettingSummaryTable({
         <thead>
           <tr>
             <th>{scopeHeading}</th>
-            <th>Coverage</th>
-            <th>Configured values</th>
-            <th>Locked</th>
-            <th>Last change</th>
-            <th aria-label="Open settings" />
+            <th>{translate("inputSettings.coverage")}</th>
+            <th>{translate("inputSettings.configuredValues")}</th>
+            <th>{translate("inputSettings.locked")}</th>
+            <th>{translate("inputSettings.lastChange")}</th>
+            <th aria-label={translate("inputSettings.open")} />
           </tr>
         </thead>
         <tbody>
@@ -52,8 +53,16 @@ export function InputSettingSummaryTable({
                 <span className="cellSub">{row.coverageDetail}</span>
               </td>
               <td className="inputSettingSummaryValues">
-                <span className="cellTitle">{countLabel(row.group.valueCount, "value")}</span>
-                <span className="cellSub mono">{row.group.keyNames.join(", ") || "No keys"}</span>
+                <span className="cellTitle">
+                  {countLabel(
+                    row.group.valueCount,
+                    translate("inputSettings.value"),
+                    translate("inputSettings.values"),
+                  )}
+                </span>
+                <span className="cellSub mono">
+                  {row.group.keyNames.join(", ") || translate("inputSettings.noKeys")}
+                </span>
               </td>
               <td className="inputSettingSummaryLocked">
                 {row.group.lockedCount ? (
@@ -72,8 +81,8 @@ export function InputSettingSummaryTable({
                 <Link
                   className="button small iconButton"
                   to={row.href}
-                  title="View settings"
-                  aria-label={`View settings for ${row.label}`}
+                  title={translate("inputSettings.view")}
+                  aria-label={translate("inputSettings.viewNamed", { name: row.label })}
                 >
                   <ChevronRight size={16} aria-hidden="true" />
                 </Link>
@@ -103,31 +112,27 @@ export function SummaryPagination({
   const start = (page - 1) * pageSize + 1;
   const end = Math.min(page * pageSize, totalItems);
   return (
-    <nav className="summaryPagination" aria-label="Settings pages">
-      <span>
-        {start}–{end} of {totalItems}
-      </span>
+    <nav className="summaryPagination" aria-label={translate("inputSettings.pages")}>
+      <span>{translate("inputSettings.range", { start, end, total: totalItems })}</span>
       <div className="summaryPaginationControls">
         <button
           className="button small iconButton"
           type="button"
           disabled={page <= 1}
           onClick={() => onChange(page - 1)}
-          title="Previous page"
-          aria-label="Previous page"
+          title={translate("inputSettings.previousPage")}
+          aria-label={translate("inputSettings.previousPage")}
         >
           <ChevronLeft size={16} aria-hidden="true" />
         </button>
-        <span>
-          Page {page} of {totalPages}
-        </span>
+        <span>{translate("inputSettings.page", { page, total: totalPages })}</span>
         <button
           className="button small iconButton"
           type="button"
           disabled={page >= totalPages}
           onClick={() => onChange(page + 1)}
-          title="Next page"
-          aria-label="Next page"
+          title={translate("inputSettings.nextPage")}
+          aria-label={translate("inputSettings.nextPage")}
         >
           <ChevronRight size={16} aria-hidden="true" />
         </button>

@@ -3,6 +3,7 @@ import { Layout } from "../components/Layout";
 import { Loading } from "../components/ui";
 import { useApp } from "../lib/app-context";
 import { useRouter } from "../lib/router";
+import { translate } from "../shared/i18n";
 
 export function workspaceDetailTarget(tab: string): string {
   if (tab === "access") return "/settings/access";
@@ -22,8 +23,11 @@ export function WorkspaceDetailPage({ workspaceID, tab }: { workspaceID: string;
   }, [navigate, settings, tab, updateSettings, workspaceID]);
 
   return (
-    <Layout title="Workspace settings" subtitle="Moving workspace administration to Settings.">
-      <Loading label="Opening workspace settings…" />
+    <Layout
+      title={translate("workspaces.settings")}
+      subtitle={translate("workspaces.settingsRedirect")}
+    >
+      <Loading label={translate("workspaces.openingSettings")} />
     </Layout>
   );
 }

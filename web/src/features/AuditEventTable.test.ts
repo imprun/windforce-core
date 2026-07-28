@@ -1,7 +1,10 @@
-import { describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test } from "vitest";
+import { setLocale } from "../shared/i18n";
 import { auditChangeGroups } from "./AuditEventTable";
 
 describe("auditChangeGroups", () => {
+  beforeEach(() => setLocale("en"));
+
   test("shows only changed setting key names in a stable order", () => {
     expect(
       auditChangeGroups({ updated: ["TIMEOUT"], added: ["REGION"], locked: ["REGION"] }),

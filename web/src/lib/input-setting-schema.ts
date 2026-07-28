@@ -1,3 +1,4 @@
+import { translate } from "../shared/i18n";
 import { describeSchema, formatSchemaValue, type SchemaField } from "./schema-document";
 
 type JSONRecord = Record<string, unknown>;
@@ -69,20 +70,33 @@ function addDefinitions(
 
 function validateSchemaValue(schema: JSONRecord, value: unknown, path: string): string | undefined {
   if (Object.hasOwn(schema, "const") && !sameJSON(schema.const, value)) {
-    return `${path} must be ${formatSchemaValue(schema.const)}.`;
+    return translate("inputSettings.validation.mustBe", {
+      path,
+      value: formatSchemaValue(schema.const),
+    });
   }
   if (Array.isArray(schema.enum) && !schema.enum.some((candidate) => sameJSON(candidate, value))) {
-    return `${path} must be one of ${schema.enum.map(formatSchemaValue).join(", ")}.`;
+    return translate("inputSettings.validation.oneOf", {
+      path,
+      values: schema.enum.map(formatSchemaValue).join(", "),
+    });
   }
 
   const type = schema.type;
   if (typeof type === "string" && !matchesType(type, value)) {
-    return `${path} must be ${article(type)} ${type}.`;
+    return translate("inputSettings.validation.type", {
+      path,
+      article: article(type),
+      type,
+    });
   }
   if (Array.isArray(type)) {
     const allowed = type.filter((item): item is string => typeof item === "string");
     if (allowed.length > 0 && !allowed.some((candidate) => matchesType(candidate, value))) {
-      return `${path} must be one of these types: ${allowed.join(", ")}.`;
+      return translate("inputSettings.validation.types", {
+        path,
+        types: allowed.join(", "),
+      });
     }
   }
 
@@ -94,12 +108,16 @@ function validateSchemaValue(schema: JSONRecord, value: unknown, path: string): 
         : [],
     );
     for (const key of required) {
-      if (!Object.hasOwn(value, key)) return `${path}.${key} is required.`;
+      if (!Object.hasOwn(value, key)) {
+        return translate("inputSettings.validation.required", { path: `${path}.${key}` });
+      }
     }
     for (const [key, nestedValue] of Object.entries(value)) {
       const property = asRecord(properties[key]);
       if (!property) {
-        if (schema.additionalProperties === false) return `${path}.${key} is not an allowed field.`;
+        if (schema.additionalProperties === false) {
+          return translate("inputSettings.validation.notAllowed", { path: `${path}.${key}` });
+        }
         continue;
       }
       const error = validateSchemaValue(property, nestedValue, `${path}.${key}`);

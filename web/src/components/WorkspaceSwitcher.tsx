@@ -3,6 +3,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useApp, useAsync } from "../lib/app-context";
 import { Link } from "../lib/router";
 import { filterWorkspaces, visibleWorkspaces, WORKSPACE_REGISTRY_CHANGED } from "../lib/workspaces";
+import { translate } from "../shared/i18n";
 import { cn } from "../shared/lib/cn";
 
 export function WorkspaceSwitcher({ variant = "default" }: { variant?: "default" | "breadcrumb" }) {
@@ -73,11 +74,15 @@ export function WorkspaceSwitcher({ variant = "default" }: { variant?: "default"
         className="workspaceSwitcherTrigger"
         type="button"
         ref={triggerRef}
-        aria-label={`Current workspace: ${current?.name || settings.workspace}`}
+        aria-label={translate("workspace.current", {
+          workspace: current?.name || settings.workspace,
+        })}
         aria-expanded={open}
         aria-controls={popoverID}
         aria-haspopup="dialog"
-        title={`Workspace: ${current?.name || settings.workspace}`}
+        title={translate("workspace.current", {
+          workspace: current?.name || settings.workspace,
+        })}
         onClick={toggle}
       >
         {variant === "default" ? (
@@ -99,11 +104,11 @@ export function WorkspaceSwitcher({ variant = "default" }: { variant?: "default"
           className="workspacePopover"
           id={popoverID}
           role="dialog"
-          aria-label="Switch workspace"
+          aria-label={translate("workspace.switch")}
         >
           <div className="workspacePopoverHeader">
-            <strong>Switch workspace</strong>
-            <span>{workspaces.length} available</span>
+            <strong>{translate("workspace.switch")}</strong>
+            <span>{translate("workspace.availableCount", { count: workspaces.length })}</span>
           </div>
           {workspaces.length > 5 ? (
             <label className="workspaceSearch">
@@ -112,23 +117,27 @@ export function WorkspaceSwitcher({ variant = "default" }: { variant?: "default"
                 ref={searchRef}
                 type="search"
                 value={query}
-                placeholder="Find a workspace"
-                aria-label="Find a workspace"
+                placeholder={translate("workspace.find")}
+                aria-label={translate("workspace.find")}
                 onChange={(event) => setQuery(event.target.value)}
               />
             </label>
           ) : null}
-          <div className="workspaceOptionList" role="listbox" aria-label="Available workspaces">
+          <div
+            className="workspaceOptionList"
+            role="listbox"
+            aria-label={translate("workspace.available")}
+          >
             {state.loading && !state.data ? (
-              <span className="workspacePopoverState">Loading workspaces…</span>
+              <span className="workspacePopoverState">{translate("workspace.loading")}</span>
             ) : null}
             {state.error ? (
               <span className="workspacePopoverState errorText">
-                Could not load workspace list.
+                {translate("workspace.loadError")}
               </span>
             ) : null}
             {!state.loading && !state.error && filtered.length === 0 ? (
-              <span className="workspacePopoverState">No matching workspaces.</span>
+              <span className="workspacePopoverState">{translate("workspace.noMatches")}</span>
             ) : null}
             {filtered.map((workspace, index) => {
               const selected = workspace.id === settings.workspace;
@@ -150,7 +159,7 @@ export function WorkspaceSwitcher({ variant = "default" }: { variant?: "default"
                     <span className="mono">{workspace.id}</span>
                   </span>
                   {workspace.status === "archived" ? (
-                    <span className="badge badge-neutral">Archived</span>
+                    <span className="badge badge-neutral">{translate("common.archived")}</span>
                   ) : null}
                 </button>
               );
@@ -158,8 +167,8 @@ export function WorkspaceSwitcher({ variant = "default" }: { variant?: "default"
           </div>
           <Link className="workspaceManageLink" to="/workspaces" onClick={() => setOpen(false)}>
             <span>
-              <strong>Manage workspaces</strong>
-              <small>Create, access, and lifecycle</small>
+              <strong>{translate("workspace.manage")}</strong>
+              <small>{translate("workspace.manageHint")}</small>
             </span>
             <ChevronRight size={16} aria-hidden="true" />
           </Link>

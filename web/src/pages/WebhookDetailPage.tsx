@@ -11,11 +11,12 @@ import type { WebhookSubscription } from "../lib/api";
 import { errorMessage } from "../lib/api";
 import { useApp, useAsync } from "../lib/app-context";
 import { Link, useRouter } from "../lib/router";
+import { translate } from "../shared/i18n";
 
 const tabs = [
-  { key: "overview", label: "Overview" },
-  { key: "deliveries", label: "Deliveries" },
-  { key: "audit", label: "Audit" },
+  { key: "overview", label: "webhook.tab.overview" },
+  { key: "deliveries", label: "webhook.tab.deliveries" },
+  { key: "audit", label: "webhook.tab.audit" },
 ] as const;
 
 export function WebhookDetailPage({
@@ -47,7 +48,7 @@ export function WebhookDetailPage({
     setActionError("");
     try {
       await api.testWebhookSubscription(subscription.id);
-      notify("ok", "Created a signed test delivery.");
+      notify("ok", translate("webhook.testDeliveryCreated"));
       navigate(`/settings/webhooks/${subscription.id}/deliveries`);
     } catch (cause) {
       setActionError(errorMessage(cause));
@@ -58,11 +59,11 @@ export function WebhookDetailPage({
 
   return (
     <Layout
-      title={subscription?.name || "Webhook"}
+      title={subscription?.name || translate("webhook.title")}
       subtitle={
         subscription
-          ? `${subscription.endpoint_summary} · Signed release delivery`
-          : "Loading webhook configuration…"
+          ? translate("webhook.signedReleaseDelivery", { endpoint: subscription.endpoint_summary })
+          : translate("webhook.loadingConfiguration")
       }
       actions={
         subscription ? (
@@ -74,14 +75,14 @@ export function WebhookDetailPage({
             <button
               className="button"
               type="button"
-              title="Refresh webhook"
+              title={translate("webhook.refresh")}
               onClick={() => {
                 setUpdated(null);
                 state.reload();
               }}
             >
               <RefreshCw size={16} aria-hidden="true" />
-              Refresh
+              {translate("common.refresh")}
             </button>
             {!subscription.deleted_at ? (
               <button
@@ -91,7 +92,7 @@ export function WebhookDetailPage({
                 onClick={sendTest}
               >
                 <Send size={16} aria-hidden="true" />
-                {testing ? "Sending…" : "Send test"}
+                {testing ? translate("webhook.sending") : translate("webhook.sendTest")}
               </button>
             ) : null}
           </>
@@ -101,20 +102,18 @@ export function WebhookDetailPage({
       <SettingsNav />
       {state.error ? <ErrorNotice message={state.error} onRetry={state.reload} /> : null}
       {actionError ? <ErrorNotice message={actionError} /> : null}
-      {state.loading && !state.data ? <Loading label="Loading webhook…" /> : null}
-      {state.data && !subscription ? (
-        <ErrorNotice message="Webhook subscription not found." />
-      ) : null}
+      {state.loading && !state.data ? <Loading label={translate("webhook.loading")} /> : null}
+      {state.data && !subscription ? <ErrorNotice message={translate("webhook.notFound")} /> : null}
       {subscription ? (
         <>
-          <nav className="tabBar webhookDetailTabs" aria-label="Webhook sections">
+          <nav className="tabBar webhookDetailTabs" aria-label={translate("webhook.sections")}>
             {tabs.map((item) => (
               <Link
                 key={item.key}
                 className={activeTab === item.key ? "tab active" : "tab"}
                 to={`/settings/webhooks/${subscription.id}${item.key === "overview" ? "" : `/${item.key}`}`}
               >
-                {item.label}
+                {translate(item.label)}
               </Link>
             ))}
           </nav>

@@ -1,4 +1,5 @@
-import { describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test } from "vitest";
+import { setLocale } from "../shared/i18n";
 import type { TriggerDefinition } from "./api";
 import {
   buildTriggerPayload,
@@ -7,6 +8,8 @@ import {
   httpRouteProvider,
   triggerConfigSummary,
 } from "./triggers";
+
+beforeEach(() => setLocale("en"));
 
 function triggerFixture(overrides: Partial<TriggerDefinition> = {}): TriggerDefinition {
   return {

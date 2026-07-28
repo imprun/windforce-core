@@ -4,6 +4,7 @@ import { errorMessage, type GitSource, type SourceSyncResult } from "../lib/api"
 import { useApp } from "../lib/app-context";
 import { shortSHA } from "../lib/format";
 import { releaseActionState } from "../lib/release-actions";
+import { translate } from "../shared/i18n";
 
 export function SourceReleaseActions({
   source,
@@ -42,9 +43,21 @@ export function SourceReleaseActions({
       const result = await api.syncGitSource(source.id);
       setSyncResult(result);
       if (result.commit === source.last_synced_commit) {
-        notify("ok", `${result.app} is already synchronized at ${shortSHA(result.commit, 12)}.`);
+        notify(
+          "ok",
+          translate("release.alreadySynchronized", {
+            app: result.app,
+            commit: shortSHA(result.commit, 12),
+          }),
+        );
       } else {
-        notify("ok", `Synchronized ${result.app} at ${shortSHA(result.commit, 12)}.`);
+        notify(
+          "ok",
+          translate("release.synchronized", {
+            app: result.app,
+            commit: shortSHA(result.commit, 12),
+          }),
+        );
       }
       onSynced?.(result);
     } catch (cause) {
@@ -67,9 +80,7 @@ export function SourceReleaseActions({
         type="button"
         disabled={syncing || state.syncDisabled}
         title={
-          state.syncDisabled
-            ? "The tracked branch was checked in this view."
-            : "Check and synchronize the tracked branch."
+          state.syncDisabled ? translate("release.branchChecked") : translate("release.checkBranch")
         }
         onClick={syncSource}
       >
@@ -80,7 +91,7 @@ export function SourceReleaseActions({
         ) : (
           <RefreshCw aria-hidden="true" />
         )}
-        {syncing ? "Synchronizing…" : state.syncLabel}
+        {syncing ? translate("release.synchronizing") : syncActionLabel(state.syncLabel)}
       </button>
       <button
         className={`${buttonClass} primary`}
@@ -91,7 +102,7 @@ export function SourceReleaseActions({
         onClick={() => onPublish(effectiveSource)}
       >
         <Rocket aria-hidden="true" />
-        {state.publishLabel}
+        {publishActionLabel(state.publishLabel)}
       </button>
     </div>
   );
@@ -100,10 +111,23 @@ export function SourceReleaseActions({
 function publishButtonTitle(
   label: "Sync required" | "Up to date" | "Publish Release" | "Republish required",
 ): string {
-  if (label === "Sync required") return "Synchronize the source before publishing.";
-  if (label === "Up to date")
-    return "The active release already uses the latest synchronized source.";
-  if (label === "Republish required")
-    return "The active release has no execution bundle. Publish it again before running jobs.";
-  return "Prepare and publish the latest synchronized source.";
+  if (label === "Sync required") return translate("release.syncBeforePublishing");
+  if (label === "Up to date") return translate("release.upToDateHint");
+  if (label === "Republish required") return translate("release.republishHint");
+  return translate("release.publishHint");
+}
+
+function syncActionLabel(label: "Sync source" | "Source current"): string {
+  return label === "Sync source"
+    ? translate("release.syncSource")
+    : translate("release.sourceCurrent");
+}
+
+function publishActionLabel(
+  label: "Sync required" | "Up to date" | "Publish Release" | "Republish required",
+): string {
+  if (label === "Sync required") return translate("release.syncRequired");
+  if (label === "Up to date") return translate("release.upToDate");
+  if (label === "Republish required") return translate("release.republishRequired");
+  return translate("release.publish");
 }

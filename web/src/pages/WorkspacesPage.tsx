@@ -6,6 +6,7 @@ import { WorkspaceActivation, WorkspaceStatus } from "../features/WorkspaceAdmin
 import { errorMessage } from "../lib/api";
 import { useApp, useAsync } from "../lib/app-context";
 import { notifyWorkspaceRegistryChanged } from "../lib/workspaces";
+import { translate } from "../shared/i18n";
 
 export function WorkspacesPage() {
   const { api } = useApp();
@@ -19,56 +20,53 @@ export function WorkspacesPage() {
   return (
     <Layout
       scope="instance"
-      title="Workspaces"
-      subtitle="Create a workspace or switch the active execution context."
+      title={translate("navigation.workspaces")}
+      subtitle={translate("workspaces.subtitle")}
       actions={
         <>
           <button
             className="button"
             type="button"
             onClick={state.reload}
-            title="Refresh workspaces"
+            title={translate("workspaces.refresh")}
           >
-            <RefreshCw size={16} aria-hidden="true" /> Refresh
+            <RefreshCw size={16} aria-hidden="true" /> {translate("common.refresh")}
           </button>
           <button className="button primary" type="button" onClick={() => setCreating(true)}>
-            <Plus size={16} aria-hidden="true" /> Create workspace
+            <Plus size={16} aria-hidden="true" /> {translate("workspaces.create")}
           </button>
         </>
       }
     >
       {state.error ? <ErrorNotice message={state.error} onRetry={state.reload} /> : null}
-      {state.loading && !state.data ? <Loading label="Loading workspaces…" /> : null}
+      {state.loading && !state.data ? <Loading label={translate("workspace.loading")} /> : null}
       {state.data ? (
         <>
           <dl className="workspaceRegistrySummary">
             <div>
-              <dt>Total</dt>
+              <dt>{translate("workspaces.total")}</dt>
               <dd>{state.data.items.length}</dd>
             </div>
             <div>
-              <dt>Active</dt>
+              <dt>{translate("workspace.status.active")}</dt>
               <dd>{activeCount}</dd>
             </div>
             <div>
-              <dt>Archived</dt>
+              <dt>{translate("common.archived")}</dt>
               <dd>{archivedCount}</dd>
             </div>
           </dl>
-          <Panel
-            title="All workspaces"
-            subtitle="Workspace settings are available after switching into that workspace."
-          >
+          <Panel title={translate("workspaces.all")} subtitle={translate("workspaces.allHint")}>
             {state.data.items.length === 0 ? (
-              <EmptyState title="No workspaces registered." />
+              <EmptyState title={translate("workspaces.empty")} />
             ) : (
               <div className="tableWrap">
                 <table className="table workspaceTable" id="workspaceRegistry">
                   <thead>
                     <tr>
-                      <th>Workspace</th>
-                      <th>Status</th>
-                      <th>Switch</th>
+                      <th>{translate("settingsNav.workspace")}</th>
+                      <th>{translate("common.status")}</th>
+                      <th>{translate("workspace.switchShort")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -126,7 +124,7 @@ function CreateWorkspaceDialog({
     try {
       const result = await api.createWorkspace(id.trim(), name.trim());
       onCreated();
-      notify("ok", `Workspace ${result.id} created. Switch to it to configure access.`);
+      notify("ok", translate("workspaces.created", { id: result.id }));
       onClose();
     } catch (cause) {
       setError(errorMessage(cause));
@@ -137,19 +135,16 @@ function CreateWorkspaceDialog({
 
   return (
     <Modal
-      title="Create workspace"
-      subtitle="Workspace IDs are permanent routing identifiers. Access tokens are created separately."
+      title={translate("workspaces.create")}
+      subtitle={translate("workspaces.createHint")}
       onClose={onClose}
     >
       {error ? <ErrorNotice message={error} /> : null}
       <div className="dialogForm">
-        <Field
-          label="Workspace ID"
-          hint="Lowercase letters, digits, and hyphens. Cannot be changed later."
-        >
+        <Field label={translate("settings.workspaceID")} hint={translate("workspaces.idHint")}>
           <input value={id} onChange={(event) => setID(event.target.value)} placeholder="team-a" />
         </Field>
-        <Field label="Display name">
+        <Field label={translate("workspaces.displayName")}>
           <input
             value={name}
             onChange={(event) => setName(event.target.value)}
@@ -163,7 +158,7 @@ function CreateWorkspaceDialog({
             disabled={saving || !id.trim() || !name.trim()}
             onClick={create}
           >
-            {saving ? "Creating…" : "Create workspace"}
+            {saving ? translate("workspaces.creating") : translate("workspaces.create")}
           </button>
         </div>
       </div>

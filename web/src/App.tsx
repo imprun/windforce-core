@@ -15,8 +15,10 @@ import { WorkspaceAccessSettingsPage } from "./pages/WorkspaceAccessSettingsPage
 import { WorkspaceDetailPage } from "./pages/WorkspaceDetailPage";
 import { WorkspaceSettingsPage } from "./pages/WorkspaceSettingsPage";
 import { WorkspacesPage } from "./pages/WorkspacesPage";
+import { useLocale } from "./shared/i18n";
 
 export function App() {
+  useLocale();
   const { path } = useRouter();
 
   const appDetail = matchRoute("/apps/:id/:tab?/:section?/:action?", path);

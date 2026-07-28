@@ -10,6 +10,7 @@ import {
   paginate,
 } from "../lib/input-setting-groups";
 import { Link } from "../lib/router";
+import { translate } from "../shared/i18n";
 import { InputConfigDialog } from "./InputConfigDialog";
 import { InputSettingScopeList } from "./InputSettingScopeList";
 import {
@@ -30,6 +31,7 @@ export function AppInputSettings({
   selectedClientID?: string;
 }) {
   const { api } = useApp();
+  const appDefaultLabel = translate("inputSettings.appDefault");
   const [editing, setEditing] = useState<InputConfig | "new" | null>(null);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -69,11 +71,11 @@ export function AppInputSettings({
           return action ? [actionDisplayName(action.display_name) || action.action_key] : [];
         });
         return inputSettingGroupMatches(group, search, [
-          clientsByID.get(group.key)?.name || "App default",
+          clientsByID.get(group.key)?.name || appDefaultLabel,
           ...actionNames,
         ]);
       }),
-    [actionsByKey, clientsByID, groups, search],
+    [actionsByKey, appDefaultLabel, clientsByID, groups, search],
   );
   const pagedGroups = useMemo(
     () => paginate(filteredGroups, page, PAGE_SIZE),
@@ -97,24 +99,24 @@ export function AppInputSettings({
       : groups.find((group) => group.key === selectedScopeKey);
   const selectedClient = selectedScopeKey ? clientsByID.get(selectedScopeKey) : undefined;
   const selectedLabel = selectedScopeKey
-    ? selectedClient?.name || "Removed client"
-    : "All clients (app default)";
+    ? selectedClient?.name || translate("inputSettings.removedClient")
+    : translate("inputSettings.allClientsDefault");
   const fixedClientID = selectedClientID === undefined ? undefined : selectedScopeKey;
 
   return (
     <>
       {selectedClientID === undefined ? (
         <Panel
-          title="Input settings"
-          subtitle="Client scopes with configured values. Open a scope to inspect and edit its action-level settings."
+          title={translate("audit.inputSettings")}
+          subtitle={translate("inputSettings.appSubtitle")}
           actions={
             <>
               <Link className="button" to={`/apps/${sourceID}/audit`}>
-                View audit
+                {translate("common.viewAudit")}
               </Link>
               <button className="button primary" type="button" onClick={() => setEditing("new")}>
                 <Plus size={16} aria-hidden="true" />
-                Add settings
+                {translate("inputSettings.add")}
               </button>
             </>
           }
@@ -123,7 +125,7 @@ export function AppInputSettings({
           {state.loading && !state.data ? <Loading /> : null}
           {state.data ? (
             state.data.configs.length === 0 ? (
-              <EmptyState title="No input settings for this app." />
+              <EmptyState title={translate("inputSettings.appEmpty")} />
             ) : (
               <>
                 <div className="settingsSummaryToolbar">
@@ -131,20 +133,28 @@ export function AppInputSettings({
                     className="searchInput"
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Search clients, actions, or setting keys…"
-                    aria-label="Search client input settings"
+                    placeholder={translate("inputSettings.searchApp")}
+                    aria-label={translate("inputSettings.searchApp")}
                   />
-                  <span>{countLabel(filteredGroups.length, "client scope")}</span>
+                  <span>
+                    {countLabel(
+                      filteredGroups.length,
+                      translate("inputSettings.clientScope"),
+                      translate("inputSettings.clientScopes"),
+                    )}
+                  </span>
                 </div>
                 {filteredGroups.length ? (
                   <InputSettingSummaryTable
                     id="appInputSettingsSummary"
-                    scopeHeading="Client scope"
+                    scopeHeading={translate("inputSettings.clientScope")}
                     rows={pagedGroups.items.map((group) => {
                       const client = group.key ? clientsByID.get(group.key) : undefined;
-                      const label = group.key ? client?.name || "Removed client" : "All clients";
+                      const label = group.key
+                        ? client?.name || translate("inputSettings.removedClient")
+                        : translate("inputSettings.allClients");
                       const actionNames = group.actionKeys.map((actionKey) => {
-                        if (!actionKey) return "All actions";
+                        if (!actionKey) return translate("appDetail.allActions");
                         const action = actionsByKey.get(actionKey);
                         return action
                           ? actionDisplayName(action.display_name) || actionKey
@@ -153,15 +163,21 @@ export function AppInputSettings({
                       return {
                         group,
                         label,
-                        subtitle: group.key ? "Client override" : "App default",
+                        subtitle: group.key
+                          ? translate("inputSettings.clientOverride")
+                          : translate("inputSettings.appDefault"),
                         href: `/apps/${sourceID}/input-settings/client/${group.key || "default"}`,
-                        coverage: countLabel(group.configs.length, "action scope"),
+                        coverage: countLabel(
+                          group.configs.length,
+                          translate("inputSettings.actionScopeLower"),
+                          translate("inputSettings.actionScopes"),
+                        ),
                         coverageDetail: actionNames.join(", "),
                       };
                     })}
                   />
                 ) : (
-                  <EmptyState title="No client settings match the search." />
+                  <EmptyState title={translate("inputSettings.noClientMatches")} />
                 )}
                 <SummaryPagination
                   page={pagedGroups.page}
@@ -176,16 +192,16 @@ export function AppInputSettings({
         </Panel>
       ) : (
         <Panel
-          title={`${selectedLabel} settings`}
-          subtitle="Action-level values applied to this client scope before execution."
+          title={translate("inputSettings.namedSettings", { name: selectedLabel })}
+          subtitle={translate("inputSettings.scopeSubtitle")}
           actions={
             <>
               <Link className="button" to={`/apps/${sourceID}/input-settings`}>
-                Back to client scopes
+                {translate("inputSettings.backToClientScopes")}
               </Link>
               <button className="button primary" type="button" onClick={() => setEditing("new")}>
                 <Plus size={16} aria-hidden="true" />
-                Add settings
+                {translate("inputSettings.add")}
               </button>
             </>
           }
@@ -193,10 +209,10 @@ export function AppInputSettings({
           {state.error ? <ErrorNotice message={state.error} onRetry={state.reload} /> : null}
           {state.loading && !state.data ? <Loading /> : null}
           {state.data && !selectedGroup && selectedScopeKey && !selectedClient ? (
-            <EmptyState title="This client scope is not available." />
+            <EmptyState title={translate("inputSettings.scopeUnavailable")} />
           ) : null}
           {state.data && !selectedGroup && (!selectedScopeKey || selectedClient) ? (
-            <EmptyState title="No input settings in this client scope." />
+            <EmptyState title={translate("inputSettings.scopeEmpty")} />
           ) : null}
           {selectedGroup ? (
             <InputSettingScopeList
@@ -205,22 +221,27 @@ export function AppInputSettings({
                 const action = config.action_key ? actionsByKey.get(config.action_key) : undefined;
                 const actionName = action
                   ? actionDisplayName(action.display_name) || action.action_key
-                  : "All actions";
+                  : translate("appDetail.allActions");
                 return {
                   key: `${config.client_id || "default"}-${config.action_key || "all"}`,
                   config,
-                  primaryLabel: "Client scope",
+                  primaryLabel: translate("inputSettings.clientScope"),
                   primaryValue: selectedClient ? (
                     <Link to={`/clients/${selectedClient.id}/input-settings/${detail.app.app_key}`}>
                       {selectedClient.name}
                     </Link>
                   ) : (
-                    "All clients"
+                    translate("inputSettings.allClients")
                   ),
-                  primaryMeta: selectedClient ? "Client override" : "App default",
+                  primaryMeta: selectedClient
+                    ? translate("inputSettings.clientOverride")
+                    : translate("inputSettings.appDefault"),
                   actionName,
-                  actionMeta: config.action_key || "App default",
-                  editLabel: `Edit input settings for ${selectedLabel}, ${actionName}`,
+                  actionMeta: config.action_key || translate("inputSettings.appDefault"),
+                  editLabel: translate("inputSettings.editNamedAction", {
+                    name: selectedLabel,
+                    action: actionName,
+                  }),
                   onEdit: () => setEditing(config),
                 };
               })}

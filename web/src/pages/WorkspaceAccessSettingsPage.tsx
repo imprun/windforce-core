@@ -8,6 +8,7 @@ import type { WorkspaceToken } from "../lib/api";
 import { errorMessage } from "../lib/api";
 import { useApp, useAsync } from "../lib/app-context";
 import { formatTime } from "../lib/format";
+import { translate } from "../shared/i18n";
 
 export function WorkspaceAccessSettingsPage() {
   const { api, settings, notify } = useApp();
@@ -32,7 +33,7 @@ export function WorkspaceAccessSettingsPage() {
       setSecret(result.api_token);
       setName("");
       tokenState.reload();
-      notify("ok", "Workspace token created.");
+      notify("ok", translate("workspaceAccess.tokenCreated"));
     } catch (cause) {
       setError(errorMessage(cause));
     } finally {
@@ -41,15 +42,14 @@ export function WorkspaceAccessSettingsPage() {
   }
 
   async function rotateToken(token: WorkspaceToken) {
-    if (!window.confirm(`Rotate ${token.name}? The current secret will stop working immediately.`))
-      return;
+    if (!window.confirm(translate("workspaceAccess.rotateConfirm", { name: token.name }))) return;
     setSaving(true);
     setError("");
     try {
       const result = await api.rotateWorkspaceToken(settings.workspace, token.id);
       setSecret(result.api_token);
       tokenState.reload();
-      notify("ok", "Workspace token rotated.");
+      notify("ok", translate("workspaceAccess.tokenRotated"));
     } catch (cause) {
       setError(errorMessage(cause));
     } finally {
@@ -58,13 +58,13 @@ export function WorkspaceAccessSettingsPage() {
   }
 
   async function revokeToken(token: WorkspaceToken) {
-    if (!window.confirm(`Revoke ${token.name}? This secret will stop working immediately.`)) return;
+    if (!window.confirm(translate("workspaceAccess.revokeConfirm", { name: token.name }))) return;
     setSaving(true);
     setError("");
     try {
       await api.revokeWorkspaceToken(settings.workspace, token.id);
       tokenState.reload();
-      notify("ok", "Workspace token revoked.");
+      notify("ok", translate("workspaceAccess.tokenRevoked"));
     } catch (cause) {
       setError(errorMessage(cause));
     } finally {
@@ -79,11 +79,11 @@ export function WorkspaceAccessSettingsPage() {
 
   return (
     <Layout
-      title="Settings"
-      subtitle="Issue and revoke named credentials for the active workspace."
+      title={translate("navigation.settings")}
+      subtitle={translate("workspaceAccess.subtitle")}
     >
       <SettingsNav />
-      {loading ? <Loading label="Loading workspace access…" /> : null}
+      {loading ? <Loading label={translate("workspaceAccess.loading")} /> : null}
       {pageError ? (
         <ErrorNotice
           message={pageError}
@@ -97,11 +97,14 @@ export function WorkspaceAccessSettingsPage() {
       {workspaceState.data && tokenState.data ? (
         <>
           <Panel
-            title="Create workspace token"
-            subtitle={`Full operator access scoped to /api/w/${settings.workspace}. Use service principals for integrations.`}
+            title={translate("workspaceAccess.create")}
+            subtitle={translate("workspaceAccess.createHint", { workspace: settings.workspace })}
           >
             <div className="workspaceSingleSetting">
-              <Field label="Token name" hint="Identify the CLI, operator, or recovery purpose.">
+              <Field
+                label={translate("workspaceAccess.tokenName")}
+                hint={translate("workspaceAccess.tokenNameHint")}
+              >
                 <input
                   value={name}
                   placeholder="Developer CLI"
@@ -115,27 +118,30 @@ export function WorkspaceAccessSettingsPage() {
                 disabled={saving || archived || !name.trim()}
                 onClick={createToken}
               >
-                <KeyRound size={16} aria-hidden="true" /> {saving ? "Creating…" : "Create token"}
+                <KeyRound size={16} aria-hidden="true" />{" "}
+                {saving
+                  ? translate("workspaces.creating")
+                  : translate("workspaceAccess.createToken")}
               </button>
             </div>
             {secret ? <OneTimeWorkspaceToken token={secret} /> : null}
           </Panel>
 
           <Panel
-            title="Named workspace tokens"
-            subtitle="Secrets are shown once. Rotation invalidates the old secret; revocation leaves no active replacement."
+            title={translate("workspaceAccess.namedTokens")}
+            subtitle={translate("workspaceAccess.namedTokensHint")}
           >
             {tokenState.data.items.length === 0 ? (
-              <EmptyState title="No workspace tokens configured." />
+              <EmptyState title={translate("workspaceAccess.empty")} />
             ) : (
               <div className="tableWrap">
                 <table className="table">
                   <thead>
                     <tr>
-                      <th>Name</th>
-                      <th>Status</th>
-                      <th>Updated</th>
-                      <th>Actions</th>
+                      <th>{translate("common.name")}</th>
+                      <th>{translate("common.status")}</th>
+                      <th>{translate("common.updated")}</th>
+                      <th>{translate("common.actions")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -151,7 +157,9 @@ export function WorkspaceAccessSettingsPage() {
                               token.status === "active" ? "badge badge-good" : "badge badge-neutral"
                             }
                           >
-                            {token.status === "active" ? "Active" : "Revoked"}
+                            {token.status === "active"
+                              ? translate("workspace.status.active")
+                              : translate("workspaceAccess.revoked")}
                           </span>
                         </td>
                         <td title={formatTime(token.updated_at)}>{formatTime(token.updated_at)}</td>
@@ -164,7 +172,8 @@ export function WorkspaceAccessSettingsPage() {
                                 disabled={saving || archived}
                                 onClick={() => rotateToken(token)}
                               >
-                                <RefreshCw size={15} aria-hidden="true" /> Rotate
+                                <RefreshCw size={15} aria-hidden="true" />{" "}
+                                {translate("workspaceAccess.rotate")}
                               </button>
                               <button
                                 className="button danger small"
@@ -172,7 +181,8 @@ export function WorkspaceAccessSettingsPage() {
                                 disabled={saving}
                                 onClick={() => revokeToken(token)}
                               >
-                                <ShieldX size={15} aria-hidden="true" /> Revoke
+                                <ShieldX size={15} aria-hidden="true" />{" "}
+                                {translate("workspaceAccess.revoke")}
                               </button>
                             </div>
                           ) : (

@@ -36,6 +36,17 @@ Register App points the control plane at a repository source. Registration valid
 3. Pick a git auth method or reference an existing credential variable path.
 4. Use Probe repository to confirm reachability and branch existence before registering.
 
+## Use the console in Korean
+
+The embedded console supports Korean across navigation and product screens while preserving API identifiers and user data.
+
+![Use the console in Korean](../assets/ui/korean-console.png)
+
+1. Open the language menu in the top bar and choose 한국어.
+2. Confirm navigation, page headings, status labels, validation, and errors use Korean.
+3. Reload the page and confirm the selected language remains active.
+4. Keep API paths, app and Action keys, event types, logs, and user-entered values unchanged.
+
 ## Inspect an app
 
 The app detail Overview tab shows the active release and readiness signals for workers.

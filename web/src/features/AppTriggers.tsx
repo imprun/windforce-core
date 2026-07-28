@@ -45,6 +45,7 @@ import {
   triggerConfigSummary,
   triggerKindLabel,
 } from "../lib/triggers";
+import { translate } from "../shared/i18n";
 
 type TriggerRow = {
   trigger: TriggerDefinition;
@@ -95,7 +96,12 @@ export function AppTriggers({
     setBusyID(trigger.id);
     try {
       await api.setTriggerEnabled(trigger.id, !trigger.enabled);
-      notify("ok", `${trigger.name} ${trigger.enabled ? "disabled" : "enabled"}.`);
+      notify(
+        "ok",
+        translate(trigger.enabled ? "trigger.notify.disabled" : "trigger.notify.enabled", {
+          name: trigger.name,
+        }),
+      );
       state.reload();
     } catch (cause) {
       notify("error", errorMessage(cause));
@@ -108,7 +114,7 @@ export function AppTriggers({
     setBusyID(trigger.id);
     try {
       await api.deleteTrigger(trigger.id);
-      notify("ok", `${trigger.name} deleted.`);
+      notify("ok", translate("trigger.notify.deleted", { name: trigger.name }));
       if (selectedID === trigger.id) setSelectedID(null);
       setDeleteTarget(null);
       state.reload();
@@ -122,8 +128,8 @@ export function AppTriggers({
   return (
     <>
       <Panel
-        title="Triggers"
-        subtitle="Inbound event sources that admit Runs for this App. Outbound release notifications remain in Settings → Webhooks."
+        title={translate("trigger.title")}
+        subtitle={translate("trigger.subtitle")}
         actions={
           <button
             className="button primary"
@@ -133,27 +139,27 @@ export function AppTriggers({
             id="addTriggerButton"
           >
             <Plus aria-hidden="true" />
-            Add trigger
+            {translate("trigger.add")}
           </button>
         }
       >
         {actions.length === 0 ? (
-          <EmptyState title="Publish an App release before adding a Trigger.">
-            <p>A Trigger needs an Action target from the active release.</p>
+          <EmptyState title={translate("trigger.publishFirst")}>
+            <p>{translate("trigger.needsAction")}</p>
           </EmptyState>
         ) : null}
         {actions.length > 0 && state.error ? (
           <ErrorNotice message={state.error} onRetry={state.reload} />
         ) : null}
         {actions.length > 0 && state.loading && !state.data ? (
-          <Loading label="Loading Triggers…" />
+          <Loading label={translate("trigger.loading")} />
         ) : null}
         {actions.length > 0 && state.data && rows.length === 0 ? (
-          <EmptyState title="No inbound Triggers configured for this App.">
-            <p>Add a Webhook, Schedule, or RabbitMQ source. New Triggers start disabled.</p>
+          <EmptyState title={translate("trigger.empty")}>
+            <p>{translate("trigger.emptyHint")}</p>
             <button className="button primary" type="button" onClick={() => setEditor("new")}>
               <Plus aria-hidden="true" />
-              Add trigger
+              {translate("trigger.add")}
             </button>
           </EmptyState>
         ) : null}
@@ -162,12 +168,12 @@ export function AppTriggers({
             <table className="table triggerTable" id="appTriggers">
               <thead>
                 <tr>
-                  <th>Trigger</th>
-                  <th>Kind</th>
-                  <th>Action</th>
-                  <th>Status</th>
-                  <th>Latest delivery</th>
-                  <th>Actions</th>
+                  <th>{translate("trigger.column.trigger")}</th>
+                  <th>{translate("trigger.column.kind")}</th>
+                  <th>{translate("trigger.column.action")}</th>
+                  <th>{translate("common.status")}</th>
+                  <th>{translate("trigger.column.latestDelivery")}</th>
+                  <th>{translate("common.actions")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -206,7 +212,7 @@ export function AppTriggers({
                           </span>
                         </>
                       ) : (
-                        <span className="cellSub">No deliveries yet</span>
+                        <span className="cellSub">{translate("trigger.noDeliveries")}</span>
                       )}
                     </td>
                     <td className="rowActions">
@@ -216,30 +222,35 @@ export function AppTriggers({
                         onClick={() => setEditor(trigger)}
                       >
                         <Pencil aria-hidden="true" />
-                        Edit
+                        {translate("common.edit")}
                       </button>
                       <button
                         className="button small"
                         type="button"
                         onClick={() => void setEnabled(trigger)}
                         disabled={busyID === trigger.id}
-                        aria-label={`${trigger.enabled ? "Disable" : "Enable"} ${trigger.name}`}
+                        aria-label={translate(
+                          trigger.enabled ? "trigger.disableNamed" : "trigger.enableNamed",
+                          { name: trigger.name },
+                        )}
                       >
                         {trigger.enabled ? (
                           <PowerOff aria-hidden="true" />
                         ) : (
                           <Power aria-hidden="true" />
                         )}
-                        {trigger.enabled ? "Disable" : "Enable"}
+                        {trigger.enabled
+                          ? translate("trigger.disable")
+                          : translate("trigger.enable")}
                       </button>
                       <button
                         className="button small danger"
                         type="button"
                         onClick={() => setDeleteTarget(trigger)}
-                        aria-label={`Delete ${trigger.name}`}
+                        aria-label={translate("trigger.deleteNamed", { name: trigger.name })}
                       >
                         <Trash2 aria-hidden="true" />
-                        Delete
+                        {translate("common.delete")}
                       </button>
                     </td>
                   </tr>
@@ -314,7 +325,7 @@ function TriggerEditorDialog({
     event.preventDefault();
     const result = buildTriggerPayload(draft, appKey, existing);
     if (!result.payload) {
-      setFormError(result.error || "Review the Trigger configuration.");
+      setFormError(result.error || translate("trigger.reviewConfiguration"));
       return;
     }
     setBusy(true);
@@ -323,7 +334,12 @@ function TriggerEditorDialog({
       const trigger = existing
         ? await api.updateTrigger(existing.id, result.payload)
         : await api.createTrigger(result.payload);
-      notify("ok", `${trigger.name} ${existing ? "updated" : "created disabled"}.`);
+      notify(
+        "ok",
+        translate(existing ? "trigger.notify.updated" : "trigger.notify.createdDisabled", {
+          name: trigger.name,
+        }),
+      );
       onSaved(trigger);
     } catch (cause) {
       setFormError(errorMessage(cause));
@@ -334,8 +350,10 @@ function TriggerEditorDialog({
 
   return (
     <Modal
-      title={existing ? `Edit ${existing.name}` : "Add trigger"}
-      subtitle={`${appKey} · Configure an inbound source. Secret values are write-only.`}
+      title={
+        existing ? translate("trigger.edit", { name: existing.name }) : translate("trigger.add")
+      }
+      subtitle={translate("trigger.dialogSubtitle", { app: appKey })}
       onClose={onClose}
       wide
       id="triggerEditorDialog"
@@ -343,13 +361,10 @@ function TriggerEditorDialog({
       <form className="dialogForm" onSubmit={(event) => void submit(event)}>
         {formError ? <ErrorNotice message={formError} /> : null}
         {!existing ? (
-          <div className="inlineNotice">
-            New Triggers are created disabled. Review the target and delivery policy, then enable
-            the Trigger from the list.
-          </div>
+          <div className="inlineNotice">{translate("trigger.newDisabledNotice")}</div>
         ) : null}
         <div className="formGrid">
-          <Field label="Name">
+          <Field label={translate("common.name")}>
             <input
               id="triggerName"
               value={draft.name}
@@ -359,13 +374,15 @@ function TriggerEditorDialog({
             />
           </Field>
           <Field
-            label="Target Action"
-            hint={`The App target is fixed by this page. Action key: ${draft.action || "—"}.`}
+            label={translate("trigger.field.targetAction")}
+            hint={translate("trigger.field.targetFixed", {
+              actionKey: draft.action || "—",
+            })}
           >
             <SelectControl
               value={draft.action}
               onChange={(value) => update("action", value)}
-              ariaLabel="Target Action"
+              ariaLabel={translate("trigger.field.targetAction")}
               options={actions.map((action) => ({
                 value: action.action_key,
                 label: actionDisplayName(action.display_name) || action.action_key,
@@ -376,31 +393,31 @@ function TriggerEditorDialog({
         </div>
 
         <fieldset className="triggerKindFieldset" disabled={Boolean(existing)}>
-          <legend>Trigger kind</legend>
+          <legend>{translate("trigger.field.kind")}</legend>
           <div className="triggerKindPicker">
             <TriggerKindOption
               kind="webhook"
               selected={draft.kind === "webhook"}
-              title="Webhook"
-              description="Receive signed HTTP events."
+              title={translate("trigger.kind.webhook")}
+              description={translate("trigger.kind.webhookHint")}
               onSelect={(kind) => update("kind", kind)}
             />
             <TriggerKindOption
               kind="schedule"
               selected={draft.kind === "schedule"}
-              title="Schedule"
-              description="Run on a cron schedule."
+              title={translate("trigger.kind.schedule")}
+              description={translate("trigger.kind.scheduleHint")}
               onSelect={(kind) => update("kind", kind)}
             />
             <TriggerKindOption
               kind="rabbitmq"
               selected={draft.kind === "rabbitmq"}
-              title="RabbitMQ"
-              description="Consume a durable queue."
+              title={translate("trigger.kind.rabbitmq")}
+              description={translate("trigger.kind.rabbitmqHint")}
               onSelect={(kind) => update("kind", kind)}
             />
           </div>
-          {existing ? <p className="fieldHint">Kind cannot be changed after creation.</p> : null}
+          {existing ? <p className="fieldHint">{translate("trigger.kindImmutable")}</p> : null}
         </fieldset>
 
         {draft.kind === "webhook" ? (
@@ -414,14 +431,18 @@ function TriggerEditorDialog({
 
         <div className="dialogFooter">
           <span className="fieldHint">
-            {existing?.has_secret ? "A write-only secret is currently configured." : ""}
+            {existing?.has_secret ? translate("trigger.secretConfigured") : ""}
           </span>
           <div className="dialogFooterActions">
             <button className="button" type="button" onClick={onClose} disabled={busy}>
-              Cancel
+              {translate("common.cancel")}
             </button>
             <button className="button primary" type="submit" disabled={busy}>
-              {busy ? "Saving…" : existing ? "Save changes" : "Create trigger"}
+              {busy
+                ? translate("common.saving")
+                : existing
+                  ? translate("trigger.saveChanges")
+                  : translate("trigger.create")}
             </button>
           </div>
         </div>
@@ -475,17 +496,17 @@ function WebhookFields({
   return (
     <section className="triggerFormSection">
       <div className="triggerFormSectionHeader">
-        <h3>Webhook security and input</h3>
-        <p>The exact request body is authenticated with HMAC-SHA256.</p>
+        <h3>{translate("trigger.webhook.heading")}</h3>
+        <p>{translate("trigger.webhook.description")}</p>
       </div>
       <div className="formGrid">
         <Field
-          label={existing ? "Replace signing secret" : "Signing secret"}
-          hint={
+          label={
             existing
-              ? "Leave blank to retain the current secret."
-              : "Use Generate or provide a random secret."
+              ? translate("trigger.webhook.replaceSecret")
+              : translate("trigger.webhook.signingSecret")
           }
+          hint={existing ? translate("trigger.secretRetain") : translate("trigger.secretGenerate")}
         >
           <div className="fieldWithAction">
             <input
@@ -500,34 +521,34 @@ function WebhookFields({
               type="button"
               onClick={() => update("webhookSecret", randomSecret())}
             >
-              Generate
+              {translate("common.generate")}
             </button>
           </div>
         </Field>
-        <Field label="Input mode">
+        <Field label={translate("trigger.field.inputMode")}>
           <SelectControl
             value={draft.inputMode}
             onChange={(value) => update("inputMode", value)}
-            ariaLabel="Webhook input mode"
+            ariaLabel={translate("trigger.webhook.inputMode")}
             options={[
-              { value: "json", label: "JSON body" },
-              { value: "raw", label: "Raw envelope" },
+              { value: "json", label: translate("trigger.input.json") },
+              { value: "raw", label: translate("trigger.input.raw") },
             ]}
           />
         </Field>
-        <Field label="Signature header">
+        <Field label={translate("trigger.field.signatureHeader")}>
           <input
             value={draft.signatureHeader}
             onChange={(event) => update("signatureHeader", event.target.value)}
           />
         </Field>
-        <Field label="Delivery ID header">
+        <Field label={translate("trigger.field.deliveryIdHeader")}>
           <input
             value={draft.deliveryIDHeader}
             onChange={(event) => update("deliveryIDHeader", event.target.value)}
           />
         </Field>
-        <Field label="Correlation header">
+        <Field label={translate("trigger.field.correlationHeader")}>
           <input
             value={draft.correlationHeader}
             onChange={(event) => update("correlationHeader", event.target.value)}
@@ -548,11 +569,11 @@ function ScheduleFields({
   return (
     <section className="triggerFormSection">
       <div className="triggerFormSectionHeader">
-        <h3>Schedule</h3>
-        <p>Five-field cron using an explicit IANA timezone. Missed occurrences are not replayed.</p>
+        <h3>{translate("trigger.schedule.heading")}</h3>
+        <p>{translate("trigger.schedule.description")}</p>
       </div>
       <div className="formGrid">
-        <Field label="Cron expression" hint="Minute hour day-of-month month day-of-week">
+        <Field label={translate("trigger.field.cron")} hint={translate("trigger.field.cronHint")}>
           <input
             className="mono"
             value={draft.cron}
@@ -560,7 +581,10 @@ function ScheduleFields({
             required
           />
         </Field>
-        <Field label="Timezone" hint="For example Asia/Seoul or UTC">
+        <Field
+          label={translate("trigger.field.timezone")}
+          hint={translate("trigger.field.timezoneHint")}
+        >
           <input
             className="mono"
             value={draft.timezone}
@@ -569,7 +593,10 @@ function ScheduleFields({
           />
         </Field>
       </div>
-      <Field label="Action input" hint="Valid JSON supplied to every scheduled Run.">
+      <Field
+        label={translate("trigger.field.actionInput")}
+        hint={translate("trigger.field.actionInputHint")}
+      >
         <textarea
           className="mono triggerJSONInput"
           value={draft.scheduleInput}
@@ -593,11 +620,11 @@ function RabbitMQFields({
   return (
     <section className="triggerFormSection">
       <div className="triggerFormSectionHeader">
-        <h3>RabbitMQ consumer</h3>
-        <p>The queue must already exist. Durable admission completes before ACK.</p>
+        <h3>{translate("trigger.rabbitmq.heading")}</h3>
+        <p>{translate("trigger.rabbitmq.description")}</p>
       </div>
       <div className="formGrid">
-        <Field label="Queue">
+        <Field label={translate("trigger.field.queue")}>
           <input
             className="mono"
             value={draft.queue}
@@ -607,12 +634,12 @@ function RabbitMQFields({
           />
         </Field>
         <Field
-          label={existing ? "Replace connection URL" : "Connection URL"}
-          hint={
+          label={
             existing
-              ? "Leave blank to retain the current URL."
-              : "Stored encrypted and never returned."
+              ? translate("trigger.rabbitmq.replaceURL")
+              : translate("trigger.rabbitmq.connectionURL")
           }
+          hint={existing ? translate("trigger.urlRetain") : translate("trigger.urlStored")}
         >
           <input
             type="password"
@@ -623,7 +650,7 @@ function RabbitMQFields({
             required={!existing}
           />
         </Field>
-        <Field label="Concurrency">
+        <Field label={translate("trigger.field.concurrency")}>
           <input
             type="number"
             min="1"
@@ -632,7 +659,10 @@ function RabbitMQFields({
             onChange={(event) => update("concurrency", event.target.value)}
           />
         </Field>
-        <Field label="Prefetch" hint="Must be at least concurrency.">
+        <Field
+          label={translate("trigger.field.prefetch")}
+          hint={translate("trigger.field.prefetchHint")}
+        >
           <input
             type="number"
             min="1"
@@ -641,24 +671,30 @@ function RabbitMQFields({
             onChange={(event) => update("prefetch", event.target.value)}
           />
         </Field>
-        <Field label="Input mode">
+        <Field label={translate("trigger.field.inputMode")}>
           <SelectControl
             value={draft.inputMode}
             onChange={(value) => update("inputMode", value)}
-            ariaLabel="RabbitMQ input mode"
+            ariaLabel={translate("trigger.rabbitmq.inputMode")}
             options={[
-              { value: "json", label: "JSON body" },
-              { value: "raw", label: "Raw envelope" },
+              { value: "json", label: translate("trigger.input.json") },
+              { value: "raw", label: translate("trigger.input.raw") },
             ]}
           />
         </Field>
-        <Field label="Delivery ID header" hint="AMQP message_id is preferred when available.">
+        <Field
+          label={translate("trigger.field.deliveryIdHeader")}
+          hint={translate("trigger.field.deliveryIdHint")}
+        >
           <input
             value={draft.deliveryIDHeader}
             onChange={(event) => update("deliveryIDHeader", event.target.value)}
           />
         </Field>
-        <Field label="Consumer tag" hint="Optional stable broker consumer name.">
+        <Field
+          label={translate("trigger.field.consumerTag")}
+          hint={translate("trigger.field.consumerTagHint")}
+        >
           <input
             value={draft.consumerTag}
             onChange={(event) => update("consumerTag", event.target.value)}
@@ -681,66 +717,66 @@ function CompletionFields({
   return (
     <section className="triggerFormSection triggerCompletionSection">
       <div className="triggerFormSectionHeader">
-        <h3>Run completion</h3>
-        <p>Choose how this Trigger exposes the terminal Action result after admission.</p>
+        <h3>{translate("trigger.completion.heading")}</h3>
+        <p>{translate("trigger.completion.description")}</p>
       </div>
       <div className="formGrid">
-        <Field label="Output delivery">
+        <Field label={translate("trigger.field.outputDelivery")}>
           <SelectControl
             id="triggerCompletionMode"
             value={draft.completionMode}
             onChange={(value) => update("completionMode", value)}
-            ariaLabel="Output delivery"
+            ariaLabel={translate("trigger.field.outputDelivery")}
             options={[
               {
                 value: "poll",
-                label: "Poll Invocation API",
-                description: "Store the result for authenticated status and result requests.",
+                label: translate("trigger.output.poll"),
+                description: translate("trigger.output.pollHint"),
               },
               {
                 value: "callback",
-                label: "HTTP callback",
-                description: "POST a signed completion envelope with durable retries.",
+                label: translate("trigger.output.callback"),
+                description: translate("trigger.output.callbackHint"),
               },
               {
                 value: "publish",
-                label: "RabbitMQ publish",
-                description: "Publish a persistent completion envelope with confirms.",
+                label: translate("trigger.output.rabbitmq"),
+                description: translate("trigger.output.rabbitmqHint"),
               },
               {
                 value: "none",
-                label: "No output",
-                description: "Admit the Run without a completion delivery.",
+                label: translate("trigger.output.none"),
+                description: translate("trigger.output.noneHint"),
               },
             ]}
           />
         </Field>
         {draft.kind === "webhook" ? (
           <Field
-            label="HTTP response"
-            hint="Wait is capped at 60 seconds. A timeout still returns the admitted Run."
+            label={translate("trigger.field.httpResponse")}
+            hint={translate("trigger.field.httpResponseHint")}
           >
             <SelectControl
               value={draft.responseMode}
               onChange={(value) => update("responseMode", value)}
-              ariaLabel="Webhook response mode"
+              ariaLabel={translate("trigger.webhook.responseMode")}
               options={[
                 {
                   value: "async",
-                  label: "202 Accepted",
-                  description: "Return Run URLs immediately.",
+                  label: translate("trigger.response.accepted"),
+                  description: translate("trigger.response.acceptedHint"),
                 },
                 {
                   value: "wait",
-                  label: "Wait for result",
-                  description: "Return the raw Action result when it finishes.",
+                  label: translate("trigger.response.wait"),
+                  description: translate("trigger.response.waitHint"),
                 },
               ]}
             />
           </Field>
         ) : null}
         {draft.kind === "webhook" && draft.responseMode === "wait" ? (
-          <Field label="Wait timeout (seconds)">
+          <Field label={translate("trigger.field.waitTimeout")}>
             <input
               type="number"
               min="1"
@@ -753,8 +789,8 @@ function CompletionFields({
         {draft.completionMode === "callback" ? (
           <>
             <Field
-              label="Callback endpoint"
-              hint="HTTPS is required except allowed local development hosts."
+              label={translate("trigger.field.callbackEndpoint")}
+              hint={translate("trigger.field.callbackEndpointHint")}
             >
               <input
                 className="mono"
@@ -768,13 +804,13 @@ function CompletionFields({
             <Field
               label={
                 existing?.completion.mode === "callback"
-                  ? "Replace callback secret"
-                  : "Callback signing secret"
+                  ? translate("trigger.callback.replaceSecret")
+                  : translate("trigger.callback.signingSecret")
               }
               hint={
                 existing?.completion.mode === "callback"
-                  ? "Leave blank to retain the current callback secret."
-                  : "Used for the X-Windforce-Signature header."
+                  ? translate("trigger.callback.secretRetain")
+                  : translate("trigger.callback.secretHint")
               }
             >
               <div className="fieldWithAction">
@@ -790,7 +826,7 @@ function CompletionFields({
                   type="button"
                   onClick={() => update("callbackSigningSecret", randomSecret())}
                 >
-                  Generate
+                  {translate("common.generate")}
                 </button>
               </div>
             </Field>
@@ -801,13 +837,13 @@ function CompletionFields({
             <Field
               label={
                 existing?.completion.mode === "publish"
-                  ? "Replace publish URL"
-                  : "Publish connection URL"
+                  ? translate("trigger.publish.replaceURL")
+                  : translate("trigger.publish.connectionURL")
               }
               hint={
                 existing?.completion.mode === "publish"
-                  ? "Leave blank to retain the current URL."
-                  : "Stored encrypted and never returned."
+                  ? translate("trigger.urlRetain")
+                  : translate("trigger.urlStored")
               }
             >
               <input
@@ -819,14 +855,17 @@ function CompletionFields({
                 required={existing?.completion.mode !== "publish"}
               />
             </Field>
-            <Field label="Exchange" hint="Leave blank to use the default exchange.">
+            <Field
+              label={translate("trigger.field.exchange")}
+              hint={translate("trigger.field.exchangeHint")}
+            >
               <input
                 className="mono"
                 value={draft.publishExchange}
                 onChange={(event) => update("publishExchange", event.target.value)}
               />
             </Field>
-            <Field label="Routing key">
+            <Field label={translate("trigger.field.routingKey")}>
               <input
                 className="mono"
                 value={draft.publishRoutingKey}
@@ -839,15 +878,10 @@ function CompletionFields({
         ) : null}
       </div>
       {draft.completionMode === "poll" ? (
-        <div className="inlineNotice">
-          The admission response includes status_url and result_url. Reading them requires a
-          workspace access token or operator session; the ingress secret cannot read Runs.
-        </div>
+        <div className="inlineNotice">{translate("trigger.response.securityNotice")}</div>
       ) : null}
       {draft.completionMode === "none" ? (
-        <div className="inlineNotice warning">
-          The Run remains observable to operators, but this Trigger will not deliver its result.
-        </div>
+        <div className="inlineNotice warning">{translate("trigger.output.noneWarning")}</div>
       ) : null}
     </section>
   );
@@ -888,10 +922,10 @@ function TriggerDetailSheet({
       id="triggerDetailSheet"
       actions={
         <>
-          <span className="fieldHint">Secrets and payload values are never displayed.</span>
+          <span className="fieldHint">{translate("trigger.secretPayloadHidden")}</span>
           <button className="button" type="button" onClick={onEdit}>
             <Pencil aria-hidden="true" />
-            Edit configuration
+            {translate("trigger.editConfiguration")}
           </button>
         </>
       }
@@ -900,30 +934,40 @@ function TriggerDetailSheet({
         <DefinitionList
           className="sheetFacts"
           items={[
-            ["Status", <TriggerEnabledBadge enabled={trigger.enabled} />],
-            ["Kind", triggerKindLabel(trigger.kind)],
-            ["Target", <span className="mono">{`${trigger.app}/${trigger.action}`}</span>],
-            ["Output", completionPolicyLabel(trigger)],
+            [translate("common.status"), <TriggerEnabledBadge enabled={trigger.enabled} />],
+            [translate("trigger.detail.kind"), triggerKindLabel(trigger.kind)],
             [
-              "HTTP response",
-              trigger.kind === "webhook" ? responsePolicyLabel(trigger) : "Not applicable",
+              translate("trigger.detail.target"),
+              <span className="mono">{`${trigger.app}/${trigger.action}`}</span>,
             ],
-            ["Secret", trigger.has_secret ? "Configured · write-only" : "Not configured"],
-            ["Updated", `${formatTime(trigger.updated_at)} · ${trigger.updated_by || "system"}`],
-            ["Trigger ID", <span className="mono">{trigger.id}</span>],
+            [translate("trigger.detail.output"), completionPolicyLabel(trigger)],
+            [
+              translate("trigger.detail.httpResponse"),
+              trigger.kind === "webhook"
+                ? responsePolicyLabel(trigger)
+                : translate("common.notApplicable"),
+            ],
+            [
+              translate("trigger.detail.secret"),
+              trigger.has_secret
+                ? translate("trigger.secretConfiguredWriteOnly")
+                : translate("common.notConfigured"),
+            ],
+            [
+              translate("common.updated"),
+              `${formatTime(trigger.updated_at)} · ${trigger.updated_by || "system"}`,
+            ],
+            [translate("trigger.detail.triggerID"), <span className="mono">{trigger.id}</span>],
           ]}
         />
         {endpoint ? (
           <div className="triggerEndpoint">
-            <p className="fieldLabel">Canonical ingress</p>
+            <p className="fieldLabel">{translate("trigger.canonicalIngress")}</p>
             <code>{endpoint}</code>
-            <p className="fieldHint">
-              Always available. Public routes rewrite to this endpoint without bypassing Trigger
-              authentication or admission.
-            </p>
+            <p className="fieldHint">{translate("trigger.canonicalIngressHint")}</p>
           </div>
         ) : null}
-        <h3>Safe configuration</h3>
+        <h3>{translate("trigger.safeConfiguration")}</h3>
         <JsonBlock value={trigger.config} maxHeight={240} />
       </section>
 
@@ -971,7 +1015,7 @@ function HTTPRouteBindingsSection({
     setBusyID(binding.id);
     try {
       await api.deleteHTTPRouteBinding(trigger.id, binding.id);
-      notify("ok", "Public route deletion requested.");
+      notify("ok", translate("trigger.route.deleteRequested"));
       setDeleteTarget(null);
       onChanged();
     } catch (cause) {
@@ -985,28 +1029,25 @@ function HTTPRouteBindingsSection({
     <section className="sheetSection triggerRoutesSection">
       <div className="sheetSectionHeading">
         <div>
-          <h3>Public routes</h3>
-          <p>
-            {routeProvider} reconciles friendly URLs to the canonical ingress. Route readiness is
-            reported asynchronously.
-          </p>
+          <h3>{translate("trigger.route.heading")}</h3>
+          <p>{translate("trigger.route.description", { provider: routeProvider })}</p>
         </div>
         <button
           className="button small primary"
           type="button"
           onClick={() => setEditor("new")}
-          aria-label="Add public route"
+          aria-label={translate("trigger.route.add")}
         >
           <Plus aria-hidden="true" />
-          Add
+          {translate("common.add")}
         </button>
       </div>
       {bindings.length === 0 ? (
         <div className="triggerRoutesEmpty">
           <Globe2 aria-hidden="true" />
           <div>
-            <strong>No public route configured.</strong>
-            <p>The canonical ingress remains available for direct integrations.</p>
+            <strong>{translate("trigger.route.empty")}</strong>
+            <p>{translate("trigger.route.emptyHint")}</p>
           </div>
         </div>
       ) : (
@@ -1029,8 +1070,12 @@ function HTTPRouteBindingsSection({
                   </div>
                   <p>
                     <span className="mono">{binding.provider}</span>
-                    {" · "}generation {binding.generation}
-                    {" · "}updated {formatRelative(binding.updated_at)}
+                    {" · "}
+                    {translate("trigger.route.generation", { generation: binding.generation })}
+                    {" · "}
+                    {translate("trigger.route.updated", {
+                      time: formatRelative(binding.updated_at),
+                    })}
                   </p>
                   {binding.error_summary ? (
                     <p className="triggerRouteError" role="alert">
@@ -1046,17 +1091,19 @@ function HTTPRouteBindingsSection({
                     disabled={deleting}
                   >
                     <Pencil aria-hidden="true" />
-                    Edit
+                    {translate("common.edit")}
                   </button>
                   <button
                     className="button small danger"
                     type="button"
                     onClick={() => setDeleteTarget(binding)}
                     disabled={deleting || busyID === binding.id}
-                    aria-label={`Delete public route ${routeBindingAddress(binding)}`}
+                    aria-label={translate("trigger.route.deleteNamed", {
+                      route: routeBindingAddress(binding),
+                    })}
                   >
                     <Trash2 aria-hidden="true" />
-                    {deleting ? "Deleting…" : "Delete"}
+                    {deleting ? translate("common.deleting") : translate("common.delete")}
                   </button>
                 </div>
               </article>
@@ -1114,7 +1161,7 @@ function HTTPRouteBindingEditor({
     event.preventDefault();
     const normalizedPath = path.trim();
     if (!normalizedPath.startsWith("/") || /[\\?#]/.test(normalizedPath)) {
-      setFormError("Path must start with / and cannot contain a query, fragment, or backslash.");
+      setFormError(translate("trigger.route.pathInvalid"));
       return;
     }
     setBusy(true);
@@ -1131,7 +1178,10 @@ function HTTPRouteBindingEditor({
       } else {
         await api.createHTTPRouteBinding(trigger.id, payload);
       }
-      notify("ok", `Public route ${existing ? "updated" : "requested"}.`);
+      notify(
+        "ok",
+        translate(existing ? "trigger.route.notifyUpdated" : "trigger.route.notifyRequested"),
+      );
       onSaved();
     } catch (cause) {
       setFormError(errorMessage(cause));
@@ -1142,16 +1192,16 @@ function HTTPRouteBindingEditor({
 
   return (
     <Modal
-      title={existing ? "Edit public route" : "Add public route"}
-      subtitle={`${trigger.name} · The Router Provider reports readiness after reconciliation.`}
+      title={existing ? translate("trigger.route.edit") : translate("trigger.route.add")}
+      subtitle={translate("trigger.route.dialogSubtitle", { name: trigger.name })}
       onClose={onClose}
       id="httpRouteBindingEditor"
     >
       <form className="dialogForm" onSubmit={(event) => void submit(event)}>
         {formError ? <ErrorNotice message={formError} /> : null}
         <Field
-          label="Hostname"
-          hint="Optional. Leave blank to let the Router Provider assign its default hostname."
+          label={translate("trigger.route.hostname")}
+          hint={translate("trigger.route.hostnameHint")}
         >
           <input
             className="mono"
@@ -1161,7 +1211,7 @@ function HTTPRouteBindingEditor({
             autoComplete="off"
           />
         </Field>
-        <Field label="Path" hint="A public path that rewrites to the canonical Trigger ingress.">
+        <Field label={translate("trigger.route.path")} hint={translate("trigger.route.pathHint")}>
           <input
             className="mono"
             value={path}
@@ -1170,24 +1220,25 @@ function HTTPRouteBindingEditor({
             required
           />
         </Field>
-        <Field label="Router Provider">
+        <Field label={translate("trigger.route.provider")}>
           <div className="routeProviderValue">
             <Globe2 aria-hidden="true" />
             <span className="mono">{provider}</span>
           </div>
         </Field>
-        <div className="inlineNotice">
-          The friendly route keeps the same webhook signature, body-size, idempotency, and Run
-          admission checks as the canonical ingress.
-        </div>
+        <div className="inlineNotice">{translate("trigger.route.securityNotice")}</div>
         <div className="dialogFooter">
-          <span className="fieldHint">New and changed routes begin in Pending state.</span>
+          <span className="fieldHint">{translate("trigger.route.pendingHint")}</span>
           <div className="dialogFooterActions">
             <button className="button" type="button" onClick={onClose} disabled={busy}>
-              Cancel
+              {translate("common.cancel")}
             </button>
             <button className="button primary" type="submit" disabled={busy}>
-              {busy ? "Saving…" : existing ? "Save route" : "Request route"}
+              {busy
+                ? translate("common.saving")
+                : existing
+                  ? translate("trigger.route.save")
+                  : translate("trigger.route.request")}
             </button>
           </div>
         </div>
@@ -1209,24 +1260,23 @@ function DeleteHTTPRouteBindingDialog({
 }) {
   return (
     <Modal
-      title="Delete public route?"
+      title={translate("trigger.route.deleteTitle")}
       subtitle={routeBindingAddress(binding)}
       onClose={onClose}
       id="deleteHTTPRouteBindingDialog"
     >
       <div className="inlineNotice error" role="alert">
-        The route enters Deleting until the Router Provider confirms cleanup. The Trigger and its
-        canonical ingress remain available.
+        {translate("trigger.route.deleteWarning")}
       </div>
       <div className="dialogFooter">
         <span />
         <div className="dialogFooterActions">
           <button className="button" type="button" onClick={onClose} disabled={busy}>
-            Cancel
+            {translate("common.cancel")}
           </button>
           <button className="button danger" type="button" onClick={onConfirm} disabled={busy}>
             <Trash2 aria-hidden="true" />
-            {busy ? "Requesting…" : "Delete public route"}
+            {busy ? translate("common.requesting") : translate("trigger.route.delete")}
           </button>
         </div>
       </div>
@@ -1247,15 +1297,15 @@ function HTTPRouteBindingBadge({ state }: { state: HTTPRouteBinding["state"] }) 
 }
 
 function routeBindingStateLabel(state: HTTPRouteBinding["state"]): string {
-  if (state === "ready") return "Ready";
-  if (state === "error") return "Error";
-  if (state === "deleting") return "Deleting";
-  if (state === "deleted") return "Deleted";
-  return "Pending";
+  if (state === "ready") return translate("trigger.state.ready");
+  if (state === "error") return translate("trigger.state.error");
+  if (state === "deleting") return translate("trigger.state.deleting");
+  if (state === "deleted") return translate("trigger.state.deleted");
+  return translate("trigger.state.pending");
 }
 
 function routeBindingAddress(binding: Pick<HTTPRouteBinding, "hostname" | "path">): string {
-  return `${binding.hostname || "Provider hostname"}${binding.path}`;
+  return `${binding.hostname || translate("trigger.route.providerHostname")}${binding.path}`;
 }
 
 function suggestedRoutePath(trigger: TriggerDefinition): string {
@@ -1273,19 +1323,19 @@ function TriggerDeliveries({
 }) {
   return (
     <section className="sheetSection">
-      <h3>Delivery history</h3>
+      <h3>{translate("trigger.delivery.heading")}</h3>
       {deliveries.length === 0 ? (
-        <p className="cellSub">No deliveries recorded yet.</p>
+        <p className="cellSub">{translate("trigger.delivery.empty")}</p>
       ) : (
         <div className="tableWrap">
           <table className="table triggerDeliveryTable">
             <thead>
               <tr>
-                <th>State</th>
-                <th>Delivery</th>
-                <th>Run</th>
-                <th>Output</th>
-                <th>When</th>
+                <th>{translate("trigger.delivery.state")}</th>
+                <th>{translate("trigger.delivery.delivery")}</th>
+                <th>{translate("trigger.delivery.run")}</th>
+                <th>{translate("trigger.delivery.output")}</th>
+                <th>{translate("trigger.delivery.when")}</th>
               </tr>
             </thead>
             <tbody>
@@ -1337,41 +1387,49 @@ function TriggerCompletionBadge({ state }: { state: TriggerDelivery["completion_
 }
 
 function completionStateLabel(state: TriggerDelivery["completion_state"]): string {
-  if (state === "available") return "Ready to poll";
-  if (state === "succeeded") return "Delivered";
-  if (state === "failed") return "Failed";
-  if (state === "retrying") return "Retrying";
-  if (state === "delivering") return "Delivering";
-  if (state === "pending") return "Pending";
-  if (state === "ignored") return "No output";
-  return "Waiting";
+  if (state === "available") return translate("trigger.state.pollReady");
+  if (state === "succeeded") return translate("trigger.state.delivered");
+  if (state === "failed") return translate("trigger.state.failed");
+  if (state === "retrying") return translate("trigger.state.retrying");
+  if (state === "delivering") return translate("trigger.state.delivering");
+  if (state === "pending") return translate("trigger.state.pending");
+  if (state === "ignored") return translate("trigger.output.none");
+  return translate("trigger.state.waiting");
 }
 
 function completionPolicyLabel(trigger: TriggerDefinition): string {
   if (trigger.completion.mode === "callback") {
-    return `HTTP callback · ${trigger.completion.callback?.endpoint || "endpoint missing"}`;
+    return translate("trigger.completion.callbackSummary", {
+      endpoint:
+        trigger.completion.callback?.endpoint || translate("trigger.completion.endpointMissing"),
+    });
   }
   if (trigger.completion.mode === "publish") {
     const publish = trigger.completion.publish;
-    return `RabbitMQ · ${publish?.exchange || "(default exchange)"}/${publish?.routing_key || "routing key missing"}`;
+    return translate("trigger.completion.rabbitMQSummary", {
+      exchange: publish?.exchange || translate("trigger.completion.defaultExchange"),
+      routingKey: publish?.routing_key || translate("trigger.completion.routingKeyMissing"),
+    });
   }
-  if (trigger.completion.mode === "poll") return "Invocation API polling";
-  return "No output";
+  if (trigger.completion.mode === "poll") return translate("trigger.completion.polling");
+  return translate("trigger.output.none");
 }
 
 function responsePolicyLabel(trigger: TriggerDefinition): string {
   if (trigger.response.mode === "wait") {
-    return `Wait up to ${trigger.response.timeout_seconds || 30}s`;
+    return translate("trigger.response.waitSummary", {
+      seconds: trigger.response.timeout_seconds || 30,
+    });
   }
-  return "202 Accepted";
+  return translate("trigger.response.accepted");
 }
 
 function TriggerAuditTrail({ audit }: { audit: TriggerAudit[] }) {
   return (
     <section className="sheetSection">
-      <h3>Audit</h3>
+      <h3>{translate("trigger.audit.heading")}</h3>
       {audit.length === 0 ? (
-        <p className="cellSub">No audit events recorded.</p>
+        <p className="cellSub">{translate("trigger.audit.empty")}</p>
       ) : (
         <ol className="triggerAuditList">
           {audit.map((event) => (
@@ -1379,7 +1437,7 @@ function TriggerAuditTrail({ audit }: { audit: TriggerAudit[] }) {
               <span className="triggerAuditMarker" aria-hidden="true" />
               <div>
                 <strong>{auditLabel(event.kind)}</strong>
-                <p>{event.detail || "No additional detail."}</p>
+                <p>{event.detail || translate("trigger.audit.noDetail")}</p>
                 <small>
                   {event.actor || "system"} · {formatTime(event.created_at)}
                 </small>
@@ -1405,23 +1463,23 @@ function DeleteTriggerDialog({
 }) {
   return (
     <Modal
-      title={`Delete ${trigger.name}?`}
-      subtitle="This removes the Trigger definition and stops future admissions. Existing Runs remain."
+      title={translate("trigger.delete.titleNamed", { name: trigger.name })}
+      subtitle={translate("trigger.delete.subtitle")}
       onClose={onClose}
       id="deleteTriggerDialog"
     >
       <div className="inlineNotice error" role="alert">
-        This action cannot be undone. Disable the Trigger instead if you may need it later.
+        {translate("trigger.delete.warning")}
       </div>
       <div className="dialogFooter">
         <span />
         <div className="dialogFooterActions">
           <button className="button" type="button" onClick={onClose} disabled={busy}>
-            Cancel
+            {translate("common.cancel")}
           </button>
           <button className="button danger" type="button" onClick={onConfirm} disabled={busy}>
             <Trash2 aria-hidden="true" />
-            {busy ? "Deleting…" : "Delete trigger"}
+            {busy ? translate("common.deleting") : translate("trigger.delete.action")}
           </button>
         </div>
       </div>
@@ -1445,7 +1503,7 @@ function TriggerEnabledBadge({ enabled }: { enabled: boolean }) {
       <span className="badgeIcon" aria-hidden="true">
         {enabled ? "●" : "○"}
       </span>
-      {enabled ? "Enabled" : "Disabled"}
+      {enabled ? translate("common.enabled") : translate("common.disabled")}
     </span>
   );
 }
@@ -1461,12 +1519,17 @@ function TriggerDeliveryBadge({ state }: { state: TriggerDelivery["state"] }) {
 }
 
 function deliveryLabel(state: TriggerDelivery["state"]): string {
-  if (state === "admitted") return "Admitted";
-  if (state === "retryable") return "Retrying";
-  return "Rejected";
+  if (state === "admitted") return translate("trigger.state.admitted");
+  if (state === "retryable") return translate("trigger.state.retrying");
+  return translate("trigger.state.rejected");
 }
 
 function auditLabel(kind: string): string {
+  if (kind === "created") return translate("trigger.audit.created");
+  if (kind === "updated") return translate("trigger.audit.updated");
+  if (kind === "enabled") return translate("trigger.audit.enabled");
+  if (kind === "disabled") return translate("trigger.audit.disabled");
+  if (kind === "deleted") return translate("trigger.audit.deleted");
   return kind
     .replace(/^trigger_/, "")
     .split("_")

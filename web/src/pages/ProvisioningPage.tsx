@@ -15,6 +15,7 @@ import { SettingsNav } from "../components/SettingsNav";
 import { EmptyState, ErrorNotice, Field, Panel, SelectControl } from "../components/ui";
 import { errorMessage, type ProvisioningAppliedResource } from "../lib/api";
 import { useApp } from "../lib/app-context";
+import { translate } from "../shared/i18n";
 
 const sampleYaml = `resources:
   - apiVersion: windforce-lite.imprun.dev/v1
@@ -60,7 +61,9 @@ export function ProvisioningPage() {
   const importReady = importText.trim().length > 0;
   const canApply = importReady && dryRunResult.length > 0 && working === "";
   const resultRows = applyResult.length ? applyResult : dryRunResult;
-  const resultLabel = applyResult.length ? "Applied resources" : "Dry-run result";
+  const resultLabel = applyResult.length
+    ? translate("provisioning.appliedResources")
+    : translate("provisioning.dryRunResult");
   const resultSummary = summarizeResult(resultRows);
   const exportFileName = useMemo(
     () =>
@@ -75,7 +78,7 @@ export function ProvisioningPage() {
     try {
       const text = await api.exportProvisioning(exportFormat, includeValues);
       setExportText(text);
-      notify("ok", "Provisioning export refreshed.");
+      notify("ok", translate("provisioning.exportRefreshed"));
     } catch (cause) {
       setError(errorMessage(cause));
     } finally {
@@ -91,7 +94,7 @@ export function ProvisioningPage() {
     try {
       const result = await api.importProvisioning(importText, true, importFormat);
       setDryRunResult(result.applied || []);
-      notify("ok", "Dry-run completed.");
+      notify("ok", translate("provisioning.dryRunCompleted"));
     } catch (cause) {
       setDryRunResult([]);
       setError(errorMessage(cause));
@@ -107,7 +110,7 @@ export function ProvisioningPage() {
       const result = await api.importProvisioning(importText, false, importFormat);
       setApplyResult(result.applied || []);
       setDryRunResult([]);
-      notify("ok", "Provisioning applied.");
+      notify("ok", translate("provisioning.applied"));
     } catch (cause) {
       setError(errorMessage(cause));
     } finally {
@@ -119,7 +122,7 @@ export function ProvisioningPage() {
     if (!exportText) return;
     try {
       await navigator.clipboard.writeText(exportText);
-      notify("ok", "Export copied.");
+      notify("ok", translate("provisioning.exportCopied"));
     } catch (cause) {
       setError(errorMessage(cause));
     }
@@ -158,14 +161,15 @@ export function ProvisioningPage() {
   }
 
   return (
-    <Layout
-      title="Settings"
-      subtitle="Provision repeatable control-plane state for backup, restore, and environment setup."
-    >
+    <Layout title={translate("navigation.settings")} subtitle={translate("provisioning.subtitle")}>
       <SettingsNav />
       {error ? <ErrorNotice message={error} /> : null}
 
-      <div className="tabBar provisioningModeTabs" role="tablist" aria-label="Provisioning mode">
+      <div
+        className="tabBar provisioningModeTabs"
+        role="tablist"
+        aria-label={translate("provisioning.mode")}
+      >
         <button
           type="button"
           role="tab"
@@ -173,7 +177,7 @@ export function ProvisioningPage() {
           className={task === "import" ? "tab active" : "tab"}
           onClick={() => setTask("import")}
         >
-          Import
+          {translate("provisioning.import")}
         </button>
         <button
           type="button"
@@ -182,20 +186,23 @@ export function ProvisioningPage() {
           className={task === "export" ? "tab active" : "tab"}
           onClick={() => setTask("export")}
         >
-          Export
+          {translate("provisioning.export")}
         </button>
       </div>
 
       {task === "import" ? (
-        <section className="provisioningWorkspace" aria-label="Import provisioning document">
+        <section
+          className="provisioningWorkspace"
+          aria-label={translate("provisioning.importDocument")}
+        >
           <Panel
-            title="Import document"
-            subtitle="Paste or load YAML/JSON. Dry-run must pass before Apply is enabled."
+            title={translate("provisioning.importDocument")}
+            subtitle={translate("provisioning.importDocumentHint")}
           >
             <div className="provisioningDocumentHeader">
-              <Field label="Format">
+              <Field label={translate("provisioning.format")}>
                 <SelectControl
-                  ariaLabel="Import format"
+                  ariaLabel={translate("provisioning.importFormat")}
                   value={importFormat}
                   onChange={(value) => {
                     setImportFormat(value);
@@ -210,7 +217,7 @@ export function ProvisioningPage() {
               </Field>
               <label className="button">
                 <FileInput aria-hidden="true" />
-                Load file
+                {translate("provisioning.loadFile")}
                 <input
                   className="visuallyHidden"
                   type="file"
@@ -224,10 +231,10 @@ export function ProvisioningPage() {
                 onClick={() => resetImportDocument(sampleYaml, "yaml")}
               >
                 <RotateCcw aria-hidden="true" />
-                Reset sample
+                {translate("provisioning.resetSample")}
               </button>
             </div>
-            <Field label="Provisioning document">
+            <Field label={translate("provisioning.document")}>
               <textarea
                 className="provisioningEditor"
                 value={importText}
@@ -241,10 +248,13 @@ export function ProvisioningPage() {
             </Field>
           </Panel>
 
-          <aside className="provisioningSidePanel" aria-label="Import controls and result">
+          <aside
+            className="provisioningSidePanel"
+            aria-label={translate("provisioning.importControls")}
+          >
             <Panel
-              title="Review and apply"
-              subtitle="Validate the document, then apply the reviewed result."
+              title={translate("provisioning.reviewApply")}
+              subtitle={translate("provisioning.reviewApplyHint")}
             >
               <div className="provisioningActionStack">
                 <button
@@ -254,7 +264,9 @@ export function ProvisioningPage() {
                   onClick={handleDryRun}
                 >
                   <Play aria-hidden="true" />
-                  {working === "dry-run" ? "Checking…" : "Dry-run"}
+                  {working === "dry-run"
+                    ? translate("repository.checking")
+                    : translate("provisioning.dryRun")}
                 </button>
                 <button
                   className="button primary"
@@ -263,7 +275,9 @@ export function ProvisioningPage() {
                   onClick={handleApply}
                 >
                   <Upload aria-hidden="true" />
-                  {working === "apply" ? "Applying…" : "Apply"}
+                  {working === "apply"
+                    ? translate("provisioning.applying")
+                    : translate("common.apply")}
                 </button>
                 <button
                   className="button"
@@ -272,38 +286,38 @@ export function ProvisioningPage() {
                   onClick={() => resetImportDocument("", importFormat)}
                 >
                   <Trash2 aria-hidden="true" />
-                  Clear document
+                  {translate("provisioning.clearDocument")}
                 </button>
               </div>
               <div className="provisioningSafety">
                 <ShieldCheck aria-hidden="true" />
-                <span>Dry-run checks the document without changing stored state.</span>
+                <span>{translate("provisioning.dryRunSafety")}</span>
               </div>
             </Panel>
 
             <Panel
               title={resultLabel}
-              subtitle={
-                resultRows.length
-                  ? resultSummary
-                  : "Run dry-run to review planned resources before applying."
-              }
+              subtitle={resultRows.length ? resultSummary : translate("provisioning.runDryRunHint")}
             >
               {resultRows.length ? (
                 <ProvisioningResultList rows={resultRows} />
               ) : (
-                <EmptyState title="No validation result">
-                  <span>
-                    Run dry-run to review what would be created, updated, stored, or validated.
-                  </span>
+                <EmptyState title={translate("provisioning.noValidation")}>
+                  <span>{translate("provisioning.noValidationHint")}</span>
                 </EmptyState>
               )}
             </Panel>
           </aside>
         </section>
       ) : (
-        <section className="provisioningWorkspace" aria-label="Export provisioning snapshot">
-          <Panel title="Export preview" subtitle="Create and review a redacted workspace snapshot.">
+        <section
+          className="provisioningWorkspace"
+          aria-label={translate("provisioning.exportSnapshot")}
+        >
+          <Panel
+            title={translate("provisioning.exportPreview")}
+            subtitle={translate("provisioning.exportPreviewHint")}
+          >
             {exportText ? (
               <>
                 <div className="provisioningToolbar">
@@ -312,23 +326,24 @@ export function ProvisioningPage() {
                 <pre className="provisioningCode">{exportText}</pre>
               </>
             ) : (
-              <EmptyState title="No snapshot exported">
-                <span>
-                  Export a snapshot to preview, copy, or download the current workspace state.
-                </span>
+              <EmptyState title={translate("provisioning.noSnapshot")}>
+                <span>{translate("provisioning.noSnapshotHint")}</span>
               </EmptyState>
             )}
           </Panel>
 
-          <aside className="provisioningSidePanel" aria-label="Export controls">
+          <aside
+            className="provisioningSidePanel"
+            aria-label={translate("provisioning.exportControls")}
+          >
             <Panel
-              title="Snapshot options"
-              subtitle="Secrets and credential values are always redacted."
+              title={translate("provisioning.snapshotOptions")}
+              subtitle={translate("provisioning.snapshotOptionsHint")}
             >
               <div className="formStack">
-                <Field label="Format">
+                <Field label={translate("provisioning.format")}>
                   <SelectControl
-                    ariaLabel="Export format"
+                    ariaLabel={translate("provisioning.exportFormat")}
                     value={exportFormat}
                     onChange={setExportFormat}
                     options={[
@@ -344,8 +359,8 @@ export function ProvisioningPage() {
                     onChange={(event) => setIncludeValues(event.target.checked)}
                   />
                   <span>
-                    Include non-secret values
-                    <small>Secret variables and credential values remain redacted.</small>
+                    {translate("provisioning.includeValues")}
+                    <small>{translate("provisioning.includeValuesHint")}</small>
                   </span>
                 </label>
               </div>
@@ -357,7 +372,9 @@ export function ProvisioningPage() {
                   disabled={working === "export"}
                 >
                   <Download aria-hidden="true" />
-                  {exporting ? "Exporting…" : "Export snapshot"}
+                  {exporting
+                    ? translate("provisioning.exporting")
+                    : translate("provisioning.exportSnapshotAction")}
                 </button>
                 <button
                   className="button"
@@ -366,7 +383,7 @@ export function ProvisioningPage() {
                   disabled={!exportText}
                 >
                   <Clipboard aria-hidden="true" />
-                  Copy
+                  {translate("provisioning.copy")}
                 </button>
                 <button
                   className="button"
@@ -375,7 +392,7 @@ export function ProvisioningPage() {
                   disabled={!exportText}
                 >
                   <Download aria-hidden="true" />
-                  Download
+                  {translate("provisioning.download")}
                 </button>
               </div>
             </Panel>
@@ -400,7 +417,7 @@ function ProvisioningResultList({ rows }: { rows: ProvisioningAppliedResource[] 
           </div>
           <span className={row.action === "validated" ? "badge badge-running" : "badge badge-good"}>
             <CheckCircle2 aria-hidden="true" />
-            {row.action}
+            {provisioningActionLabel(row.action)}
           </span>
         </div>
       ))}
@@ -416,6 +433,19 @@ function summarizeResult(rows: ProvisioningAppliedResource[]): string {
   }, {});
   return Object.entries(counts)
     .sort(([left], [right]) => left.localeCompare(right))
-    .map(([action, count]) => `${count} ${action}`)
+    .map(([action, count]) =>
+      translate("provisioning.actionCount", {
+        count,
+        action: provisioningActionLabel(action),
+      }),
+    )
     .join(" · ");
+}
+
+function provisioningActionLabel(action: string): string {
+  if (action === "created") return translate("provisioning.action.created");
+  if (action === "updated") return translate("provisioning.action.updated");
+  if (action === "stored") return translate("provisioning.action.stored");
+  if (action === "validated") return translate("provisioning.action.validated");
+  return action;
 }

@@ -1,5 +1,13 @@
 import { describe, expect, test } from "vitest";
-import { setActorHeaders, type WebhookSubscription, WindforceApi, webhookAppKeys } from "./api";
+import { setLocale } from "../shared/i18n";
+import {
+  ApiError,
+  errorMessage,
+  setActorHeaders,
+  type WebhookSubscription,
+  WindforceApi,
+  webhookAppKeys,
+} from "./api";
 
 function decodeUTF8Base64(value: string): string {
   const binary = atob(value);
@@ -26,6 +34,38 @@ describe("setActorHeaders", () => {
     const encoded = headers.get("x-windforce-actor-utf8");
     expect(encoded).toBeTruthy();
     expect(decodeUTF8Base64(encoded || "")).toBe("홍길동");
+  });
+});
+
+describe("localized API errors", () => {
+  test("keeps stable code and detail data separate from localized presentation", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          code: "workspace_archived",
+          error: "workspace archived",
+          workspace_id: "team-a",
+        }),
+        { status: 403, statusText: "Forbidden" },
+      )) as unknown as typeof fetch;
+    try {
+      const api = new WindforceApi({ workspace: "team-a", token: "", actor: "operator" });
+      const cause = await api.apps().catch((error: unknown) => error);
+      expect(cause).toBeInstanceOf(ApiError);
+      expect(cause).toMatchObject({
+        code: "server.workspace_archived",
+        status: 403,
+        detail: "workspace archived",
+      });
+
+      await setLocale("ko");
+      expect(errorMessage(cause)).toBe("이 작업을 수행할 권한이 없습니다.");
+      expect(errorMessage(cause)).not.toContain("workspace archived");
+    } finally {
+      await setLocale("en");
+      globalThis.fetch = originalFetch;
+    }
   });
 });
 

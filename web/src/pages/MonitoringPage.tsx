@@ -6,6 +6,7 @@ import type { JobStatusCounts } from "../lib/api";
 import { useApp, useAsync } from "../lib/app-context";
 import { formatRelative } from "../lib/format";
 import { Link } from "../lib/router";
+import { translate } from "../shared/i18n";
 
 export function MonitoringPage({ legacyJobID }: { legacyJobID?: string } = {}) {
   const { api } = useApp();
@@ -23,22 +24,21 @@ export function MonitoringPage({ legacyJobID }: { legacyJobID?: string } = {}) {
 
   return (
     <Layout
-      title="Monitoring"
-      subtitle="Aggregate job activity across the workspace. Individual runs live in the control-plane API and CLI."
+      title={translate("navigation.monitoring")}
+      subtitle={translate("monitoring.subtitle")}
       actions={
         <>
           <WindowSelector value={windowSeconds} onChange={setWindowSeconds} />
           <button className="button" type="button" onClick={() => state.reload()}>
-            Refresh
+            {translate("common.refresh")}
           </button>
         </>
       }
     >
       {legacyJobID ? (
         <div className="inlineNotice">
-          The Web UI shows aggregate job activity only. Individual runs such as job{" "}
-          <span className="mono">{legacyJobID}</span> are available through the control-plane API
-          and CLI.
+          {translate("monitoring.legacyRunPrefix")} <span className="mono">{legacyJobID}</span>{" "}
+          {translate("monitoring.legacyRunSuffix")}
         </div>
       ) : null}
       {state.error ? <ErrorNotice message={state.error} onRetry={state.reload} /> : null}
@@ -47,20 +47,28 @@ export function MonitoringPage({ legacyJobID }: { legacyJobID?: string } = {}) {
       {summary ? (
         <>
           <div className="statRow" id="jobSummary">
-            <StatTile label="Queued" value={summary.queued_count} tone="waiting" />
-            <StatTile label="Running" value={summary.running_count} tone="running" />
             <StatTile
-              label={`Completed · ${label}`}
+              label={translate("monitoring.queued")}
+              value={summary.queued_count}
+              tone="waiting"
+            />
+            <StatTile
+              label={translate("monitoring.running")}
+              value={summary.running_count}
+              tone="running"
+            />
+            <StatTile
+              label={translate("monitoring.completedWindow", { window: label })}
               value={summary.completed_count_recent}
               tone="good"
             />
             <StatTile
-              label={`Failed · ${label}`}
+              label={translate("monitoring.failedWindow", { window: label })}
               value={summary.failed_count_recent}
               tone="critical"
             />
             <StatTile
-              label={`Canceled · ${label}`}
+              label={translate("monitoring.canceledWindow", { window: label })}
               value={summary.canceled_count_recent}
               tone="serious"
             />
@@ -68,14 +76,19 @@ export function MonitoringPage({ legacyJobID }: { legacyJobID?: string } = {}) {
 
           {summary.oldest_queued_at ? (
             <div className="inlineNotice">
-              Oldest queued job has been waiting since {formatRelative(summary.oldest_queued_at)}.
+              {translate("monitoring.oldestQueued", {
+                time: formatRelative(summary.oldest_queued_at),
+              })}
             </div>
           ) : null}
 
-          <Panel title="By app" subtitle={`Job activity per app over the last ${label}.`}>
+          <Panel
+            title={translate("monitoring.byApp")}
+            subtitle={translate("monitoring.byAppHint", { window: label })}
+          >
             <BreakdownTable
               id="jobsByApp"
-              nameHeader="App"
+              nameHeader={translate("apps.column.app")}
               rows={(summary.by_app || []).map((item) => ({
                 key: item.app_key,
                 name: item.app_key,
@@ -86,12 +99,12 @@ export function MonitoringPage({ legacyJobID }: { legacyJobID?: string } = {}) {
           </Panel>
 
           <Panel
-            title="By route tag"
-            subtitle={`Job activity per worker route tag over the last ${label}.`}
+            title={translate("monitoring.byRouteTag")}
+            subtitle={translate("monitoring.byRouteTagHint", { window: label })}
           >
             <BreakdownTable
               id="jobsByTag"
-              nameHeader="Route tag"
+              nameHeader={translate("apps.column.routeTag")}
               rows={(summary.by_tag || []).map((item) => ({
                 key: item.tag,
                 name: item.tag,
@@ -122,7 +135,7 @@ function BreakdownTable({
   rows: BreakdownRow[];
 }) {
   if (rows.length === 0) {
-    return <EmptyState title="No job activity in this window." />;
+    return <EmptyState title={translate("monitoring.empty")} />;
   }
   return (
     <div className="tableWrap">
@@ -130,12 +143,12 @@ function BreakdownTable({
         <thead>
           <tr>
             <th>{nameHeader}</th>
-            <th className="numCell">Queued</th>
-            <th className="numCell">Running</th>
-            <th className="numCell">Completed</th>
-            <th className="numCell">Failed</th>
-            <th className="numCell">Canceled</th>
-            <th className="numCell">Failure rate</th>
+            <th className="numCell">{translate("monitoring.queued")}</th>
+            <th className="numCell">{translate("monitoring.running")}</th>
+            <th className="numCell">{translate("monitoring.completed")}</th>
+            <th className="numCell">{translate("monitoring.failed")}</th>
+            <th className="numCell">{translate("monitoring.canceled")}</th>
+            <th className="numCell">{translate("monitoring.failureRate")}</th>
           </tr>
         </thead>
         <tbody>

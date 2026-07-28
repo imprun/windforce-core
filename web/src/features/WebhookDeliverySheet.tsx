@@ -2,6 +2,7 @@ import { RotateCcw } from "lucide-react";
 import { DefinitionList, JsonBlock, Sheet } from "../components/ui";
 import type { WebhookDeliveryDetail } from "../lib/api";
 import { formatTime } from "../lib/format";
+import { translate } from "../shared/i18n";
 import { WebhookDeliveryStatus, webhookEventLabel } from "./WebhookStatus";
 
 export function WebhookDeliverySheet({
@@ -21,7 +22,7 @@ export function WebhookDeliverySheet({
   const canRetry = delivery.state === "failed" && subscriptionActive;
   return (
     <Sheet
-      title="Delivery detail"
+      title={translate("webhook.deliveryDetail")}
       subtitle={delivery.id}
       onClose={onClose}
       id="webhookDeliverySheet"
@@ -29,13 +30,13 @@ export function WebhookDeliverySheet({
         canRetry ? (
           <button className="button primary" type="button" disabled={retrying} onClick={onRetry}>
             <RotateCcw size={16} aria-hidden="true" />
-            {retrying ? "Queuing retry…" : "Retry delivery"}
+            {retrying ? translate("webhook.queuingRetry") : translate("webhook.retryDelivery")}
           </button>
         ) : (
           <span className="fieldHint">
             {delivery.state === "failed"
-              ? "Enable the subscription before retrying."
-              : "Only failed deliveries can be retried."}
+              ? translate("webhook.enableBeforeRetry")
+              : translate("webhook.failedOnlyRetry")}
           </span>
         )
       }
@@ -45,17 +46,23 @@ export function WebhookDeliverySheet({
         <strong>{webhookEventLabel(event.type)}</strong>
       </div>
       <div className="sheetSection">
-        <h3>Attempt</h3>
+        <h3>{translate("webhook.attempt")}</h3>
         <DefinitionList
           className="sheetFacts"
           items={[
-            ["Attempts", delivery.attempt],
-            ["HTTP response", delivery.response_status ?? "—"],
-            ["Latency", delivery.latency_ms != null ? `${delivery.latency_ms} ms` : "—"],
-            ["Created", formatTime(delivery.created_at)],
-            ["Completed", delivery.completed_at ? formatTime(delivery.completed_at) : "—"],
+            [translate("webhook.attempts"), delivery.attempt],
+            [translate("webhook.httpResponse"), delivery.response_status ?? "—"],
             [
-              "Next attempt",
+              translate("webhook.latency"),
+              delivery.latency_ms != null ? `${delivery.latency_ms} ms` : "—",
+            ],
+            [translate("common.created"), formatTime(delivery.created_at)],
+            [
+              translate("webhook.completed"),
+              delivery.completed_at ? formatTime(delivery.completed_at) : "—",
+            ],
+            [
+              translate("webhook.nextAttempt"),
               delivery.state === "retrying" || delivery.state === "pending"
                 ? formatTime(delivery.next_attempt_at)
                 : "—",
@@ -67,13 +74,13 @@ export function WebhookDeliverySheet({
         ) : null}
       </div>
       <div className="sheetSection">
-        <h3>Event</h3>
+        <h3>{translate("webhook.event")}</h3>
         <DefinitionList
           className="sheetFacts"
           items={[
-            ["Event ID", <span className="mono">{event.id}</span>],
-            ["Type", <span className="mono">{event.type}</span>],
-            ["Occurred", formatTime(event.time)],
+            [translate("webhook.eventID"), <span className="mono">{event.id}</span>],
+            [translate("common.type"), <span className="mono">{event.type}</span>],
+            [translate("webhook.occurred"), formatTime(event.time)],
           ]}
         />
         <JsonBlock value={event.data} maxHeight={280} />

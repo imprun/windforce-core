@@ -5,6 +5,7 @@ import { errorMessage, type HistoryItem, type ReleaseRollbackResult } from "../l
 import { useApp } from "../lib/app-context";
 import { formatTime, shortSHA } from "../lib/format";
 import { Link } from "../lib/router";
+import { translate } from "../shared/i18n";
 
 export function RollbackReleaseDialog({
   appKey,
@@ -31,7 +32,10 @@ export function RollbackReleaseDialog({
     setError("");
     try {
       const result = await api.rollbackAppRelease(appKey, target.id, normalizedReason);
-      notify("ok", `Activated ${shortSHA(result.commit, 12)} for ${result.app}.`);
+      notify(
+        "ok",
+        translate("release.activated", { commit: shortSHA(result.commit, 12), app: result.app }),
+      );
       onRolledBack(result);
     } catch (cause) {
       setError(errorMessage(cause));
@@ -43,53 +47,53 @@ export function RollbackReleaseDialog({
   return (
     <Modal
       id="rollbackReleaseDialog"
-      title={`Rollback Release — ${appKey}`}
-      subtitle="Activate a worker-ready historical release for new runs."
+      title={translate("release.rollbackNamed", { app: appKey })}
+      subtitle={translate("release.rollbackHint")}
       onClose={onClose}
     >
       <DefinitionList
         items={[
           [
-            "Current release",
+            translate("release.current"),
             active ? (
               <>
                 <code>{shortSHA(active.id, 12)}</code> · commit{" "}
                 <code>{shortSHA(active.commit_sha, 12)}</code>
               </>
             ) : (
-              "unknown"
+              translate("release.unknown")
             ),
           ],
           [
-            "Target release",
+            translate("release.target"),
             <>
               <code>{shortSHA(target.id, 12)}</code> · commit{" "}
               <code>{shortSHA(target.commit_sha, 12)}</code>
             </>,
           ],
-          ["Target release ID", <code>{target.id}</code>],
+          [translate("release.targetID"), <code>{target.id}</code>],
           [
-            "Originally published",
+            translate("release.originallyPublished"),
             `${target.created_by || "system"} · ${formatTime(target.created_at)}`,
           ],
-          ["Actor", settings.actor || "(not set)"],
+          [translate("settings.actor"), settings.actor || translate("info.notSet")],
         ]}
       />
-      <div className="inlineNotice">
-        This moves the active release pointer to the stored execution bundle. It does not
-        synchronize Git, install dependencies, or rebuild source. Existing runs keep their pinned
-        release; new runs use this target.
-      </div>
+      <div className="inlineNotice">{translate("release.rollbackNotice")}</div>
       {!settings.actor ? (
         <div className="inlineNotice error">
-          Rollback requires an audit actor. Set one in <Link to="/settings">Settings</Link>.
+          {translate("release.rollbackActorRequired")}{" "}
+          <Link to="/settings">{translate("navigation.settings")}</Link>.
         </div>
       ) : null}
-      <Field label="Rollback reason" hint="Required and recorded in the app audit trail.">
+      <Field
+        label={translate("release.rollbackReason")}
+        hint={translate("release.rollbackReasonHint")}
+      >
         <textarea
           value={reason}
           onChange={(event) => setReason(event.target.value)}
-          placeholder="Why is this historical release being restored?"
+          placeholder={translate("release.rollbackReasonPlaceholder")}
           rows={3}
         />
       </Field>
@@ -98,7 +102,7 @@ export function RollbackReleaseDialog({
         <span />
         <div className="dialogFooterActions">
           <button className="button" type="button" onClick={onClose} disabled={busy}>
-            Cancel
+            {translate("common.cancel")}
           </button>
           <button
             className="button danger"
@@ -107,7 +111,7 @@ export function RollbackReleaseDialog({
             disabled={busy || !settings.actor || !reason.trim()}
           >
             <RotateCcw size={16} aria-hidden="true" />
-            {busy ? "Rolling back…" : "Rollback release"}
+            {busy ? translate("release.rollingBack") : translate("release.rollback")}
           </button>
         </div>
       </footer>

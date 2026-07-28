@@ -7,6 +7,7 @@ import { App } from "./App";
 import { QueryProvider } from "./app/query-provider";
 import { AppProvider } from "./lib/app-context";
 import { RouterProvider } from "./lib/router";
+import "./shared/i18n";
 import "./styles.css";
 
 const root = document.getElementById("root");
