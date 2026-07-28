@@ -9,11 +9,12 @@ import { useApp, useAsync } from "../lib/app-context";
 import { formatRelative, formatTime } from "../lib/format";
 import { groupInputSettings } from "../lib/input-setting-groups";
 import { Link, useRouter } from "../lib/router";
+import { translate } from "../shared/i18n";
 
 const tabs = [
-  { key: "overview", label: "Overview" },
-  { key: "input-settings", label: "Input Settings" },
-  { key: "audit", label: "Audit" },
+  { key: "overview", label: "clients.tab.overview" },
+  { key: "input-settings", label: "clients.tab.inputSettings" },
+  { key: "audit", label: "clients.tab.audit" },
 ] as const;
 
 type TabKey = (typeof tabs)[number]["key"];
@@ -42,14 +43,17 @@ export function ClientDetailPage({
 
   if (state.loading && !state.data)
     return (
-      <Layout title="Client Registry">
+      <Layout title={translate("navigation.clientRegistry")}>
         <Loading />
       </Layout>
     );
   if (state.error || !state.data) {
     return (
-      <Layout title="Client not found">
-        <ErrorNotice message={state.error || "Client not found."} onRetry={state.reload} />
+      <Layout title={translate("clients.notFound")}>
+        <ErrorNotice
+          message={state.error || translate("clients.notFoundDetail")}
+          onRetry={state.reload}
+        />
       </Layout>
     );
   }
@@ -58,19 +62,19 @@ export function ClientDetailPage({
   return (
     <Layout
       title={client.name}
-      subtitle="External client configuration across released apps."
+      subtitle={translate("clients.detailSubtitle")}
       actions={
         <>
           <Link className="button" to="/clients">
-            Back to registry
+            {translate("clients.backToRegistry")}
           </Link>
           <button className="button" type="button" onClick={() => setEditingClient(true)}>
-            Edit client
+            {translate("clients.editClient")}
           </button>
         </>
       }
     >
-      <nav className="tabBar" aria-label="Client detail tabs">
+      <nav className="tabBar" aria-label={translate("clients.detailTabs")}>
         {tabs.map((item) => (
           <Link
             key={item.key}
@@ -81,7 +85,7 @@ export function ClientDetailPage({
                 : `/clients/${client.id}/${item.key}`
             }
           >
-            {item.label}
+            {translate(item.label)}
           </Link>
         ))}
       </nav>
@@ -128,38 +132,46 @@ function ClientOverview({ client, configs }: { client: Client; configs: InputCon
   );
   return (
     <>
-      <Panel
-        title="Client identity"
-        subtitle="Used by public API calls to select client-specific settings."
-      >
+      <Panel title={translate("clients.identity")} subtitle={translate("clients.identityHint")}>
         <DefinitionList
           items={[
-            ["Name", client.name],
-            ["API token", client.has_token ? "Active" : "Not issued"],
-            ["Updated", formatTime(client.updated_at)],
-            ["Updated by", client.updated_by],
+            [translate("common.name"), client.name],
+            [
+              translate("clients.apiToken"),
+              client.has_token
+                ? translate("workspace.status.active")
+                : translate("clients.notIssued"),
+            ],
+            [translate("common.updated"), formatTime(client.updated_at)],
+            [translate("common.updatedBy"), client.updated_by],
           ]}
         />
       </Panel>
       <Panel
-        title="Configuration summary"
-        subtitle="Current client-specific coverage across released apps."
+        title={translate("clients.configurationSummary")}
+        subtitle={translate("clients.configurationSummaryHint")}
       >
         {configs.length ? (
           <DefinitionList
             items={[
-              ["Configured apps", groups.length],
-              ["Action scopes", configs.length],
-              ["Configured values", groups.reduce((total, group) => total + group.valueCount, 0)],
-              ["Locked values", groups.reduce((total, group) => total + group.lockedCount, 0)],
+              [translate("clients.configuredApps"), groups.length],
+              [translate("clients.actionScopes"), configs.length],
               [
-                "Last settings change",
+                translate("clients.configuredValues"),
+                groups.reduce((total, group) => total + group.valueCount, 0),
+              ],
+              [
+                translate("clients.lockedValues"),
+                groups.reduce((total, group) => total + group.lockedCount, 0),
+              ],
+              [
+                translate("clients.lastSettingsChange"),
                 latest ? `${formatRelative(latest.updated_at)} · ${latest.updated_by}` : "—",
               ],
             ]}
           />
         ) : (
-          <EmptyState title="No client-specific input settings." />
+          <EmptyState title={translate("clients.noInputSettings")} />
         )}
       </Panel>
     </>
@@ -170,14 +182,11 @@ function ClientAudit({ clientID }: { clientID: string }) {
   const { api } = useApp();
   const state = useAsync(() => api.auditEvents({ clientID, limit: 250 }), [api, clientID]);
   return (
-    <Panel title="Audit trail" subtitle="Registry and input-setting changes for this client.">
+    <Panel title={translate("clients.auditTrail")} subtitle={translate("clients.auditTrailHint")}>
       {state.error ? <ErrorNotice message={state.error} onRetry={state.reload} /> : null}
       {state.loading && !state.data ? <Loading /> : null}
       {state.data ? (
-        <AuditEventTable
-          events={state.data}
-          emptyTitle="No changes have been recorded for this client."
-        />
+        <AuditEventTable events={state.data} emptyTitle={translate("clients.noChanges")} />
       ) : null}
     </Panel>
   );

@@ -10,15 +10,21 @@ import { useApp, useAsync } from "../lib/app-context";
 import { formatTime } from "../lib/format";
 import { useRouter } from "../lib/router";
 import { notifyWorkspaceRegistryChanged } from "../lib/workspaces";
+import { translate } from "../shared/i18n";
 
 export function WorkspaceSettingsPage() {
   const { api, settings } = useApp();
   const state = useAsync(() => api.workspace(settings.workspace), [api, settings.workspace]);
 
   return (
-    <Layout title="Settings" subtitle="Configure the active workspace identity and lifecycle.">
+    <Layout
+      title={translate("navigation.settings")}
+      subtitle={translate("workspaceSettings.subtitle")}
+    >
       <SettingsNav />
-      {state.loading && !state.data ? <Loading label="Loading workspace settings…" /> : null}
+      {state.loading && !state.data ? (
+        <Loading label={translate("workspaceSettings.loading")} />
+      ) : null}
       {state.error ? <ErrorNotice message={state.error} onRetry={state.reload} /> : null}
       {state.data ? <WorkspaceSettings workspace={state.data} onChanged={state.reload} /> : null}
     </Layout>
@@ -45,7 +51,7 @@ function WorkspaceSettings({
     setError("");
     try {
       await api.updateWorkspace(workspace.id, name.trim());
-      notify("ok", "Workspace name updated.");
+      notify("ok", translate("workspaceSettings.nameUpdated"));
       notifyWorkspaceRegistryChanged();
       onChanged();
     } catch (cause) {
@@ -56,18 +62,14 @@ function WorkspaceSettings({
   }
 
   async function archive() {
-    if (
-      !window.confirm(
-        `Archive ${workspace.name}? Reads remain available, but releases, settings changes, and new runs will be blocked.`,
-      )
-    )
+    if (!window.confirm(translate("workspaceSettings.archiveConfirm", { name: workspace.name })))
       return;
     setSaving(true);
     setError("");
     try {
       await api.archiveWorkspace(workspace.id);
       updateSettings({ ...settings, workspace: "default" });
-      notify("info", "Workspace archived. Switched to default.");
+      notify("info", translate("workspaceSettings.archivedSwitched"));
       notifyWorkspaceRegistryChanged();
       navigate("/");
     } catch (cause) {
@@ -80,21 +82,24 @@ function WorkspaceSettings({
   return (
     <>
       <Panel
-        title="Workspace identity"
-        subtitle="The immutable routing ID and operator-facing display name."
+        title={translate("workspaceSettings.identity")}
+        subtitle={translate("workspaceSettings.identityHint")}
       >
         {error ? <ErrorNotice message={error} /> : null}
         <DefinitionList
           className="workspaceIdentityFacts"
           items={[
-            ["Workspace ID", <span className="mono">{workspace.id}</span>],
-            ["Status", <WorkspaceStatus workspace={workspace} />],
-            ["Created", formatTime(workspace.created_at)],
-            ["Created by", workspace.created_by],
+            [translate("settings.workspaceID"), <span className="mono">{workspace.id}</span>],
+            [translate("common.status"), <WorkspaceStatus workspace={workspace} />],
+            [translate("workspaceSettings.created"), formatTime(workspace.created_at)],
+            [translate("workspaceSettings.createdBy"), workspace.created_by],
           ]}
         />
         <div className="workspaceSingleSetting">
-          <Field label="Display name" hint="Shown in the workspace switcher and settings.">
+          <Field
+            label={translate("workspaces.displayName")}
+            hint={translate("workspaceSettings.displayNameHint")}
+          >
             <input
               value={name}
               disabled={workspace.status === "archived"}
@@ -112,34 +117,30 @@ function WorkspaceSettings({
             }
             onClick={save}
           >
-            {saving ? "Saving…" : "Save display name"}
+            {saving ? translate("common.saving") : translate("workspaceSettings.saveDisplayName")}
           </button>
         </div>
       </Panel>
 
       <Panel
-        title="Workspace lifecycle"
-        subtitle="Archive preserves records while preventing future changes and executions."
+        title={translate("workspaceSettings.lifecycle")}
+        subtitle={translate("workspaceSettings.lifecycleHint")}
       >
         {workspace.id === "default" ? (
-          <div className="inlineNotice">
-            The default workspace is permanent and cannot be archived.
-          </div>
+          <div className="inlineNotice">{translate("workspaceSettings.defaultPermanent")}</div>
         ) : workspace.status === "archived" ? (
-          <div className="inlineNotice">
-            This workspace is archived. Reads and audit records remain available.
-          </div>
+          <div className="inlineNotice">{translate("workspaceSettings.archivedNotice")}</div>
         ) : (
           <div className="dangerZone">
             <div>
-              <strong>Archive workspace</strong>
-              <p>
-                Blocks releases, configuration changes, webhook changes, and new runs. This action
-                cannot be reversed.
-              </p>
+              <strong>{translate("workspaceSettings.archive")}</strong>
+              <p>{translate("workspaceSettings.archiveWarning")}</p>
             </div>
             <button className="button danger" type="button" disabled={saving} onClick={archive}>
-              <Archive size={16} aria-hidden="true" /> {saving ? "Archiving…" : "Archive workspace"}
+              <Archive size={16} aria-hidden="true" />{" "}
+              {saving
+                ? translate("workspaceSettings.archiving")
+                : translate("workspaceSettings.archive")}
             </button>
           </div>
         )}

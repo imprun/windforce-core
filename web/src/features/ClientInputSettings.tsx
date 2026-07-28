@@ -6,6 +6,7 @@ import type { AppSummary, Client, InputConfig } from "../lib/api";
 import { useApp, useAsync } from "../lib/app-context";
 import { groupInputSettings, inputSettingGroupMatches } from "../lib/input-setting-groups";
 import { Link } from "../lib/router";
+import { translate } from "../shared/i18n";
 import { InputConfigDialog } from "./InputConfigDialog";
 import { InputSettingScopeList } from "./InputSettingScopeList";
 import { countLabel, InputSettingSummaryTable } from "./InputSettingSummaryTable";
@@ -85,14 +86,14 @@ function ClientInputSettingsSummary({
   return (
     <>
       <Panel
-        title="Input settings"
-        subtitle="Apps with client-specific values. Open an app to inspect and edit its action-level settings."
+        title={translate("audit.inputSettings")}
+        subtitle={translate("inputSettings.clientSubtitle")}
         actions={
           apps.length ? (
             <div className="inlineActions">
               <SelectControl
                 value={selectedApp}
-                ariaLabel="App for new input settings"
+                ariaLabel={translate("inputSettings.appForNew")}
                 onChange={setSelectedApp}
                 options={apps.map((app) => ({ value: app.app_key, label: app.app_key }))}
               />
@@ -103,7 +104,7 @@ function ClientInputSettingsSummary({
                 onClick={() => setEditing({ appKey: selectedApp })}
               >
                 <Plus size={16} aria-hidden="true" />
-                Add settings
+                {translate("inputSettings.add")}
               </button>
             </div>
           ) : null
@@ -112,7 +113,9 @@ function ClientInputSettingsSummary({
         {configs.length === 0 ? (
           <EmptyState
             title={
-              apps.length ? "No input settings for this client." : "No released apps are available."
+              apps.length
+                ? translate("inputSettings.clientEmpty")
+                : translate("inputSettings.noReleasedApps")
             }
           />
         ) : (
@@ -122,29 +125,43 @@ function ClientInputSettingsSummary({
                 className="searchInput"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search apps, action keys, or setting keys…"
-                aria-label="Search app input settings"
+                placeholder={translate("inputSettings.searchClient")}
+                aria-label={translate("inputSettings.searchClient")}
               />
-              <span>{countLabel(filteredGroups.length, "configured app")}</span>
+              <span>
+                {countLabel(
+                  filteredGroups.length,
+                  translate("inputSettings.configuredApp"),
+                  translate("inputSettings.configuredApps"),
+                )}
+              </span>
             </div>
             {filteredGroups.length ? (
               <InputSettingSummaryTable
                 id="clientInputSettingsSummary"
-                scopeHeading="App"
+                scopeHeading={translate("apps.column.app")}
                 rows={filteredGroups.map((group) => {
                   const app = appsByKey.get(group.key);
                   return {
                     group,
                     label: group.key,
-                    subtitle: app ? "Released app" : "Release unavailable",
+                    subtitle: app
+                      ? translate("inputSettings.releasedApp")
+                      : translate("inputSettings.releaseUnavailable"),
                     href: `/clients/${client.id}/input-settings/${encodeURIComponent(group.key)}`,
-                    coverage: countLabel(group.configs.length, "action scope"),
-                    coverageDetail: group.actionKeys.map((key) => key || "All actions").join(", "),
+                    coverage: countLabel(
+                      group.configs.length,
+                      translate("inputSettings.actionScopeLower"),
+                      translate("inputSettings.actionScopes"),
+                    ),
+                    coverageDetail: group.actionKeys
+                      .map((key) => key || translate("appDetail.allActions"))
+                      .join(", "),
                   };
                 })}
               />
             ) : (
-              <EmptyState title="No app settings match the search." />
+              <EmptyState title={translate("inputSettings.noAppMatches")} />
             )}
           </>
         )}
@@ -201,12 +218,12 @@ function ClientAppInputSettingsDetail({
   return (
     <>
       <Panel
-        title={`${appKey} settings`}
-        subtitle={`Action-level values applied when ${client.name} runs this app.`}
+        title={translate("inputSettings.namedSettings", { name: appKey })}
+        subtitle={translate("inputSettings.clientAppSubtitle", { client: client.name })}
         actions={
           <>
             <Link className="button" to={`/clients/${client.id}/input-settings`}>
-              Back to apps
+              {translate("inputSettings.backToApps")}
             </Link>
             {app ? (
               <button
@@ -215,7 +232,7 @@ function ClientAppInputSettingsDetail({
                 onClick={() => setEditing({ appKey })}
               >
                 <Plus size={16} aria-hidden="true" />
-                Add settings
+                {translate("inputSettings.add")}
               </button>
             ) : null}
           </>
@@ -225,11 +242,11 @@ function ClientAppInputSettingsDetail({
         {detail.loading && app && !detail.data ? <Loading /> : null}
         {!app ? (
           <div className="inlineNotice">
-            The active release is unavailable. Existing values are read-only.
+            {translate("inputSettings.releaseUnavailableReadOnly")}
           </div>
         ) : null}
         {scopedConfigs.length === 0 ? (
-          <EmptyState title="No input settings for this app and client." />
+          <EmptyState title={translate("inputSettings.appClientEmpty")} />
         ) : null}
         {scopedConfigs.length ? (
           <InputSettingScopeList
@@ -238,11 +255,11 @@ function ClientAppInputSettingsDetail({
               const action = config.action_key ? actionsByKey.get(config.action_key) : undefined;
               const actionName = action
                 ? actionDisplayName(action.display_name) || action.action_key
-                : config.action_key || "All actions";
+                : config.action_key || translate("appDetail.allActions");
               return {
                 key: `${config.app_key}-${config.action_key || "all"}`,
                 config,
-                primaryLabel: "App",
+                primaryLabel: translate("apps.column.app"),
                 primaryValue: app ? (
                   <Link to={`/apps/${app.git_source_id}/input-settings/client/${client.id}`}>
                     {appKey}
@@ -250,12 +267,17 @@ function ClientAppInputSettingsDetail({
                 ) : (
                   appKey
                 ),
-                primaryMeta: app ? "Released app" : "Release unavailable",
+                primaryMeta: app
+                  ? translate("inputSettings.releasedApp")
+                  : translate("inputSettings.releaseUnavailable"),
                 actionName,
                 actionMeta: config.action_key
-                  ? `${config.action_key} · Action override`
-                  : "App-wide client override",
-                editLabel: `Edit ${appKey} input settings for ${actionName}`,
+                  ? translate("inputSettings.actionOverride", { action: config.action_key })
+                  : translate("inputSettings.appWideOverride"),
+                editLabel: translate("inputSettings.editAppAction", {
+                  app: appKey,
+                  action: actionName,
+                }),
                 editDisabled: !app,
                 onEdit: () => setEditing({ appKey, config }),
               };
@@ -294,14 +316,14 @@ function ClientInputConfigDialog({
   const state = useAsync(() => api.app(appKey), [api, appKey]);
   if (state.error) {
     return (
-      <Modal title="Input Settings" onClose={onClose}>
+      <Modal title={translate("audit.inputSettings")} onClose={onClose}>
         <ErrorNotice message={state.error} onRetry={state.reload} />
       </Modal>
     );
   }
   if (!state.data)
     return (
-      <Modal title="Input Settings" onClose={onClose}>
+      <Modal title={translate("audit.inputSettings")} onClose={onClose}>
         <Loading />
       </Modal>
     );

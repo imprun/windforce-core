@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Field, Modal } from "../components/ui";
 import { type Client, errorMessage } from "../lib/api";
 import { useApp } from "../lib/app-context";
+import { translate } from "../shared/i18n";
 
 export function ClientDialog({
   client,
@@ -30,10 +31,7 @@ export function ClientDialog({
   }
 
   function close() {
-    if (
-      issuedToken &&
-      !window.confirm("This API token is shown only once. Close without copying it?")
-    ) {
+    if (issuedToken && !window.confirm(translate("clients.closeWithoutCopying"))) {
       return;
     }
     finish();
@@ -41,7 +39,7 @@ export function ClientDialog({
 
   async function save() {
     if (!normalizedName) {
-      setError("Name is required.");
+      setError(translate("trigger.validation.nameRequired"));
       return;
     }
     setBusy(true);
@@ -49,14 +47,14 @@ export function ClientDialog({
     try {
       if (client) {
         await api.updateClient(client.id, { name: normalizedName });
-        notify("ok", `Updated ${normalizedName}.`);
+        notify("ok", translate("clients.updated", { name: normalizedName }));
         onSaved();
       } else {
         const result = await api.createClient({ name: normalizedName });
         setIssuedToken(result.api_token);
         setHasToken(result.client.has_token);
         setPendingRefresh(true);
-        notify("ok", `Created ${normalizedName}.`);
+        notify("ok", translate("clients.created", { name: normalizedName }));
       }
     } catch (cause) {
       setError(errorMessage(cause));
@@ -67,10 +65,7 @@ export function ClientDialog({
 
   async function rotateToken() {
     if (!client) return;
-    if (
-      hasToken &&
-      !window.confirm("Rotate this client token? The current token will stop working immediately.")
-    ) {
+    if (hasToken && !window.confirm(translate("clients.rotateConfirm"))) {
       return;
     }
     setBusy(true);
@@ -80,7 +75,7 @@ export function ClientDialog({
       setIssuedToken(result.api_token);
       setHasToken(true);
       setPendingRefresh(true);
-      notify("ok", `Issued a new API token for ${client.name}.`);
+      notify("ok", translate("clients.tokenIssued", { name: client.name }));
     } catch (cause) {
       setError(errorMessage(cause));
     } finally {
@@ -90,11 +85,7 @@ export function ClientDialog({
 
   async function revokeToken() {
     if (!client || !hasToken) return;
-    if (
-      !window.confirm(
-        "Revoke this client token? Invocation API calls will stop working immediately.",
-      )
-    ) {
+    if (!window.confirm(translate("clients.revokeConfirm"))) {
       return;
     }
     setBusy(true);
@@ -103,7 +94,7 @@ export function ClientDialog({
       await api.revokeClientToken(client.id);
       setHasToken(false);
       setPendingRefresh(true);
-      notify("ok", `Revoked the API token for ${client.name}.`);
+      notify("ok", translate("clients.tokenRevoked", { name: client.name }));
     } catch (cause) {
       setError(errorMessage(cause));
     } finally {
@@ -114,7 +105,7 @@ export function ClientDialog({
   async function copyToken() {
     try {
       await navigator.clipboard.writeText(issuedToken);
-      notify("ok", "Copied the client API token.");
+      notify("ok", translate("clients.tokenCopied"));
     } catch (cause) {
       setError(errorMessage(cause));
     }
@@ -123,15 +114,15 @@ export function ClientDialog({
   async function remove() {
     if (!client) return;
     if (hasToken) {
-      setError("Revoke the active API token before deleting this client.");
+      setError(translate("clients.revokeBeforeDelete"));
       return;
     }
-    if (!window.confirm(`Delete client ${client.name}?`)) return;
+    if (!window.confirm(translate("clients.deleteConfirm", { name: client.name }))) return;
     setBusy(true);
     setError("");
     try {
       await api.deleteClient(client.id);
-      notify("ok", `Deleted ${client.name}.`);
+      notify("ok", translate("clients.deleted", { name: client.name }));
       onDeleted();
     } catch (cause) {
       setError(errorMessage(cause));
@@ -141,11 +132,9 @@ export function ClientDialog({
 
   if (issuedToken) {
     return (
-      <Modal title="Save client API token" onClose={close}>
-        <div className="inlineNotice">
-          This token is shown only once. Store it in the calling system before closing this dialog.
-        </div>
-        <Field label="API token">
+      <Modal title={translate("clients.saveToken")} onClose={close}>
+        <div className="inlineNotice">{translate("clients.saveTokenHint")}</div>
+        <Field label={translate("settings.apiToken")}>
           <input
             className="mono"
             readOnly
@@ -158,10 +147,10 @@ export function ClientDialog({
           <span />
           <div className="dialogFooterActions">
             <button className="button" type="button" onClick={() => void copyToken()}>
-              Copy token
+              {translate("clients.copyToken")}
             </button>
             <button className="button primary" type="button" onClick={finish}>
-              Done
+              {translate("common.done")}
             </button>
           </div>
         </footer>
@@ -170,18 +159,23 @@ export function ClientDialog({
   }
 
   return (
-    <Modal title={client ? "Edit Client" : "Register Client"} onClose={close}>
+    <Modal
+      title={client ? translate("clients.edit") : translate("clients.register")}
+      onClose={close}
+    >
       <div className="formGrid">
-        <Field label="Name">
+        <Field label={translate("common.name")}>
           <input maxLength={200} value={name} onChange={(event) => setName(event.target.value)} />
         </Field>
         {client ? (
-          <Field label="Invocation API token">
+          <Field label={translate("clients.invocationToken")}>
             <div>
-              <p>{hasToken ? "Active" : "Not issued"}</p>
+              <p>
+                {hasToken ? translate("workspace.status.active") : translate("clients.notIssued")}
+              </p>
               <div className="dialogFooterActions">
                 <button className="button" type="button" disabled={busy} onClick={rotateToken}>
-                  {hasToken ? "Rotate token" : "Issue token"}
+                  {hasToken ? translate("clients.rotateToken") : translate("clients.issueToken")}
                 </button>
                 <button
                   className="button danger"
@@ -189,19 +183,14 @@ export function ClientDialog({
                   disabled={busy || !hasToken}
                   onClick={revokeToken}
                 >
-                  Revoke token
+                  {translate("clients.revokeToken")}
                 </button>
               </div>
-              <p className="fieldHint">
-                The bearer grants access only to this client&apos;s public API routes in this
-                workspace.
-              </p>
+              <p className="fieldHint">{translate("clients.tokenScopeHint")}</p>
             </div>
           </Field>
         ) : (
-          <div className="inlineNotice">
-            A client API token will be generated and shown once after registration.
-          </div>
+          <div className="inlineNotice">{translate("clients.registrationTokenHint")}</div>
         )}
       </div>
       {error ? <div className="inlineNotice error">{error}</div> : null}
@@ -214,13 +203,13 @@ export function ClientDialog({
               disabled={busy || hasToken}
               onClick={remove}
             >
-              Delete
+              {translate("common.delete")}
             </button>
           ) : null}
         </span>
         <div className="dialogFooterActions">
           <button className="button" type="button" disabled={busy} onClick={close}>
-            Cancel
+            {translate("common.cancel")}
           </button>
           <button
             className="button primary"
@@ -228,7 +217,11 @@ export function ClientDialog({
             disabled={busy || !dirty || !normalizedName}
             onClick={save}
           >
-            {busy ? "Saving…" : client ? "Save changes" : "Create client"}
+            {busy
+              ? translate("common.saving")
+              : client
+                ? translate("trigger.saveChanges")
+                : translate("clients.create")}
           </button>
         </div>
       </footer>

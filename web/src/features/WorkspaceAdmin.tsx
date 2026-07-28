@@ -2,12 +2,13 @@ import { Check, Copy } from "lucide-react";
 import type { Workspace } from "../lib/api";
 import { useApp } from "../lib/app-context";
 import { useRouter } from "../lib/router";
+import { translate } from "../shared/i18n";
 
 export function WorkspaceStatus({ workspace }: { workspace: Workspace }) {
   return workspace.status === "active" ? (
-    <span className="badge badge-good">Active</span>
+    <span className="badge badge-good">{translate("workspace.status.active")}</span>
   ) : (
-    <span className="badge badge-neutral">Archived</span>
+    <span className="badge badge-neutral">{translate("common.archived")}</span>
   );
 }
 
@@ -25,7 +26,7 @@ export function WorkspaceActivation({
   if (current) {
     return (
       <span className="badge badge-current">
-        <Check size={13} aria-hidden="true" /> Current
+        <Check size={13} aria-hidden="true" /> {translate("workspace.currentBadge")}
       </span>
     );
   }
@@ -37,15 +38,15 @@ export function WorkspaceActivation({
       disabled={workspace.status === "archived"}
       title={
         workspace.status === "archived"
-          ? "Archived workspaces cannot be selected"
-          : `Switch to ${workspace.name}`
+          ? translate("workspace.archivedCannotSelect")
+          : translate("workspace.switchToNamed", { name: workspace.name })
       }
       onClick={() => {
         updateSettings({ ...settings, workspace: workspace.id });
         navigate("/");
       }}
     >
-      {compact ? "Switch" : "Switch to workspace"}
+      {compact ? translate("workspace.switchShort") : translate("workspace.switchTo")}
     </button>
   );
 }
@@ -54,25 +55,23 @@ export function OneTimeWorkspaceToken({ token }: { token: string }) {
   const { notify } = useApp();
   return (
     <div className="oneTimeToken">
-      <p className="fieldLabel">One-time workspace token</p>
+      <p className="fieldLabel">{translate("workspace.oneTimeToken")}</p>
       <div className="copyField">
         <code>{token}</code>
         <button
           className="button iconButton"
           type="button"
-          title="Copy token"
-          aria-label="Copy workspace token"
+          title={translate("workspace.copyToken")}
+          aria-label={translate("workspace.copyToken")}
           onClick={async () => {
             await navigator.clipboard.writeText(token);
-            notify("ok", "Workspace token copied.");
+            notify("ok", translate("workspace.tokenCopied"));
           }}
         >
           <Copy size={16} aria-hidden="true" />
         </button>
       </div>
-      <p className="fieldHint">
-        This value is shown once. Rotating it immediately invalidates the previous token.
-      </p>
+      <p className="fieldHint">{translate("workspace.oneTimeTokenHint")}</p>
     </div>
   );
 }

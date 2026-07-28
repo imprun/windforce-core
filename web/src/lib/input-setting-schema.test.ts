@@ -1,5 +1,8 @@
-import { describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test } from "vitest";
+import { setLocale } from "../shared/i18n";
 import { inputSettingDefinitions, validateInputSettingValue } from "./input-setting-schema";
+
+beforeEach(() => setLocale("en"));
 
 describe("inputSettingDefinitions", () => {
   test("combines request fields and operator-only settings", () => {

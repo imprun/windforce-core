@@ -2,30 +2,17 @@ import { EmptyState } from "../components/ui";
 import type { AuditChanges, AuditEvent } from "../lib/api";
 import { formatRelative, formatTime } from "../lib/format";
 import { Link } from "../lib/router";
+import { translate } from "../shared/i18n";
 
-const categoryLabels: Record<string, string> = {
-  repository: "Repository",
-  release: "Release",
-  client: "Client Registry",
-  input_settings: "Input Settings",
-  webhook: "Webhook",
-};
-
-const changeLabels: Array<[keyof AuditChanges, string]> = [
-  ["added", "Added"],
-  ["updated", "Updated"],
-  ["removed", "Removed"],
-  ["locked", "Locked"],
-  ["unlocked", "Unlocked"],
-];
+const changeKeys: Array<keyof AuditChanges> = ["added", "updated", "removed", "locked", "unlocked"];
 
 export function auditChangeGroups(
   changes?: AuditChanges,
 ): Array<{ label: string; keys: string[] }> {
   if (!changes) return [];
-  return changeLabels.flatMap(([key, label]) => {
+  return changeKeys.flatMap((key) => {
     const keys = changes[key] || [];
-    return keys.length ? [{ label, keys }] : [];
+    return keys.length ? [{ label: auditChangeLabel(key), keys }] : [];
   });
 }
 
@@ -46,16 +33,22 @@ function AuditScope({ event }: { event: AuditEvent }) {
           className={event.app_key ? "cellSub" : "cellTitle"}
           to={`/clients/${event.client_id}`}
         >
-          {event.client_name || "Registered client"}
+          {event.client_name || translate("audit.registeredClient")}
         </Link>
       ) : null}
-      {event.action_key ? <span className="cellSub mono">Action {event.action_key}</span> : null}
+      {event.action_key ? (
+        <span className="cellSub mono">
+          {translate("audit.actionNamed", { action: event.action_key })}
+        </span>
+      ) : null}
       {event.webhook_subscription_id ? (
         <Link
           className={event.app_key || event.client_id ? "cellSub" : "cellTitle"}
           to={`/settings/webhooks/${event.webhook_subscription_id}/audit`}
         >
-          Webhook {event.webhook_subscription_id.slice(0, 12)}…
+          {translate("audit.webhookNamed", {
+            id: `${event.webhook_subscription_id.slice(0, 12)}…`,
+          })}
         </Link>
       ) : null}
       {!event.app_key &&
@@ -63,14 +56,16 @@ function AuditScope({ event }: { event: AuditEvent }) {
       !event.action_key &&
       !event.webhook_subscription_id &&
       event.git_source_id ? (
-        <span className="cellTitle">Repository source #{event.git_source_id}</span>
+        <span className="cellTitle">
+          {translate("audit.repositorySourceNamed", { id: event.git_source_id })}
+        </span>
       ) : null}
       {!event.app_key &&
       !event.client_id &&
       !event.action_key &&
       !event.git_source_id &&
       !event.webhook_subscription_id ? (
-        <span className="cellSub">Workspace</span>
+        <span className="cellSub">{translate("settingsNav.workspace")}</span>
       ) : null}
     </div>
   );
@@ -91,31 +86,33 @@ function AuditDetail({ event }: { event: AuditEvent }) {
   }
   return (
     <span className={event.detail ? "auditDetail" : "cellSub"}>
-      {event.detail || "No additional detail"}
+      {event.detail || translate("trigger.audit.noDetail")}
     </span>
   );
 }
 
 export function AuditEventTable({
   events,
-  emptyTitle = "No audit events match this view.",
+  emptyTitle,
 }: {
   events: AuditEvent[];
   emptyTitle?: string;
 }) {
-  if (events.length === 0) return <EmptyState title={emptyTitle} />;
+  if (events.length === 0) {
+    return <EmptyState title={emptyTitle || translate("audit.empty")} />;
+  }
 
   return (
     <div className="tableWrap auditTableWrap">
       <table className="table auditTable" id="auditEvents">
         <thead>
           <tr>
-            <th>When</th>
-            <th>Actor</th>
-            <th>Category</th>
-            <th>Change</th>
-            <th>Scope</th>
-            <th>Detail</th>
+            <th>{translate("trigger.delivery.when")}</th>
+            <th>{translate("settings.actor")}</th>
+            <th>{translate("audit.category")}</th>
+            <th>{translate("audit.change")}</th>
+            <th>{translate("audit.scope")}</th>
+            <th>{translate("audit.detail")}</th>
           </tr>
         </thead>
         <tbody>
@@ -127,9 +124,7 @@ export function AuditEventTable({
               </td>
               <td>{event.actor || "system"}</td>
               <td>
-                <span className="badge auditCategory">
-                  {categoryLabels[event.category] || event.category}
-                </span>
+                <span className="badge auditCategory">{auditCategoryLabel(event.category)}</span>
               </td>
               <td>
                 <span className="cellTitle">{event.summary}</span>
@@ -147,4 +142,22 @@ export function AuditEventTable({
       </table>
     </div>
   );
+}
+
+function auditCategoryLabel(category: string): string {
+  if (category === "repository") return translate("audit.repository");
+  if (category === "release") return translate("audit.release");
+  if (category === "client") return translate("navigation.clientRegistry");
+  if (category === "input_settings") return translate("audit.inputSettings");
+  if (category === "webhook") return translate("settingsNav.webhooks");
+  if (category === "workspace") return translate("settingsNav.workspace");
+  return category;
+}
+
+function auditChangeLabel(change: keyof AuditChanges): string {
+  if (change === "added") return translate("audit.change.added");
+  if (change === "updated") return translate("audit.change.updated");
+  if (change === "removed") return translate("audit.change.removed");
+  if (change === "locked") return translate("audit.change.locked");
+  return translate("audit.change.unlocked");
 }

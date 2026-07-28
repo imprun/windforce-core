@@ -1,5 +1,6 @@
 import { ErrorNotice, Loading, Panel } from "../components/ui";
 import { useApp, useAsync } from "../lib/app-context";
+import { translate } from "../shared/i18n";
 import { AuditEventTable } from "./AuditEventTable";
 
 export function WebhookAudit({ subscriptionID }: { subscriptionID: string }) {
@@ -13,18 +14,18 @@ export function WebhookAudit({ subscriptionID }: { subscriptionID: string }) {
 
   return (
     <Panel
-      title="Webhook audit"
-      subtitle="Configuration, test, retry, and deletion decisions recorded for this subscription."
+      title={translate("webhook.audit")}
+      subtitle={translate("webhook.auditHint")}
       actions={
         <button className="button" type="button" onClick={state.reload}>
-          Refresh
+          {translate("common.refresh")}
         </button>
       }
     >
       {state.error ? <ErrorNotice message={state.error} onRetry={state.reload} /> : null}
-      {state.loading && !state.data ? <Loading label="Loading audit events…" /> : null}
+      {state.loading && !state.data ? <Loading label={translate("audit.loading")} /> : null}
       {state.data ? (
-        <AuditEventTable events={events} emptyTitle="No audit events recorded for this webhook." />
+        <AuditEventTable events={events} emptyTitle={translate("webhook.noAuditEvents")} />
       ) : null}
     </Panel>
   );

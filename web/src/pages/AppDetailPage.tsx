@@ -34,16 +34,17 @@ import { formatJSON, formatRelative, formatTime, shortSHA } from "../lib/format"
 import { displayRepoURL, forgeCommitURL, forgeName, forgeTreeURL } from "../lib/repo";
 import { Link, useRouter } from "../lib/router";
 import { describeSchema, formatSchemaValue, type SchemaField } from "../lib/schema-document";
+import { type TranslationKey, translate } from "../shared/i18n";
 
 const tabs = [
-  { key: "overview", label: "Overview" },
-  { key: "docs", label: "Docs" },
-  { key: "triggers", label: "Triggers" },
-  { key: "input-settings", label: "Input Settings" },
-  { key: "monitoring", label: "Monitoring" },
-  { key: "repository", label: "Repository" },
-  { key: "releases", label: "Releases" },
-  { key: "audit", label: "Audit" },
+  { key: "overview", labelKey: "appDetail.tab.overview" as TranslationKey },
+  { key: "docs", labelKey: "appDetail.tab.docs" as TranslationKey },
+  { key: "triggers", labelKey: "trigger.title" as TranslationKey },
+  { key: "input-settings", labelKey: "audit.inputSettings" as TranslationKey },
+  { key: "monitoring", labelKey: "navigation.monitoring" as TranslationKey },
+  { key: "repository", labelKey: "audit.repository" as TranslationKey },
+  { key: "releases", labelKey: "appDetail.tab.releases" as TranslationKey },
+  { key: "audit", labelKey: "navigation.audit" as TranslationKey },
 ] as const;
 
 type TabKey = (typeof tabs)[number]["key"];
@@ -81,7 +82,7 @@ export function AppDetailPage({
 
   if (state.loading && !state.data) {
     return (
-      <Layout title="App">
+      <Layout title={translate("apps.column.app")}>
         <Loading />
       </Layout>
     );
@@ -89,7 +90,7 @@ export function AppDetailPage({
 
   if (state.error) {
     return (
-      <Layout title="App">
+      <Layout title={translate("apps.column.app")}>
         <ErrorNotice message={state.error} onRetry={state.reload} />
       </Layout>
     );
@@ -97,10 +98,10 @@ export function AppDetailPage({
 
   if (!source && !app) {
     return (
-      <Layout title="App not found">
-        <EmptyState title="This app is not registered in the current workspace.">
+      <Layout title={translate("appDetail.notFound")}>
+        <EmptyState title={translate("appDetail.notRegistered")}>
           <Link className="button" to="/">
-            Back to Apps
+            {translate("appDetail.backToApps")}
           </Link>
         </EmptyState>
       </Layout>
@@ -112,14 +113,18 @@ export function AppDetailPage({
   // and publishing then have nothing to operate on.
   const visibleTabs = source ? tabs : tabs.filter((item) => item.key !== "repository");
 
-  const title = app?.app_key ?? source?.name ?? "App";
+  const title = app?.app_key ?? source?.name ?? translate("apps.column.app");
   return (
     <Layout
       title={title}
       subtitle={
         source
-          ? `Repository source #${source.id}${source.name !== title ? ` · ${source.name}` : ""} · ${displayRepoURL(source.repo_url)}`
-          : "Repository source removed · the released contract is still active"
+          ? translate("appDetail.repositorySubtitle", {
+              id: source.id,
+              name: source.name !== title ? ` · ${source.name}` : "",
+              repository: displayRepoURL(source.repo_url),
+            })
+          : translate("appDetail.repositoryRemovedActive")
       }
       actions={
         <>
@@ -132,7 +137,7 @@ export function AppDetailPage({
               state.reload();
             }}
           >
-            Refresh
+            {translate("common.refresh")}
           </button>
           {source ? (
             <SourceReleaseActions
@@ -148,14 +153,14 @@ export function AppDetailPage({
         </>
       }
     >
-      <nav className="tabBar" aria-label="App detail tabs">
+      <nav className="tabBar" aria-label={translate("appDetail.tabs")}>
         {visibleTabs.map((item) => (
           <Link
             key={item.key}
             className={item.key === activeTab ? "tab active" : "tab"}
             to={item.key === "overview" ? `/apps/${sourceID}` : `/apps/${sourceID}/${item.key}`}
           >
-            {item.label}
+            {translate(item.labelKey)}
           </Link>
         ))}
       </nav>
@@ -177,9 +182,9 @@ export function AppDetailPage({
         <AppTriggers sourceID={sourceID} appKey={app.app_key} actions={detail.actions} />
       ) : null}
       {activeTab === "triggers" && (!app || !detail) ? (
-        <Panel title="Triggers" subtitle="Inbound sources that admit Runs for this App.">
-          <EmptyState title="Publish an App release before adding a Trigger.">
-            <p>A Trigger needs an Action target from the active release.</p>
+        <Panel title={translate("trigger.title")} subtitle={translate("appDetail.triggerHint")}>
+          <EmptyState title={translate("trigger.publishFirst")}>
+            <p>{translate("trigger.needsAction")}</p>
           </EmptyState>
         </Panel>
       ) : null}
@@ -244,12 +249,12 @@ function OverviewTab({
 
   if (!app || !detail) {
     return (
-      <Panel title="Active contract" subtitle="What workers can execute right now.">
-        <EmptyState title="No release published yet.">
-          <p>
-            This repository source is registered but has no worker-visible contract. Sync the source
-            on the Repository tab, then publish the synchronized revision to workers.
-          </p>
+      <Panel
+        title={translate("appDetail.activeContract")}
+        subtitle={translate("appDetail.activeContractHint")}
+      >
+        <EmptyState title={translate("appDetail.noRelease")}>
+          <p>{translate("appDetail.noReleaseHint")}</p>
         </EmptyState>
       </Panel>
     );
@@ -258,62 +263,68 @@ function OverviewTab({
   const routeTag = app.effective_route_tag || app.tag;
   const tagSummary = summary.data?.by_tag?.find((item) => item.tag === routeTag);
   const tagActivity = summary.error
-    ? "unavailable"
+    ? translate("appDetail.unavailable")
     : summary.loading
-      ? "checking…"
+      ? translate("settings.health.checking")
       : tagSummary
-        ? `${tagSummary.queued_count} queued · ${tagSummary.running_count} running · ${tagSummary.completed_count_recent} completed in 24h`
-        : "no recent jobs on this tag";
+        ? translate("appDetail.tagActivity", {
+            queued: tagSummary.queued_count,
+            running: tagSummary.running_count,
+            completed: tagSummary.completed_count_recent,
+          })
+        : translate("appDetail.noRecentTagJobs");
 
   return (
     <>
       <Panel
-        title="Active release"
-        subtitle="The source, routing, and execution settings selected for workers."
+        title={translate("release.active")}
+        subtitle={translate("appDetail.activeReleaseHint")}
       >
         <div className="releaseSummary">
           <div className="releaseIdentity">
-            <p className="eyebrow">Release commit</p>
+            <p className="eyebrow">{translate("appDetail.releaseCommit")}</p>
             <p className="releaseCommit">
               <CommitRef repoURL={source?.repo_url || ""} commit={app.commit_sha} />
             </p>
-            <p className="cellSub">Updated {formatRelative(app.updated_at)}</p>
+            <p className="cellSub">
+              {translate("appDetail.updatedRelative", { time: formatRelative(app.updated_at) })}
+            </p>
           </div>
           <DefinitionList
             className="overviewFacts"
             items={[
               [
-                "Source code",
+                translate("appDetail.sourceCode"),
                 <SourceCodeRef
                   repoURL={source?.repo_url || ""}
                   commit={app.commit_sha}
                   subpath={source?.subpath || ""}
                 />,
               ],
-              ["Entrypoint", <span className="mono">{app.entrypoint}</span>],
-              ["Script language", app.script_lang],
+              [translate("appDetail.entrypoint"), <span className="mono">{app.entrypoint}</span>],
+              [translate("appDetail.scriptLanguage"), app.script_lang],
               [
-                "Execution bundle",
+                translate("appDetail.executionBundle"),
                 app.bundle_status === "ready" && app.bundle_digest ? (
                   <span>
-                    <strong>Ready</strong> ·{" "}
+                    <strong>{translate("info.ready")}</strong> ·{" "}
                     <span className="mono">
                       {shortSHA(app.bundle_digest.replace(/^sha256:/, ""), 12)}
                     </span>
                   </span>
                 ) : (
-                  "Missing — sync and publish a new release"
+                  translate("appDetail.bundleMissing")
                 ),
               ],
-              ["Route tag", <span className="mono">{routeTag}</span>],
+              [translate("apps.column.routeTag"), <span className="mono">{routeTag}</span>],
               [
-                "Execution",
+                translate("appDetail.execution"),
                 `${app.timeout_s}s${app.required_capabilities?.length ? ` · ${app.required_capabilities.join(", ")}` : ""}`,
               ],
               [
-                "API reference",
+                translate("appDetail.apiReference"),
                 <Link to={`/apps/${sourceID}/docs/reference`}>
-                  {detail.actions.length} action(s)
+                  {translate("appDetail.actionCount", { count: detail.actions.length })}
                 </Link>,
               ],
             ]}
@@ -321,20 +332,29 @@ function OverviewTab({
         </div>
       </Panel>
 
-      <Panel title="Readiness" subtitle="Current source and route signals for this release.">
+      <Panel title={translate("info.readiness")} subtitle={translate("appDetail.readinessHint")}>
         <DefinitionList
           className="readinessFacts"
           items={[
-            ["Registered", source ? formatTime(source.created_at) : "repository source removed"],
-            ["Worker artifact", app.bundle_status === "ready" ? "Ready" : "Not ready"],
-            ["Last release", `${formatTime(app.updated_at)} (${formatRelative(app.updated_at)})`],
             [
-              "Latest synchronized source",
+              translate("release.registered"),
+              source ? formatTime(source.created_at) : translate("apps.repositorySourceRemoved"),
+            ],
+            [
+              translate("appDetail.workerArtifact"),
+              app.bundle_status === "ready" ? translate("info.ready") : translate("info.notReady"),
+            ],
+            [
+              translate("apps.column.lastRelease"),
+              `${formatTime(app.updated_at)} (${formatRelative(app.updated_at)})`,
+            ],
+            [
+              translate("appDetail.latestSynchronizedSource"),
               source?.last_synced_commit
                 ? `${shortSHA(source.last_synced_commit, 12)} · ${formatRelative(source.last_synced_at)}`
-                : "Not synchronized",
+                : translate("appDetail.notSynchronized"),
             ],
-            [`Jobs on route tag ${routeTag}`, tagActivity],
+            [translate("appDetail.jobsOnRouteTag", { tag: routeTag }), tagActivity],
           ]}
         />
       </Panel>
@@ -365,29 +385,29 @@ function ReleasesTab({
 
   return (
     <Panel
-      title="Release history"
-      subtitle="Who published which worker-visible contract, and why. Configuration changes are on the Audit tab."
+      title={translate("appDetail.releaseHistory")}
+      subtitle={translate("appDetail.releaseHistoryHint")}
     >
       {state.error ? <ErrorNotice message={state.error} onRetry={state.reload} /> : null}
       {state.loading ? <Loading /> : null}
       {state.data && state.data.length === 0 ? (
-        <EmptyState title="No releases recorded yet." />
+        <EmptyState title={translate("appDetail.noReleaseHistory")} />
       ) : null}
       {state.data && state.data.length > 0 ? (
         <div className="tableWrap">
           <table className="table" id="releaseHistory">
             <thead>
               <tr>
-                <th>Status</th>
-                <th>When</th>
-                <th>Actor</th>
-                <th>Commit</th>
-                <th>Source</th>
-                <th title="Immutable identifier used for active release selection and rollback">
-                  Release ID
+                <th>{translate("common.status")}</th>
+                <th>{translate("trigger.delivery.when")}</th>
+                <th>{translate("settings.actor")}</th>
+                <th>{translate("appDetail.commit")}</th>
+                <th>{translate("appDetail.source")}</th>
+                <th title={translate("appDetail.releaseIDHint")}>
+                  {translate("appDetail.releaseID")}
                 </th>
-                <th>Note</th>
-                <th>Action</th>
+                <th>{translate("appDetail.note")}</th>
+                <th>{translate("trigger.column.action")}</th>
               </tr>
             </thead>
             <tbody>
@@ -398,12 +418,18 @@ function ReleasesTab({
                       <span
                         className={`badge ${item.bundle_status === "ready" ? "badge-good" : "badge-warning"}`}
                       >
-                        {item.bundle_status === "ready" ? "Active" : "Active · bundle missing"}
+                        {item.bundle_status === "ready"
+                          ? translate("workspace.status.active")
+                          : translate("appDetail.activeBundleMissing")}
                       </span>
                     ) : item.bundle_status === "ready" ? (
-                      <span className="badge badge-neutral">Historical</span>
+                      <span className="badge badge-neutral">
+                        {translate("appDetail.historical")}
+                      </span>
                     ) : (
-                      <span className="badge badge-warning">Bundle missing</span>
+                      <span className="badge badge-warning">
+                        {translate("appDetail.bundleMissingShort")}
+                      </span>
                     )}
                   </td>
                   <td>
@@ -416,7 +442,9 @@ function ReleasesTab({
                   </td>
                   <td>{item.source}</td>
                   <td className="mono">
-                    <span title={`Release ID ${item.id}`}>{shortSHA(item.id, 12)}</span>
+                    <span title={translate("appDetail.releaseIDNamed", { id: item.id })}>
+                      {shortSHA(item.id, 12)}
+                    </span>
                   </td>
                   <td>{item.message || "—"}</td>
                   <td>
@@ -427,7 +455,7 @@ function ReleasesTab({
                         onClick={() => setRollbackTarget(item)}
                       >
                         <RotateCcw size={15} aria-hidden="true" />
-                        Rollback
+                        {translate("release.rollback")}
                       </button>
                     ) : (
                       <span className="cellSub">—</span>
@@ -473,11 +501,12 @@ function DocsTab({
 }) {
   if (!app || !detail) {
     return (
-      <Panel title="Documentation" subtitle="Guide and action schemas from the active release.">
-        <EmptyState title="No release published yet.">
-          <p>
-            Publish a release first. Documentation is generated from that immutable source snapshot.
-          </p>
+      <Panel
+        title={translate("appDetail.documentation")}
+        subtitle={translate("appDetail.documentationHint")}
+      >
+        <EmptyState title={translate("appDetail.noRelease")}>
+          <p>{translate("appDetail.publishForDocs")}</p>
         </EmptyState>
       </Panel>
     );
@@ -490,24 +519,27 @@ function DocsTab({
       ? actions.find((item) => item.action_key === actionKey) || null
       : null;
   return (
-    <Panel title="Documentation" subtitle="Guide and action schemas from the active release.">
+    <Panel
+      title={translate("appDetail.documentation")}
+      subtitle={translate("appDetail.documentationHint")}
+    >
       <div className="docsLayout">
-        <aside className="docsNav" aria-label="Documentation navigation">
-          <p className="docsNavTitle">Docs</p>
+        <aside className="docsNav" aria-label={translate("appDetail.docsNavigation")}>
+          <p className="docsNavTitle">{translate("appDetail.tab.docs")}</p>
           <Link
             className={activeSection === "guide" ? "docsNavLink active" : "docsNavLink"}
             to={`/apps/${sourceID}/docs`}
           >
-            Guide
+            {translate("appDetail.guide")}
           </Link>
-          <p className="docsNavTitle">Actions</p>
+          <p className="docsNavTitle">{translate("common.actions")}</p>
           <Link
             className={
               activeSection === "actions" && !actionKey ? "docsNavLink active" : "docsNavLink"
             }
             to={`/apps/${sourceID}/docs/actions`}
           >
-            All actions
+            {translate("appDetail.allActions")}
           </Link>
           {actions.map((action) => (
             <Link
@@ -532,7 +564,7 @@ function DocsTab({
             <ActionReferenceDetail app={app} action={selectedAction} />
           ) : null}
           {activeSection === "actions" && !selectedAction ? (
-            <EmptyState title="Action not found in the active release." />
+            <EmptyState title={translate("appDetail.actionNotFound")} />
           ) : null}
         </section>
       </div>
@@ -558,18 +590,20 @@ function RenderedGuide({
 }) {
   if (!documentation?.available || !documentation.markdown) {
     return (
-      <EmptyState title="No README.md in the active release.">
-        <p>Add a UTF-8 README.md to the app source, then publish a release.</p>
+      <EmptyState title={translate("appDetail.noReadme")}>
+        <p>{translate("appDetail.noReadmeHint")}</p>
       </EmptyState>
     );
   }
   return (
     <article className="docsArticle">
       <header className="docsHeader">
-        <h2>Guide</h2>
+        <h2>{translate("appDetail.guide")}</h2>
         <p>
-          {documentation.path || "README.md"} pinned to release{" "}
-          <span className="mono">{shortSHA(documentation.commit_sha, 12)}</span>.
+          {translate("appDetail.pinnedToRelease", {
+            path: documentation.path || "README.md",
+            commit: shortSHA(documentation.commit_sha, 12),
+          })}
         </p>
       </header>
       <ReleaseMarkdown
@@ -588,13 +622,13 @@ function ActionReferenceList({ sourceID, actions }: { sourceID: number; actions:
       <header className="docsHeader">
         <div className="docsHeaderRow">
           <div>
-            <h2>Actions</h2>
-            <p>Select an action to review its request and result schemas.</p>
+            <h2>{translate("common.actions")}</h2>
+            <p>{translate("appDetail.selectAction")}</p>
           </div>
         </div>
       </header>
       {actions.length === 0 ? (
-        <EmptyState title="No actions in the active release." />
+        <EmptyState title={translate("appDetail.noActions")} />
       ) : (
         <div className="docsActionList">
           {actions.map((action) => (
@@ -624,9 +658,9 @@ function ActionReferenceDetail({ app, action }: { app: AppSummary; action: Actio
       <header className="docsHeader">
         <div className="docsHeaderRow">
           <div>
-            <h2>{name || `Action ${action.action_key}`}</h2>
+            <h2>{name || translate("appDetail.actionNamed", { action: action.action_key })}</h2>
             <p>
-              Action key <span className="mono">{action.action_key}</span>
+              {translate("appDetail.actionKey")} <span className="mono">{action.action_key}</span>
             </p>
           </div>
         </div>
@@ -646,8 +680,12 @@ function ActionLabel({ action }: { action: ActionView }) {
   const displayName = actionDisplayName(action.display_name);
   return (
     <span className="actionLabel">
-      <span className="actionLabelName">{displayName || `Action ${action.action_key}`}</span>
-      <span className="actionLabelKey mono">Action key {action.action_key}</span>
+      <span className="actionLabelName">
+        {displayName || translate("appDetail.actionNamed", { action: action.action_key })}
+      </span>
+      <span className="actionLabelKey mono">
+        {translate("appDetail.actionKeyNamed", { action: action.action_key })}
+      </span>
     </span>
   );
 }
@@ -691,16 +729,16 @@ function SchemaReference({
   return (
     <div className="schemaStack">
       <SchemaSection
-        title="Request body"
-        emptyMessage="This request schema has no named fields. The action accepts an unconstrained JSON value."
-        exampleLabel="Example request"
+        title={translate("appDetail.requestBody")}
+        emptyMessage={translate("appDetail.requestSchemaEmpty")}
+        exampleLabel={translate("appDetail.exampleRequest")}
         filename={schemaFilename(appKey, actionKey, "input")}
         schema={schemas.input_schema}
       />
       <SchemaSection
-        title="Result payload"
-        emptyMessage="This result schema has no named fields. The action returns an unconstrained JSON value."
-        exampleLabel="Example result"
+        title={translate("appDetail.resultPayload")}
+        emptyMessage={translate("appDetail.resultSchemaEmpty")}
+        exampleLabel={translate("appDetail.exampleResult")}
         filename={schemaFilename(appKey, actionKey, "output")}
         schema={schemas.output_schema}
       />
@@ -743,14 +781,14 @@ function SchemaSection({
           <h4>{exampleLabel}</h4>
           <span className="cellSub">
             {document.example.source === "declared"
-              ? "Declared in schema"
-              : "Generated from schema"}
+              ? translate("appDetail.declaredInSchema")
+              : translate("appDetail.generatedFromSchema")}
           </span>
         </div>
         <JsonBlock value={formatJSON(document.example.value)} maxHeight={360} />
       </div>
       <details className="schemaSource">
-        <summary>Raw JSON Schema</summary>
+        <summary>{translate("appDetail.rawSchema")}</summary>
         <JsonBlock value={formatJSON(schema)} maxHeight={480} />
       </details>
     </section>
@@ -766,10 +804,10 @@ function SchemaArtifactControls({ filename, schema }: { filename: string; schema
     try {
       await copyText(text);
       setCopied(true);
-      notify("ok", "JSON Schema copied.");
+      notify("ok", translate("appDetail.schemaCopied"));
       window.setTimeout(() => setCopied(false), 1600);
     } catch {
-      notify("error", "Could not copy JSON Schema.");
+      notify("error", translate("appDetail.schemaCopyFailed"));
     }
   };
 
@@ -788,10 +826,10 @@ function SchemaArtifactControls({ filename, schema }: { filename: string; schema
   return (
     <div className="schemaArtifactControls">
       <button className="button small" type="button" onClick={() => void handleCopy()}>
-        {copied ? "Copied" : "Copy JSON"}
+        {copied ? translate("appDetail.copied") : translate("appDetail.copyJSON")}
       </button>
       <button className="button small" type="button" onClick={handleDownload}>
-        Download JSON
+        {translate("appDetail.downloadJSON")}
       </button>
     </div>
   );
@@ -825,9 +863,9 @@ function SchemaFieldTable({ fields }: { fields: SchemaField[] }) {
       <table className="table schemaTable">
         <thead>
           <tr>
-            <th>Field</th>
-            <th>Description</th>
-            <th>Constraints</th>
+            <th>{translate("appDetail.field")}</th>
+            <th>{translate("appDetail.description")}</th>
+            <th>{translate("appDetail.constraints")}</th>
           </tr>
         </thead>
         <tbody>
@@ -841,9 +879,9 @@ function SchemaFieldTable({ fields }: { fields: SchemaField[] }) {
                     {field.format ? `${field.type} (${field.format})` : field.type}
                   </span>
                   {field.required ? (
-                    <span className="badge badge-good">Required</span>
+                    <span className="badge badge-good">{translate("appDetail.required")}</span>
                   ) : (
-                    <span className="cellSub">Optional</span>
+                    <span className="cellSub">{translate("appDetail.optional")}</span>
                   )}
                 </div>
               </td>
@@ -861,9 +899,9 @@ function SchemaFieldTable({ fields }: { fields: SchemaField[] }) {
 
 function SchemaFieldValues({ field }: { field: SchemaField }) {
   const values: Array<[string, unknown]> = [];
-  if (field.constValue !== undefined) values.push(["Fixed", field.constValue]);
-  if (field.enumValues?.length) values.push(["Allowed", field.enumValues]);
-  if (field.hasDefault) values.push(["Default", field.defaultValue]);
+  if (field.constValue !== undefined) values.push([translate("appDetail.fixed"), field.constValue]);
+  if (field.enumValues?.length) values.push([translate("appDetail.allowed"), field.enumValues]);
+  if (field.hasDefault) values.push([translate("appDetail.default"), field.defaultValue]);
   if (values.length === 0) return <span>—</span>;
   return (
     <div className="schemaFieldValues">
@@ -905,11 +943,15 @@ function SourceCodeRef({
   if (url) {
     return (
       <a href={url} target="_blank" rel="noreferrer">
-        Browse {subpath || "repository"} at {shortSHA(commit, 10)} on {forgeName(repoURL)}
+        {translate("appDetail.browseSource", {
+          path: subpath || translate("audit.repository"),
+          commit: shortSHA(commit, 10),
+          forge: forgeName(repoURL),
+        })}
       </a>
     );
   }
-  if (!repoURL) return <span>repository source removed</span>;
+  if (!repoURL) return <span>{translate("apps.repositorySourceRemoved")}</span>;
   return (
     <span className="mono">
       {displayRepoURL(repoURL)}
@@ -927,8 +969,11 @@ function MonitoringTab({ app }: { app: AppSummary | null }) {
 
   if (!app) {
     return (
-      <Panel title="Monitoring" subtitle="Aggregate job activity for this app.">
-        <EmptyState title="No release published yet, so there is no job activity." />
+      <Panel
+        title={translate("navigation.monitoring")}
+        subtitle={translate("appDetail.monitoringHint")}
+      >
+        <EmptyState title={translate("appDetail.noReleaseActivity")} />
       </Panel>
     );
   }
@@ -945,36 +990,48 @@ function MonitoringTab({ app }: { app: AppSummary | null }) {
 
   return (
     <Panel
-      title="Monitoring"
-      subtitle={`Aggregate job activity for ${app.app_key}. Individual runs live in the control-plane API and CLI.`}
+      title={translate("navigation.monitoring")}
+      subtitle={translate("appDetail.monitoringNamedHint", { app: app.app_key })}
       actions={<WindowSelector value={windowSeconds} onChange={setWindowSeconds} />}
     >
       {summary.error ? <ErrorNotice message={summary.error} onRetry={summary.reload} /> : null}
       {summary.loading && !summary.data ? <Loading /> : null}
       {summary.data ? (
         <div className="statRow" id="appMonitoring">
-          <StatTile label="Queued" value={counts?.queued_count ?? 0} tone="waiting" />
-          <StatTile label="Running" value={counts?.running_count ?? 0} tone="running" />
           <StatTile
-            label={`Completed · ${label}`}
+            label={translate("monitoring.queued")}
+            value={counts?.queued_count ?? 0}
+            tone="waiting"
+          />
+          <StatTile
+            label={translate("monitoring.running")}
+            value={counts?.running_count ?? 0}
+            tone="running"
+          />
+          <StatTile
+            label={translate("monitoring.completedWindow", { window: label })}
             value={counts?.completed_count_recent ?? 0}
             tone="good"
           />
           <StatTile
-            label={`Failed · ${label}`}
+            label={translate("monitoring.failedWindow", { window: label })}
             value={counts?.failed_count_recent ?? 0}
             tone="critical"
           />
           <StatTile
-            label={`Canceled · ${label}`}
+            label={translate("monitoring.canceledWindow", { window: label })}
             value={counts?.canceled_count_recent ?? 0}
             tone="serious"
           />
-          <StatTile label={`Failure rate · ${label}`} value={failureRate} tone="neutral" />
+          <StatTile
+            label={translate("appDetail.failureRateWindow", { window: label })}
+            value={failureRate}
+            tone="neutral"
+          />
         </div>
       ) : null}
       {summary.data && !counts ? (
-        <p className="cellSub">No job activity for this app in the selected window.</p>
+        <p className="cellSub">{translate("appDetail.noActivityWindow")}</p>
       ) : null}
     </Panel>
   );
@@ -989,16 +1046,13 @@ function AuditTab({ sourceID, appKey }: { sourceID: number; appKey: string }) {
 
   return (
     <Panel
-      title="Audit trail"
-      subtitle="Repository, release, and input-setting changes for this app."
+      title={translate("appDetail.auditTrail")}
+      subtitle={translate("appDetail.auditTrailHint")}
     >
       {state.error ? <ErrorNotice message={state.error} onRetry={state.reload} /> : null}
       {state.loading && !state.data ? <Loading /> : null}
       {state.data ? (
-        <AuditEventTable
-          events={state.data}
-          emptyTitle="No changes have been recorded for this app."
-        />
+        <AuditEventTable events={state.data} emptyTitle={translate("appDetail.noChanges")} />
       ) : null}
     </Panel>
   );

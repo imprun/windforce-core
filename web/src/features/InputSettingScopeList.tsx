@@ -2,6 +2,7 @@ import { Lock, Pencil, Unlock } from "lucide-react";
 import type { ReactNode } from "react";
 import type { InputConfig } from "../lib/api";
 import { formatRelative, formatTime } from "../lib/format";
+import { translate } from "../shared/i18n";
 
 export function formatInputSettingValue(value: unknown): string {
   return JSON.stringify(value, null, 2) ?? String(value);
@@ -38,7 +39,9 @@ export function InputSettingScopeList({
               <span className="inputSettingFactMeta">{item.primaryMeta}</span>
             </div>
             <div className="inputSettingFact inputSettingActionScope">
-              <span className="inputSettingFactLabel">Action scope</span>
+              <span className="inputSettingFactLabel">
+                {translate("inputSettings.actionScope")}
+              </span>
               <span className="inputSettingFactValue">{item.actionName}</span>
               <span className="inputSettingFactMeta mono">{item.actionMeta}</span>
             </div>
@@ -46,7 +49,7 @@ export function InputSettingScopeList({
               className="inputSettingFact inputSettingChange"
               title={formatTime(item.config.updated_at)}
             >
-              <span className="inputSettingFactLabel">Last change</span>
+              <span className="inputSettingFactLabel">{translate("inputSettings.lastChange")}</span>
               <span className="inputSettingFactValue">
                 {formatRelative(item.config.updated_at)}
               </span>
@@ -57,7 +60,7 @@ export function InputSettingScopeList({
             <button
               className="button small iconButton inputSettingEdit"
               type="button"
-              title="Edit input settings"
+              title={translate("inputSettings.edit")}
               aria-label={item.editLabel}
               disabled={item.editDisabled}
               onClick={item.onEdit}
@@ -66,12 +69,15 @@ export function InputSettingScopeList({
             </button>
           </header>
 
-          <table className="inputSettingValues" aria-label="Applied input values">
+          <table
+            className="inputSettingValues"
+            aria-label={translate("inputSettings.appliedValues")}
+          >
             <thead>
               <tr className="inputSettingValuesHeader">
-                <th scope="col">Input key</th>
-                <th scope="col">Applied value</th>
-                <th scope="col">Request policy</th>
+                <th scope="col">{translate("inputSettings.inputKey")}</th>
+                <th scope="col">{translate("inputSettings.appliedValue")}</th>
+                <th scope="col">{translate("inputSettings.requestPolicy")}</th>
               </tr>
             </thead>
             <tbody>
@@ -80,22 +86,30 @@ export function InputSettingScopeList({
                 return (
                   <tr className="inputSettingValueRow" key={key}>
                     <td className="inputSettingValueCell">
-                      <span className="inputSettingFieldLabel">Input key</span>
+                      <span className="inputSettingFieldLabel">
+                        {translate("inputSettings.inputKey")}
+                      </span>
                       <code className="inputSettingKey">{key}</code>
                     </td>
                     <td className="inputSettingValueCell">
-                      <span className="inputSettingFieldLabel">Applied value</span>
+                      <span className="inputSettingFieldLabel">
+                        {translate("inputSettings.appliedValue")}
+                      </span>
                       <pre className="inputSettingValue">{formatInputSettingValue(value)}</pre>
                     </td>
                     <td className="inputSettingValueCell">
-                      <span className="inputSettingFieldLabel">Request policy</span>
+                      <span className="inputSettingFieldLabel">
+                        {translate("inputSettings.requestPolicy")}
+                      </span>
                       <span className={locked ? "inputSettingPolicy locked" : "inputSettingPolicy"}>
                         {locked ? (
                           <Lock size={14} aria-hidden="true" />
                         ) : (
                           <Unlock size={14} aria-hidden="true" />
                         )}
-                        {locked ? "Request cannot override" : "Request may override"}
+                        {locked
+                          ? translate("inputSettings.requestCannotOverride")
+                          : translate("inputSettings.requestMayOverride")}
                       </span>
                     </td>
                   </tr>

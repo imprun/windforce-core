@@ -4,6 +4,8 @@ export const recentWindows = [
   { label: "7d", seconds: 604800 },
 ] as const;
 
+import { translate } from "../shared/i18n";
+
 export type StatTone = "waiting" | "running" | "good" | "critical" | "serious" | "neutral";
 
 export function StatTile({
@@ -35,7 +37,7 @@ export function WindowSelector({
 }) {
   return (
     <fieldset className="segmented">
-      <legend className="sr-only">Recent window</legend>
+      <legend className="sr-only">{translate("monitoring.recentWindow")}</legend>
       {recentWindows.map((item) => (
         <button
           key={item.label}

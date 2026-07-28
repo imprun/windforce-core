@@ -5,6 +5,7 @@ import type { WebhookDeliveryDetail, WebhookDeliveryState, WebhookSubscription }
 import { errorMessage } from "../lib/api";
 import { useApp, useAsync } from "../lib/app-context";
 import { formatRelative, formatTime } from "../lib/format";
+import { translate } from "../shared/i18n";
 import { WebhookDeliverySheet } from "./WebhookDeliverySheet";
 import { WebhookDeliveryStatus, webhookEventLabel } from "./WebhookStatus";
 
@@ -62,7 +63,7 @@ export function WebhookDeliveries({ subscription }: { subscription: WebhookSubsc
       const result = await api.retryWebhookDelivery(selected.delivery.id);
       setSelected(result);
       setRevision((current) => current + 1);
-      notify("ok", "Queued the webhook delivery for retry.");
+      notify("ok", translate("webhook.retryQueued"));
     } catch (cause) {
       setActionError(errorMessage(cause));
     } finally {
@@ -72,8 +73,8 @@ export function WebhookDeliveries({ subscription }: { subscription: WebhookSubsc
 
   return (
     <Panel
-      title="Delivery history"
-      subtitle="Outbound attempts for this subscription. Event payloads are immutable after creation."
+      title={translate("webhook.deliveryHistory")}
+      subtitle={translate("webhook.deliveryHistoryHint")}
       actions={
         <button
           className="button"
@@ -81,48 +82,50 @@ export function WebhookDeliveries({ subscription }: { subscription: WebhookSubsc
           onClick={() => setRevision((current) => current + 1)}
         >
           <RefreshCw size={16} aria-hidden="true" />
-          Refresh
+          {translate("common.refresh")}
         </button>
       }
     >
       <div className="deliveryToolbar">
         <label className="filterField">
-          <span>Status</span>
+          <span>{translate("common.status")}</span>
           <SelectControl
             value={filter}
             onChange={setFilter}
-            ariaLabel="Webhook delivery status"
+            ariaLabel={translate("webhook.deliveryStatus")}
             options={[
-              { value: "", label: "All statuses" },
-              { value: "pending", label: "Pending" },
-              { value: "delivering", label: "Delivering" },
-              { value: "retrying", label: "Retrying" },
-              { value: "succeeded", label: "Delivered" },
-              { value: "failed", label: "Failed" },
-              { value: "canceled", label: "Canceled" },
+              { value: "", label: translate("webhook.status.all") },
+              { value: "pending", label: translate("webhook.status.pending") },
+              { value: "delivering", label: translate("webhook.status.delivering") },
+              { value: "retrying", label: translate("webhook.status.retrying") },
+              { value: "succeeded", label: translate("webhook.status.delivered") },
+              { value: "failed", label: translate("webhook.status.failed") },
+              { value: "canceled", label: translate("webhook.status.canceled") },
             ]}
           />
         </label>
         <span className="fieldHint">
-          {deliveries.length} delivery record{deliveries.length === 1 ? "" : "s"} loaded
+          {translate("webhook.deliveryRecordsLoaded", { count: deliveries.length })}
         </span>
       </div>
       {state.error ? <ErrorNotice message={state.error} onRetry={state.reload} /> : null}
       {actionError ? <ErrorNotice message={actionError} /> : null}
-      {state.loading && !state.data ? <Loading label="Loading deliveries…" /> : null}
+      {state.loading && !state.data ? (
+        <Loading label={translate("webhook.loadingDeliveries")} />
+      ) : null}
       {state.data && deliveries.length === 0 ? (
-        <EmptyState title="No deliveries match this view." />
+        <EmptyState title={translate("webhook.noDeliveriesMatch")} />
       ) : null}
       {deliveries.length ? (
         <div className="tableWrap">
           <table className="table webhookDeliveryTable" id="webhookDeliveries">
             <thead>
               <tr>
-                <th>Status</th>
-                <th>Event</th>
-                <th>Attempt</th>
-                <th>Result</th>
-                <th>Created</th>
+                <th>{translate("common.status")}</th>
+                <th>{translate("webhook.event")}</th>
+                <th>{translate("webhook.attempt")}</th>
+                <th>{translate("common.result")}</th>
+                <th>{translate("common.created")}</th>
               </tr>
             </thead>
             <tbody>
@@ -170,7 +173,7 @@ export function WebhookDeliveries({ subscription }: { subscription: WebhookSubsc
       {nextCursor ? (
         <div className="tableFooter">
           <button className="button" type="button" disabled={loadingMore} onClick={loadMore}>
-            {loadingMore ? "Loading…" : "Load more"}
+            {loadingMore ? translate("common.loading") : translate("common.loadMore")}
           </button>
         </div>
       ) : null}

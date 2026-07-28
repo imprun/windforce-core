@@ -6,12 +6,12 @@ const layoutSource = await readFile(new URL("./Layout.tsx", import.meta.url), "u
 
 describe("primaryNavItems", () => {
   test("keeps workspace administration out of workspace-scoped navigation", () => {
-    expect(primaryNavItems.map((item) => item.label)).toEqual([
-      "Apps",
-      "Client Registry",
-      "Monitoring",
-      "Audit",
-      "Settings",
+    expect(primaryNavItems.map((item) => item.labelKey)).toEqual([
+      "navigation.apps",
+      "navigation.clientRegistry",
+      "navigation.monitoring",
+      "navigation.audit",
+      "navigation.settings",
     ]);
   });
 
@@ -31,7 +31,7 @@ describe("primaryNavItems", () => {
 
   test("distinguishes hosted accounts from standalone local access", () => {
     expect(layoutSource).toContain("HostedAccountMenu");
-    expect(layoutSource).toContain("Local access");
+    expect(layoutSource).toContain('translate("shell.localAccess")');
     expect(layoutSource).not.toContain(">Browser access<");
   });
 });

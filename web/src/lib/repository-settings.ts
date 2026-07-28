@@ -1,3 +1,4 @@
+import { translate } from "../shared/i18n";
 import type { GitSource, ProbeResult } from "./api";
 import { defaultGitCredentialPath } from "./git-credential";
 
@@ -6,7 +7,9 @@ export function repositoryLocationLocked(source: GitSource): boolean {
 }
 
 export function repositoryAccessLabel(source: GitSource): string {
-  return source.creds_ref ? "Credential configured" : "Public repository";
+  return source.creds_ref
+    ? translate("repository.credentialConfigured")
+    : translate("repository.public");
 }
 
 export function reconnectCredentialPath(source: GitSource): string {

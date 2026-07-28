@@ -1,4 +1,5 @@
-import { describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test } from "vitest";
+import { setLocale } from "../shared/i18n";
 import type { GitSource } from "./api";
 import {
   probePassed,
@@ -6,6 +7,8 @@ import {
   repositoryAccessLabel,
   repositoryLocationLocked,
 } from "./repository-settings";
+
+beforeEach(() => setLocale("en"));
 
 const source: GitSource = {
   id: 2,

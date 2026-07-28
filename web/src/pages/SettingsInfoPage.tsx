@@ -1,25 +1,26 @@
 import { CheckCircle2, CircleAlert, ServerCog } from "lucide-react";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { Layout } from "../components/Layout";
 import { SettingsNav } from "../components/SettingsNav";
 import { DefinitionList, ErrorNotice, Loading, Panel } from "../components/ui";
 import { errorMessage, type SystemInfo } from "../lib/api";
 import { useApp } from "../lib/app-context";
+import { translate } from "../shared/i18n";
 
 export function SettingsInfoPage() {
   const { api, settings } = useApp();
   const [info, setInfo] = useState<SystemInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const browserItems = useMemo<Array<[string, ReactNode]>>(
-    () => [
-      ["Workspace", settings.workspace || "default"],
-      ["Actor", settings.actor || "(not set)"],
-      ["API token", settings.token ? "configured in this browser" : "not configured"],
-      ["API base", `/api/w/${encodeURIComponent(settings.workspace || "default")}`],
+  const browserItems: Array<[string, ReactNode]> = [
+    [translate("settingsNav.workspace"), settings.workspace || "default"],
+    [translate("settings.actor"), settings.actor || translate("info.notSet")],
+    [
+      translate("settings.apiToken"),
+      settings.token ? translate("info.configuredInBrowser") : translate("common.notConfigured"),
     ],
-    [settings],
-  );
+    [translate("info.apiBase"), `/api/w/${encodeURIComponent(settings.workspace || "default")}`],
+  ];
 
   async function loadInfo() {
     setLoading(true);
@@ -55,29 +56,26 @@ export function SettingsInfoPage() {
 
   return (
     <Layout
-      title="Settings"
-      subtitle="Read-only service information and browser-local Web UI settings."
+      title={translate("navigation.settings")}
+      subtitle={translate("info.subtitle")}
       actions={
         <button
           className="button"
           type="button"
           onClick={() => void loadInfo()}
-          title="Refresh service information"
+          title={translate("info.refresh")}
         >
           <ServerCog aria-hidden="true" />
-          Refresh
+          {translate("common.refresh")}
         </button>
       }
     >
       <SettingsNav />
       {error ? <ErrorNotice message={error} onRetry={() => void loadInfo()} /> : null}
-      {loading && !info ? <Loading label="Loading service information…" /> : null}
+      {loading && !info ? <Loading label={translate("info.loading")} /> : null}
       {info ? (
         <>
-          <Panel
-            title="Service"
-            subtitle="Backend service identity and readiness reported by the control plane."
-          >
+          <Panel title={translate("info.service")} subtitle={translate("info.serviceHint")}>
             <div className="settingsInfoHero">
               <div
                 className={info.ready ? "settingsInfoStatus good" : "settingsInfoStatus warning"}
@@ -88,15 +86,20 @@ export function SettingsInfoPage() {
                   <CircleAlert aria-hidden="true" />
                 )}
                 <div>
-                  <strong>{info.ready ? "Ready" : "Not ready"}</strong>
+                  <strong>
+                    {info.ready ? translate("info.ready") : translate("info.notReady")}
+                  </strong>
                   <span>{info.service}</span>
                 </div>
               </div>
               <DefinitionList
                 items={[
-                  ["Service", info.service],
-                  ["Workspace", info.workspace],
-                  ["Readiness", info.ready ? "ready" : "not ready"],
+                  [translate("info.service"), info.service],
+                  [translate("settingsNav.workspace"), info.workspace],
+                  [
+                    translate("info.readiness"),
+                    info.ready ? translate("info.ready") : translate("info.notReady"),
+                  ],
                 ]}
               />
             </div>
@@ -104,14 +107,14 @@ export function SettingsInfoPage() {
 
           <div className="settingsInfoGrid">
             <Panel
-              title="Enabled surfaces"
-              subtitle="Request planes and public handlers enabled in this process."
+              title={translate("info.enabledSurfaces")}
+              subtitle={translate("info.enabledSurfacesHint")}
             >
               <FlagList values={info.planes} />
             </Panel>
             <Panel
-              title="Backend availability"
-              subtitle="Backend integrations available to this control-plane process."
+              title={translate("info.backendAvailability")}
+              subtitle={translate("info.backendAvailabilityHint")}
             >
               <FlagList values={info.backends} />
             </Panel>
@@ -119,14 +122,14 @@ export function SettingsInfoPage() {
 
           <div className="settingsInfoGrid">
             <Panel
-              title="Authentication and secrets"
-              subtitle="Only configured/not configured is shown; secret values are never exposed."
+              title={translate("info.authSecrets")}
+              subtitle={translate("info.authSecretsHint")}
             >
               <FlagList values={info.auth} />
             </Panel>
             <Panel
-              title="Runtime configuration"
-              subtitle="Non-secret runtime settings useful for local and operational diagnosis."
+              title={translate("info.runtimeConfig")}
+              subtitle={translate("info.runtimeConfigHint")}
             >
               <DefinitionList
                 items={Object.entries(info.runtime_config).map(([key, value]) => [
@@ -140,8 +143,8 @@ export function SettingsInfoPage() {
       ) : null}
 
       <Panel
-        title="Web UI browser settings"
-        subtitle="Local values this browser sends with control-plane requests."
+        title={translate("info.browserSettings")}
+        subtitle={translate("info.browserSettingsHint")}
       >
         <DefinitionList items={browserItems} />
       </Panel>
@@ -156,7 +159,7 @@ function FlagList({ values }: { values: Record<string, boolean> }) {
       {entries.map(([key, enabled]) => (
         <div className="settingsInfoFlag" key={key}>
           <span className={enabled ? "badge badge-good" : "badge badge-neutral"}>
-            {enabled ? "Enabled" : "Not enabled"}
+            {enabled ? translate("common.enabled") : translate("info.notEnabled")}
           </span>
           <strong>{labelize(key)}</strong>
         </div>
@@ -174,7 +177,9 @@ function labelize(key: string): string {
 }
 
 export function formatSystemInfoValue(value: unknown): string {
-  if (typeof value === "boolean") return value ? "Enabled" : "Not enabled";
+  if (typeof value === "boolean") {
+    return value ? translate("common.enabled") : translate("info.notEnabled");
+  }
   if (value === null || value === undefined || value === "") return "—";
   return String(value);
 }

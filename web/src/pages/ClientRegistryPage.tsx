@@ -6,6 +6,7 @@ import type { Client } from "../lib/api";
 import { useApp, useAsync } from "../lib/app-context";
 import { formatRelative, formatTime } from "../lib/format";
 import { Link } from "../lib/router";
+import { translate } from "../shared/i18n";
 
 export function ClientRegistryPage() {
   const { api } = useApp();
@@ -26,47 +27,44 @@ export function ClientRegistryPage() {
 
   return (
     <Layout
-      title="Client Registry"
-      subtitle="External clients available for app- and action-specific configuration."
+      title={translate("navigation.clientRegistry")}
+      subtitle={translate("clients.subtitle")}
       actions={
         <>
           <input
             className="searchInput"
-            placeholder="Filter clients…"
+            placeholder={translate("clients.filter")}
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            aria-label="Filter clients"
+            aria-label={translate("clients.filter")}
           />
           <button className="button" type="button" onClick={() => state.reload()}>
-            Refresh
+            {translate("common.refresh")}
           </button>
           <button className="button primary" type="button" onClick={() => setEditing("new")}>
-            Register Client
+            {translate("clients.register")}
           </button>
         </>
       }
     >
-      <div className="inlineNotice">
-        Each client can hold one workspace-scoped API token. Raw tokens are shown only when issued
-        or rotated.
-      </div>
+      <div className="inlineNotice">{translate("clients.tokenNotice")}</div>
       {state.error ? <ErrorNotice message={state.error} onRetry={state.reload} /> : null}
       {state.loading && !state.data ? <Loading /> : null}
       {state.data ? (
         clients.length === 0 ? (
           <EmptyState
-            title={search ? "No clients match the filter." : "No clients registered yet."}
+            title={search ? translate("clients.noMatches") : translate("clients.empty")}
           />
         ) : (
           <div className="tableWrap">
             <table className="table" id="clientList">
               <thead>
                 <tr>
-                  <th>Name</th>
-                  <th>API token</th>
-                  <th>Updated</th>
-                  <th>Updated by</th>
-                  <th aria-label="Row actions" />
+                  <th>{translate("common.name")}</th>
+                  <th>{translate("settings.apiToken")}</th>
+                  <th>{translate("common.updated")}</th>
+                  <th>{translate("common.updatedBy")}</th>
+                  <th aria-label={translate("common.rowActions")} />
                 </tr>
               </thead>
               <tbody>
@@ -77,7 +75,11 @@ export function ClientRegistryPage() {
                         {client.name}
                       </Link>
                     </td>
-                    <td>{client.has_token ? "Active" : "Not issued"}</td>
+                    <td>
+                      {client.has_token
+                        ? translate("workspace.status.active")
+                        : translate("clients.notIssued")}
+                    </td>
                     <td title={formatTime(client.updated_at)}>
                       <span className="cellTitle">{formatRelative(client.updated_at)}</span>
                       <span className="cellSub">{formatTime(client.updated_at)}</span>
@@ -89,7 +91,7 @@ export function ClientRegistryPage() {
                         type="button"
                         onClick={() => setEditing(client)}
                       >
-                        Edit
+                        {translate("common.edit")}
                       </button>
                     </td>
                   </tr>

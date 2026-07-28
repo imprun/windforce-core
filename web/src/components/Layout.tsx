@@ -1,11 +1,13 @@
 import {
   Activity,
   AppWindow,
+  Check,
   ChevronDown,
   CircleUserRound,
   ContactRound,
   Eraser,
   KeyRound,
+  Languages,
   LogOut,
   Menu,
   MonitorSmartphone,
@@ -25,6 +27,8 @@ import { useApp } from "../lib/app-context";
 import { type HostAccount, loadHostAccount } from "../lib/host-account";
 import { Link, useRouter } from "../lib/router";
 import type { HostAccountConfig, HostConsoleConfig } from "../lib/runtime-config";
+import { type Locale, setLocale, translate, useLocale } from "../shared/i18n";
+import type { TranslationKey } from "../shared/i18n/resources";
 import { cn } from "../shared/lib/cn";
 import { useThemeStore } from "../shared/lib/theme";
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
@@ -32,31 +36,31 @@ import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
 export const primaryNavItems = [
   {
     to: "/",
-    label: "Apps",
+    labelKey: "navigation.apps" as TranslationKey,
     icon: AppWindow,
     match: (path: string) => path === "/" || path.startsWith("/apps"),
   },
   {
     to: "/clients",
-    label: "Client Registry",
+    labelKey: "navigation.clientRegistry" as TranslationKey,
     icon: ContactRound,
     match: (path: string) => path.startsWith("/clients"),
   },
   {
     to: "/monitoring",
-    label: "Monitoring",
+    labelKey: "navigation.monitoring" as TranslationKey,
     icon: Activity,
     match: (path: string) => path.startsWith("/monitoring") || path.startsWith("/jobs"),
   },
   {
     to: "/audit",
-    label: "Audit",
+    labelKey: "navigation.audit" as TranslationKey,
     icon: ScrollText,
     match: (path: string) => path.startsWith("/audit"),
   },
   {
     to: "/settings",
-    label: "Settings",
+    labelKey: "navigation.settings" as TranslationKey,
     icon: Settings,
     match: (path: string) => path.startsWith("/settings") && path !== "/settings/workspaces",
   },
@@ -70,17 +74,73 @@ function ThemeToggle() {
   const preference = useThemeStore((state) => state.preference);
   const cycle = useThemeStore((state) => state.cycle);
   const Icon = preference === "light" ? Sun : preference === "dark" ? Moon : MonitorSmartphone;
-  const label = preference === "light" ? "light" : preference === "dark" ? "dark" : "system";
+  const label =
+    preference === "light"
+      ? translate("shell.themeLight")
+      : preference === "dark"
+        ? translate("shell.themeDark")
+        : translate("shell.themeSystem");
   return (
     <button
       type="button"
       className="icon-control"
       onClick={cycle}
-      title={`Theme: ${label}`}
-      aria-label={`Change theme (current: ${label})`}
+      title={translate("shell.theme", { theme: label })}
+      aria-label={translate("shell.changeTheme", { theme: label })}
     >
       <Icon size={16} />
     </button>
+  );
+}
+
+function LocaleSwitcher() {
+  const locale = useLocale();
+  const currentLanguage =
+    locale === "ko" ? translate("language.korean") : translate("language.english");
+  const itemClass =
+    "flex cursor-pointer select-none items-center justify-between gap-3 rounded px-2 py-2 text-sm outline-none data-[highlighted]:bg-muted";
+
+  function changeLocale(nextLocale: Locale) {
+    void setLocale(nextLocale);
+  }
+
+  return (
+    <DropdownMenuPrimitive.Root modal={false}>
+      <DropdownMenuPrimitive.Trigger asChild>
+        <button
+          type="button"
+          className="icon-control"
+          aria-label={translate("language.changeTo", { language: currentLanguage })}
+          title={translate("language.label")}
+        >
+          <Languages size={16} aria-hidden="true" />
+        </button>
+      </DropdownMenuPrimitive.Trigger>
+      <DropdownMenuPrimitive.Portal>
+        <DropdownMenuPrimitive.Content
+          align="end"
+          sideOffset={8}
+          className="z-[100] min-w-40 rounded-md border border-border bg-surface p-1 text-foreground shadow-lg"
+        >
+          <DropdownMenuPrimitive.Label className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+            {translate("language.label")}
+          </DropdownMenuPrimitive.Label>
+          {(["en", "ko"] as const).map((option) => (
+            <DropdownMenuPrimitive.Item
+              className={itemClass}
+              data-locale={option}
+              key={option}
+              onSelect={() => changeLocale(option)}
+            >
+              <span>
+                {option === "ko" ? translate("language.korean") : translate("language.english")}
+              </span>
+              {locale === option ? <Check size={15} aria-hidden="true" /> : null}
+            </DropdownMenuPrimitive.Item>
+          ))}
+        </DropdownMenuPrimitive.Content>
+      </DropdownMenuPrimitive.Portal>
+    </DropdownMenuPrimitive.Root>
   );
 }
 
@@ -115,7 +175,7 @@ export function UserMenu({
   function handleClearLocalCredentials() {
     clearLocalCredentials();
     navigate("/settings");
-    notify("info", "Local API token and audit actor cleared.");
+    notify("info", translate("shell.localAccessCleared"));
   }
 
   const itemClass =
@@ -132,7 +192,9 @@ export function UserMenu({
               : "flex min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
             placement === "sidebar" && collapsed && "justify-center px-0",
           )}
-          aria-label={`Local access menu for ${settings.actor || "system"}`}
+          aria-label={translate("shell.localAccessMenu", {
+            actor: settings.actor || "system",
+          })}
         >
           <KeyRound
             className={cn(
@@ -148,14 +210,16 @@ export function UserMenu({
               collapsed && "hidden",
             )}
           >
-            <span className="block truncate text-sm font-medium leading-tight">Local access</span>
+            <span className="block truncate text-sm font-medium leading-tight">
+              {translate("shell.localAccess")}
+            </span>
             <span
               className={cn(
                 "block text-xs leading-tight",
                 placement === "sidebar" ? "text-shell-muted-foreground" : "text-muted-foreground",
               )}
             >
-              {settings.actor || "system"} actor
+              {translate("shell.actor", { actor: settings.actor || "system" })}
             </span>
           </span>
           {collapsed ? null : (
@@ -177,16 +241,18 @@ export function UserMenu({
           className="z-[100] min-w-56 rounded-md border border-border bg-surface p-1 text-foreground shadow-lg"
         >
           <DropdownMenuPrimitive.Label className="px-2 py-2">
-            <span className="block text-sm font-medium">Local access</span>
+            <span className="block text-sm font-medium">{translate("shell.localAccess")}</span>
             <span className="block text-xs text-muted-foreground">
-              {settings.actor || "system"} actor ·{" "}
-              {hasApiToken ? "API token configured" : "API token not configured"}
+              {translate("shell.actor", { actor: settings.actor || "system" })} ·{" "}
+              {hasApiToken
+                ? translate("shell.apiTokenConfigured")
+                : translate("shell.apiTokenNotConfigured")}
             </span>
           </DropdownMenuPrimitive.Label>
           <DropdownMenuPrimitive.Separator className="my-1 h-px bg-border" />
           <DropdownMenuPrimitive.Item className={itemClass} onSelect={() => navigate("/settings")}>
             <Settings size={16} />
-            Connection settings
+            {translate("shell.connectionSettings")}
           </DropdownMenuPrimitive.Item>
           <DropdownMenuPrimitive.Item
             className={itemClass}
@@ -194,7 +260,9 @@ export function UserMenu({
             onSelect={handleClearLocalCredentials}
           >
             <Eraser size={16} />
-            {hasBrowserIdentity ? "Clear local access" : "No local access configured"}
+            {hasBrowserIdentity
+              ? translate("shell.clearLocalAccess")
+              : translate("shell.noLocalAccess")}
           </DropdownMenuPrimitive.Item>
         </DropdownMenuPrimitive.Content>
       </DropdownMenuPrimitive.Portal>
@@ -232,8 +300,12 @@ function HostedAccountMenu({
     };
   }, [config.endpoint]);
 
-  const label = account?.label || (settled ? "Hosted access" : "Loading account…");
-  const detail = account?.detail || (settled ? "Account unavailable" : "Managed by host");
+  const label =
+    account?.label ||
+    (settled ? translate("shell.hostedAccess") : translate("shell.loadingAccount"));
+  const detail =
+    account?.detail ||
+    (settled ? translate("shell.accountUnavailable") : translate("shell.managedByHost"));
   const itemClass =
     "flex cursor-pointer select-none items-center gap-2 rounded px-2 py-2 text-sm text-foreground no-underline outline-none data-[highlighted]:bg-muted";
 
@@ -248,7 +320,7 @@ function HostedAccountMenu({
               : "flex min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
             placement === "sidebar" && collapsed && "justify-center px-0",
           )}
-          aria-label={`Hosted account menu for ${label}`}
+          aria-label={translate("shell.hostedAccountMenu", { label })}
           disabled={!settled}
         >
           <CircleUserRound
@@ -353,7 +425,7 @@ function MobileNavigation({
         <button
           className="mobileNavTrigger icon-control"
           type="button"
-          aria-label="Open navigation menu"
+          aria-label={translate("navigation.open")}
         >
           <Menu size={18} aria-hidden="true" />
         </button>
@@ -372,15 +444,21 @@ function MobileNavigation({
               <span className="min-w-0">
                 <span className="block leading-tight">Windforce</span>
                 <span className="block text-xs font-normal leading-tight text-shell-muted-foreground">
-                  Execution workspace
+                  {translate("shell.productSubtitle")}
                 </span>
               </span>
             </DialogPrimitive.Title>
-            <DialogPrimitive.Close className="icon-control" aria-label="Close navigation menu">
+            <DialogPrimitive.Close
+              className="icon-control"
+              aria-label={translate("navigation.close")}
+            >
               <X size={17} aria-hidden="true" />
             </DialogPrimitive.Close>
           </header>
-          <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-4" aria-label="Mobile">
+          <nav
+            className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-4"
+            aria-label={translate("navigation.mobile")}
+          >
             {primaryNavItems.map((item) => {
               const Icon = item.icon;
               const active = item.match(path);
@@ -392,7 +470,7 @@ function MobileNavigation({
                   onClick={() => setOpen(false)}
                 >
                   <Icon size={17} strokeWidth={1.9} aria-hidden="true" />
-                  <span>{item.label}</span>
+                  <span>{translate(item.labelKey)}</span>
                 </Link>
               );
             })}
@@ -436,7 +514,7 @@ export function Layout({
         <header className="flex h-[var(--shell-header-height)] items-center justify-between border-b border-border bg-background px-4 sm:px-6">
           <nav
             className="instanceBreadcrumb flex min-w-0 items-center gap-2 text-sm"
-            aria-label="Breadcrumb"
+            aria-label={translate("navigation.breadcrumb")}
           >
             <Link
               className="flex shrink-0 items-center gap-2 font-semibold text-foreground no-underline"
@@ -450,19 +528,21 @@ export function Layout({
             <span className="text-muted-foreground" aria-hidden="true">
               /
             </span>
-            <span className="text-muted-foreground">Instance</span>
+            <span className="text-muted-foreground">{translate("navigation.instance")}</span>
             <span className="text-muted-foreground" aria-hidden="true">
               /
             </span>
             {isRegistry ? (
-              <span className="truncate font-medium text-foreground">Workspaces</span>
+              <span className="truncate font-medium text-foreground">
+                {translate("navigation.workspaces")}
+              </span>
             ) : (
               <>
                 <Link
                   className="text-muted-foreground no-underline hover:text-foreground"
                   to="/workspaces"
                 >
-                  Workspaces
+                  {translate("navigation.workspaces")}
                 </Link>
                 <span className="text-muted-foreground" aria-hidden="true">
                   /
@@ -472,6 +552,7 @@ export function Layout({
             )}
           </nav>
           <div className="flex shrink-0 items-center gap-2">
+            <LocaleSwitcher />
             <ThemeToggle />
             <AccountContext hostAccount={runtimeConfig?.hostAccount || null} />
           </div>
@@ -515,13 +596,16 @@ export function Layout({
               <span className="min-w-0">
                 <span className="block truncate leading-tight">Windforce</span>
                 <span className="block truncate text-xs font-normal leading-tight text-shell-muted-foreground">
-                  Execution workspace
+                  {translate("shell.productSubtitle")}
                 </span>
               </span>
             ) : null}
           </Link>
         </div>
-        <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-4" aria-label="Primary">
+        <nav
+          className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-4"
+          aria-label={translate("navigation.primary")}
+        >
           {primaryNavItems.map((item) => {
             const Icon = item.icon;
             const active = item.match(path);
@@ -530,10 +614,10 @@ export function Layout({
                 key={item.to}
                 to={item.to}
                 className={cn("navItem", active && "active", collapsed && "justify-center px-0")}
-                title={item.label}
+                title={translate(item.labelKey)}
               >
                 <Icon size={17} strokeWidth={1.9} aria-hidden="true" />
-                {!collapsed ? <span>{item.label}</span> : null}
+                {!collapsed ? <span>{translate(item.labelKey)}</span> : null}
               </Link>
             );
           })}
@@ -560,9 +644,17 @@ export function Layout({
               className="icon-control hidden md:inline-flex"
               id="sidebarToggle"
               type="button"
-              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              aria-label={
+                collapsed
+                  ? translate("navigation.expandSidebar")
+                  : translate("navigation.collapseSidebar")
+              }
               aria-expanded={!collapsed}
-              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              title={
+                collapsed
+                  ? translate("navigation.expandSidebar")
+                  : translate("navigation.collapseSidebar")
+              }
               onClick={() => setCollapsed((current) => !current)}
             >
               {collapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
@@ -578,6 +670,7 @@ export function Layout({
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <HostConsoleAction hostConsole={runtimeConfig?.hostConsole || null} />
+            <LocaleSwitcher />
             <ThemeToggle />
           </div>
         </header>
@@ -642,7 +735,7 @@ function ToastStack({
           <button
             type="button"
             className="icon-control"
-            aria-label="Dismiss"
+            aria-label={translate("common.dismiss")}
             onClick={() => dismissToast(toast.id)}
           >
             <X size={15} />

@@ -1,7 +1,10 @@
-import { describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test } from "vitest";
+import { setLocale } from "../shared/i18n";
 import { inputConfigPayload } from "./InputConfigDialog";
 
 describe("inputConfigPayload", () => {
+  beforeEach(() => setLocale("en"));
+
   test("builds JSON values and locked keys", () => {
     expect(
       inputConfigPayload(

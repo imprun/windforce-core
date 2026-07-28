@@ -9,6 +9,7 @@ import { useApp, useAsync } from "../lib/app-context";
 import { formatRelative, shortSHA } from "../lib/format";
 import { displayRepoURL } from "../lib/repo";
 import { Link, useRouter } from "../lib/router";
+import { translate } from "../shared/i18n";
 
 // Either side may be missing: a registered source may not be released yet,
 // and a released app's source registration may have been deleted.
@@ -55,16 +56,16 @@ export function AppsPage() {
 
   return (
     <Layout
-      title="Apps"
-      subtitle="Register apps, review repository sources, and publish worker-visible releases."
+      title={translate("apps.title")}
+      subtitle={translate("apps.subtitle")}
       actions={
         <>
           <input
             className="searchInput"
-            placeholder="Filter apps…"
+            placeholder={translate("apps.filter")}
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            aria-label="Filter apps"
+            aria-label={translate("apps.filter")}
           />
           <button
             className="button"
@@ -74,7 +75,7 @@ export function AppsPage() {
               state.reload();
             }}
           >
-            Refresh
+            {translate("common.refresh")}
           </button>
           <button
             className="button primary"
@@ -82,7 +83,7 @@ export function AppsPage() {
             id="registerAppButton"
             onClick={() => setRegistering(true)}
           >
-            Register App
+            {translate("apps.register")}
           </button>
         </>
       }
@@ -92,22 +93,25 @@ export function AppsPage() {
 
       {state.data ? (
         <>
-          <section className="grid gap-3 sm:grid-cols-3" aria-label="Workspace summary">
+          <section
+            className="grid gap-3 sm:grid-cols-3"
+            aria-label={translate("apps.workspaceSummary")}
+          >
             {[
               {
-                label: "Repository sources",
+                label: translate("apps.repositorySources"),
                 value: state.data.sources.length,
-                detail: "registered in this workspace",
+                detail: translate("apps.registeredInWorkspace"),
               },
               {
-                label: "Published apps",
+                label: translate("apps.publishedApps"),
                 value: state.data.apps.length,
-                detail: "available to workers",
+                detail: translate("apps.availableToWorkers"),
               },
               {
-                label: "Actions",
+                label: translate("common.actions"),
                 value: state.data.apps.reduce((total, app) => total + app.actions_count, 0),
-                detail: "in active releases",
+                detail: translate("apps.inActiveReleases"),
               },
             ].map((item) => (
               <article
@@ -123,26 +127,21 @@ export function AppsPage() {
             ))}
           </section>
           {rows.length === 0 ? (
-            <EmptyState title={search ? "No apps match the filter." : "No apps registered yet."}>
-              {!search ? (
-                <p>
-                  Register a repository source to create your first app, or create the managed
-                  sample app to explore the release flow.
-                </p>
-              ) : null}
+            <EmptyState title={search ? translate("apps.noMatches") : translate("apps.empty")}>
+              {!search ? <p>{translate("apps.emptyHint")}</p> : null}
             </EmptyState>
           ) : (
             <div className="tableWrap">
               <table className="table" id="appList">
                 <thead>
                   <tr>
-                    <th>App</th>
-                    <th>Release state</th>
-                    <th>Repository source</th>
-                    <th>Last release</th>
-                    <th>Actions</th>
-                    <th>Route tag</th>
-                    <th aria-label="Row actions" />
+                    <th>{translate("apps.column.app")}</th>
+                    <th>{translate("apps.column.releaseState")}</th>
+                    <th>{translate("apps.column.repositorySource")}</th>
+                    <th>{translate("apps.column.lastRelease")}</th>
+                    <th>{translate("common.actions")}</th>
+                    <th>{translate("apps.column.routeTag")}</th>
+                    <th aria-label={translate("common.rowActions")} />
                   </tr>
                 </thead>
                 <tbody>
@@ -158,10 +157,10 @@ export function AppsPage() {
                             {app
                               ? source
                                 ? source.name !== app.app_key
-                                  ? `source / ${source.name}`
-                                  : "released"
-                                : "repository source removed"
-                              : "registered · pending release"}
+                                  ? translate("apps.sourceNamed", { name: source.name })
+                                  : translate("release.released")
+                                : translate("apps.repositorySourceRemoved")
+                              : translate("apps.registeredPendingRelease")}
                           </span>
                         </td>
                         <td>
@@ -180,12 +179,16 @@ export function AppsPage() {
                                 {source.branch || "main"}
                                 {source.subpath ? ` · ${source.subpath}` : ""}
                                 {source.last_synced_commit
-                                  ? ` · synced ${shortSHA(source.last_synced_commit, 8)}`
-                                  : " · not synced"}
+                                  ? translate("apps.syncedCommit", {
+                                      commit: shortSHA(source.last_synced_commit, 8),
+                                    })
+                                  : translate("apps.notSynced")}
                               </span>
                             </>
                           ) : (
-                            <span className="cellSub">repository source removed</span>
+                            <span className="cellSub">
+                              {translate("apps.repositorySourceRemoved")}
+                            </span>
                           )}
                         </td>
                         <td>

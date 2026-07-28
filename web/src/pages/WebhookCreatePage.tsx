@@ -7,6 +7,7 @@ import { WebhookSecretDialog } from "../features/WebhookSecretDialog";
 import { errorMessage, type WebhookSubscriptionMutation } from "../lib/api";
 import { useApp, useAsync } from "../lib/app-context";
 import { Link, useRouter } from "../lib/router";
+import { translate } from "../shared/i18n";
 
 export function WebhookCreatePage() {
   const { api, notify } = useApp();
@@ -40,11 +41,11 @@ export function WebhookCreatePage() {
     const normalizedName = name.trim();
     const normalizedEndpoint = endpoint.trim();
     if (!normalizedName || !normalizedEndpoint) {
-      setError("Name and endpoint are required.");
+      setError(translate("webhook.validation.nameEndpoint"));
       return;
     }
     if (scope === "selected" && selectedApps.length === 0) {
-      setError("Select at least one app or change the scope to all apps.");
+      setError(translate("webhook.validation.appScope"));
       return;
     }
     setBusy(true);
@@ -58,7 +59,7 @@ export function WebhookCreatePage() {
         enabled: true,
       });
       setCreated(result);
-      notify("ok", `Created webhook ${result.subscription.name}.`);
+      notify("ok", translate("webhook.created", { name: result.subscription.name }));
     } catch (cause) {
       setError(errorMessage(cause));
     } finally {
@@ -72,37 +73,31 @@ export function WebhookCreatePage() {
 
   return (
     <Layout
-      title="Create webhook"
-      subtitle="Send release events to one HTTPS receiver with a dedicated signing secret."
+      title={translate("webhook.create")}
+      subtitle={translate("webhook.createHint")}
       actions={
         <Link className="button" to="/settings/webhooks">
           <ArrowLeft size={16} aria-hidden="true" />
-          Back to webhooks
+          {translate("webhook.back")}
         </Link>
       }
     >
       <SettingsNav />
       <form className="webhookFormLayout" onSubmit={submit}>
-        <Panel
-          title="Receiver"
-          subtitle="Windforce signs each event and delivers it asynchronously."
-        >
+        <Panel title={translate("webhook.receiver")} subtitle={translate("webhook.receiverHint")}>
           <div className="formGrid">
-            <Field
-              label="Name"
-              hint="Use a name operators can recognize in delivery history and audit events."
-            >
+            <Field label={translate("common.name")} hint={translate("webhook.nameHint")}>
               <input
                 id="webhookName"
                 maxLength={200}
                 value={name}
                 onChange={(event) => setName(event.target.value)}
-                placeholder="Release notifications"
+                placeholder={translate("webhook.namePlaceholder")}
               />
             </Field>
             <Field
-              label="Endpoint URL"
-              hint="HTTPS is required outside explicitly allowed local development endpoints."
+              label={translate("webhook.endpointURL")}
+              hint={translate("webhook.endpointHint")}
             >
               <input
                 id="webhookEndpoint"
@@ -119,34 +114,28 @@ export function WebhookCreatePage() {
               <Check size={15} />
             </span>
             <div>
-              <strong>Release activity</strong>
-              <p>
-                Triggered after a worker-visible release is published or a historical release is
-                activated.
-              </p>
+              <strong>{translate("webhook.releaseActivity")}</strong>
+              <p>{translate("webhook.releaseActivityHint")}</p>
             </div>
           </div>
         </Panel>
 
-        <Panel
-          title="App scope"
-          subtitle="Limit notifications to selected apps, or receive releases from the entire workspace."
-        >
+        <Panel title={translate("webhook.appScope")} subtitle={translate("webhook.appScopeHint")}>
           <fieldset className="segmented webhookScopeMode">
-            <legend className="sr-only">App scope</legend>
+            <legend className="sr-only">{translate("webhook.appScope")}</legend>
             <button
               type="button"
               className={scope === "all" ? "segment active" : "segment"}
               onClick={() => setScope("all")}
             >
-              All apps
+              {translate("webhook.allApps")}
             </button>
             <button
               type="button"
               className={scope === "selected" ? "segment active" : "segment"}
               onClick={() => setScope("selected")}
             >
-              Selected apps
+              {translate("webhook.selectedApps")}
             </button>
           </fieldset>
           {scope === "selected" ? (
@@ -154,14 +143,14 @@ export function WebhookCreatePage() {
               <label className="scopeSearch">
                 <Search size={16} aria-hidden="true" />
                 <input
-                  aria-label="Filter apps"
-                  placeholder="Filter apps…"
+                  aria-label={translate("webhook.filterApps")}
+                  placeholder={translate("webhook.filterApps")}
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                 />
               </label>
               {apps.error ? <ErrorNotice message={apps.error} onRetry={apps.reload} /> : null}
-              {apps.loading && !apps.data ? <Loading label="Loading apps…" /> : null}
+              {apps.loading && !apps.data ? <Loading label={translate("apps.loading")} /> : null}
               {apps.data ? (
                 <div className="appScopeList" id="webhookAppScope">
                   {visibleApps.map((app) => (
@@ -178,25 +167,23 @@ export function WebhookCreatePage() {
                     </label>
                   ))}
                   {visibleApps.length === 0 ? (
-                    <p className="fieldHint">No apps match the filter.</p>
+                    <p className="fieldHint">{translate("webhook.noAppsMatch")}</p>
                   ) : null}
                 </div>
               ) : null}
             </div>
           ) : (
-            <p className="fieldHint">
-              Every release published in this workspace will create a delivery.
-            </p>
+            <p className="fieldHint">{translate("webhook.allAppsDeliveryHint")}</p>
           )}
         </Panel>
 
         {error ? <ErrorNotice message={error} /> : null}
         <div className="formActions webhookFormActions">
           <Link className="button" to="/settings/webhooks">
-            Cancel
+            {translate("common.cancel")}
           </Link>
           <button className="button primary" type="submit" disabled={busy} id="createWebhookButton">
-            {busy ? "Creating…" : "Create webhook"}
+            {busy ? translate("common.creating") : translate("webhook.create")}
           </button>
         </div>
       </form>

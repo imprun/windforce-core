@@ -8,6 +8,7 @@ import { type WebhookDeliveryDetail, type WebhookSubscription, webhookAppKeys } 
 import { useApp, useAsync } from "../lib/app-context";
 import { formatRelative, formatTime } from "../lib/format";
 import { Link } from "../lib/router";
+import { translate } from "../shared/i18n";
 
 type WebhookRow = {
   subscription: WebhookSubscription;
@@ -50,14 +51,14 @@ export function WebhookSettingsPage() {
 
   return (
     <Layout
-      title="Webhooks"
-      subtitle="Release notifications delivered from the control plane to signed HTTPS receivers."
+      title={translate("webhook.webhooks")}
+      subtitle={translate("webhook.settingsSubtitle")}
       actions={
         <>
           <input
             className="searchInput"
-            aria-label="Filter webhooks"
-            placeholder="Filter webhooks…"
+            aria-label={translate("webhook.filter")}
+            placeholder={translate("webhook.filter")}
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
@@ -65,25 +66,23 @@ export function WebhookSettingsPage() {
             className="button"
             type="button"
             onClick={() => state.reload()}
-            title="Refresh webhooks"
+            title={translate("webhook.refreshWebhooks")}
           >
             <RefreshCw size={16} aria-hidden="true" />
-            Refresh
+            {translate("common.refresh")}
           </button>
           <Link className="button primary" to="/settings/webhooks/new">
             <Plus size={16} aria-hidden="true" />
-            Create webhook
+            {translate("webhook.create")}
           </Link>
         </>
       }
     >
       <SettingsNav />
-      <section className="webhookSummaryBar" aria-label="Webhook summary">
-        <span>
-          <strong>{enabledCount}</strong> enabled
-        </span>
+      <section className="webhookSummaryBar" aria-label={translate("webhook.summary")}>
+        <span>{translate("webhook.enabledCount", { count: enabledCount })}</span>
         <span className={failedCount ? "summaryCritical" : undefined}>
-          <strong>{failedCount}</strong> latest deliveries failed
+          {translate("webhook.failedCount", { count: failedCount })}
         </span>
         <label className="historyToggle">
           <input
@@ -91,24 +90,26 @@ export function WebhookSettingsPage() {
             checked={includeDeleted}
             onChange={(event) => setIncludeDeleted(event.target.checked)}
           />
-          Show deleted
+          {translate("webhook.showDeleted")}
         </label>
       </section>
 
       {state.error ? <ErrorNotice message={state.error} onRetry={state.reload} /> : null}
-      {state.loading && !state.data ? <Loading label="Loading webhooks…" /> : null}
+      {state.loading && !state.data ? (
+        <Loading label={translate("webhook.loadingWebhooks")} />
+      ) : null}
       {state.data ? (
         <Panel
-          title="Subscriptions"
-          subtitle={`${rows.length} webhook${rows.length === 1 ? "" : "s"} in the current view`}
+          title={translate("webhook.subscriptions")}
+          subtitle={translate("webhook.currentViewCount", { count: rows.length })}
         >
           {rows.length === 0 ? (
             <EmptyState
-              title={search ? "No webhooks match the filter." : "No webhook subscriptions yet."}
+              title={search ? translate("webhook.noMatches") : translate("webhook.noSubscriptions")}
             >
               {!search ? (
                 <Link className="button primary" to="/settings/webhooks/new">
-                  Create webhook
+                  {translate("webhook.create")}
                 </Link>
               ) : null}
             </EmptyState>
@@ -117,11 +118,11 @@ export function WebhookSettingsPage() {
               <table className="table webhookTable" id="webhookList">
                 <thead>
                   <tr>
-                    <th>Webhook</th>
-                    <th>Endpoint</th>
-                    <th>App scope</th>
-                    <th>Last delivery</th>
-                    <th>Updated</th>
+                    <th>{translate("webhook.title")}</th>
+                    <th>{translate("webhook.endpoint")}</th>
+                    <th>{translate("webhook.appScope")}</th>
+                    <th>{translate("webhook.lastDelivery")}</th>
+                    <th>{translate("common.updated")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -140,11 +141,11 @@ export function WebhookSettingsPage() {
                       </td>
                       <td>
                         <span className="mono cellTitle">{subscription.endpoint_summary}</span>
-                        <span className="cellSub">Endpoint path is hidden</span>
+                        <span className="cellSub">{translate("webhook.endpointHidden")}</span>
                       </td>
                       <td>
                         {webhookAppKeys(subscription).length === 0 ? (
-                          <span className="cellTitle">All apps</span>
+                          <span className="cellTitle">{translate("webhook.allApps")}</span>
                         ) : (
                           <>
                             <span className="cellTitle">
@@ -152,7 +153,9 @@ export function WebhookSettingsPage() {
                             </span>
                             {webhookAppKeys(subscription).length > 2 ? (
                               <span className="cellSub">
-                                +{webhookAppKeys(subscription).length - 2} more
+                                {translate("common.moreCount", {
+                                  count: webhookAppKeys(subscription).length - 2,
+                                })}
                               </span>
                             ) : null}
                           </>
@@ -170,7 +173,7 @@ export function WebhookSettingsPage() {
                             </span>
                           </>
                         ) : (
-                          <span className="cellSub">No deliveries yet</span>
+                          <span className="cellSub">{translate("webhook.noDeliveriesYet")}</span>
                         )}
                       </td>
                       <td title={formatTime(subscription.updated_at)}>

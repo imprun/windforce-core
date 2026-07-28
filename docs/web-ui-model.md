@@ -129,6 +129,14 @@ principal에서 파생되며 브라우저 입력으로 바꿀 수 없다.
 
 ## 문구 규칙
 
+콘솔 문구는 영어(`en`)를 기본·fallback으로 하고 한국어(`ko`)를 지원한다.
+사용자가 상단 언어 메뉴에서 선택한 값은 `wf.locale`에 저장하며, 명시적 선택이
+없으면 브라우저 언어 중 지원되는 첫 언어를 사용한다. 탐색, 설명, 상태, 검증,
+알림과 사용자용 오류는 번역하지만 App/Action key, API 경로, 이벤트 type, 로그,
+스키마 필드와 사용자가 입력한 값은 원문을 유지한다. 서버 오류는 안정적인
+`code`/`data`와 UI 현지화 문구를 분리하고, 서버의 내부 상세 메시지를 그대로
+사용자에게 노출하지 않는다.
+
 - 버튼은 App 관점으로 쓴다: `Register App`, `Publish Release`, `Open App`.
 - released App의 primary identity는 `app_key`다. repository source name은
   alias이며 `source / {name}` 같은 보조 표기로만 쓴다. source name 변경이

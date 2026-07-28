@@ -12,6 +12,7 @@ import {
   type GitAuthMethod,
   gitCredentialSecretValue,
 } from "../lib/git-credential";
+import { translate } from "../shared/i18n";
 
 export function RegisterAppDialog({
   onClose,
@@ -72,7 +73,7 @@ export function RegisterAppDialog({
 
   async function handleRegister() {
     if (!name.trim() || !repoURL.trim()) {
-      setError("App name and repository URL are required.");
+      setError(translate("registerApp.nameRepositoryRequired"));
       return;
     }
     setBusy(true);
@@ -82,11 +83,11 @@ export function RegisterAppDialog({
       const credentialPath =
         credsRef.trim() || (credentialValue ? defaultGitCredentialPath(name) : "");
       if (authMethod === "pat" && !credentialValue && !credentialPath) {
-        setError("Access token is required, or provide an existing credential path.");
+        setError(translate("registerApp.accessTokenRequired"));
         return;
       }
       if (authMethod === "basic" && !credentialValue && !credentialPath) {
-        setError("Username and password are required, or provide an existing credential path.");
+        setError(translate("registerApp.basicRequired"));
         return;
       }
       if (credentialValue) {
@@ -100,7 +101,7 @@ export function RegisterAppDialog({
       const payload = buildPayload();
       if (credentialPath) payload.creds_ref = credentialPath;
       const created = await api.registerGitSource(payload);
-      notify("ok", `Registered ${created.name}.`);
+      notify("ok", translate("registerApp.registered", { name: created.name }));
       onRegistered(created);
     } catch (cause) {
       setError(errorMessage(cause));
@@ -114,7 +115,7 @@ export function RegisterAppDialog({
     setError("");
     try {
       const result = await api.createSample("echo");
-      notify("ok", `Created sample app ${result.sync_result.app}.`);
+      notify("ok", translate("registerApp.sampleCreated", { app: result.sync_result.app }));
       onRegistered(result.source);
     } catch (cause) {
       setError(errorMessage(cause));
@@ -126,15 +127,15 @@ export function RegisterAppDialog({
   return (
     <Modal
       id="registerAppDialog"
-      title="Register App"
-      subtitle="Point at the repository source that builds this app. Registration validates access, branch, and windforce.json before saving."
+      title={translate("apps.register")}
+      subtitle={translate("registerApp.subtitle")}
       onClose={onClose}
       wide
     >
       <div className="formGrid">
         <Field
-          label="Source name"
-          hint="Repository source alias. The app key itself comes from windforce.json at release."
+          label={translate("registerApp.sourceName")}
+          hint={translate("registerApp.sourceNameHint")}
         >
           <input
             value={name}
@@ -142,46 +143,43 @@ export function RegisterAppDialog({
             placeholder="echo"
           />
         </Field>
-        <Field label="Repository URL">
+        <Field label={translate("registerApp.repositoryURL")}>
           <input
             value={repoURL}
             onChange={(event) => setRepoURL(event.target.value)}
             placeholder="https://github.com/org/repo.git"
           />
         </Field>
-        <Field label="Branch">
+        <Field label={translate("release.branch")}>
           <input
             value={branch}
             onChange={(event) => setBranch(event.target.value)}
             placeholder="main"
           />
         </Field>
-        <Field
-          label="Subpath"
-          hint="Repository directory used as the app root. Leave empty for the repo root."
-        >
+        <Field label={translate("release.subpath")} hint={translate("registerApp.subpathHint")}>
           <input
             value={subpath}
             onChange={(event) => setSubpath(event.target.value)}
             placeholder="apps/echo"
           />
         </Field>
-        <Field label="Git auth">
+        <Field label={translate("registerApp.gitAuth")}>
           <SelectControl
             value={authMethod}
             onChange={setAuthMethod}
-            ariaLabel="Git authentication"
+            ariaLabel={translate("registerApp.gitAuth")}
             options={[
-              { value: "none", label: "Public (no credential)" },
-              { value: "pat", label: "Access token" },
-              { value: "basic", label: "Username + password" },
+              { value: "none", label: translate("registerApp.authPublic") },
+              { value: "pat", label: translate("registerApp.accessToken") },
+              { value: "basic", label: translate("registerApp.usernamePassword") },
             ]}
           />
         </Field>
         {authMethod === "pat" ? (
           <Field
-            label="Access token"
-            hint="Stored as a workspace secret variable; creds ref below is optional."
+            label={translate("registerApp.accessToken")}
+            hint={translate("registerApp.accessTokenHint")}
           >
             <input
               type="password"
@@ -193,14 +191,14 @@ export function RegisterAppDialog({
         ) : null}
         {authMethod === "basic" ? (
           <>
-            <Field label="Username">
+            <Field label={translate("registerApp.username")}>
               <input
                 value={username}
                 onChange={(event) => setUsername(event.target.value)}
                 autoComplete="off"
               />
             </Field>
-            <Field label="Password">
+            <Field label={translate("registerApp.password")}>
               <input
                 type="password"
                 value={password}
@@ -211,8 +209,8 @@ export function RegisterAppDialog({
           </>
         ) : null}
         <Field
-          label="Credential path"
-          hint="Workspace secret variable path. Leave empty to store a new credential under this source name."
+          label={translate("registerApp.credentialPath")}
+          hint={translate("registerApp.credentialPathHint")}
         >
           <input
             value={credsRef}
@@ -227,7 +225,7 @@ export function RegisterAppDialog({
 
       <footer className="dialogFooter">
         <button className="button" type="button" disabled={busy} onClick={handleSample}>
-          Create sample app
+          {translate("registerApp.createSample")}
         </button>
         <div className="dialogFooterActions">
           <button
@@ -236,10 +234,10 @@ export function RegisterAppDialog({
             disabled={busy || !repoURL.trim()}
             onClick={handleProbe}
           >
-            Probe repository
+            {translate("registerApp.probe")}
           </button>
           <button className="button primary" type="button" disabled={busy} onClick={handleRegister}>
-            Register App
+            {translate("apps.register")}
           </button>
         </div>
       </footer>

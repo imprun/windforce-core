@@ -3,6 +3,7 @@ import { Layout } from "../components/Layout";
 import { ErrorNotice, Loading, Panel, SelectControl } from "../components/ui";
 import { AuditEventTable } from "../features/AuditEventTable";
 import { useApp, useAsync } from "../lib/app-context";
+import { translate } from "../shared/i18n";
 
 export function AuditPage() {
   const { api } = useApp();
@@ -47,55 +48,55 @@ export function AuditPage() {
 
   return (
     <Layout
-      title="Audit"
-      subtitle="Workspace change history across identity, access, repositories, releases, clients, input settings, and webhooks."
+      title={translate("navigation.audit")}
+      subtitle={translate("audit.subtitle")}
       actions={
         <button className="button" type="button" onClick={() => events.reload()}>
-          Refresh
+          {translate("common.refresh")}
         </button>
       }
     >
       <Panel
-        title="Workspace activity"
+        title={translate("audit.workspaceActivity")}
         subtitle={
           events.data
-            ? `${events.data.length} most recent event${events.data.length === 1 ? "" : "s"}`
-            : "Loading events…"
+            ? translate("audit.recentEvents", { count: events.data.length })
+            : translate("audit.loadingEvents")
         }
         actions={
           filtered ? (
             <button className="button small" type="button" onClick={resetFilters}>
-              Reset filters
+              {translate("audit.resetFilters")}
             </button>
           ) : null
         }
       >
         <form className="auditFilters" onSubmit={applyActor}>
           <label className="filterField">
-            <span>Category</span>
+            <span>{translate("audit.category")}</span>
             <SelectControl
               value={category}
               onChange={setCategory}
-              ariaLabel="Audit category"
+              ariaLabel={translate("audit.category")}
               options={[
-                { value: "", label: "All categories" },
-                { value: "workspace", label: "Workspace" },
-                { value: "repository", label: "Repository" },
-                { value: "release", label: "Release" },
-                { value: "client", label: "Client Registry" },
-                { value: "input_settings", label: "Input Settings" },
-                { value: "webhook", label: "Webhooks" },
+                { value: "", label: translate("audit.allCategories") },
+                { value: "workspace", label: translate("settingsNav.workspace") },
+                { value: "repository", label: translate("audit.repository") },
+                { value: "release", label: translate("audit.release") },
+                { value: "client", label: translate("navigation.clientRegistry") },
+                { value: "input_settings", label: translate("audit.inputSettings") },
+                { value: "webhook", label: translate("settingsNav.webhooks") },
               ]}
             />
           </label>
           <label className="filterField">
-            <span>App</span>
+            <span>{translate("apps.column.app")}</span>
             <SelectControl
               value={appKey}
               onChange={setAppKey}
-              ariaLabel="Audit app"
+              ariaLabel={translate("audit.app")}
               options={[
-                { value: "", label: "All apps" },
+                { value: "", label: translate("audit.allApps") },
                 ...(options.data?.apps || []).map((app) => ({
                   value: app.app_key,
                   label: app.app_key,
@@ -104,13 +105,13 @@ export function AuditPage() {
             />
           </label>
           <label className="filterField">
-            <span>Client</span>
+            <span>{translate("audit.client")}</span>
             <SelectControl
               value={clientID}
               onChange={setClientID}
-              ariaLabel="Audit client"
+              ariaLabel={translate("audit.client")}
               options={[
-                { value: "", label: "All clients" },
+                { value: "", label: translate("audit.allClients") },
                 ...(options.data?.clients || []).map((client) => ({
                   value: client.id,
                   label: client.name,
@@ -119,15 +120,15 @@ export function AuditPage() {
             />
           </label>
           <label className="filterField auditActorFilter">
-            <span>Actor</span>
+            <span>{translate("settings.actor")}</span>
             <span className="filterInputAction">
               <input
                 value={actorDraft}
-                placeholder="Name or account"
+                placeholder={translate("audit.actorPlaceholder")}
                 onChange={(event) => setActorDraft(event.target.value)}
               />
               <button className="button" type="submit">
-                Apply
+                {translate("common.apply")}
               </button>
             </span>
           </label>

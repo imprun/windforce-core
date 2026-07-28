@@ -1,3 +1,4 @@
+import { translate } from "../shared/i18n";
 import type { SystemInfo, TriggerDefinition, TriggerKind, TriggerPayload } from "./api";
 
 export type TriggerDraft = {
@@ -108,8 +109,8 @@ export function buildTriggerPayload(
 ): TriggerPayloadResult {
   const name = draft.name.trim();
   const action = draft.action.trim();
-  if (!name) return { error: "Name is required." };
-  if (!action) return { error: "Select a target Action." };
+  if (!name) return { error: translate("trigger.validation.nameRequired") };
+  if (!action) return { error: translate("trigger.validation.actionRequired") };
 
   const payload: TriggerPayload = {
     name,
@@ -126,10 +127,10 @@ export function buildTriggerPayload(
   const completionSecret: Record<string, string> = {};
   if (draft.completionMode === "callback") {
     if (!draft.callbackEndpoint.trim()) {
-      return { error: "Callback endpoint is required." };
+      return { error: translate("trigger.validation.callbackEndpointRequired") };
     }
     if (existing?.completion.mode !== "callback" && !draft.callbackSigningSecret.trim()) {
-      return { error: "Callback signing secret is required." };
+      return { error: translate("trigger.validation.callbackSecretRequired") };
     }
     payload.completion = {
       mode: "callback",
@@ -140,10 +141,10 @@ export function buildTriggerPayload(
     }
   } else if (draft.completionMode === "publish") {
     if (!draft.publishRoutingKey.trim()) {
-      return { error: "Completion routing key is required." };
+      return { error: translate("trigger.validation.routingKeyRequired") };
     }
     if (existing?.completion.mode !== "publish" && !draft.publishRabbitMQURL.trim()) {
-      return { error: "Completion RabbitMQ URL is required." };
+      return { error: translate("trigger.validation.publishURLRequired") };
     }
     payload.completion = {
       mode: "publish",
@@ -159,14 +160,14 @@ export function buildTriggerPayload(
   if (draft.kind === "webhook" && draft.responseMode === "wait") {
     const timeout = Number(draft.responseTimeout);
     if (!Number.isInteger(timeout) || timeout < 1 || timeout > 60) {
-      return { error: "Wait timeout must be an integer between 1 and 60 seconds." };
+      return { error: translate("trigger.validation.waitTimeout") };
     }
     payload.response = { mode: "wait", timeout_seconds: timeout };
   }
 
   if (draft.kind === "webhook") {
     if (!existing && !draft.webhookSecret.trim()) {
-      return { error: "Webhook signing secret is required." };
+      return { error: translate("trigger.validation.webhookSecretRequired") };
     }
     payload.config = {
       signature_header: draft.signatureHeader.trim() || "X-WF-Signature-256",
@@ -184,13 +185,15 @@ export function buildTriggerPayload(
   }
 
   if (draft.kind === "schedule") {
-    if (!draft.cron.trim()) return { error: "Cron expression is required." };
-    if (!draft.timezone.trim()) return { error: "Timezone is required." };
+    if (!draft.cron.trim()) return { error: translate("trigger.validation.cronRequired") };
+    if (!draft.timezone.trim()) {
+      return { error: translate("trigger.validation.timezoneRequired") };
+    }
     let input: unknown;
     try {
       input = JSON.parse(draft.scheduleInput.trim() || "{}");
     } catch {
-      return { error: "Schedule input must be valid JSON." };
+      return { error: translate("trigger.validation.scheduleJSON") };
     }
     payload.config = {
       cron: draft.cron.trim(),
@@ -203,17 +206,17 @@ export function buildTriggerPayload(
     return { payload };
   }
 
-  if (!draft.queue.trim()) return { error: "RabbitMQ queue is required." };
+  if (!draft.queue.trim()) return { error: translate("trigger.validation.queueRequired") };
   if (!existing && !draft.rabbitMQURL.trim()) {
-    return { error: "RabbitMQ connection URL is required." };
+    return { error: translate("trigger.validation.rabbitMQURLRequired") };
   }
   const concurrency = Number(draft.concurrency);
   const prefetch = Number(draft.prefetch);
   if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 128) {
-    return { error: "Concurrency must be an integer between 1 and 128." };
+    return { error: translate("trigger.validation.concurrency") };
   }
   if (!Number.isInteger(prefetch) || prefetch < concurrency || prefetch > 65535) {
-    return { error: "Prefetch must be an integer at least equal to concurrency." };
+    return { error: translate("trigger.validation.prefetch") };
   }
   payload.config = {
     queue: draft.queue.trim(),
@@ -235,9 +238,9 @@ export function buildTriggerPayload(
 }
 
 export function triggerKindLabel(kind: TriggerKind): string {
-  if (kind === "rabbitmq") return "RabbitMQ";
-  if (kind === "schedule") return "Schedule";
-  return "Webhook";
+  if (kind === "rabbitmq") return translate("trigger.kind.rabbitmq");
+  if (kind === "schedule") return translate("trigger.kind.schedule");
+  return translate("trigger.kind.webhook");
 }
 
 export function triggerConfigSummary(trigger: TriggerDefinition): string {
@@ -245,11 +248,11 @@ export function triggerConfigSummary(trigger: TriggerDefinition): string {
     return `${configString(trigger.config, "cron", "—")} · ${configString(trigger.config, "timezone", "—")}`;
   }
   if (trigger.kind === "rabbitmq") {
-    return configString(trigger.config, "queue", "Queue not set");
+    return configString(trigger.config, "queue", translate("trigger.summary.queueNotSet"));
   }
   return configString(trigger.config, "input_mode", "json") === "raw"
-    ? "Raw request envelope"
-    : "JSON request body";
+    ? translate("trigger.summary.rawRequest")
+    : translate("trigger.summary.jsonRequest");
 }
 
 export function httpRouteProvider(info: SystemInfo | null | undefined): string {

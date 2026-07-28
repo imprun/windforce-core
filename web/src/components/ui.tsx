@@ -3,6 +3,7 @@ import { Dialog as DialogPrimitive, Select as SelectPrimitive } from "radix-ui";
 import type { ReactNode } from "react";
 import type { ProbeResult } from "../lib/api";
 import { formatJSON } from "../lib/format";
+import { translate } from "../shared/i18n";
 
 const emptySelectValue = "__imprun_empty_select_value__";
 
@@ -16,7 +17,7 @@ export function SelectControl<T extends string>({
   value,
   options,
   onChange,
-  placeholder = "Select",
+  placeholder = translate("common.select"),
   ariaLabel,
   id,
   disabled,
@@ -92,7 +93,7 @@ export function ReleaseStateBadge({
         <span aria-hidden="true" className="badgeIcon">
           !
         </span>
-        repair required
+        {translate("release.repairRequired")}
       </span>
     );
   }
@@ -101,14 +102,14 @@ export function ReleaseStateBadge({
       <span aria-hidden="true" className="badgeIcon">
         ✓
       </span>
-      released
+      {translate("release.released")}
     </span>
   ) : (
     <span className="badge badge-neutral">
       <span aria-hidden="true" className="badgeIcon">
         ○
       </span>
-      registered
+      {translate("release.registered")}
     </span>
   );
 }
@@ -188,22 +189,22 @@ export function ErrorNotice({ message, onRetry }: { message: string; onRetry?: (
       <span>{message}</span>
       {onRetry ? (
         <button className="button small" type="button" onClick={onRetry}>
-          Retry
+          {translate("common.retry")}
         </button>
       ) : null}
     </div>
   );
 }
 
-export function Loading({ label = "Loading…" }: { label?: string }) {
-  return <p className="loading">{label}</p>;
+export function Loading({ label }: { label?: string }) {
+  return <p className="loading">{label || translate("common.loading")}</p>;
 }
 
 export function JsonBlock({ value, maxHeight }: { value: unknown; maxHeight?: number }) {
   const text = typeof value === "string" ? value : formatJSON(value);
   return (
     <pre className="codeBlock" style={maxHeight ? { maxHeight } : undefined}>
-      {text || "(empty)"}
+      {text || translate("common.emptyValue")}
     </pre>
   );
 }
@@ -235,7 +236,11 @@ export function Modal({
                 <DialogPrimitive.Description>{subtitle}</DialogPrimitive.Description>
               ) : null}
             </div>
-            <DialogPrimitive.Close className="icon-control" aria-label="Close" title="Close">
+            <DialogPrimitive.Close
+              className="icon-control"
+              aria-label={translate("common.close")}
+              title={translate("common.close")}
+            >
               <X size={18} aria-hidden="true" />
             </DialogPrimitive.Close>
           </header>
@@ -273,7 +278,11 @@ export function Sheet({
                 <DialogPrimitive.Description>{subtitle}</DialogPrimitive.Description>
               ) : null}
             </div>
-            <DialogPrimitive.Close className="icon-control" aria-label="Close" title="Close">
+            <DialogPrimitive.Close
+              className="icon-control"
+              aria-label={translate("common.close")}
+              title={translate("common.close")}
+            >
               <X size={18} aria-hidden="true" />
             </DialogPrimitive.Close>
           </header>
@@ -288,17 +297,22 @@ export function Sheet({
 export function ProbeNotice({ probe, branch }: { probe: ProbeResult; branch: string }) {
   if (!probe.reachable) {
     return (
-      <div className="inlineNotice error">{probe.error || "Repository is not reachable."}</div>
+      <div className="inlineNotice error">{probe.error || translate("repository.unreachable")}</div>
     );
   }
   const branchName = probe.branch || branch;
   const branches = probe.branches?.length
-    ? ` Remote branches: ${probe.branches.slice(0, 8).join(", ")}.`
+    ? translate("repository.remoteBranches", {
+        branches: probe.branches.slice(0, 8).join(", "),
+      })
     : "";
   return (
     <div className="inlineNotice ok">
-      Repository reachable. Branch {branchName} {probe.branch_exists ? "exists" : "was not found"}.
-      {branches}
+      {translate("repository.reachable", { branch: branchName })}{" "}
+      {probe.branch_exists
+        ? translate("repository.branchExists")
+        : translate("repository.branchNotFound")}
+      .{branches}
     </div>
   );
 }

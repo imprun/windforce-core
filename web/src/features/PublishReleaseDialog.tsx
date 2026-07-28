@@ -5,6 +5,7 @@ import { useApp } from "../lib/app-context";
 import { shortSHA } from "../lib/format";
 import { displayRepoURL } from "../lib/repo";
 import { Link } from "../lib/router";
+import { translate } from "../shared/i18n";
 
 export function PublishReleaseDialog({
   source,
@@ -30,7 +31,10 @@ export function PublishReleaseDialog({
     setError("");
     try {
       const result = await api.deployGitSource(source.id, message.trim());
-      notify("ok", `Published ${result.app} at ${shortSHA(result.commit, 12)}.`);
+      notify(
+        "ok",
+        translate("release.published", { app: result.app, commit: shortSHA(result.commit, 12) }),
+      );
       onPublished(result);
     } catch (cause) {
       setError(errorMessage(cause));
@@ -44,55 +48,62 @@ export function PublishReleaseDialog({
   return (
     <Modal
       id="publishReleaseDialog"
-      title={`Publish Release — ${appKey || source.name}`}
-      subtitle="Prepare and publish the latest synchronized source revision to workers."
+      title={translate("release.publishNamed", { app: appKey || source.name })}
+      subtitle={translate("release.publishDialogHint")}
       onClose={onClose}
     >
       <DefinitionList
         items={[
-          ["Repository source", source.name],
-          ["Repository", displayRepoURL(source.repo_url)],
-          ["Branch", source.branch || "main"],
-          ["Subpath", source.subpath || "(repo root)"],
+          [translate("apps.column.repositorySource"), source.name],
+          [translate("audit.repository"), displayRepoURL(source.repo_url)],
+          [translate("release.branch"), source.branch || "main"],
+          [translate("release.subpath"), source.subpath || translate("release.repoRoot")],
           [
-            "Active release",
-            activeCommit ? <code>{shortSHA(activeCommit, 12)}</code> : "not published yet",
+            translate("release.active"),
+            activeCommit ? (
+              <code>{shortSHA(activeCommit, 12)}</code>
+            ) : (
+              translate("release.notPublished")
+            ),
           ],
           [
-            "Latest synchronized",
+            translate("release.latestSynchronized"),
             latestSyncedCommit ? (
               <code>{shortSHA(latestSyncedCommit, 12)}</code>
             ) : (
-              "not synchronized yet"
+              translate("release.notSynchronized")
             ),
           ],
-          ["Actor", settings.actor || "(not set)"],
+          [translate("settings.actor"), settings.actor || translate("info.notSet")],
         ]}
       />
       {latestSyncedCommit ? (
         <div className="inlineNotice">
-          Publishing installs locked dependencies, validates the entrypoint, stores a worker-ready
-          execution bundle, and activates commit <code>{shortSHA(latestSyncedCommit, 12)}</code>.
-          The active release stays unchanged if preparation fails.
+          {translate("release.publishPreparationPrefix")}{" "}
+          <code>{shortSHA(latestSyncedCommit, 12)}</code>.{" "}
+          {translate("release.publishPreparationSuffix")}
         </div>
       ) : (
         <div className="inlineNotice error">
-          No synchronized source is available.{" "}
-          <Link to={`/apps/${source.id}/repository`}>Sync the repository source</Link> before
-          publishing.
+          {translate("release.noSynchronizedSource")}{" "}
+          <Link to={`/apps/${source.id}/repository`}>
+            {translate("release.syncRepositorySource")}
+          </Link>{" "}
+          {translate("release.beforePublishing")}
         </div>
       )}
       {!settings.actor ? (
         <div className="inlineNotice error">
-          Publishing requires an audit actor. Set one in <Link to="/settings">Settings</Link>.
+          {translate("release.actorRequired")}{" "}
+          <Link to="/settings">{translate("navigation.settings")}</Link>.
         </div>
       ) : null}
-      <Field label="Release note" hint="Recorded in release history (optional).">
+      <Field label={translate("release.note")} hint={translate("release.noteHint")}>
         <input
           id="publishReleaseMessage"
           value={message}
           onChange={(event) => setMessage(event.target.value)}
-          placeholder="What changed in this release?"
+          placeholder={translate("release.notePlaceholder")}
         />
       </Field>
       {error ? <div className="inlineNotice error">{error}</div> : null}
@@ -100,7 +111,7 @@ export function PublishReleaseDialog({
         <span />
         <div className="dialogFooterActions">
           <button className="button" type="button" onClick={onClose} disabled={publishing}>
-            Cancel
+            {translate("common.cancel")}
           </button>
           <button
             className="button primary"
@@ -108,7 +119,7 @@ export function PublishReleaseDialog({
             onClick={handlePublish}
             disabled={publishing || !settings.actor || !latestSyncedCommit}
           >
-            {publishing ? "Publishing…" : "Publish latest synchronized"}
+            {publishing ? translate("release.publishing") : translate("release.publishLatest")}
           </button>
         </div>
       </footer>

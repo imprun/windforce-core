@@ -4,6 +4,7 @@ import { Layout } from "../components/Layout";
 import { SettingsNav } from "../components/SettingsNav";
 import { DefinitionList, Field, Panel } from "../components/ui";
 import { useApp } from "../lib/app-context";
+import { translate } from "../shared/i18n";
 
 export const CLI_TOKEN_ENV = "WINDFORCE_CORE_API_TOKEN";
 
@@ -15,7 +16,9 @@ export function SettingsPage() {
   const { settings, updateSettings, notify, runtimeConfig } = useApp();
   const [token, setToken] = useState(settings.token);
   const [actor, setActor] = useState(settings.actor);
-  const [health, setHealth] = useState<string>("checking…");
+  const [health, setHealth] = useState<"checking" | "ready" | "notReady" | "unreachable">(
+    "checking",
+  );
   const apiURL = globalThis.location?.origin || "";
   const profileCommand = cliProfileCommand(apiURL, settings.workspace);
   const hosted = Boolean(runtimeConfig?.hostAccount);
@@ -30,10 +33,10 @@ export function SettingsPage() {
     fetch("/readyz")
       .then((response) => response.json())
       .then((payload: { ready?: boolean }) => {
-        if (!canceled) setHealth(payload.ready ? "control plane ready" : "control plane not ready");
+        if (!canceled) setHealth(payload.ready ? "ready" : "notReady");
       })
       .catch(() => {
-        if (!canceled) setHealth("control plane unreachable");
+        if (!canceled) setHealth("unreachable");
       });
     return () => {
       canceled = true;
@@ -48,13 +51,13 @@ export function SettingsPage() {
       token: token.trim(),
       actor: actor.trim(),
     });
-    notify("ok", "Settings saved.");
+    notify("ok", translate("settings.saved"));
   }
 
   return (
     <Layout
-      title="Settings"
-      subtitle="CLI connection details, browser authentication, and audit context."
+      title={translate("navigation.settings")}
+      subtitle={translate("settings.subtitle")}
       actions={
         hosted ? null : (
           <button
@@ -64,63 +67,69 @@ export function SettingsPage() {
             disabled={!dirty}
             onClick={handleSave}
           >
-            Save settings
+            {translate("settings.save")}
           </button>
         )
       }
     >
       <SettingsNav />
       <Panel
-        title="CLI connection"
-        subtitle="Non-secret connection details for the active workspace."
+        title={translate("settings.cliConnection")}
+        subtitle={translate("settings.cliConnectionHint")}
       >
         <div className="cliConnectionGrid">
-          <Field label="Control plane URL" hint="The root address currently used by this browser.">
-            <CopyableSetting label="control plane URL" value={apiURL} />
-          </Field>
-          <Field label="Workspace ID" hint="Passed to the CLI as --workspace.">
-            <CopyableSetting label="workspace ID" value={settings.workspace} />
+          <Field
+            label={translate("settings.controlPlaneURL")}
+            hint={translate("settings.controlPlaneURLHint")}
+          >
+            <CopyableSetting label={translate("settings.controlPlaneURL")} value={apiURL} />
           </Field>
           <Field
-            label="Token environment"
-            hint="Set this variable to a named token issued from Settings → Access."
+            label={translate("settings.workspaceID")}
+            hint={translate("settings.workspaceIDHint")}
           >
-            <CopyableSetting label="token environment variable" value={CLI_TOKEN_ENV} />
+            <CopyableSetting label={translate("settings.workspaceID")} value={settings.workspace} />
+          </Field>
+          <Field
+            label={translate("settings.tokenEnvironment")}
+            hint={translate("settings.tokenEnvironmentHint")}
+          >
+            <CopyableSetting label={translate("settings.tokenEnvironment")} value={CLI_TOKEN_ENV} />
           </Field>
         </div>
         <Field
-          label="Profile command"
-          hint="The token value is intentionally excluded from this command."
+          label={translate("settings.profileCommand")}
+          hint={translate("settings.profileCommandHint")}
         >
           <div className="cliProfileCommand">
-            <CopyableSetting label="CLI profile command" value={profileCommand} />
+            <CopyableSetting label={translate("settings.profileCommand")} value={profileCommand} />
           </div>
         </Field>
       </Panel>
 
       {hosted ? (
         <Panel
-          title="Hosted browser access"
-          subtitle="This browser is authenticated by the hosting platform."
+          title={translate("settings.hostedAccess")}
+          subtitle={translate("settings.hostedAccessHint")}
         >
           <DefinitionList
             items={[
-              ["Authentication", "Managed by host"],
-              ["Audit actor", "Derived from the authenticated host principal"],
-              ["Control plane", health],
+              [translate("settings.authentication"), translate("shell.managedByHost")],
+              [translate("settings.auditActor"), translate("settings.hostPrincipalActor")],
+              [translate("settings.controlPlane"), healthLabel(health)],
             ]}
           />
         </Panel>
       ) : (
         <>
           <Panel
-            title="Browser API access"
-            subtitle="Credential used by this Web UI for requests in the active workspace."
+            title={translate("settings.browserAPIAccess")}
+            subtitle={translate("settings.browserAPIAccessHint")}
           >
             <div className="formGrid">
               <Field
-                label="API token"
-                hint="Paste a workspace token here only when this browser must authenticate its requests."
+                label={translate("settings.apiToken")}
+                hint={translate("settings.apiTokenHint")}
               >
                 <input
                   id="settingsToken"
@@ -131,18 +140,15 @@ export function SettingsPage() {
                 />
               </Field>
             </div>
-            <DefinitionList items={[["Status", health]]} />
+            <DefinitionList items={[[translate("common.status"), healthLabel(health)]]} />
           </Panel>
 
           <Panel
-            title="Audit actor"
-            subtitle="Recorded as the subject of local state changes. Not an authentication credential."
+            title={translate("settings.auditActor")}
+            subtitle={translate("settings.auditActorHint")}
           >
             <div className="formGrid">
-              <Field
-                label="Actor"
-                hint="Standalone development defaults to local-dev; authenticated principals override this value."
-              >
+              <Field label={translate("settings.actor")} hint={translate("settings.actorHint")}>
                 <input
                   id="settingsActor"
                   value={actor}
@@ -157,6 +163,13 @@ export function SettingsPage() {
   );
 }
 
+function healthLabel(health: "checking" | "ready" | "notReady" | "unreachable"): string {
+  if (health === "ready") return translate("settings.health.ready");
+  if (health === "notReady") return translate("settings.health.notReady");
+  if (health === "unreachable") return translate("settings.health.unreachable");
+  return translate("settings.health.checking");
+}
+
 function CopyableSetting({ label, value }: { label: string; value: string }) {
   const { notify } = useApp();
 
@@ -166,11 +179,11 @@ function CopyableSetting({ label, value }: { label: string; value: string }) {
       <button
         className="button iconButton"
         type="button"
-        title={`Copy ${label}`}
-        aria-label={`Copy ${label}`}
+        title={translate("common.copyNamed", { name: label })}
+        aria-label={translate("common.copyNamed", { name: label })}
         onClick={async () => {
           await navigator.clipboard.writeText(value);
-          notify("ok", `${label} copied.`);
+          notify("ok", translate("common.copiedNamed", { name: label }));
         }}
       >
         <Copy size={16} aria-hidden="true" />
