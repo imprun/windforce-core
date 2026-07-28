@@ -329,8 +329,9 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 			"post": map[string]any{
 				"operationId": "syncGitSource",
 				"summary":     "Synchronize an immutable source revision",
-				"description": "Resolves the remote branch, validates the manifest, schemas, and lockfile, then stores the exact source revision. Runtime dependencies are not installed and the active release is not changed.",
+				"description": "Resolves the remote branch, optionally requires it to match expected_commit, validates the manifest, schemas, and lockfile, then stores the exact source revision. Runtime dependencies are not installed and the active release is not changed.",
 				"parameters":  []any{oapiWorkspaceParam(workspaceID), oapiPathParam("gitSourceId", "Numeric git source id returned by register/list.")},
+				"requestBody": oapiJSONBody(oapiSchemaRef("SyncGitSourceRequest"), false),
 				"responses": withErrors(map[string]any{
 					"200": oapiResponse("Synchronized source revision and discovered actions.", oapiSchemaRef("GitSourceSyncResult")),
 				}, "400", "401", "403", "404", "409", "422"),
@@ -340,7 +341,7 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 			"post": map[string]any{
 				"operationId": "deployGitSource",
 				"summary":     "Prepare and publish the latest synchronized revision",
-				"description": "Pins the latest synchronized source at operation start, prepares and validates its execution bundle, then atomically makes it visible to new jobs and records release history, audit, and Control Plane events.",
+				"description": "Pins the latest synchronized source at operation start, optionally requires it to match expected_commit, prepares and validates its execution bundle, then atomically makes it visible to new jobs and records release history, audit, and Control Plane events.",
 				"parameters":  []any{oapiWorkspaceParam(workspaceID), oapiPathParam("gitSourceId", "Numeric git source id returned by register/list.")},
 				"requestBody": oapiJSONBody(oapiSchemaRef("DeployGitSourceRequest"), true),
 				"responses": withErrors(map[string]any{
@@ -1130,10 +1131,17 @@ func controlPlaneSchemas() map[string]any {
 		"DeployGitSourceRequest": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"confirm": oapiBooleanSchema(),
-				"message": nullableString,
+				"confirm":         oapiBooleanSchema(),
+				"message":         nullableString,
+				"expected_commit": oapiStringSchema(),
 			},
 			"required": []any{"confirm"},
+		},
+		"SyncGitSourceRequest": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"expected_commit": oapiStringSchema(),
+			},
 		},
 		"PatchGitSourceRequest": map[string]any{
 			"type": "object",
@@ -1180,6 +1188,7 @@ func controlPlaneSchemas() map[string]any {
 				"app":               oapiStringSchema(),
 				"actions":           stringArray,
 				"source":            oapiStringSchema(),
+				"release_id":        oapiStringSchema(),
 				"deployment_id":     nullableString,
 				"created_by":        nullableString,
 				"message":           nullableString,
@@ -1189,7 +1198,7 @@ func controlPlaneSchemas() map[string]any {
 				"runtime":           oapiStringSchema(),
 				"validation_checks": stringArray,
 			},
-			"required": []any{"commit", "app", "actions", "bundle_status", "bundle_digest", "runtime", "validation_checks"},
+			"required": []any{"commit", "app", "actions", "release_id", "bundle_status", "bundle_digest", "runtime", "validation_checks"},
 		},
 		"SampleSyncResponse": map[string]any{
 			"type": "object",

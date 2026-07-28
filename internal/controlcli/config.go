@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,11 +16,35 @@ const (
 	defaultTokenEnv  = "WINDFORCE_CORE_API_TOKEN"
 )
 
+type programConfig struct {
+	Name       string
+	ConfigDir  string
+	ConfigEnv  string
+	ContextEnv string
+}
+
+var (
+	legacyProgram = programConfig{
+		Name:       "windforce",
+		ConfigDir:  "windforce",
+		ConfigEnv:  "WINDFORCE_CONFIG",
+		ContextEnv: "WINDFORCE_PROFILE",
+	}
+	wfProgram = programConfig{
+		Name:       "wf",
+		ConfigDir:  "wf",
+		ConfigEnv:  "WF_CONFIG",
+		ContextEnv: "WF_CONTEXT",
+	}
+)
+
 type Profile struct {
 	APIURL    string `json:"api_url,omitempty"`
 	Workspace string `json:"workspace,omitempty"`
 	Actor     string `json:"actor,omitempty"`
 	TokenEnv  string `json:"token_env,omitempty"`
+	Account   string `json:"account,omitempty"`
+	AuthType  string `json:"auth_type,omitempty"`
 }
 
 type ConfigFile struct {
@@ -34,14 +59,32 @@ type resolvedConfig struct {
 }
 
 func configPath() (string, error) {
-	if path := strings.TrimSpace(os.Getenv("WINDFORCE_CONFIG")); path != "" {
+	return configPathFor(legacyProgram)
+}
+
+func configPathFor(program programConfig) (string, error) {
+	if path := strings.TrimSpace(os.Getenv(program.ConfigEnv)); path != "" {
 		return path, nil
 	}
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		return "", fmt.Errorf("resolve user config directory: %w", err)
 	}
-	return filepath.Join(dir, "windforce", "config.json"), nil
+	return filepath.Join(dir, program.ConfigDir, "config.json"), nil
+}
+
+func loadProgramConfig(program programConfig, path string) (ConfigFile, error) {
+	if program.Name != wfProgram.Name || strings.TrimSpace(os.Getenv(program.ConfigEnv)) != "" {
+		return loadConfig(path)
+	}
+	if _, err := os.Stat(path); err == nil || !errors.Is(err, os.ErrNotExist) {
+		return loadConfig(path)
+	}
+	legacyPath, err := configPathFor(legacyProgram)
+	if err != nil || legacyPath == path {
+		return loadConfig(path)
+	}
+	return loadConfig(legacyPath)
 }
 
 func loadConfig(path string) (ConfigFile, error) {
@@ -77,7 +120,24 @@ func saveConfig(path string, config ConfigFile) error {
 }
 
 func resolveProfile(config ConfigFile, selected string, overrides Profile) (resolvedConfig, error) {
-	name := firstNonEmpty(selected, os.Getenv("WINDFORCE_PROFILE"), config.CurrentProfile)
+	return resolveProfileFor(legacyProgram, config, selected, overrides)
+}
+
+func resolveProfileFor(program programConfig, config ConfigFile, selected string, overrides Profile) (resolvedConfig, error) {
+	return resolveProfileForMode(program, config, selected, overrides, true)
+}
+
+func resolveProfileForLogout(program programConfig, config ConfigFile, selected string, overrides Profile) (resolvedConfig, error) {
+	return resolveProfileForMode(program, config, selected, overrides, false)
+}
+
+func resolveProfileForMode(program programConfig, config ConfigFile, selected string, overrides Profile, validateAPIURL bool) (resolvedConfig, error) {
+	contextValues := []string{selected, os.Getenv(program.ContextEnv)}
+	if program.Name == wfProgram.Name {
+		contextValues = append(contextValues, os.Getenv("WF_PROFILE"), os.Getenv("WINDFORCE_PROFILE"))
+	}
+	contextValues = append(contextValues, config.CurrentProfile)
+	name := firstNonEmpty(contextValues...)
 	profile := Profile{}
 	if name != "" {
 		var ok bool
@@ -86,15 +146,77 @@ func resolveProfile(config ConfigFile, selected string, overrides Profile) (reso
 			return resolvedConfig{}, fmt.Errorf("profile %q does not exist", name)
 		}
 	}
-	profile.APIURL = firstNonEmpty(overrides.APIURL, os.Getenv("WINDFORCE_CORE_API_URL"), os.Getenv("WINDFORCE_LITE_API_URL"), profile.APIURL, defaultAPIURL)
-	profile.Workspace = firstNonEmpty(overrides.Workspace, os.Getenv("WINDFORCE_CORE_WORKSPACE"), os.Getenv("WINDFORCE_LITE_WORKSPACE"), profile.Workspace, defaultWorkspace)
-	profile.Actor = firstNonEmpty(overrides.Actor, os.Getenv("WINDFORCE_CORE_ACTOR"), os.Getenv("WINDFORCE_LITE_ACTOR"), profile.Actor)
-	profile.TokenEnv = firstNonEmpty(overrides.TokenEnv, os.Getenv("WINDFORCE_CORE_TOKEN_ENV"), profile.TokenEnv, defaultTokenEnv)
-	token := ""
+	apiURLValues := []string{overrides.APIURL}
+	workspaceValues := []string{overrides.Workspace}
+	actorValues := []string{overrides.Actor}
+	tokenEnvValues := []string{overrides.TokenEnv}
+	if program.Name == wfProgram.Name {
+		apiURLValues = append(apiURLValues, os.Getenv("WF_API_URL"))
+		workspaceValues = append(workspaceValues, os.Getenv("WF_WORKSPACE"))
+		actorValues = append(actorValues, os.Getenv("WF_ACTOR"))
+		tokenEnvValues = append(tokenEnvValues, os.Getenv("WF_TOKEN_ENV"))
+	}
+	apiURLValues = append(apiURLValues, os.Getenv("WINDFORCE_CORE_API_URL"), os.Getenv("WINDFORCE_LITE_API_URL"), profile.APIURL, defaultAPIURL)
+	workspaceValues = append(workspaceValues, os.Getenv("WINDFORCE_CORE_WORKSPACE"), os.Getenv("WINDFORCE_LITE_WORKSPACE"), profile.Workspace, defaultWorkspace)
+	actorValues = append(actorValues, os.Getenv("WINDFORCE_CORE_ACTOR"), os.Getenv("WINDFORCE_LITE_ACTOR"), profile.Actor)
+	tokenEnvValues = append(tokenEnvValues, os.Getenv("WINDFORCE_CORE_TOKEN_ENV"), profile.TokenEnv, defaultTokenEnv)
+	profile.APIURL = firstNonEmpty(apiURLValues...)
+	profile.Workspace = firstNonEmpty(workspaceValues...)
+	profile.Actor = firstNonEmpty(actorValues...)
+	profile.TokenEnv = firstNonEmpty(tokenEnvValues...)
+	if validateAPIURL {
+		normalizedAPIURL, err := normalizeAPIBaseURL(profile.APIURL)
+		if err != nil {
+			return resolvedConfig{}, err
+		}
+		profile.APIURL = normalizedAPIURL
+	} else {
+		profile.APIURL = strings.TrimSpace(profile.APIURL)
+	}
+	token := firstNonEmpty(os.Getenv("WF_TOKEN"))
+	if program.Name != wfProgram.Name {
+		token = ""
+	}
 	if profile.TokenEnv != "" {
-		token = strings.TrimSpace(os.Getenv(profile.TokenEnv))
+		token = firstNonEmpty(token, os.Getenv(profile.TokenEnv))
 	}
 	return resolvedConfig{ProfileName: name, Profile: profile, Token: token}, nil
+}
+
+func normalizeAPIBaseURL(raw string) (string, error) {
+	target, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || target == nil {
+		return "", fmt.Errorf("invalid API URL: use an http:// or https:// URL with a host")
+	}
+	scheme := strings.ToLower(target.Scheme)
+	if target.Opaque != "" ||
+		(scheme != "http" && scheme != "https") ||
+		target.Host == "" {
+		return "", fmt.Errorf("invalid API URL: use an http:// or https:// URL with a host")
+	}
+	target.Scheme = scheme
+	if target.User != nil {
+		return "", fmt.Errorf("invalid API URL: embedded credentials are not allowed")
+	}
+	if target.RawQuery != "" || target.Fragment != "" {
+		return "", fmt.Errorf("invalid API URL: query parameters and fragments are not allowed")
+	}
+	if scheme == "http" && !isLoopbackHost(target.Hostname()) {
+		return "", fmt.Errorf("invalid API URL: HTTPS is required except for loopback development")
+	}
+	return strings.TrimRight(target.String(), "/"), nil
+}
+
+func apiURLOrigin(raw string) (string, error) {
+	normalized, err := normalizeAPIBaseURL(raw)
+	if err != nil {
+		return "", err
+	}
+	target, err := url.Parse(normalized)
+	if err != nil {
+		return "", fmt.Errorf("invalid API URL: use an http:// or https:// URL with a host")
+	}
+	return strings.ToLower(target.Scheme) + "://" + strings.ToLower(target.Host), nil
 }
 
 func firstNonEmpty(values ...string) string {

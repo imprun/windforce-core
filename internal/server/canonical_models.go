@@ -159,6 +159,7 @@ type canonicalDeployResult struct {
 	Actions          []string `json:"actions"`
 	Flows            []string `json:"flows,omitempty"`
 	Source           string   `json:"source,omitempty"`
+	ReleaseID        string   `json:"release_id"`
 	DeploymentID     *string  `json:"deployment_id,omitempty"`
 	CreatedBy        *string  `json:"created_by,omitempty"`
 	Message          *string  `json:"message,omitempty"`
@@ -183,13 +184,14 @@ func newCanonicalSourceSyncResult(candidate catalogpkg.ReleaseCandidate) canonic
 	}
 }
 
-func newCanonicalDeployResult(deployment contract.Deployment) canonicalDeployResult {
+func newCanonicalDeployResult(deployment contract.Deployment, releaseID string) canonicalDeployResult {
 	actions := canonicalDeploymentActions(deployment)
 	return canonicalDeployResult{
 		Commit:           deployment.Commit,
 		App:              deployment.App,
 		Actions:          actions,
 		Source:           strings.TrimSpace(deployment.Source),
+		ReleaseID:        strings.TrimSpace(releaseID),
 		DeploymentID:     cloneStringPtr(deployment.DeploymentID),
 		CreatedBy:        cloneStringPtr(deployment.CreatedBy),
 		Message:          cloneStringPtr(deployment.Message),

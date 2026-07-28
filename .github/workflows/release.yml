@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   cli:
@@ -22,6 +23,8 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.12
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v4.1.2
       - name: Test
         run: go test ./...
       - uses: goreleaser/goreleaser-action@v7
@@ -31,6 +34,19 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Sign checksum bundle
+        shell: bash
+        run: |
+          cosign sign-blob \
+            --bundle dist/checksums.txt.sigstore.json \
+            dist/checksums.txt \
+            --yes
+          gh release upload "${GITHUB_REF_NAME}" \
+            dist/checksums.txt.sigstore.json \
+            --repo "${GITHUB_REPOSITORY}" \
+            --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   verify:
     needs: cli
@@ -46,12 +62,129 @@ jobs:
           gh release download "${GITHUB_REF_NAME}" \
             --repo "${GITHUB_REPOSITORY}" \
             --pattern checksums.txt \
-            --pattern '*_linux_amd64.tar.gz'
-      - name: Verify checksum and executable
+            --pattern checksums.txt.sigstore.json \
+            --pattern 'wf_*.tar.gz' \
+            --pattern 'wf_*.zip' \
+            --pattern 'windforce_*.tar.gz' \
+            --pattern 'windforce_*.zip'
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v4.1.2
+      - name: Verify signature, checksums, and archive contents
         run: |
-          sha256sum --check --ignore-missing checksums.txt
-          archive="$(find . -maxdepth 1 -type f -name '*_linux_amd64.tar.gz' -print -quit)"
-          test -n "${archive}"
-          mkdir -p "${RUNNER_TEMP}/windforce-smoke"
-          tar -xzf "${archive}" -C "${RUNNER_TEMP}/windforce-smoke"
+          set -euo pipefail
+          cosign verify-blob \
+            --bundle checksums.txt.sigstore.json \
+            --certificate-identity "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/tags/${GITHUB_REF_NAME}" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            checksums.txt
+          test "$(find . -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.zip' \) | wc -l)" -eq 12
+          sha256sum --check checksums.txt
+          expected_wf="$(printf '%s\n' LICENSE README.md wf | LC_ALL=C sort)"
+          expected_wf_windows="$(printf '%s\n' LICENSE README.md wf.exe | LC_ALL=C sort)"
+          expected_legacy="$(printf '%s\n' LICENSE README.md windforce | LC_ALL=C sort)"
+          expected_legacy_windows="$(printf '%s\n' LICENSE README.md windforce.exe | LC_ALL=C sort)"
+          for archive in wf_*.tar.gz; do
+            test "$(tar -tzf "${archive}" | LC_ALL=C sort)" = "${expected_wf}"
+          done
+          for archive in wf_*.zip; do
+            test "$(unzip -Z1 "${archive}" | LC_ALL=C sort)" = "${expected_wf_windows}"
+          done
+          for archive in windforce_*.tar.gz; do
+            test "$(tar -tzf "${archive}" | LC_ALL=C sort)" = "${expected_legacy}"
+          done
+          for archive in windforce_*.zip; do
+            test "$(unzip -Z1 "${archive}" | LC_ALL=C sort)" = "${expected_legacy_windows}"
+          done
+
+  host-smoke:
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Download and smoke-test published CLI
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if test "${RUNNER_OS}" = "macOS"; then
+            platform=darwin
+            completion=zsh
+            marker=compdef
+          else
+            platform=linux
+            completion=bash
+            marker=complete
+          fi
+          gh release download "${GITHUB_REF_NAME}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --pattern "wf_*_${platform}_amd64.tar.gz" \
+            --pattern "windforce_*_${platform}_amd64.tar.gz"
+          wf_archive="$(find . -maxdepth 1 -type f -name "wf_*_${platform}_amd64.tar.gz" -print -quit)"
+          legacy_archive="$(find . -maxdepth 1 -type f -name "windforce_*_${platform}_amd64.tar.gz" -print -quit)"
+          mkdir -p "${RUNNER_TEMP}/wf-smoke" "${RUNNER_TEMP}/windforce-smoke"
+          tar -xzf "${wf_archive}" -C "${RUNNER_TEMP}/wf-smoke"
+          tar -xzf "${legacy_archive}" -C "${RUNNER_TEMP}/windforce-smoke"
+          "${RUNNER_TEMP}/wf-smoke/wf" --version
+          "${RUNNER_TEMP}/wf-smoke/wf" completion "${completion}" | grep -q "${marker}"
           "${RUNNER_TEMP}/windforce-smoke/windforce" version
+          install_dir="${RUNNER_TEMP}/wf-upgrade"
+          mkdir -p "${install_dir}"
+          install -m 0755 "${RUNNER_TEMP}/wf-smoke/wf" "${install_dir}/wf"
+          WF_CONFIG="${install_dir}/config.json" "${install_dir}/wf" \
+            context set upgrade-smoke \
+            --api-url https://cell.example.test \
+            --workspace upgrade-smoke \
+            --use
+          install -m 0755 "${RUNNER_TEMP}/wf-smoke/wf" "${install_dir}/wf.new"
+          mv "${install_dir}/wf.new" "${install_dir}/wf"
+          WF_CONFIG="${install_dir}/config.json" "${install_dir}/wf" \
+            --json name,workspace context show upgrade-smoke |
+            grep -q '"workspace":"upgrade-smoke"'
+      - name: Download and smoke-test published CLI
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download "${env:GITHUB_REF_NAME}" `
+            --repo "${env:GITHUB_REPOSITORY}" `
+            --pattern "wf_*_windows_amd64.zip" `
+            --pattern "windforce_*_windows_amd64.zip"
+          $wfArchive = Get-ChildItem -File -Filter "wf_*_windows_amd64.zip" | Select-Object -First 1
+          $legacyArchive = Get-ChildItem -File -Filter "windforce_*_windows_amd64.zip" | Select-Object -First 1
+          if (-not $wfArchive -or -not $legacyArchive) {
+            throw "published Windows archives are missing"
+          }
+          Expand-Archive -LiteralPath $wfArchive.FullName -DestinationPath "${env:RUNNER_TEMP}\wf-smoke"
+          Expand-Archive -LiteralPath $legacyArchive.FullName -DestinationPath "${env:RUNNER_TEMP}\windforce-smoke"
+          & "${env:RUNNER_TEMP}\wf-smoke\wf.exe" --version
+          $completion = & "${env:RUNNER_TEMP}\wf-smoke\wf.exe" completion powershell
+          if (($completion -join "`n") -notmatch "Register-ArgumentCompleter") {
+            throw "PowerShell completion smoke failed"
+          }
+          & "${env:RUNNER_TEMP}\windforce-smoke\windforce.exe" version
+          $installDirectory = "${env:RUNNER_TEMP}\wf-upgrade"
+          New-Item -ItemType Directory -Path $installDirectory | Out-Null
+          Copy-Item -LiteralPath "${env:RUNNER_TEMP}\wf-smoke\wf.exe" -Destination "$installDirectory\wf.exe"
+          $env:WF_CONFIG = "$installDirectory\config.json"
+          & "$installDirectory\wf.exe" context set upgrade-smoke `
+            --api-url https://cell.example.test `
+            --workspace upgrade-smoke `
+            --use
+          Copy-Item -LiteralPath "${env:RUNNER_TEMP}\wf-smoke\wf.exe" -Destination "$installDirectory\wf.exe.new"
+          Move-Item -Force -LiteralPath "$installDirectory\wf.exe.new" -Destination "$installDirectory\wf.exe"
+          $context = & "$installDirectory\wf.exe" --json name,workspace context show upgrade-smoke
+          if (($context -join "`n") -notmatch '"workspace":"upgrade-smoke"') {
+            throw "context was not preserved across executable replacement"
+          }

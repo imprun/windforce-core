@@ -111,6 +111,53 @@ func TestGitSourceSyncStoresSourceWithoutRuntimePreparation(t *testing.T) {
 	}
 }
 
+func TestGitSourceSyncRejectsUnexpectedRemoteCommitBeforeSavingCandidate(t *testing.T) {
+	tempDir := t.TempDir()
+	repoDir := createTestGitSourceRepo(t, tempDir, "repo", "")
+	bundleStore := bundle.NewLocalStore(filepath.Join(tempDir, "store"))
+	releaseCatalog := catalog.NewFileCatalog(filepath.Join(tempDir, "catalog.json"))
+	registry := gitsource.NewFileRegistry(filepath.Join(tempDir, "git-sources.json"))
+	if err := registry.Upsert(context.Background(), gitsource.Source{
+		Workspace: "ws-a",
+		Name:      "source-a",
+		RepoURL:   filepath.ToSlash(repoDir),
+		Branch:    "main",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(New(Config{
+		Store:      state.NewLocalStore(filepath.Join(tempDir, "state.json")),
+		Catalog:    releaseCatalog,
+		Syncer:     &syncer.Syncer{Store: bundleStore, CloneRoot: tempDir},
+		GitSources: registry,
+	}))
+	defer server.Close()
+
+	response, err := http.Post(
+		server.URL+"/api/w/ws-a/git_sources/1/sync",
+		"application/json",
+		bytes.NewBufferString(`{"expected_commit":"not-the-remote-head"}`),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusConflict {
+		body, _ := io.ReadAll(response.Body)
+		t.Fatalf("sync status = %d, want %d: %s", response.StatusCode, http.StatusConflict, body)
+	}
+	if _, err := releaseCatalog.GetLatestReleaseCandidate(context.Background(), "ws-a", "1"); !errors.Is(err, catalog.ErrReleaseCandidateNotFound) {
+		t.Fatalf("unexpected candidate after commit mismatch: %v", err)
+	}
+	source, err := registry.Get(context.Background(), "ws-a", "1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if source.LastSyncedCommit != nil || source.LastSyncedAt != nil {
+		t.Fatalf("source marker changed after commit mismatch: %#v", source)
+	}
+}
+
 func TestGitSourceDeployRejectsCandidateWhenExecutionBundleIsInvalid(t *testing.T) {
 	tempDir := t.TempDir()
 	ctx := context.Background()
@@ -242,6 +289,28 @@ func TestGitSourceDeployBuildFailureKeepsActiveReleaseAndUsesLatestSync(t *testi
 		GitSources: registry,
 	}))
 	defer httpServer.Close()
+
+	mismatchedRequest, err := http.NewRequest(
+		http.MethodPost,
+		httpServer.URL+"/api/w/ws-a/git_sources/"+source.ID+"/deploy",
+		bytes.NewBufferString(`{"confirm":true,"expected_commit":"synced-first"}`),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mismatchedRequest.Header.Set("Content-Type", "application/json")
+	mismatchedRequest.Header.Set("X-Windforce-Actor", "operator@example.test")
+	mismatchedResponse, err := http.DefaultClient.Do(mismatchedRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mismatchedResponse.Body.Close()
+	if mismatchedResponse.StatusCode != http.StatusConflict {
+		t.Fatalf("mismatched deploy status = %d, want %d", mismatchedResponse.StatusCode, http.StatusConflict)
+	}
+	if preparedCommit != "" {
+		t.Fatalf("mismatched release prepared commit %q", preparedCommit)
+	}
 
 	req, err := http.NewRequest(http.MethodPost, httpServer.URL+"/api/w/ws-a/git_sources/"+source.ID+"/deploy", bytes.NewBufferString(`{"confirm":true}`))
 	if err != nil {

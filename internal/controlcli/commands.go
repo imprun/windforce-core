@@ -10,16 +10,20 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
+	"unicode"
 )
 
 type sourceDeployRequest struct {
-	Confirm bool   `json:"confirm"`
-	Message string `json:"message,omitempty"`
+	Confirm        bool   `json:"confirm"`
+	Message        string `json:"message,omitempty"`
+	ExpectedCommit string `json:"expected_commit,omitempty"`
 }
 
 func (r *runner) profile(path string, config ConfigFile, args []string) error {
+	noun := r.profileNoun()
 	if len(args) == 0 {
-		return usageError{"profile requires list, show, use, or set"}
+		return usageError{noun + " requires list, show, use, set, or delete"}
 	}
 	switch args[0] {
 	case "list":
@@ -34,7 +38,7 @@ func (r *runner) profile(path string, config ConfigFile, args []string) error {
 		rows := make([]map[string]any, 0, len(names))
 		for _, name := range names {
 			profile := config.Profiles[name]
-			rows = append(rows, map[string]any{"name": name, "current": name == config.CurrentProfile, "api_url": profile.APIURL, "workspace": profile.Workspace, "actor": profile.Actor, "token_env": profile.TokenEnv})
+			rows = append(rows, map[string]any{"name": name, "current": name == config.CurrentProfile, "api_url": profile.APIURL, "workspace": profile.Workspace, "actor": profile.Actor, "token_env": profile.TokenEnv, "account": profile.Account, "auth_type": profile.AuthType})
 		}
 		return r.outputJSON(rows)
 	case "show":
@@ -47,15 +51,15 @@ func (r *runner) profile(path string, config ConfigFile, args []string) error {
 		}
 		profile, ok := config.Profiles[name]
 		if !ok || name == "" {
-			return fmt.Errorf("profile %q does not exist", name)
+			return fmt.Errorf("%s %q does not exist", noun, name)
 		}
-		return r.outputJSON(map[string]any{"name": name, "current": name == config.CurrentProfile, "api_url": profile.APIURL, "workspace": profile.Workspace, "actor": profile.Actor, "token_env": profile.TokenEnv})
+		return r.outputJSON(map[string]any{"name": name, "current": name == config.CurrentProfile, "api_url": profile.APIURL, "workspace": profile.Workspace, "actor": profile.Actor, "token_env": profile.TokenEnv, "account": profile.Account, "auth_type": profile.AuthType})
 	case "use":
 		if len(args) != 2 {
 			return usageError{"usage: windforce profile use <name>"}
 		}
 		if _, ok := config.Profiles[args[1]]; !ok {
-			return fmt.Errorf("profile %q does not exist", args[1])
+			return fmt.Errorf("%s %q does not exist", noun, args[1])
 		}
 		config.CurrentProfile = args[1]
 		return saveConfig(path, config)
@@ -65,11 +69,12 @@ func (r *runner) profile(path string, config ConfigFile, args []string) error {
 		}
 		name := strings.TrimSpace(args[1])
 		fs := r.flags("profile set")
-		profile := config.Profiles[name]
+		original, existed := config.Profiles[name]
+		profile := original
 		fs.StringVar(&profile.APIURL, "api-url", profile.APIURL, "control-plane API base URL")
 		fs.StringVar(&profile.Workspace, "workspace", firstNonEmpty(profile.Workspace, defaultWorkspace), "workspace id")
 		fs.StringVar(&profile.Actor, "actor", profile.Actor, "actor subject")
-		fs.StringVar(&profile.TokenEnv, "token-env", firstNonEmpty(profile.TokenEnv, defaultTokenEnv), "bearer-token environment variable")
+		fs.StringVar(&profile.TokenEnv, "token-env", firstNonEmpty(profile.TokenEnv, r.defaultProfileTokenEnv()), "bearer-token environment variable")
 		makeCurrent := fs.Bool("use", false, "make this the current profile")
 		if err := fs.Parse(args[2:]); err != nil {
 			return usageError{err.Error()}
@@ -77,8 +82,39 @@ func (r *runner) profile(path string, config ConfigFile, args []string) error {
 		if fs.NArg() != 0 {
 			return usageError{"usage: windforce profile set <name> [flags]"}
 		}
-		if name == "" || profile.APIURL == "" {
-			return usageError{"profile name and --api-url are required"}
+		if err := validateContextName(args[1], noun); err != nil {
+			return err
+		}
+		normalizedAPIURL, err := normalizeAPIBaseURL(profile.APIURL)
+		if err != nil {
+			return usageError{err.Error()}
+		}
+		profile.APIURL = normalizedAPIURL
+		if existed && (original.Account != "" || original.AuthType != "") {
+			originalOrigin, originalErr := apiURLOrigin(original.APIURL)
+			updatedOrigin, updatedErr := apiURLOrigin(profile.APIURL)
+			if originalErr != nil || updatedErr != nil || originalOrigin != updatedOrigin {
+				return fmt.Errorf(
+					"%s %q is authenticated; run %s %s %q auth logout before changing its host",
+					noun,
+					name,
+					r.program,
+					r.profileSelector(),
+					name,
+				)
+			}
+		}
+		profile.Workspace = strings.TrimSpace(profile.Workspace)
+		profile.Actor = strings.TrimSpace(profile.Actor)
+		profile.TokenEnv = strings.TrimSpace(profile.TokenEnv)
+		if profile.Workspace == "" || strings.ContainsAny(profile.Workspace, "\x00\r\n") {
+			return usageError{"--workspace must not be empty or contain control characters"}
+		}
+		if strings.ContainsAny(profile.Actor, "\x00\r\n") {
+			return usageError{"--actor must not contain control characters"}
+		}
+		if profile.TokenEnv != "" && !validEnvironmentName(profile.TokenEnv) {
+			return usageError{"--token-env must be a portable environment variable name"}
 		}
 		config.Profiles[name] = profile
 		if *makeCurrent || config.CurrentProfile == "" {
@@ -87,15 +123,102 @@ func (r *runner) profile(path string, config ConfigFile, args []string) error {
 		if err := saveConfig(path, config); err != nil {
 			return err
 		}
-		return r.outputJSON(map[string]any{"name": name, "current": config.CurrentProfile == name, "api_url": profile.APIURL, "workspace": profile.Workspace, "actor": profile.Actor, "token_env": profile.TokenEnv})
+		return r.outputJSON(map[string]any{"name": name, "current": config.CurrentProfile == name, "api_url": profile.APIURL, "workspace": profile.Workspace, "actor": profile.Actor, "token_env": profile.TokenEnv, "account": profile.Account, "auth_type": profile.AuthType})
+	case "delete":
+		if len(args) < 2 {
+			return usageError{"usage: windforce profile delete <name> --yes"}
+		}
+		name := strings.TrimSpace(args[1])
+		if err := validateContextName(args[1], noun); err != nil {
+			return err
+		}
+		fs := r.flags("profile delete")
+		yes := fs.Bool("yes", false, "confirm removal of the non-secret "+noun)
+		if err := fs.Parse(args[2:]); err != nil {
+			return usageError{err.Error()}
+		}
+		if fs.NArg() != 0 {
+			return usageError{"usage: windforce profile delete <name> --yes"}
+		}
+		profile, ok := config.Profiles[name]
+		if !ok {
+			return fmt.Errorf("%s %q does not exist", noun, name)
+		}
+		if profile.Account != "" || profile.AuthType != "" {
+			return fmt.Errorf("%s %q is authenticated; run %s %s %q auth logout before deleting it", noun, name, r.program, r.profileSelector(), name)
+		}
+		if config.CurrentProfile == name && len(config.Profiles) > 1 {
+			return usageError{fmt.Sprintf("select another %s before deleting the current one", noun)}
+		}
+		if !*yes {
+			return usageError{"--yes is required to delete the " + noun}
+		}
+		delete(config.Profiles, name)
+		if config.CurrentProfile == name {
+			config.CurrentProfile = ""
+		}
+		if err := saveConfig(path, config); err != nil {
+			return err
+		}
+		currentKey := "current_profile"
+		if r.contextCommand {
+			currentKey = "current_context"
+		}
+		return r.outputJSON(map[string]any{"name": name, "deleted": true, currentKey: config.CurrentProfile})
 	default:
-		return usageError{fmt.Sprintf("unknown profile command %q", args[0])}
+		return usageError{fmt.Sprintf("unknown %s command %q", noun, args[0])}
 	}
+}
+
+func validateContextName(raw, noun string) error {
+	name := strings.TrimSpace(raw)
+	if name == "" ||
+		name != raw ||
+		len(name) > 128 ||
+		strings.HasPrefix(name, "-") ||
+		strings.IndexFunc(name, unicode.IsControl) >= 0 {
+		return usageError{noun + " name must be 1-128 characters, must not start with '-', and must not contain surrounding whitespace or control characters"}
+	}
+	return nil
+}
+
+func validEnvironmentName(name string) bool {
+	for index, char := range name {
+		if (char >= 'A' && char <= 'Z') ||
+			(char >= 'a' && char <= 'z') ||
+			char == '_' ||
+			(index > 0 && char >= '0' && char <= '9') {
+			continue
+		}
+		return false
+	}
+	return name != ""
+}
+
+func (r *runner) profileNoun() string {
+	if r.contextCommand {
+		return "context"
+	}
+	return "profile"
+}
+
+func (r *runner) profileSelector() string {
+	if r.contextCommand {
+		return "--context"
+	}
+	return "--profile"
+}
+
+func (r *runner) defaultProfileTokenEnv() string {
+	if r.program == wfProgram.Name {
+		return ""
+	}
+	return defaultTokenEnv
 }
 
 func (r *runner) source(args []string) error {
 	if len(args) == 0 {
-		return usageError{"source requires list, register, probe, sync, or deploy"}
+		return usageError{"source requires list, register, probe, sync, or publish"}
 	}
 	switch args[0] {
 	case "list":
@@ -104,23 +227,32 @@ func (r *runner) source(args []string) error {
 		}
 		return r.json(http.MethodGet, r.client.WorkspacePath("git_sources"), nil)
 	case "sync":
-		if len(args) != 2 {
-			return usageError{"usage: windforce source sync <source-id>"}
-		}
-		return r.json(http.MethodPost, r.client.WorkspacePath("git_sources", args[1], "sync"), nil)
-	case "deploy":
 		if len(args) < 2 {
-			return usageError{"usage: windforce source deploy <source-id> [--message note]"}
+			return usageError{"usage: windforce source sync <source-id> [--expected-commit sha]"}
 		}
-		fs := r.flags("source deploy")
-		message := fs.String("message", "", "audit note")
+		fs := r.flags("source sync")
+		expectedCommit := fs.String("expected-commit", "", "require the remote branch to resolve to this commit")
 		if err := fs.Parse(args[2:]); err != nil {
 			return usageError{err.Error()}
 		}
 		if fs.NArg() != 0 {
-			return usageError{"usage: windforce source deploy <source-id> [--message note]"}
+			return usageError{"usage: windforce source sync <source-id> [--expected-commit sha]"}
 		}
-		body := sourceDeployRequest{Confirm: true, Message: *message}
+		return r.json(http.MethodPost, r.client.WorkspacePath("git_sources", args[1], "sync"), compact(map[string]any{"expected_commit": *expectedCommit}))
+	case "deploy", "publish":
+		if len(args) < 2 {
+			return usageError{"usage: windforce source " + args[0] + " <source-id> [--message note]"}
+		}
+		fs := r.flags("source " + args[0])
+		message := fs.String("message", "", "audit note")
+		expectedCommit := fs.String("expected-commit", "", "require the latest synchronized candidate to match this commit")
+		if err := fs.Parse(args[2:]); err != nil {
+			return usageError{err.Error()}
+		}
+		if fs.NArg() != 0 {
+			return usageError{"usage: windforce source " + args[0] + " <source-id> [--message note]"}
+		}
+		body := sourceDeployRequest{Confirm: true, Message: *message, ExpectedCommit: *expectedCommit}
 		return r.json(http.MethodPost, r.client.WorkspacePath("git_sources", args[1], "deploy"), body)
 	case "register", "probe":
 		return r.sourceRegistration(args[0], args[1:])
@@ -175,9 +307,11 @@ func (r *runner) sourceRegistration(command string, args []string) error {
 
 func (r *runner) app(args []string) error {
 	if len(args) == 0 {
-		return usageError{"app requires list, show, history, source, or openapi"}
+		return usageError{"app requires publish, list, show, history, source, or openapi"}
 	}
 	switch args[0] {
+	case "publish":
+		return r.appPublish(args[1:])
 	case "list":
 		fs := r.flags("app list")
 		summary := fs.Bool("summary", false, "return summary rows")
@@ -222,7 +356,7 @@ func (r *runner) action(args []string) error {
 
 func (r *runner) run(args []string) error {
 	if len(args) == 0 {
-		return usageError{"run requires create, wait, show, result, or cancel"}
+		return usageError{"run requires create, wait, show, watch, result, or cancel"}
 	}
 	switch args[0] {
 	case "create", "wait":
@@ -267,11 +401,27 @@ func (r *runner) run(args []string) error {
 			body,
 			map[string]string{"Idempotency-Key": *idempotencyKey},
 		)
-	case "show", "result", "cancel":
+	case "watch":
+		if len(args) < 2 {
+			return usageError{"usage: " + r.program + " run watch <run-id> [flags]"}
+		}
+		fs := r.flags("run watch")
+		interval := fs.Duration("interval", 2*time.Second, "status polling interval")
+		timeout := fs.Duration("timeout", 10*time.Minute, "maximum wait duration")
+		resultOnly := fs.Bool("result", false, "print the Run result after success")
+		quiet := fs.Bool("quiet", false, "suppress state-change progress")
+		if err := fs.Parse(args[2:]); err != nil {
+			return usageError{err.Error()}
+		}
+		if fs.NArg() != 0 {
+			return usageError{"usage: " + r.program + " run watch <run-id> [flags]"}
+		}
+		return r.watchRun(args[1], *interval, *timeout, *resultOnly, *quiet)
+	case "show", "view", "result", "cancel":
 		if len(args) < 2 {
 			return usageError{"usage: windforce run " + args[0] + " <run-id>"}
 		}
-		if (args[0] == "show" || args[0] == "result") && len(args) != 2 {
+		if (args[0] == "show" || args[0] == "view" || args[0] == "result") && len(args) != 2 {
 			return usageError{"usage: windforce run " + args[0] + " <run-id>"}
 		}
 		parts := []string{"runs", args[1]}

@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/imprun/windforce-core/internal/contract"
 	gitsourcepkg "github.com/imprun/windforce-core/internal/gitsource"
@@ -34,6 +35,13 @@ type canonicalGitSourceDeployRequest struct {
 	MessageCamel   *string `json:"Message"`
 	Commit         string  `json:"commit"`
 	CommitCamel    string  `json:"Commit"`
+	ExpectedCommit string  `json:"expected_commit"`
+	ExpectedCamel  string  `json:"expectedCommit"`
+}
+
+type canonicalGitSourceSyncRequest struct {
+	ExpectedCommit string `json:"expected_commit"`
+	ExpectedCamel  string `json:"expectedCommit"`
 }
 
 const sourceValidationTimeout = 2 * time.Minute
@@ -272,11 +280,11 @@ func (h *Handler) handleCanonicalSampleGitSource(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	_, ok := h.syncGitSourceRevision(w, r, workspaceID, source)
+	_, ok := h.syncGitSourceRevision(w, r, workspaceID, source, "")
 	if !ok {
 		return
 	}
-	deployment, ok := h.deployLatestGitSourceRevision(w, r, workspaceID, source, gitSourceOperationAudit{
+	publication, ok := h.deployLatestGitSourceRevision(w, r, workspaceID, source, "", gitSourceOperationAudit{
 		Source: "external_sync",
 	})
 	if !ok {
@@ -284,7 +292,7 @@ func (h *Handler) handleCanonicalSampleGitSource(w http.ResponseWriter, r *http.
 	}
 	writeJSON(w, status, map[string]any{
 		"source":      newCanonicalGitSourceView(source),
-		"sync_result": newCanonicalDeployResult(deployment),
+		"sync_result": newCanonicalDeployResult(publication.Deployment, publication.ReleaseID),
 	})
 }
 
@@ -420,6 +428,16 @@ func (h *Handler) handleCanonicalGitSourceSync(w http.ResponseWriter, r *http.Re
 	if !ok {
 		return
 	}
+	var request canonicalGitSourceSyncRequest
+	if err := readOptionalJSON(r, &request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	expectedCommit, ok := expectedGitCommit(request.ExpectedCommit, request.ExpectedCamel)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "expected_commit is invalid")
+		return
+	}
 	if h.syncer == nil {
 		writeError(w, http.StatusServiceUnavailable, "sync API is not configured")
 		return
@@ -437,7 +455,7 @@ func (h *Handler) handleCanonicalGitSourceSync(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	candidate, ok := h.syncGitSourceRevision(w, r, workspaceID, source)
+	candidate, ok := h.syncGitSourceRevision(w, r, workspaceID, source, expectedCommit)
 	if !ok {
 		return
 	}
@@ -463,6 +481,11 @@ func (h *Handler) handleCanonicalGitSourceDeploy(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusBadRequest, "deploy always uses the latest synchronized revision; omit commit")
 		return
 	}
+	expectedCommit, ok := expectedGitCommit(request.ExpectedCommit, request.ExpectedCamel)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "expected_commit is invalid")
+		return
+	}
 	actor := strings.TrimSpace(requestActorSubject(r))
 	if actor == "" {
 		writeError(w, http.StatusBadRequest, "deploy actor is required")
@@ -483,7 +506,7 @@ func (h *Handler) handleCanonicalGitSourceDeploy(w http.ResponseWriter, r *http.
 	}
 	deploymentID := newDeploymentOperationID()
 	message := deployRequestMessage(request)
-	deployment, ok := h.deployLatestGitSourceRevision(w, r, workspaceID, source, gitSourceOperationAudit{
+	publication, ok := h.deployLatestGitSourceRevision(w, r, workspaceID, source, expectedCommit, gitSourceOperationAudit{
 		Source:       "deploy",
 		DeploymentID: &deploymentID,
 		Message:      message,
@@ -492,7 +515,23 @@ func (h *Handler) handleCanonicalGitSourceDeploy(w http.ResponseWriter, r *http.
 	if !ok {
 		return
 	}
-	writeJSON(w, http.StatusOK, newCanonicalDeployResult(deployment))
+	writeJSON(w, http.StatusOK, newCanonicalDeployResult(publication.Deployment, publication.ReleaseID))
+}
+
+func expectedGitCommit(values ...string) (string, bool) {
+	value := strings.TrimSpace(firstNonEmpty(values...))
+	if value == "" {
+		return "", true
+	}
+	if len(value) > 128 {
+		return "", false
+	}
+	for _, char := range value {
+		if unicode.IsSpace(char) || unicode.IsControl(char) {
+			return "", false
+		}
+	}
+	return value, true
 }
 
 func deployRequestConfirmed(request canonicalGitSourceDeployRequest) bool {

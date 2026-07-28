@@ -11,7 +11,7 @@
     "groups": [
       {
         "group": "Getting started",
-        "pages": ["index", "cli"]
+        "pages": ["index", "cli", "wf-cli-roadmap"]
       },
       {
         "group": "Concepts",
