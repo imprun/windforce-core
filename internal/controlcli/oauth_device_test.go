@@ -355,6 +355,114 @@ func TestRunWFHostedDeviceLoginAndRefresh(t *testing.T) {
 	}
 }
 
+func TestRunWFHostedLoginRevokesCredentialWhenWorkspaceProbeFails(t *testing.T) {
+	var server *httptest.Server
+	var revocationRequests atomic.Int32
+	var revokedToken atomic.Value
+	revokedToken.Store("")
+	handler := http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch request.URL.Path {
+		case cliMetadataPath:
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"schema_version": 1,
+				"authentication": map[string]any{
+					"type":      authTypeOAuth2Device,
+					"issuer":    server.URL,
+					"client_id": "wf-cli",
+					"audience":  "windforce-api",
+					"scopes":    []string{"openid", "offline_access"},
+				},
+			})
+		case "/.well-known/openid-configuration":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"issuer":                        server.URL,
+				"device_authorization_endpoint": server.URL + "/oauth2/device/auth",
+				"token_endpoint":                server.URL + "/oauth2/token",
+				"revocation_endpoint":           server.URL + "/oauth2/revoke",
+			})
+		case "/oauth2/device/auth":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"device_code":               "unused-device-code",
+				"user_code":                 "FAIL-PROBE",
+				"verification_uri":          server.URL + "/oauth/device",
+				"verification_uri_complete": server.URL + "/oauth/device?user_code=FAIL-PROBE",
+				"expires_in":                600,
+				"interval":                  1,
+			})
+		case "/oauth2/token":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"access_token":  "unused-access-token",
+				"refresh_token": "unused-refresh-token",
+				"token_type":    "Bearer",
+				"expires_in":    3600,
+			})
+		case "/oauth2/revoke":
+			if err := request.ParseForm(); err != nil {
+				t.Errorf("parse revocation form: %v", err)
+				http.Error(w, "bad form", http.StatusBadRequest)
+				return
+			}
+			revocationRequests.Add(1)
+			revokedToken.Store(request.Form.Get("token"))
+			w.WriteHeader(http.StatusOK)
+		case "/api/w/team/apps":
+			http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+		default:
+			http.NotFound(w, request)
+		}
+	})
+	server = httptest.NewServer(handler)
+	defer server.Close()
+
+	configPath := t.TempDir() + "/config.json"
+	t.Setenv("WF_CONFIG", configPath)
+	var stdout, stderr bytes.Buffer
+	exit := RunWF(
+		[]string{"context", "set", "hosted", "--api-url", server.URL, "--workspace", "team", "--use"},
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+	)
+	if exit != ExitOK {
+		t.Fatalf("set context exit=%d stderr=%s", exit, stderr.String())
+	}
+
+	store := &memoryCredentialStore{values: map[string]string{}}
+	stdout.Reset()
+	stderr.Reset()
+	exit = runWithProgramDependencies(
+		wfProgram,
+		[]string{"auth", "login"},
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+		store,
+		func(string) error { return nil },
+	)
+	if exit != ExitForbidden {
+		t.Fatalf("hosted login exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
+	}
+	if token := revokedToken.Load().(string); revocationRequests.Load() != 1 || token != "unused-refresh-token" {
+		t.Fatalf("revocation requests=%d token=%q", revocationRequests.Load(), token)
+	}
+	if len(store.values) != 0 {
+		t.Fatalf("failed login stored credentials: %#v", store.values)
+	}
+	for _, secret := range []string{"unused-device-code", "unused-access-token", "unused-refresh-token"} {
+		if strings.Contains(stdout.String(), secret) || strings.Contains(stderr.String(), secret) {
+			t.Fatalf("failed hosted login leaked %q", secret)
+		}
+	}
+	config, err := loadConfig(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if profile := config.Profiles["hosted"]; profile.Account != "" || profile.AuthType != "" {
+		t.Fatalf("failed login mutated context: %#v", profile)
+	}
+}
+
 func TestRunWFHostedLogoutPreservesCredentialWhenRemoteRevocationFails(t *testing.T) {
 	var revocationRequests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {

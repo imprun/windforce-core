@@ -30,8 +30,8 @@ The runtime remains `windforce-core server|worker|standalone`. No `wf cell deplo
 - Standard output is reserved for results. Progress, warnings, and diagnostics use standard error. `NO_COLOR` and non-terminal output disable decoration.
 - Exit codes distinguish usage, local configuration, authentication, authorization, transport, API client failure, and API server failure.
 - Destructive operations explain their target and require confirmation unless `--yes` is supplied.
-- `WF_HOST`, `WF_CONTEXT`, `WF_WORKSPACE`, and `WF_TOKEN` provide explicit non-interactive overrides. Environment credentials are never copied into configuration.
-- Secrets use the operating-system credential store. Failure to access secure storage is visible and fails closed unless the user explicitly selects insecure storage.
+- `WF_API_URL`, `WF_CONTEXT`, `WF_WORKSPACE`, and `WF_TOKEN` provide explicit non-interactive overrides. Environment credentials are never copied into configuration.
+- Secrets use the operating-system credential store. Failure to access secure storage is visible and fails closed without a plaintext fallback.
 - Diagnostic output redacts authorization headers, cookies, OAuth codes, PKCE verifiers, access tokens, refresh tokens, and engine credentials.
 
 ## Authentication profiles
@@ -52,11 +52,11 @@ A context is non-secret metadata:
 
 ```yaml
 name: hosted-cell
-host: platform.example.test
-cell: cell-east-1
 api_url: https://cell-east-1.platform.example.test
 workspace: default
+actor: developer@example.test
 account: account-label
+auth_type: oauth2-device
 ```
 
 The account selects a host credential. The context selects a routing target and workspace. Changing a workspace does not create another login, and changing an account does not mutate a Cell.
@@ -90,12 +90,7 @@ The server remains authoritative for source access, validation, preparation, art
 - Add `--json`, filtering, templates, `NO_COLOR`, paging policy, prompts, and shell completion.
 - Stabilize exit codes and safe diagnostic categories.
 
-Terminal-aware labels and tables, deterministic redirected JSON,
-`--json <fields>`, `--jq`, `--template`, authentication and authorization exit
-codes, offline command help, and Bash/Zsh/Fish/PowerShell completion are now
-implemented. Paging is intentionally disabled until a bounded large-result
-workflow needs it. The client emits no color today, so `NO_COLOR` and
-non-terminal output are decoration-free.
+Terminal-aware labels and tables, deterministic redirected JSON, `--json <fields>`, `--jq`, `--template`, authentication and authorization exit codes, offline command help, and Bash/Zsh/Fish/PowerShell completion are now implemented. Paging is intentionally disabled until a bounded large-result workflow needs it. The client emits no color today, so `NO_COLOR` and non-terminal output are decoration-free.
 
 ### M3 — Authentication
 
@@ -104,18 +99,7 @@ non-terminal output are decoration-free.
 - Add provider discovery and hosted browser or device authorization without product-specific code in Core.
 - Verify token refresh, revocation, multiple accounts, headless automation, and redaction.
 
-Direct token login, status, logout, credential-store isolation, account
-switching, and `WF_TOKEN` precedence are implemented. Hosted targets can now
-advertise a secretless Device Authorization client through
-`/.well-known/wf-cli.json`; `wf auth login` discovers the issuer, opens the
-external browser or prints the verification URL, stores the refreshable
-credential securely, validates workspace access, and refreshes the access
-token before expiry. Hosted logout performs provider token revocation with a
-fail-closed local fallback, while central browser-session logout remains a
-separate Identity concern. Tests cover the browser-opening and headless paths,
-refresh rotation, multiple local accounts, environment-token precedence,
-remote revocation, revocation failure, and older stored credentials. Full live
-hosted verification remains open.
+Direct token login, status, logout, credential-store isolation, account switching, and `WF_TOKEN` precedence are implemented. Hosted targets can now advertise a secretless Device Authorization client through `/.well-known/wf-cli.json`; `wf auth login` discovers the issuer, opens the external browser or prints the verification URL, stores the refreshable credential securely, validates workspace access, and refreshes the access token before expiry. Hosted logout performs provider token revocation with a fail-closed local fallback, while central browser-session logout remains a separate Identity concern. Tests cover the browser-opening and headless paths, refresh rotation, multiple local accounts, environment-token precedence, remote revocation, revocation failure, older stored credentials, and revocation of a newly issued credential when workspace verification cannot complete. Full live hosted verification remains open.
 
 ### M4 — Workspace and app workflows
 
@@ -124,15 +108,7 @@ hosted verification remains open.
 - Add release history, activation, rollback, and canonical Run commands.
 - Keep low-level source and Job commands available for advanced operations.
 
-Exact-commit `wf app publish`, workspace list/view/use, release
-list/view/activate/rollback, and Run watch/result are implemented. Workspace
-switching verifies access before mutating the context. The server rejects a
-Sync or Publish race before candidate mutation or release activation, and a
-successful publication returns the immutable release ID. A direct-Cell
-integration test now exercises a real Git remote through publish, release
-inspection, worker claim/completion, Run watch, and result retrieval in one
-workflow. Hosted discovery across multiple Cells remains a platform concern
-and is still open.
+Exact-commit `wf app publish`, workspace list/view/use, release list/view/activate/rollback, and Run watch/result are implemented. Workspace switching verifies access before mutating the context. The server rejects a Sync or Publish race before candidate mutation or release activation, and a successful publication returns the immutable release ID. A direct-Cell integration test now exercises a real Git remote through publish, release inspection, worker claim/completion, Run watch, and result retrieval in one workflow. Hosted discovery across multiple Cells remains a platform concern and is still open.
 
 ### M5 — Distribution and live verification
 
@@ -141,16 +117,7 @@ and is still open.
 - Test upgrades without losing contexts or credentials.
 - Exercise direct standalone and hosted Cell paths end to end.
 
-Cross-platform archives, checksums, exact archive-content assertions, and
-Windows, macOS, and Linux CLI smoke commands are configured. Tagged releases
-additionally create and verify a keyless Sigstore bundle for the checksum
-file. Release verification runs each published amd64 binary on its native
-Windows, macOS, or Linux host and verifies that executable replacement
-preserves an external context file. A hosting-product E2E also builds the real
-`wf` and Cell binaries and covers exact-commit publication through Run result
-retrieval with non-interactive product authorization. The workflows must still
-pass remotely, and a new tag plus live hosted Cell verification are required
-before this milestone is complete.
+Cross-platform archives, checksums, exact archive-content assertions, and Windows, macOS, and Linux CLI smoke commands are configured. Tagged releases additionally create and verify a keyless Sigstore bundle for the checksum file. Release verification runs each published amd64 binary on its native Windows, macOS, or Linux host and verifies that executable replacement preserves an external context file. Pull-request CI also runs the CLI package under Go's race detector. A hosting-product E2E builds the real `wf` and Cell binaries and covers exact-commit publication through Run result retrieval with non-interactive product authorization. The workflows must still pass remotely, and a new tag plus live hosted Cell verification are required before this milestone is complete.
 
 ## Completion gates
 

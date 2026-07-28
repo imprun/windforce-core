@@ -65,6 +65,8 @@ jobs:
           fi
       - name: Test
         run: make test
+      - name: Race-test wf client
+        run: go test -race -mod=readonly ./internal/controlcli
       - name: Test PostgreSQL storage
         env:
           WINDFORCE_LITE_POSTGRES_TEST_DSN: postgres://postgres@127.0.0.1:5432/windforce_core?sslmode=disable

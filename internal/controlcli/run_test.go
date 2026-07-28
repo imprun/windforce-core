@@ -235,10 +235,75 @@ func TestRunWFUsesContextVocabularyAndSeparateConfig(t *testing.T) {
 	stdout.Reset()
 	stderr.Reset()
 	exit = RunWF([]string{"--help"}, strings.NewReader(""), &stdout, &stderr)
-	if exit != ExitOK || !strings.Contains(stdout.String(), "usage: wf ") ||
+	if exit != ExitOK || !strings.Contains(stdout.String(), "wf [global flags] <command>") ||
 		!strings.Contains(stdout.String(), "context list") ||
+		!strings.Contains(stdout.String(), "completion bash|zsh|fish|powershell") ||
+		!strings.Contains(stdout.String(), "may appear before or after") ||
 		strings.Contains(stdout.String(), "usage: windforce ") {
 		t.Fatalf("exit=%d stdout=%s stderr=%s", exit, stdout.String(), stderr.String())
+	}
+}
+
+func TestWFOutputFlagsWorkAfterTheCommand(t *testing.T) {
+	path := t.TempDir() + "/config.json"
+	t.Setenv("WF_CONFIG", path)
+	var stdout, stderr bytes.Buffer
+	exit := RunWF(
+		[]string{"context", "set", "local", "--api-url", "https://cell.example.test", "--workspace", "team", "--use"},
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+	)
+	if exit != ExitOK {
+		t.Fatalf("set context exit=%d stderr=%s", exit, stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	exit = RunWF(
+		[]string{"context", "show", "local", "--json", "name,workspace"},
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+	)
+	if exit != ExitOK || strings.TrimSpace(stdout.String()) != `{"name":"local","workspace":"team"}` {
+		t.Fatalf("post-command --json exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	exit = RunWF(
+		[]string{"context", "show", "local", "--json=*", "--jq", ".workspace"},
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+	)
+	if exit != ExitOK || strings.TrimSpace(stdout.String()) != "team" {
+		t.Fatalf("post-command --jq exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	exit = RunWF(
+		[]string{"context", "show", "local", "--template", "{{.name}}/{{.workspace}}"},
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+	)
+	if exit != ExitOK || strings.TrimSpace(stdout.String()) != "local/team" {
+		t.Fatalf("post-command --template exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	exit = RunWF(
+		[]string{"context", "show", "local", "--pretty"},
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+	)
+	if exit != ExitOK || !strings.Contains(stdout.String(), "{\n  \"") {
+		t.Fatalf("post-command --pretty exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
 	}
 }
 

@@ -149,6 +149,7 @@ func (r *runner) authLogin(args []string) error {
 	}
 
 	var accessToken, credential string
+	var issuedHosted *storedCredential
 	if *withToken {
 		data, err := io.ReadAll(io.LimitReader(r.stdin, (64<<10)+1))
 		if err != nil {
@@ -167,21 +168,26 @@ func (r *runner) authLogin(args []string) error {
 		if err != nil {
 			return err
 		}
+		issuedHosted = &hosted
 		accessToken = hosted.AccessToken
 		credential, err = encodeStoredCredential(hosted)
 		if err != nil {
-			return err
+			return r.failHostedLogin(err, issuedHosted)
 		}
 	}
 	if err := r.probe(accessToken); err != nil {
-		return fmt.Errorf("verify credential: %w", err)
+		return r.failHostedLogin(fmt.Errorf("verify credential: %w", err), issuedHosted)
 	}
 	previous, found, err := r.store.Get(key)
 	if err != nil {
-		return fmt.Errorf("read credential store: %w", err)
+		return r.failHostedLogin(fmt.Errorf("read credential store: %w", err), issuedHosted)
 	}
 	if err := r.store.Set(key, credential); err != nil {
-		return fmt.Errorf("write credential store: %w", err)
+		failure := fmt.Errorf("write credential store: %w", err)
+		if rollbackErr := rollbackCredential(r.store, key, previous, found); rollbackErr != nil {
+			failure = fmt.Errorf("%w; rollback local credential: %v", failure, rollbackErr)
+		}
+		return r.failHostedLogin(failure, issuedHosted)
 	}
 	original := r.config.Profiles[r.resolved.ProfileName]
 	updated := original
@@ -192,12 +198,11 @@ func (r *runner) authLogin(args []string) error {
 	updated.AuthType = authType
 	r.config.Profiles[r.resolved.ProfileName] = updated
 	if err := saveConfig(r.configPath, r.config); err != nil {
-		if found {
-			_ = r.store.Set(key, previous)
-		} else {
-			_ = r.store.Delete(key)
+		failure := err
+		if rollbackErr := rollbackCredential(r.store, key, previous, found); rollbackErr != nil {
+			failure = fmt.Errorf("%w; rollback local credential: %v", failure, rollbackErr)
 		}
-		return err
+		return r.failHostedLogin(failure, issuedHosted)
 	}
 	return r.outputJSON(map[string]any{
 		"account":       label,
@@ -208,6 +213,23 @@ func (r *runner) authLogin(args []string) error {
 		"storage":       "system-credential-store",
 		"workspace":     profile.Workspace,
 	})
+}
+
+func (r *runner) failHostedLogin(primary error, credential *storedCredential) error {
+	if credential == nil {
+		return primary
+	}
+	if err := r.revokeStoredCredential(context.Background(), *credential); err != nil {
+		return fmt.Errorf("%w; additionally failed to revoke unused hosted credential: %v", primary, err)
+	}
+	return primary
+}
+
+func rollbackCredential(store CredentialStore, key, previous string, found bool) error {
+	if found {
+		return store.Set(key, previous)
+	}
+	return store.Delete(key)
 }
 
 func (r *runner) authStatus() error {

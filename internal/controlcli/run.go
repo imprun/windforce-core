@@ -88,6 +88,7 @@ func runWithProgramDependencies(
 	store CredentialStore,
 	openBrowser func(string) error,
 ) int {
+	args = hoistOutputFlags(args)
 	global := flag.NewFlagSet(program.Name, flag.ContinueOnError)
 	global.SetOutput(stderr)
 	global.Usage = func() {}
@@ -234,6 +235,34 @@ func runWithProgramDependencies(
 		return r.finishError(err)
 	}
 	return ExitOK
+}
+
+func hoistOutputFlags(args []string) []string {
+	var outputFlags, remaining []string
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		if arg == "--" {
+			remaining = append(remaining, args[index:]...)
+			break
+		}
+		switch {
+		case arg == "--pretty" || strings.HasPrefix(arg, "--pretty="):
+			outputFlags = append(outputFlags, arg)
+		case arg == "--json" || arg == "--jq" || arg == "--template":
+			outputFlags = append(outputFlags, arg)
+			if index+1 < len(args) {
+				index++
+				outputFlags = append(outputFlags, args[index])
+			}
+		case strings.HasPrefix(arg, "--json=") ||
+			strings.HasPrefix(arg, "--jq=") ||
+			strings.HasPrefix(arg, "--template="):
+			outputFlags = append(outputFlags, arg)
+		default:
+			remaining = append(remaining, arg)
+		}
+	}
+	return append(outputFlags, remaining...)
 }
 
 func (r *runner) command(args []string) error {
@@ -463,11 +492,27 @@ func writeError(writer io.Writer, err error) {
 
 func printUsage(writer io.Writer, program string) {
 	if program == wfProgram.Name {
-		fmt.Fprintln(writer, `usage: wf [global flags] <command>
+		fmt.Fprintln(writer, `USAGE
+  wf [global flags] <command>
 
-Global flags: --context, --api-url, --workspace, --actor, --token-env, --json, --jq, --template, --pretty, --version
+GLOBAL FLAGS
+  --context string           Select a saved Cell context
+  --api-url string           Override the Cell API URL
+  --workspace string         Override the workspace
+  --actor string             Override X-Windforce-Actor
+  --token-env string         Read an automation token from this environment variable
+  --request-timeout duration Set the HTTP timeout (default 1m)
+  --json fields              Select comma-separated JSON fields, or *
+  --jq expression            Filter JSON output with jq syntax
+  --template string          Format output with a Go template
+  --pretty                   Pretty-print JSON
+  --version                  Print the version
+  -h, --help                 Show help
 
-Commands:
+Output flags (--json, --jq, --template, --pretty) may appear before or after
+the command.
+
+COMMANDS
   auth login|switch|status|logout
   context list|show|set|use
   workspace list|show|view|use
@@ -480,6 +525,8 @@ Commands:
   provisioning export|apply
   api
   openapi
+  completion bash|zsh|fish|powershell
+  help [command]
   version`)
 		return
 	}

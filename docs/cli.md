@@ -5,7 +5,7 @@ description: Install and use the thin client for an existing Windforce Cell.
 
 `wf` is the supported command-line client for an existing Windforce Cell. Installing it does not install or start a server, worker, database, or queue. The legacy `windforce` command remains in release archives during the migration period.
 
-The client exposes high-level app, release, and Run workflows together with the complete low-level Control Plane API. Interactive terminals receive readable labels and tables. Redirected output remains compact JSON unless `--pretty`, `--json`, `--jq`, or `--template` selects another stable automation format. Hosted Device Authorization and direct Cell credentials are supported.
+The client exposes high-level app, release, and Run workflows together with the complete low-level Control Plane API. Interactive terminals receive readable labels and tables. Redirected output remains compact JSON unless `--pretty`, `--json`, `--jq`, or `--template` selects another stable automation format. These output flags may appear before or after the command, matching common `gh` usage. Hosted Device Authorization and direct Cell credentials are supported.
 
 ## Install
 
@@ -26,8 +26,7 @@ install -m 0755 wf "$HOME/.local/bin/wf"
 wf --version
 ```
 
-Each release includes `checksums.txt` and a keyless Sigstore bundle named
-`checksums.txt.sigstore.json`. Verify the signer and checksum before installing:
+Each release includes `checksums.txt` and a keyless Sigstore bundle named `checksums.txt.sigstore.json`. Verify the signer and checksum before installing:
 
 ```shell
 cosign verify-blob \
@@ -40,8 +39,7 @@ sha256sum --check --ignore-missing checksums.txt
 
 ## Upgrade
 
-Download and verify the new release exactly as for a fresh installation. Check
-the staged binary before replacing the installed executable:
+Download and verify the new release exactly as for a fresh installation. Check the staged binary before replacing the installed executable:
 
 ```powershell
 Expand-Archive .\wf_<NEW_VERSION>_windows_amd64.zip -DestinationPath .\wf-new
@@ -63,16 +61,9 @@ wf --version
 wf context show
 ```
 
-The executable contains no context or credential state. Contexts remain in the
-operating-system user configuration directory under `wf/config.json`, or at
-`WF_CONFIG` when explicitly selected. Credentials remain in Windows Credential
-Manager, macOS Keychain, or the Linux Secret Service. Do not copy a credential
-into an upgrade directory or back it up as plaintext.
+The executable contains no context or credential state. Contexts remain in the operating-system user configuration directory under `wf/config.json`, or at `WF_CONFIG` when explicitly selected. Credentials remain in Windows Credential Manager, macOS Keychain, or the Linux Secret Service. Do not copy a credential into an upgrade directory or back it up as plaintext.
 
-After upgrading, `wf context show` proves that the selected target survived.
-`wf auth status` additionally probes the selected workspace when it is
-reachable. Stored hosted credentials from earlier `wf` releases remain
-readable; missing revocation metadata is recovered from the stored issuer.
+After upgrading, `wf context show` proves that the selected target survived. `wf auth status` additionally probes the selected workspace when it is reachable. Stored hosted credentials from earlier `wf` releases remain readable; missing revocation metadata is recovered from the stored issuer.
 
 The repository build produces `wf` and the legacy `windforce` alias:
 
@@ -134,20 +125,11 @@ wf app list --summary
 
 Use `wf context list`, `wf context show`, and `wf context use <name>` to inspect or select contexts. `wf auth switch <account>` selects another credential already stored for the same host and verifies it before changing the context. `WF_CONFIG` selects an explicit configuration file. When the new default configuration does not exist, `wf` can read the legacy `windforce` profile file; the next context change writes the new `wf` configuration.
 
-Both login modes validate the credential against the selected workspace before
-storing it. If the system credential store is unavailable, login fails without
-writing a plaintext fallback.
+Both login modes validate the credential against the selected workspace before storing it. If the system credential store is unavailable, login fails without writing a plaintext fallback. If hosted Device Authorization succeeds but the workspace probe or local commit fails, `wf` revokes the unused refresh token before returning the error.
 
-For a hosted account, `wf auth logout` first revokes the CLI refresh token at
-the provider and removes local state only after revocation succeeds. If the
-provider is unavailable, the credential remains available for a retry; use
-`wf auth logout --local-only` only when intentionally abandoning remote
-revocation. Credentials written by an older `wf` are supported by discovering
-the revocation endpoint from their stored issuer. Direct Cell credentials have
-no generic remote revocation contract and are removed locally.
+For a hosted account, `wf auth logout` first revokes the CLI refresh token at the provider and removes local state only after revocation succeeds. If the provider is unavailable, the credential remains available for a retry; use `wf auth logout --local-only` only when intentionally abandoning remote revocation. Credentials written by an older `wf` are supported by discovering the revocation endpoint from their stored issuer. Direct Cell credentials have no generic remote revocation contract and are removed locally.
 
-CLI token revocation does not end the central Identity browser session. Use the
-product's explicit central logout flow when that separate session must end.
+CLI token revocation does not end the central Identity browser session. Use the product's explicit central logout flow when that separate session must end.
 
 Inspect or change the workspace without creating another login:
 
@@ -158,10 +140,7 @@ wf workspace view team
 wf workspace use team
 ```
 
-`workspace use` probes the target with the current credential before updating
-the context. A failed authorization therefore leaves the previous workspace
-unchanged. The global list and view endpoints require an instance-admin
-credential on a direct Cell or equivalent authorization from a hosted product.
+`workspace use` probes the target with the current credential before updating the context. A failed authorization therefore leaves the previous workspace unchanged. The global list and view endpoints require an instance-admin credential on a direct Cell or equivalent authorization from a hosted product.
 
 For automation, prefer the one-process environment override:
 
@@ -211,37 +190,25 @@ wf app publish .
 wf app publish . --message "Ship invoice validation"
 ```
 
-`wf app publish` finds the nearest `windforce.json` and Git worktree, resolves
-the remote, branch, repository subpath, and full `HEAD` commit, finds or
-registers a matching source, synchronizes with an exact-commit precondition,
-and publishes the immutable bundle. If the remote branch does not resolve to
-that commit, publication fails before activation.
+`wf app publish` finds the nearest `windforce.json` and Git worktree, resolves the remote, branch, repository subpath, and full `HEAD` commit, finds or registers a matching source, synchronizes with an exact-commit precondition, and publishes the immutable bundle. If the remote branch does not resolve to that commit, publication fails before activation.
 
-The worktree must be clean by default. `--allow-dirty` explicitly publishes
-only committed `HEAD`; uncommitted files, including a changed manifest, are
-ignored. The result identifies the app, exact commit, source, release, bundle
-digest, workspace, and context. Private repositories use a server-side
-credential reference:
+The worktree must be clean by default. `--allow-dirty` explicitly publishes only committed `HEAD`; uncommitted files, including a changed manifest, are ignored. The result identifies the app, exact commit, source, release, bundle digest, workspace, and context. Private repositories use a server-side credential reference:
 
 ```shell
 wf app publish . --creds-ref github-app-installation
 wf app publish . --source-id 12
 ```
 
-For automation, select the immutable release identifier from the publication
-result and pass it to later commands instead of asking for the newest release:
+For automation, select the immutable release identifier from the publication result and pass it to later commands instead of asking for the newest release:
 
 ```shell
-wf --json release_id app publish .
+wf app publish . --json release_id
 wf release view example <RELEASE_ID>
 ```
 
-A successful Cell response must contain `release_id`. `wf` rejects an older or
-incompatible response that omits it rather than performing a race-prone release
-history lookup.
+A successful Cell response must contain `release_id`. `wf` rejects an older or incompatible response that omits it rather than performing a race-prone release history lookup.
 
-The low-level Register, Sync, and Publish sequence remains available for
-advanced operations:
+The low-level Register, Sync, and Publish sequence remains available for advanced operations:
 
 ```powershell
 $env:GIT_ACCESS_TOKEN = "<TOKEN>"
@@ -276,9 +243,7 @@ wf release activate example <RELEASE_ID> \
   --yes
 ```
 
-`activate` and its explicit `rollback` alias validate the immutable bundle in
-the Cell before changing the active release. A reason and `--yes` are required
-so automation cannot mutate the active release accidentally.
+`activate` and its explicit `rollback` alias validate the immutable bundle in the Cell before changing the active release. A reason and `--yes` are required so automation cannot mutate the active release accidentally.
 
 ## Inspect apps and schemas
 
@@ -292,20 +257,16 @@ wf app openapi example
 wf openapi
 ```
 
-On a terminal, commands render readable labels or tables. Redirected output is
-compact JSON. Output flags are global and therefore appear before the command:
+On a terminal, commands render readable labels or tables. Redirected output is compact JSON. Output flags work in the familiar command-local position:
 
 ```shell
-wf --pretty app show example
-wf --json app,commit,bundle_digest app publish .
-wf --json app,state --jq '.state' run show <RUN_ID>
-wf --template '{{.app}} {{.state}}' run show <RUN_ID>
+wf app show example --pretty
+wf app publish . --json app,commit,bundle_digest
+wf run show <RUN_ID> --json app,state --jq '.state'
+wf run show <RUN_ID> --template '{{.app}} {{.state}}'
 ```
 
-`--json` accepts comma-separated top-level fields or `*`. Unknown fields fail
-with the available field names instead of silently returning empty data.
-`--jq` uses jq syntax, and `--template` uses a Go template. Standard output is
-reserved for results; progress and diagnostics use standard error.
+`--json` accepts comma-separated top-level fields or `*`. Unknown fields fail with the available field names instead of silently returning empty data. `--jq` uses jq syntax, and `--template` uses a Go template. Standard output is reserved for results; progress and diagnostics use standard error.
 
 ## Run and inspect work
 
@@ -324,9 +285,7 @@ wf job logs <JOB_ID> --tail-bytes 65536
 
 `--input-file -` reads JSON from standard input. Job logs are written as the raw response so they can be piped.
 
-`wf run watch` prints state changes to standard error, polls no faster than
-100 ms, and prints the terminal Run or successful result to standard output.
-Its default timeout is ten minutes.
+`wf run watch` prints state changes to standard error, polls no faster than 100 ms, and prints the terminal Run or successful result to standard output. Its default timeout is ten minutes.
 
 ## Shell completion and help
 
@@ -345,8 +304,7 @@ Load the generated script using the normal mechanism for the selected shell.
 
 ## Call the API directly
 
-`wf api` is the authenticated escape hatch for Control Plane operations that
-do not yet have a high-level command:
+`wf api` is the authenticated escape hatch for Control Plane operations that do not yet have a high-level command:
 
 ```shell
 wf api apps
@@ -356,11 +314,7 @@ wf api /healthz
 wf api provisioning/apply --method POST --input request.json
 ```
 
-A relative endpoint is resolved below `/api/w/<workspace>/`. A path beginning
-with `/` is resolved on the selected context host. Absolute URLs, scheme-relative
-URLs, fragments, and parent traversal are rejected so the selected credential
-cannot be redirected to another host. `--field` converts booleans, null,
-numbers, arrays, and objects; `--raw-field` always sends a string.
+A relative endpoint is resolved below `/api/w/<workspace>/`. A path beginning with `/` is resolved on the selected context host. Absolute URLs, scheme-relative URLs, fragments, and parent traversal are rejected so the selected credential cannot be redirected to another host. `--field` converts booleans, null, numbers, arrays, and objects; `--raw-field` always sends a string.
 
 ## Provisioning
 
@@ -386,29 +340,18 @@ Exported secret values remain redacted. Environment-specific secret resources mu
 | `20` | Control Plane returned a 4xx response |
 | `21` | Control Plane returned a 5xx response |
 
-JSON API errors are written to standard error. This preserves the automation
-contract while keeping authentication, authorization, client, and server
-failures distinct.
+JSON API errors are written to standard error. This preserves the automation contract while keeping authentication, authorization, client, and server failures distinct.
 
 ## Troubleshooting
 
-- Exit `4`: run `wf auth status`, then `wf auth login`. On a remote shell use
-  `wf auth login --no-browser`.
-- Exit `5`: the credential is valid but lacks access to the selected hosted
-  tenant or workspace. Check `wf context show` and `wf workspace show`; do not
-  replace the credential with a Cloud management token.
-- `Git worktree has uncommitted changes`: commit the intended files. Use
-  `--allow-dirty` only when deliberately publishing committed `HEAD`.
-- `409 Conflict` with `expected_commit`: push `HEAD` to the selected remote
-  branch and retry. The CLI will not publish a different branch tip.
-- `secure credential storage is unavailable`: restore Windows Credential
-  Manager, macOS Keychain, or Linux Secret Service. The client does not fall
-  back to a plaintext token file.
-- A redirected API response is rejected. Configure the context with the final
-  canonical Cell URL instead of relying on an HTTP redirect.
+- Exit `4`: run `wf auth status`, then `wf auth login`. On a remote shell use `wf auth login --no-browser`.
+- Exit `5`: the credential is valid but lacks access to the selected hosted tenant or workspace. Check `wf context show` and `wf workspace show`; do not replace the credential with a Cloud management token.
+- `Git worktree has uncommitted changes`: commit the intended files. Use `--allow-dirty` only when deliberately publishing committed `HEAD`.
+- `409 Conflict` with `expected_commit`: push `HEAD` to the selected remote branch and retry. The CLI will not publish a different branch tip.
+- `secure credential storage is unavailable`: restore Windows Credential Manager, macOS Keychain, or Linux Secret Service. The client does not fall back to a plaintext token file.
+- A redirected API response is rejected. Configure the context with the final canonical Cell URL instead of relying on an HTTP redirect.
 
-Diagnostics and JSON errors redact credential fields, Bearer values, OAuth
-codes, and Windforce token prefixes before writing standard error.
+Diagnostics and JSON errors redact credential fields, Bearer values, OAuth codes, and Windforce token prefixes before writing standard error.
 
 ## Repository helper
 
