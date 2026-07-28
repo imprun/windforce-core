@@ -43,6 +43,7 @@ type Profile struct {
 	Actor     string `json:"actor,omitempty"`
 	TokenEnv  string `json:"token_env,omitempty"`
 	Account   string `json:"account,omitempty"`
+	AuthType  string `json:"auth_type,omitempty"`
 }
 
 type ConfigFile struct {

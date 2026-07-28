@@ -97,7 +97,7 @@ The server remains authoritative for source access, validation, preparation, art
 - Add provider discovery and hosted browser or device authorization without product-specific code in Core.
 - Verify token refresh, revocation, multiple accounts, headless automation, and redaction.
 
-Direct token login, status, logout, credential-store isolation, and `WF_TOKEN` precedence are implemented. Hosted provider discovery, browser authorization, refresh, and multiple hosted accounts remain open.
+Direct token login, status, logout, credential-store isolation, and `WF_TOKEN` precedence are implemented. Hosted targets can now advertise a secretless Device Authorization client through `/.well-known/wf-cli.json`; `wf auth login` discovers the issuer, opens the external browser or prints the verification URL, stores the refreshable credential securely, validates workspace access, and refreshes the access token before expiry. Remote token revocation, an explicit account-switch command, and full live hosted verification remain open.
 
 ### M4 — Workspace and app workflows
 

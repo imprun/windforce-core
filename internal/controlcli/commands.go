@@ -35,7 +35,7 @@ func (r *runner) profile(path string, config ConfigFile, args []string) error {
 		rows := make([]map[string]any, 0, len(names))
 		for _, name := range names {
 			profile := config.Profiles[name]
-			rows = append(rows, map[string]any{"name": name, "current": name == config.CurrentProfile, "api_url": profile.APIURL, "workspace": profile.Workspace, "actor": profile.Actor, "token_env": profile.TokenEnv, "account": profile.Account})
+			rows = append(rows, map[string]any{"name": name, "current": name == config.CurrentProfile, "api_url": profile.APIURL, "workspace": profile.Workspace, "actor": profile.Actor, "token_env": profile.TokenEnv, "account": profile.Account, "auth_type": profile.AuthType})
 		}
 		return r.outputJSON(rows)
 	case "show":
@@ -50,7 +50,7 @@ func (r *runner) profile(path string, config ConfigFile, args []string) error {
 		if !ok || name == "" {
 			return fmt.Errorf("%s %q does not exist", noun, name)
 		}
-		return r.outputJSON(map[string]any{"name": name, "current": name == config.CurrentProfile, "api_url": profile.APIURL, "workspace": profile.Workspace, "actor": profile.Actor, "token_env": profile.TokenEnv, "account": profile.Account})
+		return r.outputJSON(map[string]any{"name": name, "current": name == config.CurrentProfile, "api_url": profile.APIURL, "workspace": profile.Workspace, "actor": profile.Actor, "token_env": profile.TokenEnv, "account": profile.Account, "auth_type": profile.AuthType})
 	case "use":
 		if len(args) != 2 {
 			return usageError{"usage: windforce profile use <name>"}
@@ -88,7 +88,7 @@ func (r *runner) profile(path string, config ConfigFile, args []string) error {
 		if err := saveConfig(path, config); err != nil {
 			return err
 		}
-		return r.outputJSON(map[string]any{"name": name, "current": config.CurrentProfile == name, "api_url": profile.APIURL, "workspace": profile.Workspace, "actor": profile.Actor, "token_env": profile.TokenEnv, "account": profile.Account})
+		return r.outputJSON(map[string]any{"name": name, "current": config.CurrentProfile == name, "api_url": profile.APIURL, "workspace": profile.Workspace, "actor": profile.Actor, "token_env": profile.TokenEnv, "account": profile.Account, "auth_type": profile.AuthType})
 	default:
 		return usageError{fmt.Sprintf("unknown %s command %q", noun, args[0])}
 	}

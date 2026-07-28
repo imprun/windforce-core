@@ -5,7 +5,7 @@ description: Install and use the thin client for an existing Windforce Cell.
 
 `wf` is the supported command-line client for an existing Windforce Cell. Installing it does not install or start a server, worker, database, or queue. The legacy `windforce` command remains in release archives during the migration period.
 
-The current client exposes the complete low-level Control Plane API and emits compact JSON by default. The higher-level authentication, human output, and `wf app publish .` milestones are tracked in the [wf CLI roadmap](wf-cli-roadmap.md).
+The current client exposes the complete low-level Control Plane API and emits compact JSON by default. Hosted Device Authorization and direct Cell credentials are supported. Human output and `wf app publish .` milestones are tracked in the [wf CLI roadmap](wf-cli-roadmap.md).
 
 ## Install
 
@@ -36,7 +36,41 @@ On Windows the outputs are `.tmp/bin/wf.exe` and `.tmp/bin/windforce.exe`.
 
 ## Configure a context
 
-A context contains non-secret connection metadata: API URL, workspace, optional audit actor, and an account label. Direct Cell credentials are stored in Windows Credential Manager, macOS Keychain, or the Linux Secret Service. `WF_TOKEN` supplies a bearer token to one process and takes precedence without being written to the configuration file or credential store.
+A context contains non-secret connection metadata: API URL, workspace, optional audit actor, account label, and authentication type. Interactive credentials are stored in Windows Credential Manager, macOS Keychain, or the Linux Secret Service. `WF_TOKEN` supplies a bearer token to one process and takes precedence without being written to the configuration file or credential store.
+
+For a hosted target, login discovers a secretless OAuth 2.0 Device Authorization client from the selected target, opens the system browser, and validates the resulting access against the selected workspace:
+
+```powershell
+wf context set hosted `
+  --api-url https://cell.example.test `
+  --workspace team `
+  --use
+
+wf auth login
+wf auth status
+wf app list --summary
+```
+
+Use `wf auth login --no-browser` on a remote shell to print the verification URL instead of trying to open it. `--web` explicitly selects the same hosted flow. `--account <label>` keeps credentials for another hosted account under a distinct local label.
+
+The target publishes only non-secret discovery metadata at `/.well-known/wf-cli.json`:
+
+```json
+{
+  "schema_version": 1,
+  "authentication": {
+    "type": "oauth2-device",
+    "issuer": "https://identity.example.test",
+    "client_id": "wf-cli",
+    "audience": "windforce-api",
+    "scopes": ["openid", "profile", "email", "offline_access"]
+  }
+}
+```
+
+The issuer's OpenID configuration supplies the Device Authorization and token endpoints. The public client has no client secret. `wf` stores the short-lived access token and refresh token only in the operating-system credential store and refreshes before expiry. Discovery and OAuth endpoints require HTTPS except for loopback development; cross-origin discovery redirects and OAuth POST redirects are rejected.
+
+For a direct self-hosted Cell, read a named workspace credential from standard input:
 
 ```powershell
 wf context set local `
@@ -52,7 +86,7 @@ wf app list --summary
 
 Use `wf context list`, `wf context show`, and `wf context use <name>` to inspect or select contexts. `WF_CONFIG` selects an explicit configuration file. When the new default configuration does not exist, `wf` can read the legacy `windforce` profile file; the next context change writes the new `wf` configuration.
 
-`auth login --with-token` validates the credential against the selected workspace before storing it. If the system credential store is unavailable, login fails without writing a plaintext fallback. `wf auth logout` removes the local credential reference and secret; it does not reinterpret a direct workspace credential as a central Identity session.
+Both login modes validate the credential against the selected workspace before storing it. If the system credential store is unavailable, login fails without writing a plaintext fallback. `wf auth logout` removes only the local credential reference and secret. It does not revoke an Identity session, hosted refresh token, or direct workspace credential remotely.
 
 For automation, prefer the one-process environment override:
 

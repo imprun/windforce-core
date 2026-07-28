@@ -334,8 +334,8 @@ func TestRunWFDirectAuthUsesCredentialStoreWithoutWritingToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.Profiles["hosted"].Account != "operator" {
-		t.Fatalf("context account = %q", config.Profiles["hosted"].Account)
+	if config.Profiles["hosted"].Account != "operator" || config.Profiles["hosted"].AuthType != authTypeToken {
+		t.Fatalf("context authentication = %#v", config.Profiles["hosted"])
 	}
 
 	stdout.Reset()
