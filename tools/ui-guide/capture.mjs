@@ -583,7 +583,7 @@ async function stabilizePage(page) {
         display: none !important;
       }
     `;
-    if (document.activeElement instanceof HTMLElement) {
+    if (!document.querySelector('[role="listbox"]') && document.activeElement instanceof HTMLElement) {
       document.activeElement.blur();
     }
     window.scrollTo(0, 0);

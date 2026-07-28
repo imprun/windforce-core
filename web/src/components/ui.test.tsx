@@ -19,8 +19,8 @@ describe("SelectControl", () => {
     );
 
     expect(container.querySelector("select")).toBeNull();
-    expect(screen.getByRole("combobox", { name: "Output delivery" }).textContent).toContain(
-      "Poll Invocation API",
-    );
+    const control = screen.getByRole("combobox", { name: "Output delivery" });
+    expect(control.querySelector(".selectValue")).not.toBeNull();
+    expect(control.textContent).toContain("Poll Invocation API");
   });
 });

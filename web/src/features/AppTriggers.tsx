@@ -358,14 +358,18 @@ function TriggerEditorDialog({
               required
             />
           </Field>
-          <Field label="Target Action" hint="The App target is fixed by this page.">
+          <Field
+            label="Target Action"
+            hint={`The App target is fixed by this page. Action key: ${draft.action || "—"}.`}
+          >
             <SelectControl
               value={draft.action}
               onChange={(value) => update("action", value)}
               ariaLabel="Target Action"
               options={actions.map((action) => ({
                 value: action.action_key,
-                label: `${actionDisplayName(action.display_name) || action.action_key} (${action.action_key})`,
+                label: actionDisplayName(action.display_name) || action.action_key,
+                description: action.action_key,
               }))}
             />
           </Field>
