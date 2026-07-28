@@ -440,6 +440,43 @@ CREATE TABLE IF NOT EXISTS trigger_delivery (
     UNIQUE (workspace_id, trigger_id, delivery_id)
 );
 
+CREATE TABLE IF NOT EXISTS http_route_binding (
+    workspace_id TEXT NOT NULL,
+    id TEXT NOT NULL,
+    trigger_id TEXT NOT NULL,
+    hostname TEXT NOT NULL DEFAULT '',
+    path TEXT NOT NULL,
+    visibility TEXT NOT NULL DEFAULT 'public',
+    provider TEXT NOT NULL DEFAULT 'auto',
+    state TEXT NOT NULL DEFAULT 'pending',
+    public_url TEXT NOT NULL DEFAULT '',
+    error_summary TEXT NOT NULL DEFAULT '',
+    generation BIGINT NOT NULL DEFAULT 1,
+    observed_generation BIGINT NOT NULL DEFAULT 0,
+    created_by TEXT NOT NULL,
+    updated_by TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    delete_requested_at TIMESTAMPTZ,
+    deleted_at TIMESTAMPTZ,
+    PRIMARY KEY (workspace_id, id)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS http_route_binding_active_address_idx
+    ON http_route_binding (workspace_id, lower(hostname), path)
+    WHERE deleted_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS http_route_binding_audit (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL,
+    trigger_id TEXT NOT NULL,
+    binding_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    detail TEXT NOT NULL DEFAULT '',
+    actor TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 ALTER TABLE trigger_delivery ADD COLUMN IF NOT EXISTS correlation_id TEXT NOT NULL DEFAULT '';
 ALTER TABLE trigger_delivery ADD COLUMN IF NOT EXISTS scheduled_for TIMESTAMPTZ;
 
@@ -532,6 +569,15 @@ CREATE INDEX IF NOT EXISTS trigger_audit_lookup_idx
 CREATE INDEX IF NOT EXISTS trigger_delivery_lookup_idx
     ON trigger_delivery (workspace_id, trigger_id, updated_at DESC, id DESC);
 
+CREATE INDEX IF NOT EXISTS http_route_binding_trigger_idx
+    ON http_route_binding (workspace_id, trigger_id, created_at, id);
+
+CREATE INDEX IF NOT EXISTS http_route_binding_provider_idx
+    ON http_route_binding (workspace_id, provider, state, updated_at, id);
+
+CREATE INDEX IF NOT EXISTS http_route_binding_audit_lookup_idx
+    ON http_route_binding_audit (workspace_id, trigger_id, binding_id, created_at, id);
+
 CREATE INDEX IF NOT EXISTS workspace_audit_lookup_idx
     ON workspace_audit (workspace_id, created_at DESC, id DESC);
 
@@ -556,6 +602,7 @@ FROM (
     UNION SELECT workspace_id FROM control_release_history
     UNION SELECT workspace_id FROM webhook_subscription
     UNION SELECT workspace_id FROM trigger_definition
+    UNION SELECT workspace_id FROM http_route_binding
     UNION SELECT COALESCE(NULLIF(payload->>'workspace', ''), 'default') FROM jobs
 ) discovered
 WHERE workspace_id <> ''

@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createHmac } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
 import { createServer as createHttpServer } from "node:http";
 import path from "node:path";
@@ -79,6 +80,7 @@ export default {
         "--webhook-allow-insecure-loopback",
         "--ui-host-url", "https://portal.example.test/console",
         "--ui-host-label", "Open host console",
+        "--http-route-provider", "ui-guide-router",
       ],
       { cwd: baseDir, stdio: "ignore" },
     );
@@ -131,6 +133,7 @@ export default {
         body: { confirm: true, message: "UI guide release" },
       });
       await waitForWebhookDelivery(api, webhook.subscription.id);
+      await seedTriggers(api, this.baseUrl);
       await advanceSampleRepository(exec);
     }
     const clientToken = await api("/clients", {
@@ -159,6 +162,105 @@ export default {
     stopServer();
   },
 };
+
+async function seedTriggers(api, baseUrl) {
+  const actorHeaders = { "x-windforce-actor": "ui-guide@example.test" };
+  const signingSecret = "ui-guide-trigger-secret";
+  const inboundWebhook = await api("/triggers", {
+    method: "POST",
+    headers: actorHeaders,
+    body: {
+      name: "Partner events",
+      kind: "webhook",
+      app: "echo",
+      action: "echo",
+      config: {
+        signature_header: "X-WF-Signature-256",
+        delivery_id_header: "X-WF-Delivery-Id",
+        correlation_header: "X-WF-Correlation-Id",
+        input_mode: "json",
+      },
+      secret_config: { secret: signingSecret },
+    },
+  });
+  await api("/triggers", {
+    method: "POST",
+    headers: actorHeaders,
+    body: {
+      name: "Morning check",
+      kind: "schedule",
+      app: "echo",
+      action: "echo",
+      config: {
+        cron: "0 9 * * *",
+        timezone: "Asia/Seoul",
+        input: { message: "scheduled health check" },
+      },
+    },
+  });
+  await api("/triggers", {
+    method: "POST",
+    headers: actorHeaders,
+    body: {
+      name: "Order queue",
+      kind: "rabbitmq",
+      app: "echo",
+      action: "echo",
+      config: {
+        queue: "orders.windforce",
+        prefetch: 8,
+        concurrency: 4,
+        delivery_id_header: "x-source-delivery-id",
+        input_mode: "json",
+      },
+      secret_config: { url: "amqps://ui-guide:ui-guide@broker.example.test/vhost" },
+    },
+  });
+  await api(`/triggers/${encodeURIComponent(inboundWebhook.id)}/enable`, {
+    method: "POST",
+    headers: actorHeaders,
+  });
+  const route = await api(`/triggers/${encodeURIComponent(inboundWebhook.id)}/routes`, {
+    method: "POST",
+    headers: actorHeaders,
+    body: {
+      hostname: "hooks.example.test",
+      path: "/echo/partner-events",
+      visibility: "public",
+      provider: "ui-guide-router",
+    },
+  });
+  await api(`/http-route-bindings/${encodeURIComponent(route.id)}/status`, {
+    method: "PUT",
+    headers: { "x-windforce-actor": "provider:ui-guide-router" },
+    body: {
+      state: "ready",
+      public_url: "https://hooks.example.test/echo/partner-events",
+      observed_generation: route.generation,
+    },
+  });
+
+  const body = JSON.stringify({ message: "partner delivery" });
+  const signature = createHmac("sha256", signingSecret).update(body).digest("hex");
+  const response = await fetch(
+    new URL(
+      `/api/v1/workspaces/default/triggers/${encodeURIComponent(inboundWebhook.id)}/events`,
+      baseUrl,
+    ),
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-wf-signature-256": `sha256=${signature}`,
+        "x-wf-delivery-id": "ui-guide-partner-delivery-1",
+      },
+      body,
+    },
+  );
+  if (response.status !== 202) {
+    throw new Error(`Trigger seed delivery failed: HTTP ${response.status} ${await response.text()}`);
+  }
+}
 
 async function advanceSampleRepository(exec) {
   const sampleBase = path.join(baseDir, ".data", "sample-repos", "default", "echo");

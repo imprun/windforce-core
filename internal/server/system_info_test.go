@@ -21,6 +21,7 @@ func TestSystemInfoExposesSafeServiceConfiguration(t *testing.T) {
 		SecretKey:         "secret-key-value",
 		Wait:              250 * time.Millisecond,
 		ManagedWorkspaces: true,
+		HTTPRouteProvider: "kubernetes-gateway-api",
 	}))
 	defer server.Close()
 
@@ -47,6 +48,7 @@ func TestSystemInfoExposesSafeServiceConfiguration(t *testing.T) {
 		RuntimeConfig struct {
 			WaitMS            float64 `json:"wait_ms"`
 			ManagedWorkspaces bool    `json:"managed_workspaces"`
+			HTTPRouteProvider string  `json:"http_route_provider"`
 		} `json:"runtime_config"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
@@ -56,10 +58,10 @@ func TestSystemInfoExposesSafeServiceConfiguration(t *testing.T) {
 		t.Fatalf("body identity = %#v", body)
 	}
 	if !body.Planes["control_api"] || !body.Planes["invocation_api"] || !body.Planes["worker_api"] || !body.Planes["web_ui"] ||
-		body.Planes["execution_api"] || body.Planes["public_api"] {
+		!body.Planes["http_routes"] || body.Planes["execution_api"] || body.Planes["public_api"] {
 		t.Fatalf("planes = %#v", body.Planes)
 	}
-	if !body.Backends["state_store"] {
+	if !body.Backends["state_store"] || !body.Backends["http_route_provider"] {
 		t.Fatalf("backends = %#v", body.Backends)
 	}
 	if !body.Auth["admin_token_configured"] || !body.Auth["worker_token_configured"] || !body.Auth["job_token_configured"] {
@@ -70,5 +72,8 @@ func TestSystemInfoExposesSafeServiceConfiguration(t *testing.T) {
 	}
 	if !body.RuntimeConfig.ManagedWorkspaces {
 		t.Fatal("managed_workspaces = false, want true")
+	}
+	if body.RuntimeConfig.HTTPRouteProvider != "kubernetes-gateway-api" {
+		t.Fatalf("http_route_provider = %q", body.RuntimeConfig.HTTPRouteProvider)
 	}
 }

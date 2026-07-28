@@ -100,6 +100,7 @@ func runServer(args []string, mode string) int {
 	uiHostURL := flags.String("ui-host-url", strings.TrimSpace(os.Getenv("WINDFORCE_UI_HOST_URL")), "optional host console URL shown in the Web UI")
 	uiHostLabel := flags.String("ui-host-label", strings.TrimSpace(os.Getenv("WINDFORCE_UI_HOST_LABEL")), "accessible label for the optional host console action")
 	uiHostAccountEndpoint := flags.String("ui-host-account-endpoint", strings.TrimSpace(os.Getenv("WINDFORCE_UI_HOST_ACCOUNT_ENDPOINT")), "optional same-origin endpoint that presents the authenticated host account")
+	httpRouteProvider := flags.String("http-route-provider", strings.TrimSpace(os.Getenv("WINDFORCE_HTTP_ROUTE_PROVIDER")), "external HTTP Route Binding provider name advertised to the Web UI")
 	storeDir := flags.String("store", defaultStoreDir(), "source snapshot and execution bundle store directory")
 	catalogPath := flags.String("catalog", defaultCatalogPath(), "catalog JSON import path")
 	gitSourcesPath := flags.String("git-sources", defaultGitSourcesPath(), "registered git sources JSON path")
@@ -254,6 +255,7 @@ func runServer(args []string, mode string) int {
 		UIHostURL:             *uiHostURL,
 		UIHostLabel:           *uiHostLabel,
 		UIHostAccountEndpoint: *uiHostAccountEndpoint,
+		HTTPRouteProvider:     *httpRouteProvider,
 		Admission:             admission,
 		TriggerManager:        triggerManager,
 	})

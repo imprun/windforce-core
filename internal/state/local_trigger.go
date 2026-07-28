@@ -149,6 +149,7 @@ func (s *LocalStore) DeleteTrigger(ctx context.Context, workspaceID string, id s
 		record.UpdatedAt = now
 		record.DeletedAt = cloneTime(&now)
 		snapshot.Triggers[key] = record
+		requestHTTPRouteBindingsForTrigger(snapshot, record.WorkspaceID, record.ID, actor, now)
 		appendTriggerAudit(snapshot, record.TriggerDefinition, "deleted", "", actor, now)
 		return nil
 	})

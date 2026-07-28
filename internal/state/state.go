@@ -424,7 +424,7 @@ type TriggerDefinition struct {
 	UpdatedBy     string          `json:"updated_by"`
 	CreatedAt     time.Time       `json:"created_at"`
 	UpdatedAt     time.Time       `json:"updated_at"`
-	DeletedAt     *time.Time      `json:"-"`
+	DeletedAt     *time.Time      `json:"deleted_at,omitempty"`
 }
 
 type TriggerRecord struct {
@@ -455,6 +455,55 @@ type TriggerDelivery struct {
 	ScheduledFor  *time.Time `json:"scheduled_for,omitempty"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
+}
+
+// HTTPRouteBinding is provider-neutral desired and observed state for exposing a
+// webhook Trigger through an external HTTP router.
+type HTTPRouteBinding struct {
+	ID                 string     `json:"id"`
+	WorkspaceID        string     `json:"workspace_id"`
+	TriggerID          string     `json:"trigger_id"`
+	Hostname           string     `json:"hostname,omitempty"`
+	Path               string     `json:"path"`
+	Visibility         string     `json:"visibility"`
+	Provider           string     `json:"provider"`
+	State              string     `json:"state"`
+	PublicURL          string     `json:"public_url,omitempty"`
+	ErrorSummary       string     `json:"error_summary,omitempty"`
+	Generation         int64      `json:"generation"`
+	ObservedGeneration int64      `json:"observed_generation"`
+	CreatedBy          string     `json:"created_by"`
+	UpdatedBy          string     `json:"updated_by"`
+	CreatedAt          time.Time  `json:"created_at"`
+	UpdatedAt          time.Time  `json:"updated_at"`
+	DeleteRequestedAt  *time.Time `json:"delete_requested_at,omitempty"`
+	DeletedAt          *time.Time `json:"deleted_at,omitempty"`
+}
+
+const (
+	HTTPRouteBindingPending  = "pending"
+	HTTPRouteBindingReady    = "ready"
+	HTTPRouteBindingError    = "error"
+	HTTPRouteBindingDeleting = "deleting"
+	HTTPRouteBindingDeleted  = "deleted"
+)
+
+type HTTPRouteBindingStatus struct {
+	State              string `json:"state"`
+	PublicURL          string `json:"public_url,omitempty"`
+	ErrorSummary       string `json:"error_summary,omitempty"`
+	ObservedGeneration int64  `json:"observed_generation"`
+}
+
+type HTTPRouteBindingAudit struct {
+	ID          string    `json:"id"`
+	WorkspaceID string    `json:"workspace_id"`
+	TriggerID   string    `json:"trigger_id"`
+	BindingID   string    `json:"binding_id"`
+	Kind        string    `json:"kind"`
+	Detail      string    `json:"detail,omitempty"`
+	Actor       string    `json:"actor"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 func (record *ClientAudit) UnmarshalJSON(data []byte) error {
@@ -516,6 +565,8 @@ type Snapshot struct {
 	Triggers               map[string]TriggerRecord               `json:"triggers"`
 	TriggerAudits          map[string][]TriggerAudit              `json:"triggerAudits"`
 	TriggerDeliveries      map[string]TriggerDelivery             `json:"triggerDeliveries"`
+	HTTPRouteBindings      map[string]HTTPRouteBinding            `json:"httpRouteBindings"`
+	HTTPRouteBindingAudits map[string][]HTTPRouteBindingAudit     `json:"httpRouteBindingAudits"`
 	Workers                map[string]WorkerRecord                `json:"workers,omitempty"`
 	Workspaces             map[string]Workspace                   `json:"workspaces"`
 	WorkspaceTokens        map[string]map[string]WorkspaceToken   `json:"workspaceTokens"`
@@ -589,6 +640,13 @@ type Store interface {
 	ListTriggerAudit(ctx context.Context, workspaceID string, id string) ([]TriggerAudit, error)
 	UpsertTriggerDelivery(ctx context.Context, delivery TriggerDelivery) (TriggerDelivery, error)
 	ListTriggerDeliveries(ctx context.Context, workspaceID string, triggerID string, limit int) ([]TriggerDelivery, error)
+	ListHTTPRouteBindings(ctx context.Context, workspaceID string, triggerID string, includeDeleted bool) ([]HTTPRouteBinding, error)
+	GetHTTPRouteBinding(ctx context.Context, workspaceID string, triggerID string, id string) (HTTPRouteBinding, error)
+	CreateHTTPRouteBinding(ctx context.Context, binding HTTPRouteBinding, actor string) (HTTPRouteBinding, error)
+	UpdateHTTPRouteBinding(ctx context.Context, binding HTTPRouteBinding, actor string) (HTTPRouteBinding, error)
+	RequestDeleteHTTPRouteBinding(ctx context.Context, workspaceID string, triggerID string, id string, actor string) (HTTPRouteBinding, error)
+	UpdateHTTPRouteBindingStatus(ctx context.Context, workspaceID string, id string, status HTTPRouteBindingStatus, actor string) (HTTPRouteBinding, error)
+	ListHTTPRouteBindingAudit(ctx context.Context, workspaceID string, triggerID string, id string) ([]HTTPRouteBindingAudit, error)
 	ClaimJob(ctx context.Context, workerID string, leaseTTL time.Duration) (Job, Lease, error)
 	ClaimJobForWorker(ctx context.Context, workerID string, tags []string, labels []string, leaseTTL time.Duration) (Job, Lease, error)
 	RegisterWorker(ctx context.Context, record WorkerRecord) error

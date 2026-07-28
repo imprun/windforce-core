@@ -176,9 +176,12 @@ func TestControlPlaneOpenAPIIncludesWriteOnlyTriggerSecrets(t *testing.T) {
 	text := string(raw)
 	for _, expected := range []string{
 		`/api/w/{workspace}/triggers`,
+		`/api/w/{workspace}/triggers/{triggerId}/routes`,
+		`/api/w/{workspace}/http-route-bindings/{bindingId}/status`,
 		`/api/v1/workspaces/{workspace}/triggers/{triggerId}/events`,
 		`"secret_config"`,
 		`"writeOnly":true`,
+		`"HTTPRouteBindingStatusRequest"`,
 	} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("OpenAPI missing %q", expected)

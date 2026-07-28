@@ -99,6 +99,17 @@ The app detail Monitoring tab narrows the workspace job aggregates to a single a
 3. Switch the window between 1h, 24h, and 7d.
 4. Watch the failure rate; the workspace-wide picture lives on the Monitoring page.
 
+## Manage App Triggers
+
+The App Triggers tab keeps inbound Webhook, Schedule, and RabbitMQ sources beside the Action contract they invoke.
+
+![Manage App Triggers](../assets/ui/app-triggers.png)
+
+1. Open an App and choose Triggers.
+2. Review each source kind, target Action, enablement state, and latest delivery outcome.
+3. Enable or disable a source without changing its configuration.
+4. Keep outbound release notifications in Settings → Webhooks.
+
 ## Audit configuration changes
 
 The Audit tab records who changed the app's configuration: repository settings edits, source deletion, and route tag overrides. Releases have their own history on the Releases tab.
@@ -120,6 +131,27 @@ The Monitoring view aggregates job activity for the whole workspace: totals, per
 3. Switch the window between 1h, 24h, and 7d.
 4. Use the by-app and by-route-tag tables to find where the failure rate is moving; app names link to the app detail.
 
+## Review App Triggers in dark mode
+
+Dark mode preserves clear separation between Trigger kinds, enablement, delivery outcomes, and destructive actions.
+
+![Review App Triggers in dark mode](../assets/ui/app-triggers-dark.png)
+
+1. Switch the execution workspace to dark mode.
+2. Open an App and choose Triggers.
+3. Confirm status text and icons remain distinguishable without relying on color alone.
+
+## Add an inbound Trigger
+
+A kind-aware editor configures the current App target while keeping signing secrets and broker credentials write-only.
+
+![Add an inbound Trigger](../assets/ui/trigger-create.png)
+
+1. Choose Add trigger from the App Triggers tab.
+2. Select Webhook, Schedule, or RabbitMQ and a target Action.
+3. Complete the kind-specific delivery and security fields.
+4. Create the Trigger disabled, verify it, and enable it from the list.
+
 ## Import and export provisioning state
 
 Provisioning exports a redacted workspace snapshot and imports repeatable app, credential, client, input-setting, and webhook resources through dry-run first.
@@ -129,6 +161,17 @@ Provisioning exports a redacted workspace snapshot and imports repeatable app, c
 1. Open Settings from the sidebar and choose Provisioning.
 2. Export the current workspace as YAML or JSON for review.
 3. Paste or load a provisioning document, run Dry-run, then Apply only after validation succeeds.
+
+## Expose a Webhook Trigger through a public route
+
+A configured Router Provider reports the friendly URL and reconciliation state without replacing the canonical Trigger ingress.
+
+![Expose a Webhook Trigger through a public route](../assets/ui/trigger-public-route.png)
+
+1. Open an App, choose Triggers, and select a Webhook Trigger.
+2. Use the canonical ingress for direct integrations in every deployment mode.
+3. When a Router Provider is configured, review the friendly public URL and its observed state.
+4. Add, edit, or delete the route independently from the Trigger definition.
 
 ## Connect the CLI and set browser access
 
@@ -141,6 +184,17 @@ General settings shows CLI connection metadata and adapts browser access to stan
 3. Set the named environment variable to the one-time token issued from the workspace Access tab; token values are not included in copied commands.
 4. In standalone mode, set the API token and local audit actor when required.
 5. In hosted mode, use the read-only authenticated host session instead of local token and actor inputs.
+
+## Inspect a Trigger on a narrow screen
+
+The Trigger detail sheet fills a narrow viewport while configuration, delivery history, and audit information remain scrollable.
+
+![Inspect a Trigger on a narrow screen](../assets/ui/trigger-detail-mobile.png)
+
+1. Open the App Triggers tab on a narrow screen.
+2. Choose a Trigger name to open its operational detail.
+3. Review the canonical ingress and provider-managed public route without exposing secret values.
+4. Scroll to inspect delivery and audit history.
 
 ## Switch workspace context
 

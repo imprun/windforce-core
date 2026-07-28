@@ -549,7 +549,9 @@ async function main() {
     await rm(verifyScreenshotsDir, { recursive: true, force: true });
     console.log("UI smoke scenarios passed.");
   } else if (verify) {
-    await verifyGuide(config, scenarios);
+    // A scenario filter narrows browser execution, not the generated guide
+    // contract. Always compare the guide against the complete scenario set.
+    await verifyGuide(config, loadedScenarios);
     await rm(verifyScreenshotsDir, { recursive: true, force: true });
     console.log("UI guide verified.");
   } else {

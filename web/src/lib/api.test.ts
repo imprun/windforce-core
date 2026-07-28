@@ -190,6 +190,74 @@ describe("WindforceApi webhooks", () => {
   });
 });
 
+describe("WindforceApi Triggers", () => {
+  test("uses workspace Control API routes for the Trigger lifecycle", async () => {
+    const requests: Array<{ url: string; method: string; body: string }> = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input, init) => {
+      requests.push({
+        url: String(input),
+        method: init?.method || "GET",
+        body: String(init?.body || ""),
+      });
+      const body =
+        String(input).endsWith("/deliveries") || String(input).endsWith("/audit")
+          ? { items: [] }
+          : String(input).endsWith("/triggers")
+            ? { items: [] }
+            : { id: "trg_1", name: "Daily" };
+      return new Response(JSON.stringify(body), { status: 200 });
+    }) as typeof fetch;
+    try {
+      const api = new WindforceApi({ workspace: "ops", token: "", actor: "operator" });
+      const payload = {
+        name: "Daily",
+        kind: "schedule" as const,
+        app: "orders",
+        action: "reconcile",
+        config: { cron: "0 9 * * *", timezone: "Asia/Seoul", input: {} },
+      };
+      await api.triggers();
+      await api.createTrigger(payload);
+      await api.updateTrigger("trg/1", payload);
+      await api.setTriggerEnabled("trg/1", true);
+      await api.triggerDeliveries("trg/1");
+      await api.triggerAudit("trg/1");
+      const routePayload = {
+        hostname: "hooks.example.com",
+        path: "/orders",
+        visibility: "public" as const,
+        provider: "kubernetes-gateway-api",
+      };
+      await api.httpRouteBindings("trg/1");
+      await api.createHTTPRouteBinding("trg/1", routePayload);
+      await api.updateHTTPRouteBinding("trg/1", "hrb/1", routePayload);
+      await api.httpRouteBindingAudit("trg/1", "hrb/1");
+      await api.deleteHTTPRouteBinding("trg/1", "hrb/1");
+      await api.deleteTrigger("trg/1");
+
+      expect(requests.map(({ url, method }) => [url, method])).toEqual([
+        ["/api/w/ops/triggers", "GET"],
+        ["/api/w/ops/triggers", "POST"],
+        ["/api/w/ops/triggers/trg%2F1", "PUT"],
+        ["/api/w/ops/triggers/trg%2F1/enable", "POST"],
+        ["/api/w/ops/triggers/trg%2F1/deliveries", "GET"],
+        ["/api/w/ops/triggers/trg%2F1/audit", "GET"],
+        ["/api/w/ops/triggers/trg%2F1/routes", "GET"],
+        ["/api/w/ops/triggers/trg%2F1/routes", "POST"],
+        ["/api/w/ops/triggers/trg%2F1/routes/hrb%2F1", "PUT"],
+        ["/api/w/ops/triggers/trg%2F1/routes/hrb%2F1/audit", "GET"],
+        ["/api/w/ops/triggers/trg%2F1/routes/hrb%2F1", "DELETE"],
+        ["/api/w/ops/triggers/trg%2F1", "DELETE"],
+      ]);
+      expect(JSON.parse(requests[1]!.body)).toEqual(payload);
+      expect(JSON.parse(requests[8]!.body)).toEqual(routePayload);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
 describe("WindforceApi provisioning", () => {
   test("imports raw YAML with dry-run and actor headers", async () => {
     const requests: Array<{ url: string; method: string; headers: Headers; body: string }> = [];
