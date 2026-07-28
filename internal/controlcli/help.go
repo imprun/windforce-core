@@ -13,7 +13,7 @@ USAGE
   wf auth login [--web | --with-token] [--no-browser] [--account label]
   wf auth switch <account>
   wf auth status
-  wf auth logout`,
+  wf auth logout [--local-only]`,
 	"auth login": `Authenticate with a hosted Identity provider or a direct Cell credential.
 
 USAGE
@@ -24,6 +24,17 @@ FLAGS
   --with-token      Read one direct Cell credential from standard input
   --no-browser      Print the verification URL instead of opening a browser
   --account string  Local account label`,
+	"auth logout": `Remove the selected account credential.
+
+Hosted credentials are revoked at the Identity provider before local state is
+removed. A revocation failure preserves the local credential so the operation
+can be retried. This does not end the central browser session.
+
+USAGE
+  wf auth logout [--local-only]
+
+FLAGS
+  --local-only  Skip hosted token revocation and remove only local state`,
 	"context": `Manage non-secret Cell connection contexts.
 
 USAGE

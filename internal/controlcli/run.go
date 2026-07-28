@@ -48,6 +48,7 @@ type runner struct {
 	jqExpression   string
 	outputTemplate string
 	humanOutput    bool
+	openBrowser    func(string) error
 }
 
 type usageError struct{ message string }
@@ -75,6 +76,18 @@ func runWithProgram(program programConfig, args []string, stdin io.Reader, stdou
 	if len(stores) > 0 {
 		store = stores[0]
 	}
+	return runWithProgramDependencies(program, args, stdin, stdout, stderr, store, openSystemBrowser)
+}
+
+func runWithProgramDependencies(
+	program programConfig,
+	args []string,
+	stdin io.Reader,
+	stdout io.Writer,
+	stderr io.Writer,
+	store CredentialStore,
+	openBrowser func(string) error,
+) int {
 	global := flag.NewFlagSet(program.Name, flag.ContinueOnError)
 	global.SetOutput(stderr)
 	global.Usage = func() {}
@@ -176,6 +189,7 @@ func runWithProgram(program programConfig, args []string, stdin io.Reader, stdou
 		store: store, configPath: path, config: config,
 		outputFields: outputFields, jqExpression: jqExpression, outputTemplate: outputTemplate,
 		humanOutput: isTerminalOutput(stdout) && !pretty && outputFields == "" && jqExpression == "" && outputTemplate == "",
+		openBrowser: openBrowser,
 	}
 	if remaining[0] == "profile" || (program.Name == wfProgram.Name && remaining[0] == "context") {
 		r.contextCommand = remaining[0] == "context"

@@ -13,13 +13,21 @@ type CredentialStore interface {
 }
 
 func credentialKey(profile Profile) (string, error) {
-	target, err := url.Parse(strings.TrimSpace(profile.APIURL))
-	if err != nil || (target.Scheme != "http" && target.Scheme != "https") || target.Host == "" {
-		return "", fmt.Errorf("invalid context API URL %q", profile.APIURL)
+	host, err := credentialHost(profile.APIURL)
+	if err != nil {
+		return "", err
 	}
 	account := strings.TrimSpace(profile.Account)
 	if account == "" {
 		return "", fmt.Errorf("context has no authenticated account")
 	}
-	return strings.ToLower(target.Host) + "/" + account, nil
+	return host + "/" + account, nil
+}
+
+func credentialHost(apiURL string) (string, error) {
+	target, err := url.Parse(strings.TrimSpace(apiURL))
+	if err != nil || (target.Scheme != "http" && target.Scheme != "https") || target.Host == "" {
+		return "", fmt.Errorf("invalid context API URL %q", apiURL)
+	}
+	return strings.ToLower(target.Host), nil
 }

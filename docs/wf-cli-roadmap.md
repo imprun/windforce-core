@@ -110,8 +110,12 @@ advertise a secretless Device Authorization client through
 `/.well-known/wf-cli.json`; `wf auth login` discovers the issuer, opens the
 external browser or prints the verification URL, stores the refreshable
 credential securely, validates workspace access, and refreshes the access
-token before expiry. Remote token revocation and full live hosted verification
-remain open.
+token before expiry. Hosted logout performs provider token revocation with a
+fail-closed local fallback, while central browser-session logout remains a
+separate Identity concern. Tests cover the browser-opening and headless paths,
+refresh rotation, multiple local accounts, environment-token precedence,
+remote revocation, revocation failure, and older stored credentials. Full live
+hosted verification remains open.
 
 ### M4 — Workspace and app workflows
 
@@ -140,8 +144,13 @@ and is still open.
 Cross-platform archives, checksums, exact archive-content assertions, and
 Windows, macOS, and Linux CLI smoke commands are configured. Tagged releases
 additionally create and verify a keyless Sigstore bundle for the checksum
-file. The workflow must still pass remotely, and a new tag plus real hosted
-Cell verification are required before this milestone is complete.
+file. Release verification runs each published amd64 binary on its native
+Windows, macOS, or Linux host and verifies that executable replacement
+preserves an external context file. A hosting-product E2E also builds the real
+`wf` and Cell binaries and covers exact-commit publication through Run result
+retrieval with non-interactive product authorization. The workflows must still
+pass remotely, and a new tag plus live hosted Cell verification are required
+before this milestone is complete.
 
 ## Completion gates
 

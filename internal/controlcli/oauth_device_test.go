@@ -18,6 +18,8 @@ func TestRunWFHostedDeviceLoginAndRefresh(t *testing.T) {
 	var server *httptest.Server
 	var appRequests atomic.Int32
 	var refreshRequests atomic.Int32
+	var revocationRequests atomic.Int32
+	var openedURL string
 	var formMu sync.Mutex
 	seenForms := make(map[string]url.Values)
 
@@ -40,6 +42,7 @@ func TestRunWFHostedDeviceLoginAndRefresh(t *testing.T) {
 				"issuer":                        server.URL,
 				"device_authorization_endpoint": server.URL + "/oauth2/device/auth",
 				"token_endpoint":                server.URL + "/oauth2/token",
+				"revocation_endpoint":           server.URL + "/oauth2/revoke",
 			})
 		case "/oauth2/device/auth":
 			if err := request.ParseForm(); err != nil {
@@ -87,6 +90,17 @@ func TestRunWFHostedDeviceLoginAndRefresh(t *testing.T) {
 			default:
 				http.Error(w, `{"error":"unsupported_grant_type"}`, http.StatusBadRequest)
 			}
+		case "/oauth2/revoke":
+			if err := request.ParseForm(); err != nil {
+				t.Errorf("parse revocation form: %v", err)
+				http.Error(w, "bad form", http.StatusBadRequest)
+				return
+			}
+			revocationRequests.Add(1)
+			formMu.Lock()
+			seenForms["revocation"] = request.Form
+			formMu.Unlock()
+			w.WriteHeader(http.StatusOK)
 		case "/api/w/team/apps":
 			appRequests.Add(1)
 			authorization := request.Header.Get("Authorization")
@@ -119,18 +133,27 @@ func TestRunWFHostedDeviceLoginAndRefresh(t *testing.T) {
 	store := &memoryCredentialStore{values: map[string]string{}}
 	stdout.Reset()
 	stderr.Reset()
-	exit = RunWFWithCredentialStore(
-		[]string{"auth", "login", "--no-browser"},
+	exit = runWithProgramDependencies(
+		wfProgram,
+		[]string{"auth", "login"},
 		strings.NewReader(""),
 		&stdout,
 		&stderr,
 		store,
+		func(rawURL string) error {
+			openedURL = rawURL
+			return nil
+		},
 	)
 	if exit != ExitOK {
 		t.Fatalf("hosted login exit=%d stderr=%s", exit, stderr.String())
 	}
 	if !strings.Contains(stderr.String(), "ABCD-EFGH") || !strings.Contains(stderr.String(), server.URL+"/oauth/device") {
 		t.Fatalf("device instructions = %q", stderr.String())
+	}
+	if openedURL != server.URL+"/oauth/device?user_code=ABCD-EFGH" ||
+		!strings.Contains(stderr.String(), "Opening ") {
+		t.Fatalf("browser URL=%q instructions=%q", openedURL, stderr.String())
 	}
 	for _, secret := range []string{"server-only-device-code", "hosted-access-token", "hosted-refresh-token"} {
 		if strings.Contains(stdout.String(), secret) || strings.Contains(stderr.String(), secret) {
@@ -150,6 +173,9 @@ func TestRunWFHostedDeviceLoginAndRefresh(t *testing.T) {
 	}
 	if credential.AccessToken != "hosted-access-token" || credential.RefreshToken != "hosted-refresh-token" {
 		t.Fatalf("stored credential = %#v", credential)
+	}
+	if credential.RevocationURL != server.URL+"/oauth2/revoke" {
+		t.Fatalf("stored revocation endpoint = %q", credential.RevocationURL)
 	}
 	configBytes, err := os.ReadFile(configPath)
 	if err != nil {
@@ -217,6 +243,9 @@ func TestRunWFHostedDeviceLoginAndRefresh(t *testing.T) {
 	if refreshed.AccessToken != "refreshed-access-token" || refreshed.RefreshToken != "rotated-refresh-token" {
 		t.Fatalf("refreshed credential = %#v", refreshed)
 	}
+	if refreshed.RevocationURL != server.URL+"/oauth2/revoke" {
+		t.Fatalf("refreshed revocation endpoint = %q", refreshed.RevocationURL)
+	}
 	formMu.Lock()
 	refreshForm := seenForms["refresh_token"]
 	formMu.Unlock()
@@ -237,6 +266,196 @@ func TestRunWFHostedDeviceLoginAndRefresh(t *testing.T) {
 	)
 	if exit != ExitOK || !strings.Contains(stdout.String(), `"auth_type":"oauth2-device"`) {
 		t.Fatalf("auth status exit=%d stdout=%s stderr=%s", exit, stdout.String(), stderr.String())
+	}
+
+	// Credentials written before revocation metadata was added remain usable:
+	// logout re-discovers the endpoint from the stored issuer.
+	refreshed.RevocationURL = ""
+	encoded, err = encodeStoredCredential(refreshed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.values[key] = encoded
+
+	stdout.Reset()
+	stderr.Reset()
+	exit = RunWFWithCredentialStore(
+		[]string{"auth", "logout"},
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+		store,
+	)
+	if exit != ExitOK ||
+		!strings.Contains(stdout.String(), `"remote_revoked":true`) ||
+		!strings.Contains(stdout.String(), `"credential_removed":true`) {
+		t.Fatalf("auth logout exit=%d stdout=%s stderr=%s", exit, stdout.String(), stderr.String())
+	}
+	if revocationRequests.Load() != 1 || len(store.values) != 0 {
+		t.Fatalf("revocation requests=%d credentials=%#v", revocationRequests.Load(), store.values)
+	}
+	formMu.Lock()
+	revocationForm := seenForms["revocation"]
+	formMu.Unlock()
+	if revocationForm.Get("client_id") != "wf-cli" ||
+		revocationForm.Get("token") != "rotated-refresh-token" ||
+		revocationForm.Get("token_type_hint") != "refresh_token" {
+		t.Fatalf("revocation form = %#v", revocationForm)
+	}
+	for _, secret := range []string{"refreshed-access-token", "rotated-refresh-token"} {
+		if strings.Contains(stdout.String(), secret) || strings.Contains(stderr.String(), secret) {
+			t.Fatalf("OAuth secret %q leaked during logout", secret)
+		}
+	}
+	config, err = loadConfig(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.Profiles["hosted"].Account != "" || config.Profiles["hosted"].AuthType != "" {
+		t.Fatalf("logout profile = %#v", config.Profiles["hosted"])
+	}
+
+	var browserCalled bool
+	stdout.Reset()
+	stderr.Reset()
+	exit = runWithProgramDependencies(
+		wfProgram,
+		[]string{"auth", "login", "--no-browser", "--account", "headless"},
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+		store,
+		func(string) error {
+			browserCalled = true
+			return nil
+		},
+	)
+	if exit != ExitOK ||
+		browserCalled ||
+		!strings.Contains(stderr.String(), "Open this URL to continue:") {
+		t.Fatalf(
+			"headless login exit=%d browserCalled=%v stdout=%q stderr=%q",
+			exit,
+			browserCalled,
+			stdout.String(),
+			stderr.String(),
+		)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	exit = RunWFWithCredentialStore(
+		[]string{"auth", "logout", "--local-only"},
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+		store,
+	)
+	if exit != ExitOK || len(store.values) != 0 {
+		t.Fatalf("headless cleanup exit=%d credentials=%#v stderr=%q", exit, store.values, stderr.String())
+	}
+}
+
+func TestRunWFHostedLogoutPreservesCredentialWhenRemoteRevocationFails(t *testing.T) {
+	var revocationRequests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/oauth2/revoke" {
+			http.NotFound(w, request)
+			return
+		}
+		revocationRequests.Add(1)
+		http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	configPath := t.TempDir() + "/config.json"
+	t.Setenv("WF_CONFIG", configPath)
+	profile := Profile{
+		APIURL:    server.URL,
+		Workspace: "team",
+		Account:   "identity",
+		AuthType:  authTypeOAuth2Device,
+	}
+	config := ConfigFile{
+		CurrentProfile: "hosted",
+		Profiles:       map[string]Profile{"hosted": profile},
+	}
+	if err := saveConfig(configPath, config); err != nil {
+		t.Fatal(err)
+	}
+	credential := storedCredential{
+		Version:       1,
+		Kind:          authTypeOAuth2Device,
+		AccessToken:   "hosted-access-token",
+		RefreshToken:  "hosted-refresh-token",
+		TokenType:     "Bearer",
+		ExpiresAt:     time.Now().Add(time.Hour),
+		TokenURL:      server.URL + "/oauth2/token",
+		RevocationURL: server.URL + "/oauth2/revoke",
+		ClientID:      "wf-cli",
+		Issuer:        server.URL,
+	}
+	encoded, err := encodeStoredCredential(credential)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := credentialKey(profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := &memoryCredentialStore{values: map[string]string{key: encoded}}
+
+	var stdout, stderr bytes.Buffer
+	exit := RunWFWithCredentialStore(
+		[]string{"auth", "logout"},
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+		store,
+	)
+	if exit == ExitOK ||
+		!strings.Contains(stderr.String(), "HTTP 503") ||
+		!strings.Contains(stderr.String(), "no local credential was removed") {
+		t.Fatalf("logout exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
+	}
+	if store.values[key] != encoded {
+		t.Fatalf("credential changed after failed revocation: %#v", store.values)
+	}
+	loaded, err := loadConfig(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Profiles["hosted"].Account != "identity" {
+		t.Fatalf("profile changed after failed revocation: %#v", loaded.Profiles["hosted"])
+	}
+	for _, secret := range []string{"hosted-access-token", "hosted-refresh-token"} {
+		if strings.Contains(stdout.String(), secret) || strings.Contains(stderr.String(), secret) {
+			t.Fatalf("OAuth secret %q leaked after revocation failure", secret)
+		}
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	exit = RunWFWithCredentialStore(
+		[]string{"auth", "logout", "--local-only"},
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+		store,
+	)
+	if exit != ExitOK ||
+		!strings.Contains(stdout.String(), `"remote_revoked":false`) ||
+		!strings.Contains(stdout.String(), `"credential_removed":true`) {
+		t.Fatalf("local logout exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
+	}
+	if revocationRequests.Load() != 1 || len(store.values) != 0 {
+		t.Fatalf("revocation requests=%d credentials=%#v", revocationRequests.Load(), store.values)
+	}
+	loaded, err = loadConfig(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Profiles["hosted"].Account != "" || loaded.Profiles["hosted"].AuthType != "" {
+		t.Fatalf("local logout profile = %#v", loaded.Profiles["hosted"])
 	}
 }
 

@@ -27,10 +27,7 @@ func (r *runner) auth(args []string) error {
 		}
 		return r.authStatus()
 	case "logout":
-		if len(args) != 1 {
-			return usageError{"usage: wf auth logout"}
-		}
-		return r.authLogout()
+		return r.authLogout(args[1:])
 	default:
 		return usageError{fmt.Sprintf("unknown auth command %q", args[0])}
 	}
@@ -224,14 +221,7 @@ func (r *runner) authStatus() error {
 	if err := r.probe(token); err != nil {
 		return fmt.Errorf("verify credential: %w", err)
 	}
-	key := ""
-	if r.resolved.Account != "" {
-		key, _ = credentialKey(r.resolved.Profile)
-	}
-	host := ""
-	if index := strings.LastIndex(key, "/"); index >= 0 {
-		host = key[:index]
-	}
+	host, _ := credentialHost(r.resolved.APIURL)
 	return r.outputJSON(map[string]any{
 		"account":       r.resolved.Account,
 		"authenticated": true,
@@ -243,7 +233,15 @@ func (r *runner) authStatus() error {
 	})
 }
 
-func (r *runner) authLogout() error {
+func (r *runner) authLogout(args []string) error {
+	fs := r.flags("auth logout")
+	localOnly := fs.Bool("local-only", false, "remove the local credential without revoking a hosted token")
+	if err := fs.Parse(args); err != nil {
+		return usageError{err.Error()}
+	}
+	if fs.NArg() != 0 {
+		return usageError{"usage: wf auth logout [--local-only]"}
+	}
 	if r.resolved.ProfileName == "" {
 		return fmt.Errorf("select a context before logging out")
 	}
@@ -261,8 +259,24 @@ func (r *runner) authLogout() error {
 	if err != nil {
 		return fmt.Errorf("read credential store: %w", err)
 	}
+	remoteRevoked := false
+	if found && !*localOnly {
+		hostedCredential, hosted, err := decodeStoredCredential(credential)
+		if err != nil {
+			return err
+		}
+		if hosted {
+			if err := r.revokeStoredCredential(context.Background(), hostedCredential); err != nil {
+				return fmt.Errorf("%w; no local credential was removed (retry or use --local-only)", err)
+			}
+			remoteRevoked = true
+		}
+	}
 	if found {
 		if err := r.store.Delete(key); err != nil {
+			if remoteRevoked {
+				return fmt.Errorf("hosted credential was revoked but deleting its local copy failed: %w", err)
+			}
 			return fmt.Errorf("delete credential: %w", err)
 		}
 	}
@@ -271,14 +285,19 @@ func (r *runner) authLogout() error {
 	profile.AuthType = ""
 	r.config.Profiles[r.resolved.ProfileName] = profile
 	if err := saveConfig(r.configPath, r.config); err != nil {
-		if found {
+		if found && !remoteRevoked {
 			_ = r.store.Set(key, credential)
+		}
+		if remoteRevoked {
+			return fmt.Errorf("hosted credential was revoked but clearing its local context failed: %w", err)
 		}
 		return err
 	}
 	return r.outputJSON(map[string]any{
-		"context":    r.resolved.ProfileName,
-		"logged_out": true,
+		"context":            r.resolved.ProfileName,
+		"credential_removed": found,
+		"logged_out":         true,
+		"remote_revoked":     remoteRevoked,
 	})
 }
 

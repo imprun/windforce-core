@@ -15,7 +15,7 @@ On Windows, extract the matching ZIP and place `wf.exe` on `PATH`:
 
 ```powershell
 Expand-Archive .\wf_<VERSION>_windows_amd64.zip -DestinationPath .\wf
-wf\wf.exe version
+wf\wf.exe --version
 ```
 
 On macOS or Linux, extract the matching archive and install the executable in a directory on `PATH`:
@@ -23,7 +23,7 @@ On macOS or Linux, extract the matching archive and install the executable in a 
 ```shell
 tar -xzf wf_<VERSION>_<OS>_<ARCH>.tar.gz
 install -m 0755 wf "$HOME/.local/bin/wf"
-wf version
+wf --version
 ```
 
 Each release includes `checksums.txt` and a keyless Sigstore bundle named
@@ -38,9 +38,41 @@ cosign verify-blob \
 sha256sum --check --ignore-missing checksums.txt
 ```
 
-Upgrade by verifying and replacing the executable with the archive for the new
-version. Context files and credentials are stored outside the executable and
-remain in place across upgrades.
+## Upgrade
+
+Download and verify the new release exactly as for a fresh installation. Check
+the staged binary before replacing the installed executable:
+
+```powershell
+Expand-Archive .\wf_<NEW_VERSION>_windows_amd64.zip -DestinationPath .\wf-new
+.\wf-new\wf.exe --version
+$installedDirectory = "C:\Tools\wf"
+Copy-Item .\wf-new\wf.exe "$installedDirectory\wf.exe.new"
+& "$installedDirectory\wf.exe.new" --version
+Move-Item -Force "$installedDirectory\wf.exe.new" "$installedDirectory\wf.exe"
+wf --version
+wf context show
+```
+
+```shell
+tar -xzf "wf_<NEW_VERSION>_<OS>_<ARCH>.tar.gz"
+./wf --version
+install -m 0755 wf "$HOME/.local/bin/wf.new"
+mv "$HOME/.local/bin/wf.new" "$HOME/.local/bin/wf"
+wf --version
+wf context show
+```
+
+The executable contains no context or credential state. Contexts remain in the
+operating-system user configuration directory under `wf/config.json`, or at
+`WF_CONFIG` when explicitly selected. Credentials remain in Windows Credential
+Manager, macOS Keychain, or the Linux Secret Service. Do not copy a credential
+into an upgrade directory or back it up as plaintext.
+
+After upgrading, `wf context show` proves that the selected target survived.
+`wf auth status` additionally probes the selected workspace when it is
+reachable. Stored hosted credentials from earlier `wf` releases remain
+readable; missing revocation metadata is recovered from the stored issuer.
 
 The repository build produces `wf` and the legacy `windforce` alias:
 
@@ -102,7 +134,20 @@ wf app list --summary
 
 Use `wf context list`, `wf context show`, and `wf context use <name>` to inspect or select contexts. `wf auth switch <account>` selects another credential already stored for the same host and verifies it before changing the context. `WF_CONFIG` selects an explicit configuration file. When the new default configuration does not exist, `wf` can read the legacy `windforce` profile file; the next context change writes the new `wf` configuration.
 
-Both login modes validate the credential against the selected workspace before storing it. If the system credential store is unavailable, login fails without writing a plaintext fallback. `wf auth logout` removes only the local credential reference and secret. It does not revoke an Identity session, hosted refresh token, or direct workspace credential remotely.
+Both login modes validate the credential against the selected workspace before
+storing it. If the system credential store is unavailable, login fails without
+writing a plaintext fallback.
+
+For a hosted account, `wf auth logout` first revokes the CLI refresh token at
+the provider and removes local state only after revocation succeeds. If the
+provider is unavailable, the credential remains available for a retry; use
+`wf auth logout --local-only` only when intentionally abandoning remote
+revocation. Credentials written by an older `wf` are supported by discovering
+the revocation endpoint from their stored issuer. Direct Cell credentials have
+no generic remote revocation contract and are removed locally.
+
+CLI token revocation does not end the central Identity browser session. Use the
+product's explicit central logout flow when that separate session must end.
 
 Inspect or change the workspace without creating another login:
 

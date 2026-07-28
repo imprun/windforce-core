@@ -25,6 +25,22 @@ func TestWFCommandHelpDoesNotRequireConfigurationOrAuthentication(t *testing.T) 
 	}
 }
 
+func TestWFAuthLogoutHelpExplainsRemoteRevocationBoundary(t *testing.T) {
+	t.Setenv("WF_CONFIG", t.TempDir())
+	var stdout, stderr bytes.Buffer
+	exit := RunWF(
+		[]string{"auth", "logout", "--help"},
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+	)
+	if exit != ExitOK ||
+		!strings.Contains(stdout.String(), "--local-only") ||
+		!strings.Contains(stdout.String(), "central browser session") {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
+	}
+}
+
 func TestWFVersionDoesNotRequireConfigurationOrAuthentication(t *testing.T) {
 	for _, args := range [][]string{{"version"}, {"--version"}} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {

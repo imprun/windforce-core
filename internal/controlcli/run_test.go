@@ -271,6 +271,24 @@ func TestRunWFUsesProcessTokenWithoutPersistingIt(t *testing.T) {
 	if strings.Contains(stdout.String(), "process-secret") || strings.Contains(stderr.String(), "process-secret") {
 		t.Fatalf("token leaked: stdout=%s stderr=%s", stdout.String(), stderr.String())
 	}
+
+	stdout.Reset()
+	stderr.Reset()
+	exit = RunWF(
+		[]string{"--api-url", server.URL, "auth", "status"},
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+	)
+	host := strings.TrimPrefix(server.URL, "http://")
+	if exit != ExitOK ||
+		!strings.Contains(stdout.String(), `"source":"environment"`) ||
+		!strings.Contains(stdout.String(), `"host":"`+host+`"`) {
+		t.Fatalf("auth status exit=%d stdout=%s stderr=%s", exit, stdout.String(), stderr.String())
+	}
+	if strings.Contains(stdout.String(), "process-secret") || strings.Contains(stderr.String(), "process-secret") {
+		t.Fatalf("auth status leaked token: stdout=%s stderr=%s", stdout.String(), stderr.String())
+	}
 }
 
 func TestRunWFSourcePublishUsesReleasePublicationEndpoint(t *testing.T) {

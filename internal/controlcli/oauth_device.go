@@ -42,6 +42,7 @@ type oidcDiscovery struct {
 	Issuer                      string `json:"issuer"`
 	DeviceAuthorizationEndpoint string `json:"device_authorization_endpoint"`
 	TokenEndpoint               string `json:"token_endpoint"`
+	RevocationEndpoint          string `json:"revocation_endpoint"`
 }
 
 type deviceClientConfig struct {
@@ -51,6 +52,7 @@ type deviceClientConfig struct {
 	Scopes                      []string
 	DeviceAuthorizationEndpoint string
 	TokenEndpoint               string
+	RevocationEndpoint          string
 }
 
 type deviceAuthorization struct {
@@ -71,15 +73,16 @@ type oauthTokenResponse struct {
 }
 
 type storedCredential struct {
-	Version      int       `json:"version"`
-	Kind         string    `json:"kind"`
-	AccessToken  string    `json:"access_token"`
-	RefreshToken string    `json:"refresh_token"`
-	TokenType    string    `json:"token_type"`
-	ExpiresAt    time.Time `json:"expires_at"`
-	TokenURL     string    `json:"token_endpoint"`
-	ClientID     string    `json:"client_id"`
-	Issuer       string    `json:"issuer"`
+	Version       int       `json:"version"`
+	Kind          string    `json:"kind"`
+	AccessToken   string    `json:"access_token"`
+	RefreshToken  string    `json:"refresh_token"`
+	TokenType     string    `json:"token_type"`
+	ExpiresAt     time.Time `json:"expires_at"`
+	TokenURL      string    `json:"token_endpoint"`
+	RevocationURL string    `json:"revocation_endpoint,omitempty"`
+	ClientID      string    `json:"client_id"`
+	Issuer        string    `json:"issuer"`
 }
 
 func (r *runner) loginWithDevice(ctx context.Context, noBrowser bool) (storedCredential, error) {
@@ -99,7 +102,7 @@ func (r *runner) loginWithDevice(ctx context.Context, noBrowser bool) (storedCre
 	fmt.Fprintf(r.stderr, "Copy this one-time code: %s\n", authorization.UserCode)
 	if noBrowser {
 		fmt.Fprintf(r.stderr, "Open this URL to continue: %s\n", verificationURL)
-	} else if err := openSystemBrowser(verificationURL); err != nil {
+	} else if err := r.browserOpener()(verificationURL); err != nil {
 		fmt.Fprintf(r.stderr, "Could not open a browser. Open this URL to continue: %s\n", verificationURL)
 	} else {
 		fmt.Fprintf(r.stderr, "Opening %s in your browser.\n", verificationURL)
@@ -113,6 +116,13 @@ func (r *runner) loginWithDevice(ctx context.Context, noBrowser bool) (storedCre
 		return storedCredential{}, err
 	}
 	return credential, nil
+}
+
+func (r *runner) browserOpener() func(string) error {
+	if r.openBrowser != nil {
+		return r.openBrowser
+	}
+	return openSystemBrowser
 }
 
 func (r *runner) discoverDeviceClient(ctx context.Context) (deviceClientConfig, error) {
@@ -170,6 +180,14 @@ func (r *runner) discoverDeviceClient(ctx context.Context) (deviceClientConfig, 
 	if err != nil {
 		return deviceClientConfig{}, fmt.Errorf("invalid token endpoint: %w", err)
 	}
+	revocationEndpoint := ""
+	if strings.TrimSpace(discovery.RevocationEndpoint) != "" {
+		endpoint, err := safeEndpointURL(discovery.RevocationEndpoint)
+		if err != nil {
+			return deviceClientConfig{}, fmt.Errorf("invalid revocation endpoint: %w", err)
+		}
+		revocationEndpoint = endpoint.String()
+	}
 	return deviceClientConfig{
 		Issuer:                      issuer.String(),
 		ClientID:                    clientID,
@@ -177,6 +195,7 @@ func (r *runner) discoverDeviceClient(ctx context.Context) (deviceClientConfig, 
 		Scopes:                      scopes,
 		DeviceAuthorizationEndpoint: deviceEndpoint.String(),
 		TokenEndpoint:               tokenEndpoint.String(),
+		RevocationEndpoint:          revocationEndpoint,
 	}, nil
 }
 
@@ -263,11 +282,55 @@ func (r *runner) refreshStoredCredential(ctx context.Context, current storedCred
 		token.RefreshToken = current.RefreshToken
 	}
 	client := deviceClientConfig{
-		Issuer:        current.Issuer,
-		ClientID:      current.ClientID,
-		TokenEndpoint: current.TokenURL,
+		Issuer:             current.Issuer,
+		ClientID:           current.ClientID,
+		TokenEndpoint:      current.TokenURL,
+		RevocationEndpoint: current.RevocationURL,
 	}
 	return newStoredCredential(client, token)
+}
+
+func (r *runner) revokeStoredCredential(ctx context.Context, current storedCredential) error {
+	revocationURL := strings.TrimSpace(current.RevocationURL)
+	if revocationURL == "" {
+		issuer, err := safeWebURL(current.Issuer)
+		if err != nil {
+			return fmt.Errorf("discover token revocation: stored issuer is invalid")
+		}
+		discoveryURL := strings.TrimRight(issuer.String(), "/") + "/.well-known/openid-configuration"
+		discoveryOrigin := &url.URL{Scheme: issuer.Scheme, Host: issuer.Host}
+		var discovery oidcDiscovery
+		if err := r.getJSON(ctx, discoveryURL, discoveryOrigin, &discovery); err != nil {
+			return fmt.Errorf("discover token revocation: %w", err)
+		}
+		if discovery.Issuer != issuer.String() {
+			return fmt.Errorf("discover token revocation: identity provider issuer mismatch")
+		}
+		if strings.TrimSpace(discovery.RevocationEndpoint) == "" {
+			return fmt.Errorf("identity provider does not advertise token revocation")
+		}
+		endpoint, err := safeEndpointURL(discovery.RevocationEndpoint)
+		if err != nil {
+			return fmt.Errorf("discover token revocation: invalid endpoint")
+		}
+		revocationURL = endpoint.String()
+	}
+	status, err := r.postForm(
+		ctx,
+		revocationURL,
+		url.Values{
+			"client_id":       {current.ClientID},
+			"token":           {current.RefreshToken},
+			"token_type_hint": {"refresh_token"},
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("revoke hosted credential: %w", err)
+	}
+	if status < 200 || status >= 300 {
+		return fmt.Errorf("revoke hosted credential: identity provider returned HTTP %d", status)
+	}
+	return nil
 }
 
 func newStoredCredential(client deviceClientConfig, token oauthTokenResponse) (storedCredential, error) {
@@ -284,15 +347,16 @@ func newStoredCredential(client deviceClientConfig, token oauthTokenResponse) (s
 		return storedCredential{}, fmt.Errorf("identity provider returned invalid token lifetime")
 	}
 	return storedCredential{
-		Version:      1,
-		Kind:         authTypeOAuth2Device,
-		AccessToken:  strings.TrimSpace(token.AccessToken),
-		RefreshToken: strings.TrimSpace(token.RefreshToken),
-		TokenType:    "Bearer",
-		ExpiresAt:    time.Now().Add(time.Duration(token.ExpiresIn) * time.Second),
-		TokenURL:     client.TokenEndpoint,
-		ClientID:     client.ClientID,
-		Issuer:       client.Issuer,
+		Version:       1,
+		Kind:          authTypeOAuth2Device,
+		AccessToken:   strings.TrimSpace(token.AccessToken),
+		RefreshToken:  strings.TrimSpace(token.RefreshToken),
+		TokenType:     "Bearer",
+		ExpiresAt:     time.Now().Add(time.Duration(token.ExpiresIn) * time.Second),
+		TokenURL:      client.TokenEndpoint,
+		RevocationURL: client.RevocationEndpoint,
+		ClientID:      client.ClientID,
+		Issuer:        client.Issuer,
 	}, nil
 }
 
@@ -332,6 +396,14 @@ func decodeStoredCredential(raw string) (storedCredential, bool, error) {
 	if err != nil {
 		return storedCredential{}, true, fmt.Errorf("stored credential is damaged")
 	}
+	revocationURL := ""
+	if strings.TrimSpace(credential.RevocationURL) != "" {
+		endpoint, err := safeEndpointURL(credential.RevocationURL)
+		if err != nil {
+			return storedCredential{}, true, fmt.Errorf("stored credential is damaged")
+		}
+		revocationURL = endpoint.String()
+	}
 	issuer, err := safeWebURL(credential.Issuer)
 	if err != nil {
 		return storedCredential{}, true, fmt.Errorf("stored credential is damaged")
@@ -341,6 +413,7 @@ func decodeStoredCredential(raw string) (storedCredential, bool, error) {
 		return storedCredential{}, true, fmt.Errorf("stored credential is damaged")
 	}
 	credential.TokenURL = tokenURL.String()
+	credential.RevocationURL = revocationURL
 	credential.Issuer = issuer.String()
 	credential.ClientID = clientID
 	return credential, true, nil
@@ -426,6 +499,29 @@ func (r *runner) postFormJSON(ctx context.Context, rawURL string, form url.Value
 	if err := decodeBoundedJSON(response.Body, target); err != nil {
 		return response.StatusCode, err
 	}
+	return response.StatusCode, nil
+}
+
+func (r *runner) postForm(ctx context.Context, rawURL string, form url.Values) (int, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, rawURL, strings.NewReader(form.Encode()))
+	if err != nil {
+		return 0, err
+	}
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	client := *r.client.HTTP
+	client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return 0, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode >= 300 && response.StatusCode < 400 {
+		return response.StatusCode, fmt.Errorf("redirects are not allowed for OAuth revocation requests")
+	}
+	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, maxOAuthBodyBytes+1))
 	return response.StatusCode, nil
 }
 
