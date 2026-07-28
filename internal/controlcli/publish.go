@@ -284,7 +284,7 @@ func sourceMatchesPublishTarget(source publishGitSource, target publishTarget) e
 }
 
 func inspectPublishTarget(pathArg string, remoteOverride string, branchOverride string, allowDirty bool) (publishTarget, error) {
-	start, err := filepath.Abs(pathArg)
+	start, err := canonicalExistingPath(pathArg)
 	if err != nil {
 		return publishTarget{}, fmt.Errorf("resolve publish path: %w", err)
 	}
@@ -303,7 +303,7 @@ func inspectPublishTarget(pathArg string, remoteOverride string, branchOverride 
 	if err != nil {
 		return publishTarget{}, fmt.Errorf("publish path is not inside a Git worktree")
 	}
-	repoRoot, err := filepath.Abs(filepath.Clean(repoRootText))
+	repoRoot, err := canonicalExistingPath(repoRootText)
 	if err != nil {
 		return publishTarget{}, fmt.Errorf("resolve Git worktree root: %w", err)
 	}
@@ -395,6 +395,18 @@ func inspectPublishTarget(pathArg string, remoteOverride string, branchOverride 
 		RepoKey:      repoKey,
 		Subpath:      subpath,
 	}, nil
+}
+
+func canonicalExistingPath(path string) (string, error) {
+	absolute, err := filepath.Abs(filepath.Clean(path))
+	if err != nil {
+		return "", err
+	}
+	canonical, err := filepath.EvalSymlinks(absolute)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Clean(canonical), nil
 }
 
 func nearestManifestDir(start string, repoRoot string) (string, error) {

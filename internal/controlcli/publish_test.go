@@ -210,6 +210,29 @@ func TestInspectPublishTargetRejectsDirtyWorktreeUnlessExplicitlyAllowed(t *test
 	}
 }
 
+func TestInspectPublishTargetCanonicalizesWorktreeAliases(t *testing.T) {
+	repoRoot, appDir, commit := createPublishGitFixture(t)
+	aliasRoot := filepath.Join(filepath.Dir(repoRoot), filepath.Base(repoRoot)+"-alias")
+	if err := os.Symlink(repoRoot, aliasRoot); err != nil {
+		t.Skipf("worktree alias is unavailable: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Remove(aliasRoot)
+	})
+
+	relativeApp, err := filepath.Rel(repoRoot, appDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := inspectPublishTarget(filepath.Join(aliasRoot, relativeApp), "", "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target.Commit != commit || target.Subpath != "apps/echo" {
+		t.Fatalf("target = %#v", target)
+	}
+}
+
 func TestNormalizeRepoURLMatchesHTTPSAndSSHWithoutAcceptingSecrets(t *testing.T) {
 	base := t.TempDir()
 	httpsKey, err := normalizeRepoURL("https://github.com/imprun/windforce-core.git", base)
