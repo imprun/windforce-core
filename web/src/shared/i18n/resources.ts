@@ -454,17 +454,17 @@ export const en = {
   "workspaceSettings.archiveWarning":
     "Blocks releases, configuration changes, webhook changes, and new runs. This action cannot be reversed.",
   "workspaceSettings.archiving": "Archiving…",
-  "workspaceAccess.subtitle": "Issue and revoke named credentials for the active workspace.",
+  "workspaceAccess.subtitle": "Manage credentials for the active workspace.",
   "workspaceAccess.loading": "Loading workspace access…",
-  "workspaceAccess.create": "Create workspace token",
+  "workspaceAccess.create": "New workspace token",
   "workspaceAccess.createHint":
     "Full operator access scoped to /api/w/{{workspace}}. Use service principals for integrations.",
   "workspaceAccess.tokenName": "Token name",
   "workspaceAccess.tokenNameHint": "Identify the CLI, operator, or recovery purpose.",
   "workspaceAccess.createToken": "Create token",
-  "workspaceAccess.namedTokens": "Named workspace tokens",
+  "workspaceAccess.namedTokens": "Issued tokens",
   "workspaceAccess.namedTokensHint":
-    "Secrets are shown once. Rotation invalidates the old secret; revocation leaves no active replacement.",
+    "Review issued credentials. Secrets appear once; rotation invalidates the old secret and revocation creates no replacement.",
   "workspaceAccess.empty": "No workspace tokens configured.",
   "workspaceAccess.revoked": "Revoked",
   "workspaceAccess.rotate": "Rotate",
@@ -1599,17 +1599,17 @@ export const ko = {
   "workspaceSettings.archiveWarning":
     "릴리스, 설정 변경, Webhook 변경 및 새 Run을 차단합니다. 이 작업은 되돌릴 수 없습니다.",
   "workspaceSettings.archiving": "보관 중…",
-  "workspaceAccess.subtitle": "활성 워크스페이스의 이름 있는 자격 증명을 발급하고 폐기합니다.",
+  "workspaceAccess.subtitle": "활성 워크스페이스의 자격 증명을 관리합니다.",
   "workspaceAccess.loading": "워크스페이스 접근 정보 불러오는 중…",
-  "workspaceAccess.create": "워크스페이스 토큰 생성",
+  "workspaceAccess.create": "새 워크스페이스 토큰",
   "workspaceAccess.createHint":
     "/api/w/{{workspace}} 범위의 전체 운영자 접근 권한입니다. 연동에는 서비스 주체를 사용하세요.",
   "workspaceAccess.tokenName": "토큰 이름",
   "workspaceAccess.tokenNameHint": "CLI, 운영자 또는 복구 용도를 식별하세요.",
   "workspaceAccess.createToken": "토큰 생성",
-  "workspaceAccess.namedTokens": "이름 있는 워크스페이스 토큰",
+  "workspaceAccess.namedTokens": "발급된 토큰",
   "workspaceAccess.namedTokensHint":
-    "비밀 값은 한 번만 표시됩니다. 회전하면 이전 비밀 값이 무효화되고 폐기하면 활성 대체 토큰이 남지 않습니다.",
+    "발급된 자격 증명을 확인합니다. 비밀 값은 한 번만 표시되며, 회전하면 이전 값이 무효화되고 폐기해도 대체 토큰은 생성되지 않습니다.",
   "workspaceAccess.empty": "설정된 워크스페이스 토큰이 없습니다.",
   "workspaceAccess.revoked": "폐기됨",
   "workspaceAccess.rotate": "회전",
