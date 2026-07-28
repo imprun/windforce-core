@@ -85,6 +85,7 @@ func runWithProgram(program programConfig, args []string, stdin io.Reader, stdou
 	var jqExpression string
 	var outputTemplate string
 	var timeout time.Duration
+	var showVersion bool
 	global.StringVar(&profileName, "profile", "", "connection profile")
 	if program.Name == wfProgram.Name {
 		global.StringVar(&profileName, "context", "", "connection context")
@@ -98,6 +99,7 @@ func runWithProgram(program programConfig, args []string, stdin io.Reader, stdou
 	global.StringVar(&jqExpression, "jq", "", "filter JSON output with a jq expression")
 	global.StringVar(&outputTemplate, "template", "", "format output with a Go template")
 	global.DurationVar(&timeout, "request-timeout", 60*time.Second, "HTTP request timeout")
+	global.BoolVar(&showVersion, "version", false, "print version")
 	if err := global.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			printUsage(stdout, program.Name)
@@ -106,6 +108,14 @@ func runWithProgram(program programConfig, args []string, stdin io.Reader, stdou
 		return ExitUsage
 	}
 	remaining := global.Args()
+	if showVersion {
+		if len(remaining) != 0 {
+			writeError(stderr, usageError{"--version does not accept a command"})
+			return ExitUsage
+		}
+		_, _ = fmt.Fprintln(stdout, Version)
+		return ExitOK
+	}
 	if len(remaining) == 0 {
 		printUsage(stderr, program.Name)
 		return ExitUsage
@@ -441,7 +451,7 @@ func printUsage(writer io.Writer, program string) {
 	if program == wfProgram.Name {
 		fmt.Fprintln(writer, `usage: wf [global flags] <command>
 
-Global flags: --context, --api-url, --workspace, --actor, --token-env, --json, --jq, --template, --pretty
+Global flags: --context, --api-url, --workspace, --actor, --token-env, --json, --jq, --template, --pretty, --version
 
 Commands:
   auth login|switch|status|logout
@@ -461,7 +471,7 @@ Commands:
 	}
 	fmt.Fprintln(writer, `usage: windforce [global flags] <command>
 
-Global flags: --profile, --api-url, --workspace, --actor, --token-env, --json, --jq, --template, --pretty
+Global flags: --profile, --api-url, --workspace, --actor, --token-env, --json, --jq, --template, --pretty, --version
 
 Commands:
   profile list|show|set|use

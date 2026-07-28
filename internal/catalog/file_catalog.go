@@ -41,13 +41,18 @@ type Store interface {
 	GetDeployment(ctx context.Context, app string) (contract.Deployment, error)
 	GetDeploymentForWorkspace(ctx context.Context, workspace string, app string) (contract.Deployment, error)
 	LoadCatalog(ctx context.Context) (Snapshot, error)
-	PublishRelease(ctx context.Context, deployment contract.Deployment, releasedAt time.Time) (contract.Deployment, error)
+	PublishRelease(ctx context.Context, deployment contract.Deployment, releasedAt time.Time) (ReleasePublication, error)
 	AppendAudit(ctx context.Context, record AuditRecord) error
 	AuditTrail(ctx context.Context, workspace string, gitSourceID string) ([]AuditRecord, error)
 	SetAppTagOverride(ctx context.Context, workspace string, app string, tagOverride *string) (contract.Deployment, error)
 	SetActionTagOverride(ctx context.Context, workspace string, app string, actionKey string, tagOverride *string) (contract.Action, error)
 	ListSourceReleaseMarkers(ctx context.Context) (map[string]SourceReleaseMarker, error)
 	ImportCatalog(ctx context.Context, snapshot Snapshot) error
+}
+
+type ReleasePublication struct {
+	Deployment contract.Deployment
+	ReleaseID  string
 }
 
 var _ Store = (*FileCatalog)(nil)
@@ -92,13 +97,13 @@ func (c *FileCatalog) UpsertDeployment(ctx context.Context, deployment contract.
 	return err
 }
 
-func (c *FileCatalog) PublishRelease(ctx context.Context, deployment contract.Deployment, releasedAt time.Time) (contract.Deployment, error) {
+func (c *FileCatalog) PublishRelease(ctx context.Context, deployment contract.Deployment, releasedAt time.Time) (ReleasePublication, error) {
 	if err := ctx.Err(); err != nil {
-		return contract.Deployment{}, err
+		return ReleasePublication{}, err
 	}
 	snapshot, err := c.Load(ctx)
 	if err != nil {
-		return contract.Deployment{}, err
+		return ReleasePublication{}, err
 	}
 	deployment, history, audit := PreparePublication(deployment, releasedAt)
 	deploymentKey := DeploymentKey(deployment.SourceWorkspace(), deployment.App)
@@ -114,9 +119,9 @@ func (c *FileCatalog) PublishRelease(ctx context.Context, deployment contract.De
 	}
 	snapshot.SourceMarkers[SourceReleaseKey(marker.Workspace, marker.GitSourceID)] = marker
 	if err := c.write(snapshot); err != nil {
-		return contract.Deployment{}, err
+		return ReleasePublication{}, err
 	}
-	return deployment, nil
+	return ReleasePublication{Deployment: deployment, ReleaseID: history.ID}, nil
 }
 
 func (c *FileCatalog) RollbackRelease(ctx context.Context, request ReleaseRollbackRequest) (ReleaseRollbackResult, error) {

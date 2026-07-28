@@ -3,6 +3,7 @@ package controlcli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -152,6 +153,9 @@ func (r *runner) appPublish(args []string) error {
 	}
 	if app, _ := result["app"].(string); app != target.App {
 		return fmt.Errorf("Cell published app %q instead of manifest app %q", app, target.App)
+	}
+	if releaseID, _ := result["release_id"].(string); strings.TrimSpace(releaseID) == "" {
+		return errors.New("Cell published the release without returning its immutable release ID")
 	}
 	result["source_id"] = source.ID
 	result["source_name"] = source.Name

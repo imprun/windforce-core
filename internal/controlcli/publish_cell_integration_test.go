@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -34,7 +36,7 @@ func (integrationBundleManager) ValidateExecutionBundle(context.Context, contrac
 	return nil
 }
 
-func TestWFAppPublishAgainstRealCellHandler(t *testing.T) {
+func TestWFDirectCellPublishReleaseRunWatchAndResult(t *testing.T) {
 	tempDir := t.TempDir()
 	remoteDir := filepath.Join(tempDir, "remote.git")
 	workDir := filepath.Join(tempDir, "work")
@@ -68,8 +70,12 @@ func TestWFAppPublishAgainstRealCellHandler(t *testing.T) {
 	commit := strings.TrimSpace(runIntegrationGit(t, workDir, "rev-parse", "HEAD"))
 
 	releaseCatalog := catalog.NewFileCatalog(filepath.Join(tempDir, "catalog.json"))
+	stateStore := state.NewLocalStore(filepath.Join(tempDir, "state.json"))
+	if _, err := stateStore.CreateWorkspace(context.Background(), "team", "Team", "integration"); err != nil {
+		t.Fatal(err)
+	}
 	cell := httptest.NewServer(server.New(server.Config{
-		Store:            state.NewLocalStore(filepath.Join(tempDir, "state.json")),
+		Store:            stateStore,
 		Catalog:          releaseCatalog,
 		Syncer:           &syncer.Syncer{Store: bundle.NewLocalStore(filepath.Join(tempDir, "source-store")), CloneRoot: filepath.Join(tempDir, "clones")},
 		ExecutionBundles: integrationBundleManager{},
@@ -100,8 +106,10 @@ func TestWFAppPublishAgainstRealCellHandler(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &published); err != nil {
 		t.Fatal(err)
 	}
+	releaseID, _ := published["release_id"].(string)
 	if published["app"] != "echo" ||
 		published["commit"] != commit ||
+		strings.TrimSpace(releaseID) == "" ||
 		published["bundle_status"] != "ready" {
 		t.Fatalf("published = %#v", published)
 	}
@@ -120,15 +128,172 @@ func TestWFAppPublishAgainstRealCellHandler(t *testing.T) {
 		t.Fatalf("history status = %d", response.StatusCode)
 	}
 	var history []struct {
+		ID     string `json:"id"`
 		Commit string `json:"commit_sha"`
 		Active bool   `json:"active"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&history); err != nil {
 		t.Fatal(err)
 	}
-	if len(history) != 1 || history[0].Commit != commit || !history[0].Active {
+	if len(history) != 1 || history[0].ID != releaseID || history[0].Commit != commit || !history[0].Active {
 		t.Fatalf("history = %#v", history)
 	}
+
+	releaseRaw := runWFDirectCellIntegration(t, cell.URL, "release", "view", "echo", releaseID)
+	var release struct {
+		ID        string `json:"id"`
+		CommitSHA string `json:"commit_sha"`
+		Active    bool   `json:"active"`
+	}
+	if err := json.Unmarshal(releaseRaw, &release); err != nil {
+		t.Fatal(err)
+	}
+	if release.ID != releaseID || release.CommitSHA != commit || !release.Active {
+		t.Fatalf("release view = %#v", release)
+	}
+
+	status, workerBody := postWorkerIntegration(
+		t,
+		cell.URL+"/worker/v1/workers",
+		[]byte(`{"id":"wf-integration-worker","group":"default","labels":[],"slots":1}`),
+	)
+	if status != http.StatusCreated {
+		t.Fatalf("worker registration = %d: %s", status, workerBody)
+	}
+
+	runRaw := runWFDirectCellIntegration(
+		t,
+		cell.URL,
+		"run",
+		"create",
+		"echo",
+		"run",
+		"--input",
+		`{"message":"hi"}`,
+	)
+	var createdRun struct {
+		ID string `json:"run_id"`
+	}
+	if err := json.Unmarshal(runRaw, &createdRun); err != nil {
+		t.Fatal(err)
+	}
+	if createdRun.ID == "" {
+		t.Fatalf("created Run = %s", runRaw)
+	}
+
+	status, claimBody := postWorkerIntegration(
+		t,
+		cell.URL+"/worker/v1/claims",
+		[]byte(`{"worker_id":"wf-integration-worker","labels":[]}`),
+	)
+	if status != http.StatusOK {
+		t.Fatalf("worker claim = %d: %s", status, claimBody)
+	}
+	var claim struct {
+		Job struct {
+			ID      string `json:"id"`
+			Payload struct {
+				Input json.RawMessage `json:"input"`
+			} `json:"payload"`
+		} `json:"job"`
+		Lease json.RawMessage `json:"lease"`
+	}
+	if err := json.Unmarshal(claimBody, &claim); err != nil {
+		t.Fatal(err)
+	}
+	if claim.Job.ID == "" || !bytes.Contains(claim.Job.Payload.Input, []byte(`"hi"`)) {
+		t.Fatalf("worker claim = %s", claimBody)
+	}
+	completion, err := json.Marshal(map[string]any{
+		"lease":   claim.Lease,
+		"outcome": "succeeded",
+		"result": map[string]any{
+			"app":      "echo",
+			"action":   "run",
+			"output":   map[string]any{"message": "hi"},
+			"exitCode": 0,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, completionBody := postWorkerIntegration(
+		t,
+		cell.URL+"/worker/v1/jobs/"+claim.Job.ID+"/complete",
+		completion,
+	)
+	if status != http.StatusNoContent {
+		t.Fatalf("worker completion = %d: %s", status, completionBody)
+	}
+
+	watchedResult := runWFDirectCellIntegration(
+		t,
+		cell.URL,
+		"run",
+		"watch",
+		createdRun.ID,
+		"--interval",
+		"100ms",
+		"--timeout",
+		"5s",
+		"--result",
+		"--quiet",
+	)
+	fetchedResult := runWFDirectCellIntegration(t, cell.URL, "run", "result", createdRun.ID)
+	var watched, fetched map[string]any
+	if err := json.Unmarshal(watchedResult, &watched); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(fetchedResult, &fetched); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(watched, fetched) {
+		t.Fatalf("watch result = %#v, fetched result = %#v", watched, fetched)
+	}
+	if watched["message"] != "hi" {
+		t.Fatalf("Run result = %#v", watched)
+	}
+}
+
+func runWFDirectCellIntegration(t *testing.T, cellURL string, args ...string) []byte {
+	t.Helper()
+	fullArgs := []string{
+		"--api-url", cellURL,
+		"--workspace", "team",
+		"--actor", "integration@example.com",
+	}
+	fullArgs = append(fullArgs, args...)
+	var stdout, stderr bytes.Buffer
+	exit := controlcli.RunWF(
+		fullArgs,
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+	)
+	if exit != controlcli.ExitOK {
+		t.Fatalf("wf %s exit=%d stderr=%s", strings.Join(args, " "), exit, stderr.String())
+	}
+	return append([]byte(nil), stdout.Bytes()...)
+}
+
+func postWorkerIntegration(t *testing.T, endpoint string, body []byte) (int, []byte) {
+	t.Helper()
+	request, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer integration-token")
+	request.Header.Set("Content-Type", "application/json")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	responseBody, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return response.StatusCode, responseBody
 }
 
 func runIntegrationGit(t *testing.T, dir string, args ...string) string {

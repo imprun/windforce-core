@@ -1188,6 +1188,7 @@ func controlPlaneSchemas() map[string]any {
 				"app":               oapiStringSchema(),
 				"actions":           stringArray,
 				"source":            oapiStringSchema(),
+				"release_id":        oapiStringSchema(),
 				"deployment_id":     nullableString,
 				"created_by":        nullableString,
 				"message":           nullableString,
@@ -1197,7 +1198,7 @@ func controlPlaneSchemas() map[string]any {
 				"runtime":           oapiStringSchema(),
 				"validation_checks": stringArray,
 			},
-			"required": []any{"commit", "app", "actions", "bundle_status", "bundle_digest", "runtime", "validation_checks"},
+			"required": []any{"commit", "app", "actions", "release_id", "bundle_status", "bundle_digest", "runtime", "validation_checks"},
 		},
 		"SampleSyncResponse": map[string]any{
 			"type": "object",

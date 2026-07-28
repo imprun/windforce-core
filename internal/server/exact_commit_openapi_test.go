@@ -29,4 +29,23 @@ func TestControlPlaneOpenAPIAdvertisesExactCommitPreconditions(t *testing.T) {
 			t.Errorf("%s must not advertise the unsupported commit selector", name)
 		}
 	}
+
+	deployResult := schemas["GitSourceDeployResult"].(map[string]any)
+	deployProperties := deployResult["properties"].(map[string]any)
+	if _, ok := deployProperties["release_id"]; !ok {
+		t.Error("GitSourceDeployResult does not advertise release_id")
+	}
+	required := deployResult["required"].([]any)
+	if !containsOpenAPIName(required, "release_id") {
+		t.Error("GitSourceDeployResult does not require release_id")
+	}
+}
+
+func containsOpenAPIName(values []any, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }

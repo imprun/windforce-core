@@ -92,6 +92,35 @@ jobs:
         run: go build -trimpath -o "${{ runner.temp }}/windforce-core.exe" ./cmd/windforce-core
       - name: Test CLI contracts
         run: go test ./internal/controlcli ./pkg/controlplane
+      - name: Smoke CLI
+        shell: pwsh
+        run: |
+          & "${{ runner.temp }}/wf.exe" --version
+          $completion = & "${{ runner.temp }}/wf.exe" completion powershell
+          if (($completion -join "`n") -notmatch "Register-ArgumentCompleter") {
+            throw "PowerShell completion smoke failed"
+          }
+
+  macos-cli:
+    name: macOS CLI
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build CLI
+        run: |
+          go build -trimpath -o "${RUNNER_TEMP}/wf" ./cmd/wf
+          go build -trimpath -o "${RUNNER_TEMP}/windforce" ./cmd/windforce
+      - name: Test CLI contracts
+        run: go test ./internal/controlcli ./pkg/controlplane
+      - name: Smoke CLI
+        run: |
+          "${RUNNER_TEMP}/wf" --version
+          "${RUNNER_TEMP}/wf" completion zsh | grep -q "compdef"
 
   release-snapshot:
     name: release snapshot
@@ -113,13 +142,33 @@ jobs:
       - name: Verify snapshot archives
         shell: bash
         run: |
-          test "$(find dist -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.zip' \) | wc -l)" -eq 12
-          wf_archive="$(find dist -maxdepth 1 -type f -name 'wf_*_linux_amd64.tar.gz' -print -quit)"
-          legacy_archive="$(find dist -maxdepth 1 -type f -name 'windforce_*_linux_amd64.tar.gz' -print -quit)"
+          set -euo pipefail
+          cd dist
+          test "$(find . -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.zip' \) | wc -l)" -eq 12
+          sha256sum --check checksums.txt
+          expected_wf="$(printf '%s\n' LICENSE README.md wf | LC_ALL=C sort)"
+          expected_wf_windows="$(printf '%s\n' LICENSE README.md wf.exe | LC_ALL=C sort)"
+          expected_legacy="$(printf '%s\n' LICENSE README.md windforce | LC_ALL=C sort)"
+          expected_legacy_windows="$(printf '%s\n' LICENSE README.md windforce.exe | LC_ALL=C sort)"
+          for archive in wf_*.tar.gz; do
+            test "$(tar -tzf "${archive}" | LC_ALL=C sort)" = "${expected_wf}"
+          done
+          for archive in wf_*.zip; do
+            test "$(unzip -Z1 "${archive}" | LC_ALL=C sort)" = "${expected_wf_windows}"
+          done
+          for archive in windforce_*.tar.gz; do
+            test "$(tar -tzf "${archive}" | LC_ALL=C sort)" = "${expected_legacy}"
+          done
+          for archive in windforce_*.zip; do
+            test "$(unzip -Z1 "${archive}" | LC_ALL=C sort)" = "${expected_legacy_windows}"
+          done
+          wf_archive="$(find . -maxdepth 1 -type f -name 'wf_*_linux_amd64.tar.gz' -print -quit)"
+          legacy_archive="$(find . -maxdepth 1 -type f -name 'windforce_*_linux_amd64.tar.gz' -print -quit)"
           test -n "${wf_archive}"
           test -n "${legacy_archive}"
           mkdir -p "${RUNNER_TEMP}/wf-smoke" "${RUNNER_TEMP}/windforce-smoke"
           tar -xzf "${wf_archive}" -C "${RUNNER_TEMP}/wf-smoke"
           tar -xzf "${legacy_archive}" -C "${RUNNER_TEMP}/windforce-smoke"
-          "${RUNNER_TEMP}/wf-smoke/wf" version
+          "${RUNNER_TEMP}/wf-smoke/wf" --version
+          "${RUNNER_TEMP}/wf-smoke/wf" completion bash | grep -q "complete"
           "${RUNNER_TEMP}/windforce-smoke/windforce" version

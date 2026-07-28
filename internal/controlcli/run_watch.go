@@ -48,12 +48,13 @@ func (r *runner) watchRun(runID string, interval time.Duration, timeout time.Dur
 		if run.RunID == "" || run.State == "" {
 			return fmt.Errorf("Cell returned an incomplete Run status")
 		}
-		if run.State != previous {
-			r.publishProgress(quiet, "Run %s: %s", run.RunID, strings.ToLower(string(run.State)))
-			previous = run.State
+		state := strings.ToLower(strings.TrimSpace(run.State))
+		if state != previous {
+			r.publishProgress(quiet, "Run %s: %s", run.RunID, state)
+			previous = state
 		}
-		if terminalRunState(run.State) {
-			if resultOnly && run.State == "SUCCEEDED" {
+		if terminalRunState(state) {
+			if resultOnly && state == "succeeded" {
 				result, err := r.client.DoJSON(
 					ctx,
 					http.MethodGet,
@@ -68,7 +69,7 @@ func (r *runner) watchRun(runID string, interval time.Duration, timeout time.Dur
 			if err := r.outputJSON(raw); err != nil {
 				return err
 			}
-			if run.State != "SUCCEEDED" {
+			if state != "succeeded" {
 				return commandFailure{message: fmt.Sprintf("Run %s finished with state %s", run.RunID, run.State)}
 			}
 			return nil
@@ -85,8 +86,8 @@ func (r *runner) watchRun(runID string, interval time.Duration, timeout time.Dur
 }
 
 func terminalRunState(value string) bool {
-	switch value {
-	case "SUCCEEDED", "FAILED", "CANCELED", "EXPIRED":
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "succeeded", "failed", "canceled", "expired":
 		return true
 	default:
 		return false

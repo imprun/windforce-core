@@ -26,11 +26,15 @@ func TestWFCommandHelpDoesNotRequireConfigurationOrAuthentication(t *testing.T) 
 }
 
 func TestWFVersionDoesNotRequireConfigurationOrAuthentication(t *testing.T) {
-	t.Setenv("WF_CONFIG", t.TempDir())
-	var stdout, stderr bytes.Buffer
-	exit := RunWF([]string{"version"}, strings.NewReader(""), &stdout, &stderr)
-	if exit != ExitOK || strings.TrimSpace(stdout.String()) != Version {
-		t.Fatalf("exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
+	for _, args := range [][]string{{"version"}, {"--version"}} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			t.Setenv("WF_CONFIG", t.TempDir())
+			var stdout, stderr bytes.Buffer
+			exit := RunWF(args, strings.NewReader(""), &stdout, &stderr)
+			if exit != ExitOK || strings.TrimSpace(stdout.String()) != Version {
+				t.Fatalf("exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
+			}
+		})
 	}
 }
 

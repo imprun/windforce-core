@@ -10,8 +10,9 @@ import (
 
 var _ catalog.Store = (*LocalStore)(nil)
 
-func (s *LocalStore) PublishRelease(ctx context.Context, deployment contract.Deployment, releasedAt time.Time) (contract.Deployment, error) {
+func (s *LocalStore) PublishRelease(ctx context.Context, deployment contract.Deployment, releasedAt time.Time) (catalog.ReleasePublication, error) {
 	var published contract.Deployment
+	var releaseID string
 	err := s.update(ctx, func(snapshot *Snapshot, now time.Time) error {
 		if releasedAt.IsZero() {
 			releasedAt = now
@@ -19,6 +20,7 @@ func (s *LocalStore) PublishRelease(ctx context.Context, deployment contract.Dep
 		var history catalog.DeploymentHistory
 		var audit catalog.AuditRecord
 		published, history, audit = catalog.PreparePublication(deployment, releasedAt)
+		releaseID = history.ID
 		releaseCatalog := &snapshot.ReleaseCatalog
 		catalog.NormalizeSnapshot(releaseCatalog)
 		previous := latestReleaseHistory(*releaseCatalog, published.SourceWorkspace(), published.App)
@@ -45,7 +47,7 @@ func (s *LocalStore) PublishRelease(ctx context.Context, deployment contract.Dep
 		}
 		return nil
 	})
-	return published, err
+	return catalog.ReleasePublication{Deployment: published, ReleaseID: releaseID}, err
 }
 
 func (s *LocalStore) RollbackRelease(ctx context.Context, request catalog.ReleaseRollbackRequest) (catalog.ReleaseRollbackResult, error) {

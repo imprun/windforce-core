@@ -18,6 +18,7 @@ The server already stores immutable release candidates by workspace, Git source,
 4. Publication still selects the latest synchronized candidate. When its identity does not match `expected_commit`, the server returns `409 Conflict` before building or activating an execution bundle.
 5. The existing `commit` request field remains rejected. `expected_commit` is a precondition, not a historical release selector.
 6. Omitting `expected_commit` preserves the existing low-level operator workflow.
+7. A successful publication returns the immutable `release_id` selected by the server, together with the published commit and bundle digest. The CLI treats a success response without that identifier as an incompatible Cell response instead of guessing from release history.
 
 ## Consequences
 
@@ -25,3 +26,4 @@ The server already stores immutable release candidates by workspace, Git source,
 - A concurrent synchronization becomes a visible conflict instead of silently changing the published revision.
 - The server remains authoritative for remote source access, validation, immutable candidate storage, execution bundle preparation, and active release mutation.
 - Synchronization can leave an unreferenced immutable source snapshot when the branch precondition fails, but it cannot change the source marker, release candidate, or active release.
+- `wf app publish` can hand its exact result directly to `wf release view`; it does not need a race-prone follow-up lookup for the newest release.

@@ -74,7 +74,8 @@ func TestWFAppPublishRegistersSynchronizesAndPublishesExactCommit(t *testing.T) 
 			_, _ = w.Write([]byte(`{
 				"app": "echo",
 				"commit": "` + commit + `",
-				"deployment_id": "release-1",
+				"release_id": "release-1",
+				"deployment_id": "deploy-op-1",
 				"bundle_status": "ready",
 				"bundle_digest": "sha256:abc"
 			}`))
@@ -111,6 +112,7 @@ func TestWFAppPublishRegistersSynchronizesAndPublishesExactCommit(t *testing.T) 
 	if result["app"] != "echo" ||
 		result["commit"] != commit ||
 		result["source_id"] != float64(12) ||
+		result["release_id"] != "release-1" ||
 		result["registered"] != true ||
 		result["workspace"] != "team" ||
 		result["manifest"] != "apps/echo/windforce.json" {
@@ -129,6 +131,56 @@ func TestWFAppPublishRegistersSynchronizesAndPublishesExactCommit(t *testing.T) 
 	defer mu.Unlock()
 	if !reflect.DeepEqual(requests, wantRequests) {
 		t.Fatalf("requests = %#v, want %#v", requests, wantRequests)
+	}
+}
+
+func TestWFAppPublishRejectsResponseWithoutImmutableReleaseID(t *testing.T) {
+	_, appDir, commit := createPublishGitFixture(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch request.Method + " " + request.URL.Path {
+		case "GET /api/w/team/git_sources":
+			_, _ = w.Write([]byte(`[{
+				"id": 12,
+				"workspace_id": "team",
+				"name": "echo",
+				"repo_url": "https://git.example.test/team/apps.git",
+				"branch": "main",
+				"subpath": "apps/echo",
+				"creds_ref": ""
+			}]`))
+		case "POST /api/w/team/git_sources/12/sync":
+			_, _ = w.Write([]byte(`{"app":"echo","commit":"` + commit + `"}`))
+		case "POST /api/w/team/git_sources/12/deploy":
+			_, _ = w.Write([]byte(`{
+				"app": "echo",
+				"commit": "` + commit + `",
+				"bundle_status": "ready",
+				"bundle_digest": "sha256:abc"
+			}`))
+		default:
+			http.Error(w, "unexpected request", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("WF_CONFIG", filepath.Join(t.TempDir(), "config.json"))
+	var stdout, stderr bytes.Buffer
+	exit := RunWF(
+		[]string{
+			"--api-url", server.URL,
+			"--workspace", "team",
+			"--actor", "test-user",
+			"app", "publish", appDir,
+			"--quiet",
+		},
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+	)
+	if exit == ExitOK ||
+		!strings.Contains(stderr.String(), "without returning its immutable release ID") {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
 	}
 }
 

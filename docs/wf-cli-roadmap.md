@@ -123,8 +123,12 @@ remain open.
 Exact-commit `wf app publish`, workspace list/view/use, release
 list/view/activate/rollback, and Run watch/result are implemented. Workspace
 switching verifies access before mutating the context. The server rejects a
-Sync or Publish race before candidate mutation or release activation. Hosted
-discovery across multiple Cells remains a platform concern and is still open.
+Sync or Publish race before candidate mutation or release activation, and a
+successful publication returns the immutable release ID. A direct-Cell
+integration test now exercises a real Git remote through publish, release
+inspection, worker claim/completion, Run watch, and result retrieval in one
+workflow. Hosted discovery across multiple Cells remains a platform concern
+and is still open.
 
 ### M5 — Distribution and live verification
 
@@ -133,10 +137,11 @@ discovery across multiple Cells remains a platform concern and is still open.
 - Test upgrades without losing contexts or credentials.
 - Exercise direct standalone and hosted Cell paths end to end.
 
-Cross-platform archives, checksums, and smoke commands are configured. Tagged
-releases additionally create and verify a keyless Sigstore bundle for the
-checksum file. A new tag and real hosted/direct Cell verification are still
-required before this milestone is complete.
+Cross-platform archives, checksums, exact archive-content assertions, and
+Windows, macOS, and Linux CLI smoke commands are configured. Tagged releases
+additionally create and verify a keyless Sigstore bundle for the checksum
+file. The workflow must still pass remotely, and a new tag plus real hosted
+Cell verification are required before this milestone is complete.
 
 ## Completion gates
 

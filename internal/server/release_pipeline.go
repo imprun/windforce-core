@@ -81,26 +81,26 @@ func (h *Handler) syncGitSourceRevision(w http.ResponseWriter, r *http.Request, 
 	return candidate, true
 }
 
-func (h *Handler) deployLatestGitSourceRevision(w http.ResponseWriter, r *http.Request, workspaceID string, source gitsourcepkg.Source, expectedCommit string, audit gitSourceOperationAudit) (contract.Deployment, bool) {
+func (h *Handler) deployLatestGitSourceRevision(w http.ResponseWriter, r *http.Request, workspaceID string, source gitsourcepkg.Source, expectedCommit string, audit gitSourceOperationAudit) (catalog.ReleasePublication, bool) {
 	operationCtx, release, err := h.acquireGitSourceOperation(r.Context(), workspaceID, source)
 	if err != nil {
 		writeSourceOperationError(w, err)
-		return contract.Deployment{}, false
+		return catalog.ReleasePublication{}, false
 	}
 	defer release()
 	candidateStore, ok := h.catalog.(catalog.ReleaseCandidateStore)
 	if !ok {
 		writeError(w, http.StatusServiceUnavailable, "synchronized source store is not configured")
-		return contract.Deployment{}, false
+		return catalog.ReleasePublication{}, false
 	}
 	candidate, err := candidateStore.GetLatestReleaseCandidate(operationCtx, workspaceID, source.ID)
 	if err != nil {
 		if errors.Is(err, catalog.ErrReleaseCandidateNotFound) {
 			writeError(w, http.StatusConflict, "sync source before publishing a release")
-			return contract.Deployment{}, false
+			return catalog.ReleasePublication{}, false
 		}
 		writeError(w, http.StatusInternalServerError, err.Error())
-		return contract.Deployment{}, false
+		return catalog.ReleasePublication{}, false
 	}
 	candidateCommit := candidate.Deployment.Commit
 	if expectedCommit != "" {
@@ -108,20 +108,20 @@ func (h *Handler) deployLatestGitSourceRevision(w http.ResponseWriter, r *http.R
 	}
 	if err := catalog.ValidateReleaseCandidate(candidate, workspaceID, source.ID, candidateCommit); err != nil {
 		writeError(w, http.StatusConflict, err.Error())
-		return contract.Deployment{}, false
+		return catalog.ReleasePublication{}, false
 	}
 	if h.executionBundles == nil {
 		writeError(w, http.StatusServiceUnavailable, "execution bundle manager is not configured")
-		return contract.Deployment{}, false
+		return catalog.ReleasePublication{}, false
 	}
 	deployment, err := h.executionBundles.BuildExecutionBundle(operationCtx, candidate.Deployment)
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "execution bundle build failed: "+err.Error())
-		return contract.Deployment{}, false
+		return catalog.ReleasePublication{}, false
 	}
 	if err := h.executionBundles.ValidateExecutionBundle(operationCtx, deployment); err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "execution bundle validation failed: "+err.Error())
-		return contract.Deployment{}, false
+		return catalog.ReleasePublication{}, false
 	}
 	deployment.Source = strings.TrimSpace(audit.Source)
 	deployment.DeploymentID = cloneStringPtr(audit.DeploymentID)
@@ -136,18 +136,18 @@ func (h *Handler) deployLatestGitSourceRevision(w http.ResponseWriter, r *http.R
 		deployment.Actions[key] = action
 	}
 	publisher, ok := h.catalog.(interface {
-		PublishRelease(context.Context, contract.Deployment, time.Time) (contract.Deployment, error)
+		PublishRelease(context.Context, contract.Deployment, time.Time) (catalog.ReleasePublication, error)
 	})
 	if !ok {
 		writeError(w, http.StatusServiceUnavailable, "transactional release catalog is not configured")
-		return contract.Deployment{}, false
+		return catalog.ReleasePublication{}, false
 	}
-	deployment, err = publisher.PublishRelease(operationCtx, deployment, releasedAt)
+	publication, err := publisher.PublishRelease(operationCtx, deployment, releasedAt)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
-		return contract.Deployment{}, false
+		return catalog.ReleasePublication{}, false
 	}
-	return deployment, true
+	return publication, true
 }
 
 func writeSourceOperationError(w http.ResponseWriter, err error) {

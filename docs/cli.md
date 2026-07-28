@@ -183,6 +183,18 @@ wf app publish . --creds-ref github-app-installation
 wf app publish . --source-id 12
 ```
 
+For automation, select the immutable release identifier from the publication
+result and pass it to later commands instead of asking for the newest release:
+
+```shell
+wf --json release_id app publish .
+wf release view example <RELEASE_ID>
+```
+
+A successful Cell response must contain `release_id`. `wf` rejects an older or
+incompatible response that omits it rather than performing a race-prone release
+history lookup.
+
 The low-level Register, Sync, and Publish sequence remains available for
 advanced operations:
 

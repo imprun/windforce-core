@@ -284,7 +284,7 @@ func (h *Handler) handleCanonicalSampleGitSource(w http.ResponseWriter, r *http.
 	if !ok {
 		return
 	}
-	deployment, ok := h.deployLatestGitSourceRevision(w, r, workspaceID, source, "", gitSourceOperationAudit{
+	publication, ok := h.deployLatestGitSourceRevision(w, r, workspaceID, source, "", gitSourceOperationAudit{
 		Source: "external_sync",
 	})
 	if !ok {
@@ -292,7 +292,7 @@ func (h *Handler) handleCanonicalSampleGitSource(w http.ResponseWriter, r *http.
 	}
 	writeJSON(w, status, map[string]any{
 		"source":      newCanonicalGitSourceView(source),
-		"sync_result": newCanonicalDeployResult(deployment),
+		"sync_result": newCanonicalDeployResult(publication.Deployment, publication.ReleaseID),
 	})
 }
 
@@ -506,7 +506,7 @@ func (h *Handler) handleCanonicalGitSourceDeploy(w http.ResponseWriter, r *http.
 	}
 	deploymentID := newDeploymentOperationID()
 	message := deployRequestMessage(request)
-	deployment, ok := h.deployLatestGitSourceRevision(w, r, workspaceID, source, expectedCommit, gitSourceOperationAudit{
+	publication, ok := h.deployLatestGitSourceRevision(w, r, workspaceID, source, expectedCommit, gitSourceOperationAudit{
 		Source:       "deploy",
 		DeploymentID: &deploymentID,
 		Message:      message,
@@ -515,7 +515,7 @@ func (h *Handler) handleCanonicalGitSourceDeploy(w http.ResponseWriter, r *http.
 	if !ok {
 		return
 	}
-	writeJSON(w, http.StatusOK, newCanonicalDeployResult(deployment))
+	writeJSON(w, http.StatusOK, newCanonicalDeployResult(publication.Deployment, publication.ReleaseID))
 }
 
 func expectedGitCommit(values ...string) (string, bool) {

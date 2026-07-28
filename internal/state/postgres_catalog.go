@@ -16,19 +16,19 @@ import (
 
 var _ catalog.Store = (*PostgresStore)(nil)
 
-func (s *PostgresStore) PublishRelease(ctx context.Context, deployment contract.Deployment, releasedAt time.Time) (contract.Deployment, error) {
+func (s *PostgresStore) PublishRelease(ctx context.Context, deployment contract.Deployment, releasedAt time.Time) (catalog.ReleasePublication, error) {
 	deployment, history, audit := catalog.PreparePublication(deployment, releasedAt)
 	deploymentJSON, err := json.Marshal(deployment)
 	if err != nil {
-		return contract.Deployment{}, err
+		return catalog.ReleasePublication{}, err
 	}
 	historyJSON, err := json.Marshal(history)
 	if err != nil {
-		return contract.Deployment{}, err
+		return catalog.ReleasePublication{}, err
 	}
 	auditJSON, err := json.Marshal(audit)
 	if err != nil {
-		return contract.Deployment{}, err
+		return catalog.ReleasePublication{}, err
 	}
 	marker := catalog.SourceReleaseMarker{
 		Workspace:   deployment.SourceWorkspace(),
@@ -94,7 +94,7 @@ VALUES ($1, $2, $3, $4, $5, $6)
 		}
 		return postgresEnqueueEventDeliveries(ctx, tx, releaseEvent, history.Workspace, history.App, time.Now().UTC())
 	})
-	return deployment, err
+	return catalog.ReleasePublication{Deployment: deployment, ReleaseID: history.ID}, err
 }
 
 func (s *PostgresStore) RollbackRelease(ctx context.Context, request catalog.ReleaseRollbackRequest) (catalog.ReleaseRollbackResult, error) {

@@ -26,8 +26,8 @@ func TestLocalReleaseCatalogPublishesAtomically(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if published.UpdatedAt == nil || !published.UpdatedAt.Equal(releasedAt) {
-		t.Fatalf("published updatedAt = %v, want %v", published.UpdatedAt, releasedAt)
+	if published.Deployment.UpdatedAt == nil || !published.Deployment.UpdatedAt.Equal(releasedAt) {
+		t.Fatalf("published updatedAt = %v, want %v", published.Deployment.UpdatedAt, releasedAt)
 	}
 	snapshot, err := store.LoadCatalog(ctx)
 	if err != nil {
@@ -35,6 +35,9 @@ func TestLocalReleaseCatalogPublishesAtomically(t *testing.T) {
 	}
 	if len(snapshot.History) != 1 {
 		t.Fatalf("history count = %d, want 1", len(snapshot.History))
+	}
+	if published.ReleaseID != snapshot.History[0].ID {
+		t.Fatalf("published release ID = %q, want %q", published.ReleaseID, snapshot.History[0].ID)
 	}
 	if len(snapshot.Audit) != 1 {
 		t.Fatalf("audit count = %d, want 1", len(snapshot.Audit))
@@ -118,8 +121,8 @@ func TestPostgresReleaseCatalogContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if published.UpdatedAt == nil || !published.UpdatedAt.Equal(releasedAt) {
-		t.Fatalf("published updatedAt = %v, want %v", published.UpdatedAt, releasedAt)
+	if published.Deployment.UpdatedAt == nil || !published.Deployment.UpdatedAt.Equal(releasedAt) {
+		t.Fatalf("published updatedAt = %v, want %v", published.Deployment.UpdatedAt, releasedAt)
 	}
 	snapshot, err := store.LoadCatalog(ctx)
 	if err != nil {
@@ -127,6 +130,9 @@ func TestPostgresReleaseCatalogContract(t *testing.T) {
 	}
 	if len(snapshot.Deployments) != 1 || len(snapshot.History) != 1 || len(snapshot.Audit) != 1 || len(snapshot.SourceMarkers) != 1 {
 		t.Fatalf("published counts = deployments:%d history:%d audit:%d markers:%d", len(snapshot.Deployments), len(snapshot.History), len(snapshot.Audit), len(snapshot.SourceMarkers))
+	}
+	if published.ReleaseID != snapshot.History[0].ID {
+		t.Fatalf("published release ID = %q, want %q", published.ReleaseID, snapshot.History[0].ID)
 	}
 	if snapshot.Audit[0].ID != snapshot.History[0].ID || snapshot.Audit[0].Actor != actor || snapshot.Audit[0].Detail != message {
 		t.Fatalf("release audit = %#v, history = %#v", snapshot.Audit[0], snapshot.History[0])
