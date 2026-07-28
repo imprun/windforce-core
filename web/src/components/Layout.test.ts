@@ -34,4 +34,9 @@ describe("primaryNavItems", () => {
     expect(layoutSource).toContain('translate("shell.localAccess")');
     expect(layoutSource).not.toContain(">Browser access<");
   });
+
+  test("uses a language-neutral globe for the locale switcher", () => {
+    expect(layoutSource).toContain("<Globe2 size={16}");
+    expect(layoutSource).not.toContain("<Languages");
+  });
 });

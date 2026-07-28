@@ -6,8 +6,8 @@ import {
   CircleUserRound,
   ContactRound,
   Eraser,
+  Globe2,
   KeyRound,
-  Languages,
   LogOut,
   Menu,
   MonitorSmartphone,
@@ -113,7 +113,7 @@ function LocaleSwitcher() {
           aria-label={translate("language.changeTo", { language: currentLanguage })}
           title={translate("language.label")}
         >
-          <Languages size={16} aria-hidden="true" />
+          <Globe2 size={16} aria-hidden="true" />
         </button>
       </DropdownMenuPrimitive.Trigger>
       <DropdownMenuPrimitive.Portal>
