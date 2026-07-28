@@ -42,7 +42,9 @@ export function SelectControl<T extends string>({
         aria-label={ariaLabel}
         id={id}
       >
-        <SelectPrimitive.Value placeholder={placeholder} />
+        <span className="selectValue">
+          <SelectPrimitive.Value placeholder={placeholder} />
+        </span>
         <SelectPrimitive.Icon asChild>
           <ChevronDown aria-hidden="true" />
         </SelectPrimitive.Icon>

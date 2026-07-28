@@ -20,8 +20,45 @@ export default {
     await page.waitForSelector("#appTriggers tbody tr");
     await page.click("#addTriggerButton");
     await page.waitForSelector("#triggerEditorDialog");
+    const fieldLayout = await page.evaluate(() => {
+      const name = document.querySelector("#triggerName");
+      const target = document.querySelector('[aria-label="Target Action"]');
+      if (!(name instanceof HTMLElement) || !(target instanceof HTMLElement)) return null;
+      const targetValue = target.querySelector(".selectValue");
+      const nameRect = name.getBoundingClientRect();
+      const targetRect = target.getBoundingClientRect();
+      return {
+        topDelta: Math.abs(nameRect.top - targetRect.top),
+        heightDelta: Math.abs(nameRect.height - targetRect.height),
+        targetWraps:
+          targetValue instanceof HTMLElement
+            ? targetValue.scrollHeight > targetValue.clientHeight
+            : null,
+        targetHTML: targetValue ? "" : target.innerHTML,
+      };
+    });
+    if (
+      !fieldLayout ||
+      fieldLayout.topDelta > 1 ||
+      fieldLayout.heightDelta > 1 ||
+      fieldLayout.targetWraps !== false
+    ) {
+      throw new Error(`Trigger identity fields are misaligned: ${JSON.stringify(fieldLayout)}`);
+    }
     await page.click("#triggerCompletionMode");
     await page.waitForSelector(".selectContent");
+    const overlayLayers = await page.evaluate(() => {
+      const dialog = document.querySelector(".dialog");
+      const select = document.querySelector(".selectContent");
+      if (!(dialog instanceof HTMLElement) || !(select instanceof HTMLElement)) return null;
+      return {
+        dialog: Number.parseInt(getComputedStyle(dialog).zIndex || "0", 10),
+        select: Number.parseInt(getComputedStyle(select).zIndex || "0", 10),
+      };
+    });
+    if (!overlayLayers || overlayLayers.select <= overlayLayers.dialog) {
+      throw new Error(`Select overlay is not above the dialog: ${JSON.stringify(overlayLayers)}`);
+    }
     await capture(this.id);
     await page.click("#triggerCompletionMode");
     await page.fill("#triggerName", "UI guide schedule");
