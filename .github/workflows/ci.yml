@@ -55,6 +55,14 @@ jobs:
           git diff --exit-code
       - name: Build
         run: make build
+      - name: Verify thin wf dependency boundary
+        shell: bash
+        run: |
+          forbidden='^github.com/imprun/windforce-core/internal/(server|worker|runtime|state|trigger|executor|provisioning)(/|$)'
+          if go list -deps ./cmd/wf | grep -E "${forbidden}"; then
+            echo "wf links a forbidden runtime package" >&2
+            exit 1
+          fi
       - name: Test
         run: make test
       - name: Test PostgreSQL storage
@@ -77,7 +85,9 @@ jobs:
           go-version-file: go.mod
           cache: true
       - name: Build CLI
-        run: go build -trimpath -o "${{ runner.temp }}/windforce.exe" ./cmd/windforce
+        run: |
+          go build -trimpath -o "${{ runner.temp }}/wf.exe" ./cmd/wf
+          go build -trimpath -o "${{ runner.temp }}/windforce.exe" ./cmd/windforce
       - name: Build server
         run: go build -trimpath -o "${{ runner.temp }}/windforce-core.exe" ./cmd/windforce-core
       - name: Test CLI contracts
@@ -103,9 +113,13 @@ jobs:
       - name: Verify snapshot archives
         shell: bash
         run: |
-          test "$(find dist -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.zip' \) | wc -l)" -eq 6
-          archive="$(find dist -maxdepth 1 -type f -name '*_linux_amd64.tar.gz' -print -quit)"
-          test -n "${archive}"
-          mkdir -p "${RUNNER_TEMP}/windforce-smoke"
-          tar -xzf "${archive}" -C "${RUNNER_TEMP}/windforce-smoke"
+          test "$(find dist -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.zip' \) | wc -l)" -eq 12
+          wf_archive="$(find dist -maxdepth 1 -type f -name 'wf_*_linux_amd64.tar.gz' -print -quit)"
+          legacy_archive="$(find dist -maxdepth 1 -type f -name 'windforce_*_linux_amd64.tar.gz' -print -quit)"
+          test -n "${wf_archive}"
+          test -n "${legacy_archive}"
+          mkdir -p "${RUNNER_TEMP}/wf-smoke" "${RUNNER_TEMP}/windforce-smoke"
+          tar -xzf "${wf_archive}" -C "${RUNNER_TEMP}/wf-smoke"
+          tar -xzf "${legacy_archive}" -C "${RUNNER_TEMP}/windforce-smoke"
+          "${RUNNER_TEMP}/wf-smoke/wf" version
           "${RUNNER_TEMP}/windforce-smoke/windforce" version

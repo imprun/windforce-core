@@ -9,8 +9,10 @@
 
 APP := windforce-core
 CMD := ./cmd/windforce-core
-CLI_APP := windforce
-CLI_CMD := ./cmd/windforce
+CLI_APP := wf
+CLI_CMD := ./cmd/wf
+LEGACY_CLI_APP := windforce
+LEGACY_CLI_CMD := ./cmd/windforce
 ifeq ($(OS),Windows_NT)
 EXEEXT := .exe
 endif
@@ -40,6 +42,7 @@ DEV_DIR ?= $(WFL_TMP)/dev
 BIN_DIR ?= $(WFL_TMP)/bin
 BIN ?= $(BIN_DIR)/$(APP)
 CLI_BIN ?= $(BIN_DIR)/$(CLI_APP)$(EXEEXT)
+LEGACY_CLI_BIN ?= $(BIN_DIR)/$(LEGACY_CLI_APP)$(EXEEXT)
 VERSION ?= dev
 STORE ?= $(DEV_DIR)/store
 CATALOG ?= $(DEV_DIR)/catalog.json
@@ -112,7 +115,7 @@ help:
 	@echo "  test-postgres          run PostgreSQL integration test against docker compose"
 	@echo "  test-rabbitmq          run RabbitMQ trigger integration test against docker compose"
 	@echo "  build                  build $(BIN)"
-	@echo "  cli-build              build supported Control Plane CLI at $(CLI_BIN)"
+	@echo "  cli-build              build wf at $(CLI_BIN) and the legacy windforce alias"
 	@echo "  dev-standalone         run local JSON-state standalone server"
 	@echo "  dev-standalone-postgres run PostgreSQL-backed standalone server"
 	@echo "  dev-server             run server process with PostgreSQL state"
@@ -190,6 +193,7 @@ build: cli-build
 cli-build:
 	@mkdir -p "$(BIN_DIR)"
 	$(GO) build -ldflags "-X github.com/imprun/windforce-core/internal/controlcli.Version=$(VERSION)" -o "$(CLI_BIN)" $(CLI_CMD)
+	$(GO) build -ldflags "-X github.com/imprun/windforce-core/internal/controlcli.Version=$(VERSION)" -o "$(LEGACY_CLI_BIN)" $(LEGACY_CLI_CMD)
 
 compose-up:
 	$(COMPOSE) --profile backend up -d server web

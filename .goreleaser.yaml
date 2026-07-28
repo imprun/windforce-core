@@ -1,9 +1,25 @@
 # yaml-language-server: $schema=https://goreleaser.com/static/schema.json
 version: 2
 
-project_name: windforce
+project_name: wf
 
 builds:
+  - id: wf
+    main: ./cmd/wf
+    binary: wf
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X github.com/imprun/windforce-core/internal/controlcli.Version={{.Version}}
   - id: windforce
     main: ./cmd/windforce
     binary: windforce
@@ -22,8 +38,9 @@ builds:
       - -s -w -X github.com/imprun/windforce-core/internal/controlcli.Version={{.Version}}
 
 archives:
-  - ids:
-      - windforce
+  - id: wf
+    ids:
+      - wf
     formats:
       - tar.gz
     format_overrides:
@@ -32,6 +49,17 @@ archives:
           - zip
     name_template: >-
       {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+  - id: windforce
+    ids:
+      - windforce
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    name_template: >-
+      windforce_{{ .Version }}_{{ .Os }}_{{ .Arch }}
 
 checksum:
   name_template: checksums.txt

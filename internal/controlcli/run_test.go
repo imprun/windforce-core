@@ -160,3 +160,91 @@ func TestGlobalHelpIsSuccessful(t *testing.T) {
 		t.Fatalf("exit=%d stdout=%s stderr=%s", exit, stdout.String(), stderr.String())
 	}
 }
+
+func TestRunWFUsesContextVocabularyAndSeparateConfig(t *testing.T) {
+	path := t.TempDir() + "/config.json"
+	t.Setenv("WF_CONFIG", path)
+	var stdout, stderr bytes.Buffer
+	exit := RunWF(
+		[]string{"context", "set", "local", "--api-url", "http://127.0.0.1:18091", "--workspace", "team", "--use"},
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+	)
+	if exit != ExitOK {
+		t.Fatalf("exit=%d stderr=%s", exit, stderr.String())
+	}
+	config, err := loadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.CurrentProfile != "local" || config.Profiles["local"].Workspace != "team" {
+		t.Fatalf("config = %#v", config)
+	}
+	if config.Profiles["local"].TokenEnv != "" {
+		t.Fatalf("new context unexpectedly stores token env %q", config.Profiles["local"].TokenEnv)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	exit = RunWF([]string{"--help"}, strings.NewReader(""), &stdout, &stderr)
+	if exit != ExitOK || !strings.Contains(stdout.String(), "usage: wf ") ||
+		!strings.Contains(stdout.String(), "context list") ||
+		strings.Contains(stdout.String(), "usage: windforce ") {
+		t.Fatalf("exit=%d stdout=%s stderr=%s", exit, stdout.String(), stderr.String())
+	}
+}
+
+func TestRunWFUsesProcessTokenWithoutPersistingIt(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer process-secret" {
+			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"apps":[]}`))
+	}))
+	defer server.Close()
+
+	path := t.TempDir() + "/config.json"
+	t.Setenv("WF_CONFIG", path)
+	t.Setenv("WF_TOKEN", "process-secret")
+	var stdout, stderr bytes.Buffer
+	exit := RunWF(
+		[]string{"--api-url", server.URL, "app", "list"},
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+	)
+	if exit != ExitOK {
+		t.Fatalf("exit=%d stderr=%s", exit, stderr.String())
+	}
+	if _, err := loadConfig(path); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(stdout.String(), "process-secret") || strings.Contains(stderr.String(), "process-secret") {
+		t.Fatalf("token leaked: stdout=%s stderr=%s", stdout.String(), stderr.String())
+	}
+}
+
+func TestRunWFSourcePublishUsesReleasePublicationEndpoint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/w/team/git_sources/12/deploy" {
+			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"active":true}`))
+	}))
+	defer server.Close()
+
+	t.Setenv("WF_CONFIG", t.TempDir()+"/config.json")
+	var stdout, stderr bytes.Buffer
+	exit := RunWF(
+		[]string{"--api-url", server.URL, "--workspace", "team", "source", "publish", "12"},
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+	)
+	if exit != ExitOK {
+		t.Fatalf("exit=%d stderr=%s", exit, stderr.String())
+	}
+}

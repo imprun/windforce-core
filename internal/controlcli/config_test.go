@@ -35,3 +35,23 @@ func TestResolveProfileUsesExplicitOverrides(t *testing.T) {
 		t.Fatalf("resolved = %#v", resolved)
 	}
 }
+
+func TestResolveWFContextUsesWFOverridesFirst(t *testing.T) {
+	t.Setenv("WF_CONTEXT", "hosted")
+	t.Setenv("WF_API_URL", "https://cell.example")
+	t.Setenv("WF_WORKSPACE", "team")
+	t.Setenv("WF_TOKEN", "process-secret")
+	t.Setenv("WINDFORCE_CORE_API_URL", "https://legacy.example")
+	config := ConfigFile{CurrentProfile: "legacy", Profiles: map[string]Profile{
+		"hosted": {APIURL: "https://profile.example", Workspace: "profile"},
+		"legacy": {APIURL: "https://other.example", Workspace: "other"},
+	}}
+	resolved, err := resolveProfileFor(wfProgram, config, "", Profile{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.ProfileName != "hosted" || resolved.APIURL != "https://cell.example" ||
+		resolved.Workspace != "team" || resolved.Token != "process-secret" {
+		t.Fatalf("resolved = %#v", resolved)
+	}
+}

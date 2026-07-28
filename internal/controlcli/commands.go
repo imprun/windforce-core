@@ -18,8 +18,9 @@ type sourceDeployRequest struct {
 }
 
 func (r *runner) profile(path string, config ConfigFile, args []string) error {
+	noun := r.profileNoun()
 	if len(args) == 0 {
-		return usageError{"profile requires list, show, use, or set"}
+		return usageError{noun + " requires list, show, use, or set"}
 	}
 	switch args[0] {
 	case "list":
@@ -47,7 +48,7 @@ func (r *runner) profile(path string, config ConfigFile, args []string) error {
 		}
 		profile, ok := config.Profiles[name]
 		if !ok || name == "" {
-			return fmt.Errorf("profile %q does not exist", name)
+			return fmt.Errorf("%s %q does not exist", noun, name)
 		}
 		return r.outputJSON(map[string]any{"name": name, "current": name == config.CurrentProfile, "api_url": profile.APIURL, "workspace": profile.Workspace, "actor": profile.Actor, "token_env": profile.TokenEnv})
 	case "use":
@@ -55,7 +56,7 @@ func (r *runner) profile(path string, config ConfigFile, args []string) error {
 			return usageError{"usage: windforce profile use <name>"}
 		}
 		if _, ok := config.Profiles[args[1]]; !ok {
-			return fmt.Errorf("profile %q does not exist", args[1])
+			return fmt.Errorf("%s %q does not exist", noun, args[1])
 		}
 		config.CurrentProfile = args[1]
 		return saveConfig(path, config)
@@ -69,7 +70,7 @@ func (r *runner) profile(path string, config ConfigFile, args []string) error {
 		fs.StringVar(&profile.APIURL, "api-url", profile.APIURL, "control-plane API base URL")
 		fs.StringVar(&profile.Workspace, "workspace", firstNonEmpty(profile.Workspace, defaultWorkspace), "workspace id")
 		fs.StringVar(&profile.Actor, "actor", profile.Actor, "actor subject")
-		fs.StringVar(&profile.TokenEnv, "token-env", firstNonEmpty(profile.TokenEnv, defaultTokenEnv), "bearer-token environment variable")
+		fs.StringVar(&profile.TokenEnv, "token-env", firstNonEmpty(profile.TokenEnv, r.defaultProfileTokenEnv()), "bearer-token environment variable")
 		makeCurrent := fs.Bool("use", false, "make this the current profile")
 		if err := fs.Parse(args[2:]); err != nil {
 			return usageError{err.Error()}
@@ -78,7 +79,7 @@ func (r *runner) profile(path string, config ConfigFile, args []string) error {
 			return usageError{"usage: windforce profile set <name> [flags]"}
 		}
 		if name == "" || profile.APIURL == "" {
-			return usageError{"profile name and --api-url are required"}
+			return usageError{noun + " name and --api-url are required"}
 		}
 		config.Profiles[name] = profile
 		if *makeCurrent || config.CurrentProfile == "" {
@@ -89,13 +90,27 @@ func (r *runner) profile(path string, config ConfigFile, args []string) error {
 		}
 		return r.outputJSON(map[string]any{"name": name, "current": config.CurrentProfile == name, "api_url": profile.APIURL, "workspace": profile.Workspace, "actor": profile.Actor, "token_env": profile.TokenEnv})
 	default:
-		return usageError{fmt.Sprintf("unknown profile command %q", args[0])}
+		return usageError{fmt.Sprintf("unknown %s command %q", noun, args[0])}
 	}
+}
+
+func (r *runner) profileNoun() string {
+	if r.contextCommand {
+		return "context"
+	}
+	return "profile"
+}
+
+func (r *runner) defaultProfileTokenEnv() string {
+	if r.program == wfProgram.Name {
+		return ""
+	}
+	return defaultTokenEnv
 }
 
 func (r *runner) source(args []string) error {
 	if len(args) == 0 {
-		return usageError{"source requires list, register, probe, sync, or deploy"}
+		return usageError{"source requires list, register, probe, sync, or publish"}
 	}
 	switch args[0] {
 	case "list":
@@ -108,17 +123,17 @@ func (r *runner) source(args []string) error {
 			return usageError{"usage: windforce source sync <source-id>"}
 		}
 		return r.json(http.MethodPost, r.client.WorkspacePath("git_sources", args[1], "sync"), nil)
-	case "deploy":
+	case "deploy", "publish":
 		if len(args) < 2 {
-			return usageError{"usage: windforce source deploy <source-id> [--message note]"}
+			return usageError{"usage: windforce source " + args[0] + " <source-id> [--message note]"}
 		}
-		fs := r.flags("source deploy")
+		fs := r.flags("source " + args[0])
 		message := fs.String("message", "", "audit note")
 		if err := fs.Parse(args[2:]); err != nil {
 			return usageError{err.Error()}
 		}
 		if fs.NArg() != 0 {
-			return usageError{"usage: windforce source deploy <source-id> [--message note]"}
+			return usageError{"usage: windforce source " + args[0] + " <source-id> [--message note]"}
 		}
 		body := sourceDeployRequest{Confirm: true, Message: *message}
 		return r.json(http.MethodPost, r.client.WorkspacePath("git_sources", args[1], "deploy"), body)

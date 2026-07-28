@@ -1,89 +1,100 @@
 ---
-title: Control Plane CLI
-description: Install and use the supported Windforce command-line client.
+title: wf command-line client
+description: Install and use the thin client for an existing Windforce Cell.
 ---
 
-The `windforce` command is the supported non-interactive client for the
-Windforce Core Control Plane API. It uses the same API for a loopback stack and
-a hosted workspace. Changing the selected profile changes the target without
-changing source, release, or job commands.
+`wf` is the supported command-line client for an existing Windforce Cell. Installing it does not install or start a server, worker, database, or queue. The legacy `windforce` command remains in release archives during the migration period.
+
+The current client exposes the complete low-level Control Plane API and emits compact JSON by default. The higher-level authentication, human output, and `wf app publish .` milestones are tracked in the [wf CLI roadmap](wf-cli-roadmap.md).
 
 ## Install
 
-Tagged releases contain archives for Windows, macOS, and Linux on amd64 and
-arm64. Download the archive for the host from
-[GitHub Releases](https://github.com/imprun/windforce-core/releases).
+Tagged releases contain `wf` archives for Windows, macOS, and Linux on amd64 and arm64. These are operator-host binaries and are unrelated to the architecture of a Kubernetes Cell image.
 
-On Windows, extract the ZIP file and place `windforce.exe` in a directory on
-`PATH`:
+On Windows, extract the matching ZIP and place `wf.exe` on `PATH`:
 
 ```powershell
-Expand-Archive .\windforce_<VERSION>_windows_amd64.zip -DestinationPath .\windforce
-windforce\windforce.exe version
+Expand-Archive .\wf_<VERSION>_windows_amd64.zip -DestinationPath .\wf
+wf\wf.exe version
 ```
 
-On macOS or Linux, extract the matching archive and install the executable in a
-directory on `PATH`:
+On macOS or Linux, extract the matching archive and install the executable in a directory on `PATH`:
 
 ```shell
-tar -xzf windforce_<VERSION>_<OS>_<ARCH>.tar.gz
-install -m 0755 windforce "$HOME/.local/bin/windforce"
-windforce version
+tar -xzf wf_<VERSION>_<OS>_<ARCH>.tar.gz
+install -m 0755 wf "$HOME/.local/bin/wf"
+wf version
 ```
 
-Upgrade by replacing the executable with one from a newer tagged release. User
-profiles stay in the operating system's user configuration directory and do
-not need to move with the executable.
-
-The repository build produces the same executable:
+The repository build produces `wf` and the legacy `windforce` alias:
 
 ```shell
 make cli-build
 ```
 
-The output is `.tmp/bin/windforce` (`.exe` on Windows when built by Go for
-Windows).
+On Windows the outputs are `.tmp/bin/wf.exe` and `.tmp/bin/windforce.exe`.
 
-## Configure a profile
+## Configure a context
 
-Profiles store connection metadata. A profile stores the name of the
-environment variable containing a bearer token; it never stores the token
-value.
+A context contains non-secret connection metadata: API URL, workspace, optional audit actor, and an optional environment-variable name. `WF_TOKEN` supplies a bearer token to one process and takes precedence without being written to the configuration file.
 
 ```powershell
-$env:WINDFORCE_API_TOKEN = "<TOKEN>"
-windforce profile set local `
+wf context set local `
   --api-url http://127.0.0.1:18091 `
   --workspace default `
   --actor developer@example.test `
-  --token-env WINDFORCE_API_TOKEN `
+  --use
+
+$env:WF_TOKEN = "<WORKSPACE_TOKEN>"
+wf app list --summary
+```
+
+Use `wf context list`, `wf context show`, and `wf context use <name>` to inspect or select contexts. `WF_CONFIG` selects an explicit configuration file. When the new default configuration does not exist, `wf` can read the legacy `windforce` profile file; the next context change writes the new `wf` configuration.
+
+For existing automation that names a token environment variable:
+
+```powershell
+$env:WORKSPACE_TOKEN = "<WORKSPACE_TOKEN>"
+wf context set hosted `
+  --api-url https://cell.example.test `
+  --workspace team `
+  --token-env WORKSPACE_TOKEN `
   --use
 ```
 
-Use `windforce profile list`, `windforce profile show`, and `windforce profile
-use <name>` to inspect or select profiles. Set `WINDFORCE_CONFIG` to use an
-explicit profile file. Global flags override profile values:
+The configuration stores only `WORKSPACE_TOKEN`, never its value. Secure interactive credential storage will replace this compatibility workflow when the authentication milestone lands.
+
+Global flags override the selected context:
 
 ```shell
-windforce --profile staging --pretty app list --summary
-windforce --api-url https://windforce.example.test --workspace team app list
+wf --context staging --pretty app list --summary
+wf --api-url https://cell.example.test --workspace team app list
 ```
 
-## Release path
+The primary process overrides are:
 
-Register reads Git credentials only from an environment variable. The CLI
-stores the resulting credential as a secret Control Plane variable and sends
-its reference when registering the source.
+| Variable | Meaning |
+| --- | --- |
+| `WF_CONFIG` | Explicit non-secret configuration path |
+| `WF_CONTEXT` | Selected context |
+| `WF_API_URL` | Control Plane API base URL |
+| `WF_WORKSPACE` | Selected workspace |
+| `WF_ACTOR` | Direct-connection audit actor |
+| `WF_TOKEN` | One-process bearer credential; never persisted |
+
+## Publish a release
+
+The current release workflow keeps Register, Sync, and Publish explicit:
 
 ```powershell
 $env:GIT_ACCESS_TOKEN = "<TOKEN>"
-windforce source probe `
+wf source probe `
   --repo-url https://git.example.test/team/app.git `
   --branch main `
   --auth-method pat `
   --access-token-env GIT_ACCESS_TOKEN
 
-windforce source register `
+wf source register `
   --name example `
   --repo-url https://git.example.test/team/app.git `
   --branch main `
@@ -91,54 +102,52 @@ windforce source register `
   --auth-method pat `
   --access-token-env GIT_ACCESS_TOKEN
 
-windforce source list
-windforce source sync 12
-windforce source deploy 12 --message "Publish validated revision"
+wf source list
+wf source sync 12
+wf source publish 12 --message "Publish validated revision"
 ```
 
-The numeric source ID returned by register or list is used by sync and deploy.
-Workers do not receive Git credentials and do not contact the repository.
+`publish` calls the existing release-publication endpoint. The legacy spelling `source deploy` remains accepted during migration. Workers never receive repository credentials and never contact Git.
 
-## Inspect apps and API schemas
+## Inspect apps and schemas
 
 ```shell
-windforce app list --summary
-windforce app show example
-windforce app history example
-windforce action show example health
-windforce action schema example health
-windforce app openapi example
-windforce openapi
+wf app list --summary
+wf app show example
+wf app history example
+wf action show example health
+wf action schema example health
+wf app openapi example
+wf openapi
 ```
 
-Commands emit compact JSON by default. Add the global `--pretty` flag before
-the command for human-readable JSON.
+Commands emit compact JSON by default. Add the global `--pretty` flag before the command for indented JSON.
 
-## Run and inspect jobs
+## Run and inspect work
 
 ```shell
-windforce job run example health --input '{"ping":true}'
-windforce job run example parse --input-file input.json --wait --timeout-ms 30000
-windforce job list --app example --status running
-windforce job show <JOB_ID>
-windforce job result <JOB_ID>
-windforce job logs <JOB_ID> --tail-bytes 65536
-windforce job cancel <JOB_ID> --reason "operator request"
+wf run create example health --input '{"ping":true}'
+wf run wait example parse --input-file input.json --timeout 30s
+wf run show <RUN_ID>
+wf run result <RUN_ID>
+wf run cancel <RUN_ID> --reason "operator request"
+
+wf job list --app example --status running
+wf job show <JOB_ID>
+wf job logs <JOB_ID> --tail-bytes 65536
 ```
 
-`--input-file -` reads JSON from standard input. Job logs are written as the
-raw response so they can be piped to another command.
+`--input-file -` reads JSON from standard input. Job logs are written as the raw response so they can be piped.
 
 ## Provisioning
 
 ```shell
-windforce provisioning export --format yaml --output windforce.yaml
-windforce provisioning apply --file windforce.yaml --dry-run
-windforce provisioning apply --file windforce.yaml
+wf provisioning export --format yaml --output windforce.yaml
+wf provisioning apply --file windforce.yaml --dry-run
+wf provisioning apply --file windforce.yaml
 ```
 
-Exported secret values remain redacted. Environment-specific secret resources
-must use the provisioning `valueFrom` contract.
+Exported secret values remain redacted. Environment-specific secret resources must use the provisioning `valueFrom` contract.
 
 ## Exit codes
 
@@ -146,18 +155,13 @@ must use the provisioning `valueFrom` contract.
 | ---: | --- |
 | `0` | Command completed successfully |
 | `2` | Invalid command or arguments |
-| `3` | Invalid local profile or configuration |
+| `3` | Invalid local context or configuration |
 | `10` | Local I/O or HTTP transport failure |
 | `20` | Control Plane returned a 4xx response |
 | `21` | Control Plane returned a 5xx response |
 
-JSON API errors are written to standard error. This makes the command suitable
-for CI without parsing human-formatted messages.
+JSON API errors are written to standard error. This preserves the existing automation contract while terminal-oriented error categories are added.
 
 ## Repository helper
 
-`tools/windforce_control.py` is a repository-local API helper. The released
-`windforce` executable is the installed client contract for source, app,
-action, job, OpenAPI, and provisioning operations. Repository-only maintenance
-commands can continue to use the helper without making Python a requirement
-for product repositories.
+`tools/windforce_control.py` is a repository-local API helper. Released `wf` archives are the installed client contract. Repository maintenance can continue using the helper without making Python a dependency of product repositories.

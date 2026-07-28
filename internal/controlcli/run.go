@@ -30,11 +30,13 @@ const (
 var Version = "dev"
 
 type runner struct {
-	stdin  io.Reader
-	stdout io.Writer
-	stderr io.Writer
-	pretty bool
-	client *controlplane.Client
+	stdin          io.Reader
+	stdout         io.Writer
+	stderr         io.Writer
+	pretty         bool
+	program        string
+	contextCommand bool
+	client         *controlplane.Client
 }
 
 type usageError struct{ message string }
@@ -42,7 +44,15 @@ type usageError struct{ message string }
 func (e usageError) Error() string { return e.message }
 
 func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	global := flag.NewFlagSet("windforce", flag.ContinueOnError)
+	return runWithProgram(legacyProgram, args, stdin, stdout, stderr)
+}
+
+func RunWF(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	return runWithProgram(wfProgram, args, stdin, stdout, stderr)
+}
+
+func runWithProgram(program programConfig, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	global := flag.NewFlagSet(program.Name, flag.ContinueOnError)
 	global.SetOutput(stderr)
 	global.Usage = func() {}
 	var profileName string
@@ -50,6 +60,9 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	var pretty bool
 	var timeout time.Duration
 	global.StringVar(&profileName, "profile", "", "connection profile")
+	if program.Name == wfProgram.Name {
+		global.StringVar(&profileName, "context", "", "connection context")
+	}
 	global.StringVar(&overrides.APIURL, "api-url", "", "control-plane API base URL")
 	global.StringVar(&overrides.Workspace, "workspace", "", "workspace id")
 	global.StringVar(&overrides.Actor, "actor", "", "actor sent as X-Windforce-Actor")
@@ -58,29 +71,30 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	global.DurationVar(&timeout, "request-timeout", 60*time.Second, "HTTP request timeout")
 	if err := global.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			printUsage(stdout)
+			printUsage(stdout, program.Name)
 			return ExitOK
 		}
 		return ExitUsage
 	}
 	remaining := global.Args()
 	if len(remaining) == 0 {
-		printUsage(stderr)
+		printUsage(stderr, program.Name)
 		return ExitUsage
 	}
 
-	path, err := configPath()
+	path, err := configPathFor(program)
 	if err != nil {
 		writeError(stderr, err)
 		return ExitConfig
 	}
-	config, err := loadConfig(path)
+	config, err := loadProgramConfig(program, path)
 	if err != nil {
 		writeError(stderr, err)
 		return ExitConfig
 	}
-	r := &runner{stdin: stdin, stdout: stdout, stderr: stderr, pretty: pretty}
-	if remaining[0] == "profile" {
+	r := &runner{stdin: stdin, stdout: stdout, stderr: stderr, pretty: pretty, program: program.Name}
+	if remaining[0] == "profile" || (program.Name == wfProgram.Name && remaining[0] == "context") {
+		r.contextCommand = remaining[0] == "context"
 		if err := r.profile(path, config, remaining[1:]); err != nil {
 			var usage usageError
 			if errors.As(err, &usage) {
@@ -91,7 +105,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 		return ExitOK
 	}
-	resolved, err := resolveProfile(config, profileName, overrides)
+	resolved, err := resolveProfileFor(program, config, profileName, overrides)
 	if err != nil {
 		writeError(stderr, err)
 		return ExitConfig
@@ -135,7 +149,7 @@ func (r *runner) command(args []string) error {
 		if len(args) != 1 {
 			return usageError{"usage: windforce help"}
 		}
-		printUsage(r.stdout)
+		printUsage(r.stdout, r.program)
 		return nil
 	default:
 		return usageError{fmt.Sprintf("unknown command %q", args[0])}
@@ -211,7 +225,14 @@ func (r *runner) finishError(err error) int {
 		}
 		return ExitAPIClient
 	case errors.As(err, &usage):
-		writeError(r.stderr, err)
+		message := usage.message
+		if r.program != "" && r.program != legacyProgram.Name {
+			message = strings.ReplaceAll(message, legacyProgram.Name, r.program)
+		}
+		if r.contextCommand {
+			message = strings.ReplaceAll(message, " profile ", " context ")
+		}
+		writeError(r.stderr, usageError{message: message})
 		return ExitUsage
 	default:
 		writeError(r.stderr, err)
@@ -329,7 +350,24 @@ func query(values url.Values) string {
 }
 func writeError(writer io.Writer, err error) { _, _ = fmt.Fprintln(writer, err) }
 
-func printUsage(writer io.Writer) {
+func printUsage(writer io.Writer, program string) {
+	if program == wfProgram.Name {
+		fmt.Fprintln(writer, `usage: wf [global flags] <command>
+
+Global flags: --context, --api-url, --workspace, --actor, --token-env, --pretty
+
+Commands:
+  context list|show|set|use
+  source list|register|probe|sync|publish
+  app list|show|history|source|openapi
+  action show|schema
+  run create|wait|show|result|cancel
+  job list|show|result|logs|cancel
+  provisioning export|apply
+  openapi
+  version`)
+		return
+	}
 	fmt.Fprintln(writer, `usage: windforce [global flags] <command>
 
 Global flags: --profile, --api-url, --workspace, --actor, --token-env, --pretty
