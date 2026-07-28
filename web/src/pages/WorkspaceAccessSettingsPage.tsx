@@ -2,7 +2,7 @@ import { KeyRound, RefreshCw, ShieldX } from "lucide-react";
 import { useState } from "react";
 import { Layout } from "../components/Layout";
 import { SettingsNav } from "../components/SettingsNav";
-import { EmptyState, ErrorNotice, Field, Loading, Panel } from "../components/ui";
+import { EmptyState, ErrorNotice, Loading, Panel } from "../components/ui";
 import { OneTimeWorkspaceToken } from "../features/WorkspaceAdmin";
 import type { WorkspaceToken } from "../lib/api";
 import { errorMessage } from "../lib/api";
@@ -100,30 +100,42 @@ export function WorkspaceAccessSettingsPage() {
             title={translate("workspaceAccess.create")}
             subtitle={translate("workspaceAccess.createHint", { workspace: settings.workspace })}
           >
-            <div className="workspaceSingleSetting">
-              <Field
-                label={translate("workspaceAccess.tokenName")}
-                hint={translate("workspaceAccess.tokenNameHint")}
-              >
-                <input
-                  value={name}
-                  placeholder="Developer CLI"
-                  disabled={archived}
-                  onChange={(event) => setName(event.target.value)}
-                />
-              </Field>
-              <button
-                className="button primary"
-                type="button"
-                disabled={saving || archived || !name.trim()}
-                onClick={createToken}
-              >
-                <KeyRound size={16} aria-hidden="true" />{" "}
-                {saving
-                  ? translate("workspaces.creating")
-                  : translate("workspaceAccess.createToken")}
-              </button>
-            </div>
+            <form
+              className="workspaceTokenCreate"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (!saving && !archived && name.trim()) void createToken();
+              }}
+            >
+              <div className="field">
+                <label className="fieldLabel" htmlFor="workspaceTokenName">
+                  {translate("workspaceAccess.tokenName")}
+                </label>
+                <div className="fieldWithAction">
+                  <input
+                    id="workspaceTokenName"
+                    value={name}
+                    placeholder="Developer CLI"
+                    disabled={archived}
+                    aria-describedby="workspaceTokenNameHint"
+                    onChange={(event) => setName(event.target.value)}
+                  />
+                  <button
+                    className="button primary"
+                    type="submit"
+                    disabled={saving || archived || !name.trim()}
+                  >
+                    <KeyRound size={16} aria-hidden="true" />{" "}
+                    {saving
+                      ? translate("workspaces.creating")
+                      : translate("workspaceAccess.createToken")}
+                  </button>
+                </div>
+                <span className="fieldHint" id="workspaceTokenNameHint">
+                  {translate("workspaceAccess.tokenNameHint")}
+                </span>
+              </div>
+            </form>
             {secret ? <OneTimeWorkspaceToken token={secret} /> : null}
           </Panel>
 

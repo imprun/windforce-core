@@ -14,10 +14,10 @@ export default {
   ],
   async run({ page, capture }) {
     await page.goto();
-    await page.clickText("Settings");
+    await page.waitForSelector("a[href$='/settings']");
+    await page.click("a[href$='/settings']");
     await page.click("a[href$='/settings/access']");
-    await page.waitForText("main", "Create workspace token");
-    await page.waitForText("main", "Named workspace tokens");
+    await page.waitForSelector(".workspaceTokenCreate");
     await capture(this.id);
   },
 };
