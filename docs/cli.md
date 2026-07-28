@@ -36,7 +36,7 @@ On Windows the outputs are `.tmp/bin/wf.exe` and `.tmp/bin/windforce.exe`.
 
 ## Configure a context
 
-A context contains non-secret connection metadata: API URL, workspace, optional audit actor, and an optional environment-variable name. `WF_TOKEN` supplies a bearer token to one process and takes precedence without being written to the configuration file.
+A context contains non-secret connection metadata: API URL, workspace, optional audit actor, and an account label. Direct Cell credentials are stored in Windows Credential Manager, macOS Keychain, or the Linux Secret Service. `WF_TOKEN` supplies a bearer token to one process and takes precedence without being written to the configuration file or credential store.
 
 ```powershell
 wf context set local `
@@ -45,13 +45,24 @@ wf context set local `
   --actor developer@example.test `
   --use
 
-$env:WF_TOKEN = "<WORKSPACE_TOKEN>"
+Get-Content .\workspace-token.txt | wf auth login --with-token --account operator
+wf auth status
 wf app list --summary
 ```
 
 Use `wf context list`, `wf context show`, and `wf context use <name>` to inspect or select contexts. `WF_CONFIG` selects an explicit configuration file. When the new default configuration does not exist, `wf` can read the legacy `windforce` profile file; the next context change writes the new `wf` configuration.
 
-For existing automation that names a token environment variable:
+`auth login --with-token` validates the credential against the selected workspace before storing it. If the system credential store is unavailable, login fails without writing a plaintext fallback. `wf auth logout` removes the local credential reference and secret; it does not reinterpret a direct workspace credential as a central Identity session.
+
+For automation, prefer the one-process environment override:
+
+```powershell
+$env:WF_TOKEN = "<WORKSPACE_TOKEN>"
+wf app list --summary
+Remove-Item Env:WF_TOKEN
+```
+
+Existing automation can still name a token environment variable:
 
 ```powershell
 $env:WORKSPACE_TOKEN = "<WORKSPACE_TOKEN>"
@@ -62,7 +73,7 @@ wf context set hosted `
   --use
 ```
 
-The configuration stores only `WORKSPACE_TOKEN`, never its value. Secure interactive credential storage will replace this compatibility workflow when the authentication milestone lands.
+The configuration stores only `WORKSPACE_TOKEN`, never its value. This is a compatibility workflow; new interactive use should use the system credential store.
 
 Global flags override the selected context:
 

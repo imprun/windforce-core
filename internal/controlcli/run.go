@@ -36,6 +36,10 @@ type runner struct {
 	pretty         bool
 	program        string
 	contextCommand bool
+	store          CredentialStore
+	configPath     string
+	config         ConfigFile
+	resolved       resolvedConfig
 	client         *controlplane.Client
 }
 
@@ -48,10 +52,18 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 }
 
 func RunWF(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	return runWithProgram(wfProgram, args, stdin, stdout, stderr)
+	return RunWFWithCredentialStore(args, stdin, stdout, stderr, nil)
 }
 
-func runWithProgram(program programConfig, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+func RunWFWithCredentialStore(args []string, stdin io.Reader, stdout, stderr io.Writer, store CredentialStore) int {
+	return runWithProgram(wfProgram, args, stdin, stdout, stderr, store)
+}
+
+func runWithProgram(program programConfig, args []string, stdin io.Reader, stdout, stderr io.Writer, stores ...CredentialStore) int {
+	var store CredentialStore
+	if len(stores) > 0 {
+		store = stores[0]
+	}
 	global := flag.NewFlagSet(program.Name, flag.ContinueOnError)
 	global.SetOutput(stderr)
 	global.Usage = func() {}
@@ -92,7 +104,10 @@ func runWithProgram(program programConfig, args []string, stdin io.Reader, stdou
 		writeError(stderr, err)
 		return ExitConfig
 	}
-	r := &runner{stdin: stdin, stdout: stdout, stderr: stderr, pretty: pretty, program: program.Name}
+	r := &runner{
+		stdin: stdin, stdout: stdout, stderr: stderr, pretty: pretty, program: program.Name,
+		store: store, configPath: path, config: config,
+	}
 	if remaining[0] == "profile" || (program.Name == wfProgram.Name && remaining[0] == "context") {
 		r.contextCommand = remaining[0] == "context"
 		if err := r.profile(path, config, remaining[1:]); err != nil {
@@ -110,10 +125,23 @@ func runWithProgram(program programConfig, args []string, stdin io.Reader, stdou
 		writeError(stderr, err)
 		return ExitConfig
 	}
+	r.resolved = resolved
 	r.client = &controlplane.Client{
 		BaseURL: resolved.APIURL, Workspace: resolved.Workspace, Actor: resolved.Actor,
 		Token: resolved.Token, HTTP: &http.Client{Timeout: timeout},
 	}
+	if program.Name == wfProgram.Name && remaining[0] == "auth" {
+		if err := r.auth(remaining[1:]); err != nil {
+			return r.finishError(err)
+		}
+		return ExitOK
+	}
+	token, _, err := r.resolveCredential()
+	if err != nil {
+		writeError(stderr, err)
+		return ExitConfig
+	}
+	r.client.Token = token
 	if err := r.command(remaining); err != nil {
 		return r.finishError(err)
 	}
@@ -357,6 +385,7 @@ func printUsage(writer io.Writer, program string) {
 Global flags: --context, --api-url, --workspace, --actor, --token-env, --pretty
 
 Commands:
+  auth login|status|logout
   context list|show|set|use
   source list|register|probe|sync|publish
   app list|show|history|source|openapi

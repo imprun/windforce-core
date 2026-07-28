@@ -97,6 +97,8 @@ The server remains authoritative for source access, validation, preparation, art
 - Add provider discovery and hosted browser or device authorization without product-specific code in Core.
 - Verify token refresh, revocation, multiple accounts, headless automation, and redaction.
 
+Direct token login, status, logout, credential-store isolation, and `WF_TOKEN` precedence are implemented. Hosted provider discovery, browser authorization, refresh, and multiple hosted accounts remain open.
+
 ### M4 — Workspace and app workflows
 
 - Add workspace discovery and switching.

@@ -3,12 +3,45 @@ package controlcli
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
 )
+
+type memoryCredentialStore struct {
+	values    map[string]string
+	getErr    error
+	setErr    error
+	deleteErr error
+}
+
+func (s *memoryCredentialStore) Get(key string) (string, bool, error) {
+	if s.getErr != nil {
+		return "", false, s.getErr
+	}
+	value, ok := s.values[key]
+	return value, ok, nil
+}
+
+func (s *memoryCredentialStore) Set(key, value string) error {
+	if s.setErr != nil {
+		return s.setErr
+	}
+	s.values[key] = value
+	return nil
+}
+
+func (s *memoryCredentialStore) Delete(key string) error {
+	if s.deleteErr != nil {
+		return s.deleteErr
+	}
+	delete(s.values, key)
+	return nil
+}
 
 func TestRunWaitUsesCanonicalInvocationSpecification(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -246,5 +279,127 @@ func TestRunWFSourcePublishUsesReleasePublicationEndpoint(t *testing.T) {
 	)
 	if exit != ExitOK {
 		t.Fatalf("exit=%d stderr=%s", exit, stderr.String())
+	}
+}
+
+func TestRunWFDirectAuthUsesCredentialStoreWithoutWritingToken(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		if r.URL.Path != "/api/w/team/apps" || r.Header.Get("Authorization") != "Bearer direct-secret" {
+			t.Fatalf("request = %s auth=%q", r.URL.Path, r.Header.Get("Authorization"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"apps":[]}`))
+	}))
+	defer server.Close()
+
+	path := t.TempDir() + "/config.json"
+	t.Setenv("WF_CONFIG", path)
+	var stdout, stderr bytes.Buffer
+	exit := RunWF(
+		[]string{"context", "set", "hosted", "--api-url", server.URL, "--workspace", "team", "--use"},
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+	)
+	if exit != ExitOK {
+		t.Fatalf("set context exit=%d stderr=%s", exit, stderr.String())
+	}
+
+	store := &memoryCredentialStore{values: map[string]string{}}
+	stdout.Reset()
+	stderr.Reset()
+	exit = RunWFWithCredentialStore(
+		[]string{"auth", "login", "--with-token", "--account", "operator"},
+		strings.NewReader("direct-secret\n"),
+		&stdout,
+		&stderr,
+		store,
+	)
+	if exit != ExitOK {
+		t.Fatalf("login exit=%d stderr=%s", exit, stderr.String())
+	}
+	if len(store.values) != 1 {
+		t.Fatalf("stored credentials = %#v", store.values)
+	}
+	configBytes, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(configBytes, []byte("direct-secret")) {
+		t.Fatal("configuration contains the credential")
+	}
+	config, err := loadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.Profiles["hosted"].Account != "operator" {
+		t.Fatalf("context account = %q", config.Profiles["hosted"].Account)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	exit = RunWFWithCredentialStore(
+		[]string{"app", "list"},
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+		store,
+	)
+	if exit != ExitOK {
+		t.Fatalf("app list exit=%d stderr=%s", exit, stderr.String())
+	}
+	if requests.Load() != 2 {
+		t.Fatalf("requests = %d, want login probe plus app list", requests.Load())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	exit = RunWFWithCredentialStore(
+		[]string{"auth", "logout"},
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+		store,
+	)
+	if exit != ExitOK || len(store.values) != 0 {
+		t.Fatalf("logout exit=%d store=%#v stderr=%s", exit, store.values, stderr.String())
+	}
+}
+
+func TestRunWFAuthFailsClosedWhenCredentialStoreFails(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"apps":[]}`))
+	}))
+	defer server.Close()
+	path := t.TempDir() + "/config.json"
+	t.Setenv("WF_CONFIG", path)
+	var stdout, stderr bytes.Buffer
+	exit := RunWF(
+		[]string{"context", "set", "local", "--api-url", server.URL, "--use"},
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+	)
+	if exit != ExitOK {
+		t.Fatalf("set context exit=%d stderr=%s", exit, stderr.String())
+	}
+	store := &memoryCredentialStore{values: map[string]string{}, getErr: errors.New("vault unavailable")}
+	stdout.Reset()
+	stderr.Reset()
+	exit = RunWFWithCredentialStore(
+		[]string{"auth", "login", "--with-token"},
+		strings.NewReader("direct-secret"),
+		&stdout,
+		&stderr,
+		store,
+	)
+	if exit != ExitTransport || !strings.Contains(stderr.String(), "vault unavailable") {
+		t.Fatalf("exit=%d stderr=%s", exit, stderr.String())
+	}
+	if strings.Contains(stderr.String(), "direct-secret") {
+		t.Fatalf("credential leaked: %s", stderr.String())
 	}
 }

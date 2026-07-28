@@ -42,6 +42,7 @@ type Profile struct {
 	Workspace string `json:"workspace,omitempty"`
 	Actor     string `json:"actor,omitempty"`
 	TokenEnv  string `json:"token_env,omitempty"`
+	Account   string `json:"account,omitempty"`
 }
 
 type ConfigFile struct {
