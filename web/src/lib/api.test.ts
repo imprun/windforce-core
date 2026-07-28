@@ -216,6 +216,7 @@ describe("WindforceApi Triggers", () => {
         app: "orders",
         action: "reconcile",
         config: { cron: "0 9 * * *", timezone: "Asia/Seoul", input: {} },
+        completion: { mode: "poll" as const },
       };
       await api.triggers();
       await api.createTrigger(payload);

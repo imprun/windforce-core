@@ -143,14 +143,15 @@ Dark mode preserves clear separation between Trigger kinds, enablement, delivery
 
 ## Add an inbound Trigger
 
-A kind-aware editor configures the current App target while keeping signing secrets and broker credentials write-only.
+A kind-aware editor configures the current App target and an explicit completion output while keeping signing secrets and broker credentials write-only.
 
 ![Add an inbound Trigger](../assets/ui/trigger-create.png)
 
 1. Choose Add trigger from the App Triggers tab.
 2. Select Webhook, Schedule, or RabbitMQ and a target Action.
-3. Complete the kind-specific delivery and security fields.
-4. Create the Trigger disabled, verify it, and enable it from the list.
+3. Choose Poll, signed HTTP callback, RabbitMQ publish, or deliberate No output.
+4. Complete the kind-specific delivery and security fields.
+5. Create the Trigger disabled, verify it, and enable it from the list.
 
 ## Import and export provisioning state
 

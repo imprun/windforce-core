@@ -170,16 +170,33 @@ func (s *LocalStore) UpsertTriggerDelivery(ctx context.Context, delivery Trigger
 	delivery.TriggerID = strings.TrimSpace(delivery.TriggerID)
 	delivery.DeliveryID = strings.TrimSpace(delivery.DeliveryID)
 	delivery.State = strings.TrimSpace(delivery.State)
+	var err error
+	delivery.Completion, err = NormalizeTriggerCompletionPolicy(delivery.Completion)
+	if err != nil {
+		return TriggerDelivery{}, err
+	}
+	if delivery.CompletionState == "" {
+		delivery.CompletionState = InitialTriggerCompletionState(delivery.Completion)
+	}
 	if delivery.TriggerID == "" || delivery.DeliveryID == "" || delivery.State == "" {
 		return TriggerDelivery{}, fmt.Errorf("%w: trigger_id, delivery_id, and state are required", ErrInvalidState)
 	}
 	var stored TriggerDelivery
-	err := s.update(ctx, func(snapshot *Snapshot, now time.Time) error {
+	err = s.update(ctx, func(snapshot *Snapshot, now time.Time) error {
 		key := triggerDeliveryKey(delivery.WorkspaceID, delivery.TriggerID, delivery.DeliveryID)
 		existing, exists := snapshot.TriggerDeliveries[key]
 		if exists {
 			delivery.ID = existing.ID
 			delivery.CreatedAt = existing.CreatedAt
+			delivery.Completion = existing.Completion
+			delivery.CompletionState = existing.CompletionState
+			delivery.CompletionAttempt = existing.CompletionAttempt
+			delivery.CompletionNextAttemptAt = existing.CompletionNextAttemptAt
+			delivery.CompletionLeaseOwner = existing.CompletionLeaseOwner
+			delivery.CompletionLeaseExpiresAt = cloneTime(existing.CompletionLeaseExpiresAt)
+			delivery.CompletionResponseStatus = cloneInt(existing.CompletionResponseStatus)
+			delivery.CompletionErrorSummary = existing.CompletionErrorSummary
+			delivery.CompletionCompletedAt = cloneTime(existing.CompletionCompletedAt)
 			if delivery.Attempt <= existing.Attempt {
 				delivery.Attempt = existing.Attempt + 1
 			}
@@ -266,6 +283,16 @@ func prepareTriggerDefinition(definition TriggerDefinition, actor string, create
 	definition.ActionKey = strings.TrimSpace(definition.ActionKey)
 	definition.CredentialRef = strings.TrimSpace(definition.CredentialRef)
 	definition.Config = canonicalJSONInput(definition.Config)
+	completion, err := NormalizeTriggerCompletionPolicy(definition.Completion)
+	if err != nil {
+		return TriggerDefinition{}, err
+	}
+	definition.Completion = completion
+	response, err := NormalizeTriggerResponsePolicy(definition.Kind, definition.Response)
+	if err != nil {
+		return TriggerDefinition{}, err
+	}
+	definition.Response = response
 	if len(definition.SecretConfig) > 0 {
 		definition.SecretConfig = canonicalJSONInput(definition.SecretConfig)
 	}
@@ -326,6 +353,14 @@ func triggerNameExists(snapshot *Snapshot, workspaceID string, name string, exce
 func cloneTriggerDefinition(definition TriggerDefinition) TriggerDefinition {
 	definition.Config = cloneRaw(definition.Config)
 	definition.SecretConfig = cloneRaw(definition.SecretConfig)
+	if definition.Completion.Callback != nil {
+		callback := *definition.Completion.Callback
+		definition.Completion.Callback = &callback
+	}
+	if definition.Completion.Publish != nil {
+		publish := *definition.Completion.Publish
+		definition.Completion.Publish = &publish
+	}
 	definition.DeletedAt = cloneTime(definition.DeletedAt)
 	return definition
 }

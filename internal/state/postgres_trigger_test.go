@@ -8,6 +8,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/imprun/windforce-core/internal/contract"
 )
 
 func TestPostgresTriggerStoreContract(t *testing.T) {
@@ -105,5 +107,93 @@ func TestPostgresTriggerStoreContract(t *testing.T) {
 	}
 	if len(audit) != 2 || audit[0].Kind != "created" || audit[1].Kind != "enabled" {
 		t.Fatalf("audit = %#v", audit)
+	}
+}
+
+func TestPostgresTriggerCompletionContract(t *testing.T) {
+	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("WINDFORCE_LITE_POSTGRES_TEST_DSN is not set")
+	}
+	ctx := context.Background()
+	store := openIsolatedPostgresCatalogStore(t, dsn)
+	store.ConfigureInputCrypto("postgres-trigger-completion-secret-key", "")
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	store.leaseNow = func() time.Time { return now }
+	trigger, err := store.CreateTrigger(ctx, TriggerDefinition{
+		WorkspaceID: "workspace-a",
+		Name:        "Completion",
+		Kind:        "webhook",
+		AppKey:      "demo",
+		ActionKey:   "run",
+		Config:      json.RawMessage(`{}`),
+		Completion: TriggerCompletionPolicy{
+			Mode:     TriggerCompletionModeCallback,
+			Callback: &TriggerCompletionCallback{Endpoint: "https://callback.example.test/completed"},
+		},
+		SecretConfig: json.RawMessage(`{"secret":"source-secret","completion":{"signing_secret":"callback-secret"}}`),
+	}, "tester")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateRunAndEnqueue(ctx, Run{
+		ID:         "run-completion-1",
+		App:        "demo",
+		Action:     "run",
+		State:      RunSucceeded,
+		Deployment: contract.Deployment{Workspace: "workspace-a"},
+		Output:     json.RawMessage(`{"ok":true}`),
+	}, Job{
+		ID:    "job-completion-1",
+		RunID: "run-completion-1",
+		State: JobSucceeded,
+		Payload: JobPayload{
+			Workspace: "workspace-a",
+			App:       "demo",
+			Action:    "run",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	delivery, err := store.UpsertTriggerDelivery(ctx, TriggerDelivery{
+		WorkspaceID: "workspace-a",
+		TriggerID:   trigger.ID,
+		DeliveryID:  "delivery-completion-1",
+		State:       "admitted",
+		RunID:       "run-completion-1",
+		Completion:  trigger.Completion,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DeleteTrigger(ctx, "workspace-a", trigger.ID, "tester"); err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := store.ClaimTriggerCompletion(ctx, "completion-a", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claimed.Delivery.ID != delivery.ID ||
+		claimed.Trigger.DeletedAt == nil ||
+		claimed.Run.ID != "run-completion-1" ||
+		!bytes.Contains(claimed.Trigger.SecretConfig, []byte("callback-secret")) {
+		t.Fatalf("claim = %#v", claimed)
+	}
+	status := 204
+	if err := store.CompleteTriggerCompletion(ctx, claimed.Lease, TriggerCompletionResult{
+		State:          TriggerCompletionSucceeded,
+		ResponseStatus: &status,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	items, err := store.ListTriggerDeliveries(ctx, "workspace-a", trigger.ID, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 ||
+		items[0].CompletionState != TriggerCompletionSucceeded ||
+		items[0].CompletionResponseStatus == nil ||
+		*items[0].CompletionResponseStatus != status {
+		t.Fatalf("deliveries = %#v", items)
 	}
 }

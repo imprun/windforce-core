@@ -12,7 +12,7 @@ import {
 import { useMemo, useState } from "react";
 import { Layout } from "../components/Layout";
 import { SettingsNav } from "../components/SettingsNav";
-import { EmptyState, ErrorNotice, Field, Panel } from "../components/ui";
+import { EmptyState, ErrorNotice, Field, Panel, SelectControl } from "../components/ui";
 import { errorMessage, type ProvisioningAppliedResource } from "../lib/api";
 import { useApp } from "../lib/app-context";
 
@@ -194,18 +194,19 @@ export function ProvisioningPage() {
           >
             <div className="provisioningDocumentHeader">
               <Field label="Format">
-                <select
-                  aria-label="Import format"
+                <SelectControl
+                  ariaLabel="Import format"
                   value={importFormat}
-                  onChange={(event) => {
-                    setImportFormat(event.target.value as ImportFormat);
+                  onChange={(value) => {
+                    setImportFormat(value);
                     setDryRunResult([]);
                     setApplyResult([]);
                   }}
-                >
-                  <option value="yaml">YAML</option>
-                  <option value="json">JSON</option>
-                </select>
+                  options={[
+                    { value: "yaml", label: "YAML" },
+                    { value: "json", label: "JSON" },
+                  ]}
+                />
               </Field>
               <label className="button">
                 <FileInput aria-hidden="true" />
@@ -326,14 +327,15 @@ export function ProvisioningPage() {
             >
               <div className="formStack">
                 <Field label="Format">
-                  <select
-                    aria-label="Export format"
+                  <SelectControl
+                    ariaLabel="Export format"
                     value={exportFormat}
-                    onChange={(event) => setExportFormat(event.target.value as ExportFormat)}
-                  >
-                    <option value="yaml">YAML</option>
-                    <option value="json">JSON</option>
-                  </select>
+                    onChange={setExportFormat}
+                    options={[
+                      { value: "yaml", label: "YAML" },
+                      { value: "json", label: "JSON" },
+                    ]}
+                  />
                 </Field>
                 <label className="toggleField">
                   <input

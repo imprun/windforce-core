@@ -216,6 +216,100 @@ textarea {
   background: var(--surface);
 }
 
+.selectControl {
+  align-items: center;
+  background: var(--surface-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-small);
+  color: var(--text-primary);
+  display: inline-flex;
+  font: inherit;
+  gap: 8px;
+  justify-content: space-between;
+  min-height: 36px;
+  padding: 7px 10px;
+  text-align: left;
+  width: 100%;
+}
+
+.selectControl > svg {
+  color: var(--text-secondary);
+  flex: 0 0 auto;
+  height: 16px;
+  width: 16px;
+}
+
+.selectControl[data-placeholder] {
+  color: var(--text-secondary);
+}
+
+.selectControl[data-disabled] {
+  cursor: not-allowed;
+  opacity: 0.56;
+}
+
+.selectControl:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.selectContent {
+  background: var(--surface-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-small);
+  box-shadow: var(--shadow);
+  max-height: min(360px, var(--radix-select-content-available-height));
+  min-width: var(--radix-select-trigger-width);
+  overflow: hidden;
+  z-index: 80;
+}
+
+.selectViewport {
+  padding: 5px;
+}
+
+.selectItem {
+  align-items: center;
+  border-radius: calc(var(--radius-small) - 2px);
+  color: var(--text-primary);
+  cursor: default;
+  display: flex;
+  font-size: 14px;
+  gap: 14px;
+  justify-content: space-between;
+  min-height: 34px;
+  outline: none;
+  padding: 7px 9px;
+  user-select: none;
+}
+
+.selectItem[data-highlighted] {
+  background: var(--accent);
+  color: var(--text-primary);
+}
+
+.selectItem[data-state="checked"] {
+  color: var(--accent-strong);
+  font-weight: 650;
+}
+
+.selectItem > svg {
+  flex: 0 0 auto;
+  height: 15px;
+  width: 15px;
+}
+
+.selectItemCopy {
+  display: grid;
+  gap: 2px;
+}
+
+.selectItemCopy small {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 400;
+}
+
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible,

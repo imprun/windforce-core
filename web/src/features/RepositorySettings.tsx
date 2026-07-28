@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { DefinitionList, Field, Modal, Panel, ProbeNotice } from "../components/ui";
+import { DefinitionList, Field, Modal, Panel, ProbeNotice, SelectControl } from "../components/ui";
 import { errorMessage, type GitSource, type ProbeResult } from "../lib/api";
 import { useApp } from "../lib/app-context";
 import { formatTime, shortSHA } from "../lib/format";
@@ -503,17 +503,19 @@ function ReconnectCredentialDialog({ source, onClose, onChanged }: RepositoryDia
       onClose={onClose}
     >
       <Field label="Authentication">
-        <select
+        <SelectControl
           value={authMethod}
-          onChange={(event) => {
-            setAuthMethod(event.target.value as GitAuthMethod);
+          onChange={(value) => {
+            setAuthMethod(value);
             resetVerification();
           }}
-        >
-          <option value="pat">Personal access token</option>
-          <option value="basic">Username and password</option>
-          <option value="none">Public repository</option>
-        </select>
+          ariaLabel="Repository authentication"
+          options={[
+            { value: "pat", label: "Personal access token" },
+            { value: "basic", label: "Username and password" },
+            { value: "none", label: "Public repository" },
+          ]}
+        />
       </Field>
       {authMethod === "pat" ? (
         <Field label="Access token">

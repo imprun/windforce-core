@@ -2,10 +2,12 @@ package state
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -15,7 +17,16 @@ import (
 
 const triggerColumns = `
 	workspace_id, id, name, kind, enabled, app_key, action_key, credential_ref,
-	config, secret_config_encrypted, created_by, updated_by, created_at, updated_at, deleted_at
+	config, completion, response, secret_config_encrypted,
+	created_by, updated_by, created_at, updated_at, deleted_at
+`
+
+const triggerDeliveryColumns = `
+	id, workspace_id, trigger_id, delivery_id, correlation_id, state, COALESCE(run_id,''),
+	attempt, error_summary, scheduled_for, completion, completion_state, completion_attempt,
+	completion_next_attempt_at, completion_lease_owner, completion_lease_expires_at,
+	completion_response_status, completion_error_summary, completion_completed_at,
+	created_at, updated_at
 `
 
 type triggerScanner interface {
@@ -60,16 +71,21 @@ func (s *PostgresStore) CreateTrigger(ctx context.Context, definition TriggerDef
 	if err != nil {
 		return TriggerDefinition{}, err
 	}
+	completion, response, err := marshalTriggerPolicies(definition)
+	if err != nil {
+		return TriggerDefinition{}, err
+	}
 	var created TriggerDefinition
 	err = s.withTx(ctx, func(tx pgx.Tx) error {
 		created, _, err = scanTriggerRecord(tx.QueryRow(ctx, `
 INSERT INTO trigger_definition (
 	workspace_id, id, name, kind, enabled, app_key, action_key, credential_ref,
-	config, secret_config_encrypted, created_by, updated_by
-) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11)
+	config, completion, response, secret_config_encrypted, created_by, updated_by
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$13)
 RETURNING `+triggerColumns,
 			definition.WorkspaceID, definition.ID, definition.Name, definition.Kind, definition.Enabled,
-			definition.AppKey, definition.ActionKey, definition.CredentialRef, definition.Config, encrypted, normalizedActor(actor)))
+			definition.AppKey, definition.ActionKey, definition.CredentialRef, definition.Config,
+			completion, response, encrypted, normalizedActor(actor)))
 		if err != nil {
 			return triggerPostgresError(err)
 		}
@@ -93,6 +109,10 @@ func (s *PostgresStore) UpdateTrigger(ctx context.Context, definition TriggerDef
 			return TriggerDefinition{}, err
 		}
 	}
+	completion, response, err := marshalTriggerPolicies(definition)
+	if err != nil {
+		return TriggerDefinition{}, err
+	}
 	var updated TriggerDefinition
 	err = s.withTx(ctx, func(tx pgx.Tx) error {
 		if len(encrypted) == 0 {
@@ -111,11 +131,12 @@ FOR UPDATE`, definition.WorkspaceID, definition.ID).Scan(&encrypted)
 		updated, _, err = scanTriggerRecord(tx.QueryRow(ctx, `
 UPDATE trigger_definition
 SET name=$3, kind=$4, enabled=$5, app_key=$6, action_key=$7, credential_ref=$8,
-	config=$9, secret_config_encrypted=$10, updated_by=$11, updated_at=now()
+	config=$9, completion=$10, response=$11, secret_config_encrypted=$12, updated_by=$13, updated_at=now()
 WHERE workspace_id=$1 AND id=$2 AND deleted_at IS NULL
 RETURNING `+triggerColumns,
 			definition.WorkspaceID, definition.ID, definition.Name, definition.Kind, definition.Enabled,
-			definition.AppKey, definition.ActionKey, definition.CredentialRef, definition.Config, encrypted, normalizedActor(actor)))
+			definition.AppKey, definition.ActionKey, definition.CredentialRef, definition.Config,
+			completion, response, encrypted, normalizedActor(actor)))
 		if err != nil {
 			return triggerPostgresError(err)
 		}
@@ -199,6 +220,14 @@ func (s *PostgresStore) UpsertTriggerDelivery(ctx context.Context, delivery Trig
 	delivery.DeliveryID = strings.TrimSpace(delivery.DeliveryID)
 	delivery.State = strings.TrimSpace(delivery.State)
 	delivery.ErrorSummary = truncateTriggerError(delivery.ErrorSummary)
+	var err error
+	delivery.Completion, err = NormalizeTriggerCompletionPolicy(delivery.Completion)
+	if err != nil {
+		return TriggerDelivery{}, err
+	}
+	if delivery.CompletionState == "" {
+		delivery.CompletionState = InitialTriggerCompletionState(delivery.Completion)
+	}
 	if delivery.TriggerID == "" || delivery.DeliveryID == "" || delivery.State == "" {
 		return TriggerDelivery{}, fmt.Errorf("%w: trigger_id, delivery_id, and state are required", ErrInvalidState)
 	}
@@ -208,11 +237,16 @@ func (s *PostgresStore) UpsertTriggerDelivery(ctx context.Context, delivery Trig
 	if delivery.Attempt <= 0 {
 		delivery.Attempt = 1
 	}
+	completion, err := json.Marshal(delivery.Completion)
+	if err != nil {
+		return TriggerDelivery{}, err
+	}
 	var stored TriggerDelivery
-	err := s.pool.QueryRow(ctx, `
+	stored, err = scanTriggerDelivery(s.pool.QueryRow(ctx, `
 INSERT INTO trigger_delivery (
-	id, workspace_id, trigger_id, delivery_id, correlation_id, state, run_id, attempt, error_summary, scheduled_for
-) VALUES ($1,$2,$3,$4,$5,$6,NULLIF($7,''),$8,$9,$10)
+	id, workspace_id, trigger_id, delivery_id, correlation_id, state, run_id, attempt, error_summary, scheduled_for,
+	completion, completion_state, completion_next_attempt_at
+) VALUES ($1,$2,$3,$4,$5,$6,NULLIF($7,''),$8,$9,$10,$11,$12,$13)
 ON CONFLICT (workspace_id, trigger_id, delivery_id) DO UPDATE SET
 	correlation_id=EXCLUDED.correlation_id,
 	state=EXCLUDED.state,
@@ -221,12 +255,10 @@ ON CONFLICT (workspace_id, trigger_id, delivery_id) DO UPDATE SET
 	error_summary=EXCLUDED.error_summary,
 	scheduled_for=EXCLUDED.scheduled_for,
 	updated_at=now()
-RETURNING id, workspace_id, trigger_id, delivery_id, correlation_id, state, COALESCE(run_id,''), attempt, error_summary, scheduled_for, created_at, updated_at`,
+RETURNING `+triggerDeliveryColumns,
 		delivery.ID, delivery.WorkspaceID, delivery.TriggerID, delivery.DeliveryID, delivery.CorrelationID,
-		delivery.State, delivery.RunID, delivery.Attempt, delivery.ErrorSummary, delivery.ScheduledFor).
-		Scan(&stored.ID, &stored.WorkspaceID, &stored.TriggerID, &stored.DeliveryID, &stored.CorrelationID,
-			&stored.State, &stored.RunID, &stored.Attempt, &stored.ErrorSummary, &stored.ScheduledFor,
-			&stored.CreatedAt, &stored.UpdatedAt)
+		delivery.State, delivery.RunID, delivery.Attempt, delivery.ErrorSummary, delivery.ScheduledFor,
+		completion, delivery.CompletionState, optionalTime(delivery.CompletionNextAttemptAt)))
 	return stored, err
 }
 
@@ -238,7 +270,7 @@ func (s *PostgresStore) ListTriggerDeliveries(ctx context.Context, workspaceID s
 		limit = 200
 	}
 	rows, err := s.pool.Query(ctx, `
-SELECT id, workspace_id, trigger_id, delivery_id, correlation_id, state, COALESCE(run_id,''), attempt, error_summary, scheduled_for, created_at, updated_at
+SELECT `+triggerDeliveryColumns+`
 FROM trigger_delivery
 WHERE workspace_id=$1 AND trigger_id=$2
 ORDER BY updated_at DESC, id DESC
@@ -249,10 +281,8 @@ LIMIT $3`, contract.NormalizeWorkspace(workspaceID), strings.TrimSpace(triggerID
 	defer rows.Close()
 	items := make([]TriggerDelivery, 0)
 	for rows.Next() {
-		var item TriggerDelivery
-		if err := rows.Scan(&item.ID, &item.WorkspaceID, &item.TriggerID, &item.DeliveryID, &item.CorrelationID,
-			&item.State, &item.RunID, &item.Attempt, &item.ErrorSummary, &item.ScheduledFor,
-			&item.CreatedAt, &item.UpdatedAt); err != nil {
+		item, err := scanTriggerDelivery(rows)
+		if err != nil {
 			return nil, err
 		}
 		items = append(items, item)
@@ -272,9 +302,12 @@ func (s *PostgresStore) scanTrigger(ctx context.Context, scanner triggerScanner)
 func scanTriggerRecord(scanner triggerScanner) (TriggerDefinition, json.RawMessage, error) {
 	var definition TriggerDefinition
 	var encrypted json.RawMessage
+	var completion json.RawMessage
+	var response json.RawMessage
 	err := scanner.Scan(
 		&definition.WorkspaceID, &definition.ID, &definition.Name, &definition.Kind, &definition.Enabled,
-		&definition.AppKey, &definition.ActionKey, &definition.CredentialRef, &definition.Config, &encrypted,
+		&definition.AppKey, &definition.ActionKey, &definition.CredentialRef, &definition.Config,
+		&completion, &response, &encrypted,
 		&definition.CreatedBy, &definition.UpdatedBy, &definition.CreatedAt, &definition.UpdatedAt, &definition.DeletedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -283,7 +316,72 @@ func scanTriggerRecord(scanner triggerScanner) (TriggerDefinition, json.RawMessa
 	if err != nil {
 		return TriggerDefinition{}, nil, err
 	}
+	if err := json.Unmarshal(completion, &definition.Completion); err != nil {
+		return TriggerDefinition{}, nil, err
+	}
+	if err := json.Unmarshal(response, &definition.Response); err != nil {
+		return TriggerDefinition{}, nil, err
+	}
 	return definition, encrypted, nil
+}
+
+func scanTriggerDelivery(scanner triggerScanner) (TriggerDelivery, error) {
+	var delivery TriggerDelivery
+	var completion json.RawMessage
+	var nextAttempt sql.NullTime
+	var leaseOwner sql.NullString
+	var leaseExpires sql.NullTime
+	var responseStatus sql.NullInt32
+	var completedAt sql.NullTime
+	if err := scanner.Scan(
+		&delivery.ID, &delivery.WorkspaceID, &delivery.TriggerID, &delivery.DeliveryID,
+		&delivery.CorrelationID, &delivery.State, &delivery.RunID, &delivery.Attempt,
+		&delivery.ErrorSummary, &delivery.ScheduledFor, &completion, &delivery.CompletionState,
+		&delivery.CompletionAttempt, &nextAttempt, &leaseOwner, &leaseExpires,
+		&responseStatus, &delivery.CompletionErrorSummary, &completedAt,
+		&delivery.CreatedAt, &delivery.UpdatedAt,
+	); err != nil {
+		return TriggerDelivery{}, err
+	}
+	if err := json.Unmarshal(completion, &delivery.Completion); err != nil {
+		return TriggerDelivery{}, err
+	}
+	if nextAttempt.Valid {
+		delivery.CompletionNextAttemptAt = nextAttempt.Time
+	}
+	if leaseOwner.Valid {
+		delivery.CompletionLeaseOwner = leaseOwner.String
+	}
+	if leaseExpires.Valid {
+		delivery.CompletionLeaseExpiresAt = cloneTime(&leaseExpires.Time)
+	}
+	if responseStatus.Valid {
+		value := int(responseStatus.Int32)
+		delivery.CompletionResponseStatus = &value
+	}
+	if completedAt.Valid {
+		delivery.CompletionCompletedAt = cloneTime(&completedAt.Time)
+	}
+	return delivery, nil
+}
+
+func marshalTriggerPolicies(definition TriggerDefinition) (json.RawMessage, json.RawMessage, error) {
+	completion, err := json.Marshal(definition.Completion)
+	if err != nil {
+		return nil, nil, err
+	}
+	response, err := json.Marshal(definition.Response)
+	if err != nil {
+		return nil, nil, err
+	}
+	return completion, response, nil
+}
+
+func optionalTime(value time.Time) *time.Time {
+	if value.IsZero() {
+		return nil
+	}
+	return &value
 }
 
 func insertTriggerAudit(ctx context.Context, tx pgx.Tx, definition TriggerDefinition, kind string, detail string, actor string) error {

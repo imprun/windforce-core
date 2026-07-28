@@ -74,6 +74,7 @@ var (
 	ErrConflict      = errors.New("conflict")
 	ErrInvalidState  = errors.New("invalid state")
 	ErrInvalidLease  = errors.New("invalid lease")
+	ErrNoCompletion  = errors.New("no pending trigger completion")
 	ErrLockTimeout   = errors.New("state lock timeout")
 	defaultLeaseTime = 30 * time.Second
 )
@@ -410,22 +411,63 @@ type WorkspaceAudit struct {
 }
 
 type TriggerDefinition struct {
-	ID            string          `json:"id"`
-	WorkspaceID   string          `json:"workspace_id"`
-	Name          string          `json:"name"`
-	Kind          string          `json:"kind"`
-	Enabled       bool            `json:"enabled"`
-	AppKey        string          `json:"app"`
-	ActionKey     string          `json:"action"`
-	CredentialRef string          `json:"credential_ref,omitempty"`
-	Config        json.RawMessage `json:"config"`
-	SecretConfig  json.RawMessage `json:"-"`
-	CreatedBy     string          `json:"created_by"`
-	UpdatedBy     string          `json:"updated_by"`
-	CreatedAt     time.Time       `json:"created_at"`
-	UpdatedAt     time.Time       `json:"updated_at"`
-	DeletedAt     *time.Time      `json:"deleted_at,omitempty"`
+	ID            string                  `json:"id"`
+	WorkspaceID   string                  `json:"workspace_id"`
+	Name          string                  `json:"name"`
+	Kind          string                  `json:"kind"`
+	Enabled       bool                    `json:"enabled"`
+	AppKey        string                  `json:"app"`
+	ActionKey     string                  `json:"action"`
+	CredentialRef string                  `json:"credential_ref,omitempty"`
+	Config        json.RawMessage         `json:"config"`
+	Completion    TriggerCompletionPolicy `json:"completion"`
+	Response      TriggerResponsePolicy   `json:"response"`
+	SecretConfig  json.RawMessage         `json:"-"`
+	CreatedBy     string                  `json:"created_by"`
+	UpdatedBy     string                  `json:"updated_by"`
+	CreatedAt     time.Time               `json:"created_at"`
+	UpdatedAt     time.Time               `json:"updated_at"`
+	DeletedAt     *time.Time              `json:"deleted_at,omitempty"`
 }
+
+type TriggerCompletionPolicy struct {
+	Mode     string                     `json:"mode"`
+	Callback *TriggerCompletionCallback `json:"callback,omitempty"`
+	Publish  *TriggerCompletionPublish  `json:"publish,omitempty"`
+}
+
+type TriggerCompletionCallback struct {
+	Endpoint string `json:"endpoint"`
+}
+
+type TriggerCompletionPublish struct {
+	Exchange   string `json:"exchange,omitempty"`
+	RoutingKey string `json:"routing_key"`
+}
+
+type TriggerResponsePolicy struct {
+	Mode           string `json:"mode"`
+	TimeoutSeconds int    `json:"timeout_seconds,omitempty"`
+}
+
+const (
+	TriggerCompletionModeNone     = "none"
+	TriggerCompletionModePoll     = "poll"
+	TriggerCompletionModeCallback = "callback"
+	TriggerCompletionModePublish  = "publish"
+
+	TriggerResponseAsync = "async"
+	TriggerResponseWait  = "wait"
+
+	TriggerCompletionWaiting    = "waiting"
+	TriggerCompletionIgnored    = "ignored"
+	TriggerCompletionAvailable  = "available"
+	TriggerCompletionPending    = "pending"
+	TriggerCompletionDelivering = "delivering"
+	TriggerCompletionRetrying   = "retrying"
+	TriggerCompletionSucceeded  = "succeeded"
+	TriggerCompletionFailed     = "failed"
+)
 
 type TriggerRecord struct {
 	TriggerDefinition
@@ -443,18 +485,49 @@ type TriggerAudit struct {
 }
 
 type TriggerDelivery struct {
-	ID            string     `json:"id"`
-	WorkspaceID   string     `json:"workspace_id"`
-	TriggerID     string     `json:"trigger_id"`
-	DeliveryID    string     `json:"delivery_id"`
-	CorrelationID string     `json:"correlation_id,omitempty"`
-	State         string     `json:"state"`
-	RunID         string     `json:"run_id,omitempty"`
-	Attempt       int        `json:"attempt"`
-	ErrorSummary  string     `json:"error_summary,omitempty"`
-	ScheduledFor  *time.Time `json:"scheduled_for,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
+	ID                       string                  `json:"id"`
+	WorkspaceID              string                  `json:"workspace_id"`
+	TriggerID                string                  `json:"trigger_id"`
+	DeliveryID               string                  `json:"delivery_id"`
+	CorrelationID            string                  `json:"correlation_id,omitempty"`
+	State                    string                  `json:"state"`
+	RunID                    string                  `json:"run_id,omitempty"`
+	Attempt                  int                     `json:"attempt"`
+	ErrorSummary             string                  `json:"error_summary,omitempty"`
+	ScheduledFor             *time.Time              `json:"scheduled_for,omitempty"`
+	Completion               TriggerCompletionPolicy `json:"completion"`
+	CompletionState          string                  `json:"completion_state"`
+	CompletionAttempt        int                     `json:"completion_attempt"`
+	CompletionNextAttemptAt  time.Time               `json:"completion_next_attempt_at,omitempty"`
+	CompletionLeaseOwner     string                  `json:"completion_lease_owner,omitempty"`
+	CompletionLeaseExpiresAt *time.Time              `json:"completion_lease_expires_at,omitempty"`
+	CompletionResponseStatus *int                    `json:"completion_response_status,omitempty"`
+	CompletionErrorSummary   string                  `json:"completion_error_summary,omitempty"`
+	CompletionCompletedAt    *time.Time              `json:"completion_completed_at,omitempty"`
+	CreatedAt                time.Time               `json:"created_at"`
+	UpdatedAt                time.Time               `json:"updated_at"`
+}
+
+type TriggerCompletionLease struct {
+	DeliveryID string    `json:"delivery_id"`
+	WorkerID   string    `json:"worker_id"`
+	Attempt    int       `json:"attempt"`
+	ExpiresAt  time.Time `json:"expires_at"`
+}
+
+type TriggerCompletionClaim struct {
+	Delivery TriggerDelivery        `json:"delivery"`
+	Run      Run                    `json:"run"`
+	Trigger  TriggerDefinition      `json:"trigger"`
+	Lease    TriggerCompletionLease `json:"lease"`
+}
+
+type TriggerCompletionResult struct {
+	State          string
+	NextAttemptAt  time.Time
+	ResponseStatus *int
+	ErrorSummary   string
+	CompletedAt    *time.Time
 }
 
 // HTTPRouteBinding is provider-neutral desired and observed state for exposing a
@@ -640,6 +713,8 @@ type Store interface {
 	ListTriggerAudit(ctx context.Context, workspaceID string, id string) ([]TriggerAudit, error)
 	UpsertTriggerDelivery(ctx context.Context, delivery TriggerDelivery) (TriggerDelivery, error)
 	ListTriggerDeliveries(ctx context.Context, workspaceID string, triggerID string, limit int) ([]TriggerDelivery, error)
+	ClaimTriggerCompletion(ctx context.Context, workerID string, leaseTTL time.Duration) (*TriggerCompletionClaim, error)
+	CompleteTriggerCompletion(ctx context.Context, lease TriggerCompletionLease, result TriggerCompletionResult) error
 	ListHTTPRouteBindings(ctx context.Context, workspaceID string, triggerID string, includeDeleted bool) ([]HTTPRouteBinding, error)
 	GetHTTPRouteBinding(ctx context.Context, workspaceID string, triggerID string, id string) (HTTPRouteBinding, error)
 	CreateHTTPRouteBinding(ctx context.Context, binding HTTPRouteBinding, actor string) (HTTPRouteBinding, error)

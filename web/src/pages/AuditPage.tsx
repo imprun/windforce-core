@@ -1,6 +1,6 @@
 import { type FormEvent, useState } from "react";
 import { Layout } from "../components/Layout";
-import { ErrorNotice, Loading, Panel } from "../components/ui";
+import { ErrorNotice, Loading, Panel, SelectControl } from "../components/ui";
 import { AuditEventTable } from "../features/AuditEventTable";
 import { useApp, useAsync } from "../lib/app-context";
 
@@ -73,37 +73,50 @@ export function AuditPage() {
         <form className="auditFilters" onSubmit={applyActor}>
           <label className="filterField">
             <span>Category</span>
-            <select value={category} onChange={(event) => setCategory(event.target.value)}>
-              <option value="">All categories</option>
-              <option value="workspace">Workspace</option>
-              <option value="repository">Repository</option>
-              <option value="release">Release</option>
-              <option value="client">Client Registry</option>
-              <option value="input_settings">Input Settings</option>
-              <option value="webhook">Webhooks</option>
-            </select>
+            <SelectControl
+              value={category}
+              onChange={setCategory}
+              ariaLabel="Audit category"
+              options={[
+                { value: "", label: "All categories" },
+                { value: "workspace", label: "Workspace" },
+                { value: "repository", label: "Repository" },
+                { value: "release", label: "Release" },
+                { value: "client", label: "Client Registry" },
+                { value: "input_settings", label: "Input Settings" },
+                { value: "webhook", label: "Webhooks" },
+              ]}
+            />
           </label>
           <label className="filterField">
             <span>App</span>
-            <select value={appKey} onChange={(event) => setAppKey(event.target.value)}>
-              <option value="">All apps</option>
-              {(options.data?.apps || []).map((app) => (
-                <option key={`${app.git_source_id}-${app.app_key}`} value={app.app_key}>
-                  {app.app_key}
-                </option>
-              ))}
-            </select>
+            <SelectControl
+              value={appKey}
+              onChange={setAppKey}
+              ariaLabel="Audit app"
+              options={[
+                { value: "", label: "All apps" },
+                ...(options.data?.apps || []).map((app) => ({
+                  value: app.app_key,
+                  label: app.app_key,
+                })),
+              ]}
+            />
           </label>
           <label className="filterField">
             <span>Client</span>
-            <select value={clientID} onChange={(event) => setClientID(event.target.value)}>
-              <option value="">All clients</option>
-              {(options.data?.clients || []).map((client) => (
-                <option key={client.id} value={client.id}>
-                  {client.name}
-                </option>
-              ))}
-            </select>
+            <SelectControl
+              value={clientID}
+              onChange={setClientID}
+              ariaLabel="Audit client"
+              options={[
+                { value: "", label: "All clients" },
+                ...(options.data?.clients || []).map((client) => ({
+                  value: client.id,
+                  label: client.name,
+                })),
+              ]}
+            />
           </label>
           <label className="filterField auditActorFilter">
             <span>Actor</span>

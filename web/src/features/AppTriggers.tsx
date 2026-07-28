@@ -20,6 +20,7 @@ import {
   Loading,
   Modal,
   Panel,
+  SelectControl,
   Sheet,
 } from "../components/ui";
 import { actionDisplayName } from "../lib/action-label";
@@ -358,18 +359,15 @@ function TriggerEditorDialog({
             />
           </Field>
           <Field label="Target Action" hint="The App target is fixed by this page.">
-            <select
+            <SelectControl
               value={draft.action}
-              onChange={(event) => update("action", event.target.value)}
-              required
-            >
-              {actions.map((action) => (
-                <option key={action.action_key} value={action.action_key}>
-                  {actionDisplayName(action.display_name) || action.action_key} ({action.action_key}
-                  )
-                </option>
-              ))}
-            </select>
+              onChange={(value) => update("action", value)}
+              ariaLabel="Target Action"
+              options={actions.map((action) => ({
+                value: action.action_key,
+                label: `${actionDisplayName(action.display_name) || action.action_key} (${action.action_key})`,
+              }))}
+            />
           </Field>
         </div>
 
@@ -408,6 +406,7 @@ function TriggerEditorDialog({
         {draft.kind === "rabbitmq" ? (
           <RabbitMQFields draft={draft} existing={existing} update={update} />
         ) : null}
+        <CompletionFields draft={draft} existing={existing} update={update} />
 
         <div className="dialogFooter">
           <span className="fieldHint">
@@ -502,13 +501,15 @@ function WebhookFields({
           </div>
         </Field>
         <Field label="Input mode">
-          <select
+          <SelectControl
             value={draft.inputMode}
-            onChange={(event) => update("inputMode", event.target.value as "json" | "raw")}
-          >
-            <option value="json">JSON body</option>
-            <option value="raw">Raw envelope</option>
-          </select>
+            onChange={(value) => update("inputMode", value)}
+            ariaLabel="Webhook input mode"
+            options={[
+              { value: "json", label: "JSON body" },
+              { value: "raw", label: "Raw envelope" },
+            ]}
+          />
         </Field>
         <Field label="Signature header">
           <input
@@ -637,13 +638,15 @@ function RabbitMQFields({
           />
         </Field>
         <Field label="Input mode">
-          <select
+          <SelectControl
             value={draft.inputMode}
-            onChange={(event) => update("inputMode", event.target.value as "json" | "raw")}
-          >
-            <option value="json">JSON body</option>
-            <option value="raw">Raw envelope</option>
-          </select>
+            onChange={(value) => update("inputMode", value)}
+            ariaLabel="RabbitMQ input mode"
+            options={[
+              { value: "json", label: "JSON body" },
+              { value: "raw", label: "Raw envelope" },
+            ]}
+          />
         </Field>
         <Field label="Delivery ID header" hint="AMQP message_id is preferred when available.">
           <input
@@ -658,6 +661,190 @@ function RabbitMQFields({
           />
         </Field>
       </div>
+    </section>
+  );
+}
+
+function CompletionFields({
+  draft,
+  existing,
+  update,
+}: {
+  draft: TriggerDraft;
+  existing: TriggerDefinition | null;
+  update: <K extends keyof TriggerDraft>(key: K, value: TriggerDraft[K]) => void;
+}) {
+  return (
+    <section className="triggerFormSection triggerCompletionSection">
+      <div className="triggerFormSectionHeader">
+        <h3>Run completion</h3>
+        <p>Choose how this Trigger exposes the terminal Action result after admission.</p>
+      </div>
+      <div className="formGrid">
+        <Field label="Output delivery">
+          <SelectControl
+            id="triggerCompletionMode"
+            value={draft.completionMode}
+            onChange={(value) => update("completionMode", value)}
+            ariaLabel="Output delivery"
+            options={[
+              {
+                value: "poll",
+                label: "Poll Invocation API",
+                description: "Store the result for authenticated status and result requests.",
+              },
+              {
+                value: "callback",
+                label: "HTTP callback",
+                description: "POST a signed completion envelope with durable retries.",
+              },
+              {
+                value: "publish",
+                label: "RabbitMQ publish",
+                description: "Publish a persistent completion envelope with confirms.",
+              },
+              {
+                value: "none",
+                label: "No output",
+                description: "Admit the Run without a completion delivery.",
+              },
+            ]}
+          />
+        </Field>
+        {draft.kind === "webhook" ? (
+          <Field
+            label="HTTP response"
+            hint="Wait is capped at 60 seconds. A timeout still returns the admitted Run."
+          >
+            <SelectControl
+              value={draft.responseMode}
+              onChange={(value) => update("responseMode", value)}
+              ariaLabel="Webhook response mode"
+              options={[
+                {
+                  value: "async",
+                  label: "202 Accepted",
+                  description: "Return Run URLs immediately.",
+                },
+                {
+                  value: "wait",
+                  label: "Wait for result",
+                  description: "Return the raw Action result when it finishes.",
+                },
+              ]}
+            />
+          </Field>
+        ) : null}
+        {draft.kind === "webhook" && draft.responseMode === "wait" ? (
+          <Field label="Wait timeout (seconds)">
+            <input
+              type="number"
+              min="1"
+              max="60"
+              value={draft.responseTimeout}
+              onChange={(event) => update("responseTimeout", event.target.value)}
+            />
+          </Field>
+        ) : null}
+        {draft.completionMode === "callback" ? (
+          <>
+            <Field
+              label="Callback endpoint"
+              hint="HTTPS is required except allowed local development hosts."
+            >
+              <input
+                className="mono"
+                type="url"
+                value={draft.callbackEndpoint}
+                onChange={(event) => update("callbackEndpoint", event.target.value)}
+                placeholder="https://partner.example.com/windforce/completions"
+                required
+              />
+            </Field>
+            <Field
+              label={
+                existing?.completion.mode === "callback"
+                  ? "Replace callback secret"
+                  : "Callback signing secret"
+              }
+              hint={
+                existing?.completion.mode === "callback"
+                  ? "Leave blank to retain the current callback secret."
+                  : "Used for the X-Windforce-Signature header."
+              }
+            >
+              <div className="fieldWithAction">
+                <input
+                  type="password"
+                  value={draft.callbackSigningSecret}
+                  onChange={(event) => update("callbackSigningSecret", event.target.value)}
+                  autoComplete="new-password"
+                  required={existing?.completion.mode !== "callback"}
+                />
+                <button
+                  className="button"
+                  type="button"
+                  onClick={() => update("callbackSigningSecret", randomSecret())}
+                >
+                  Generate
+                </button>
+              </div>
+            </Field>
+          </>
+        ) : null}
+        {draft.completionMode === "publish" ? (
+          <>
+            <Field
+              label={
+                existing?.completion.mode === "publish"
+                  ? "Replace publish URL"
+                  : "Publish connection URL"
+              }
+              hint={
+                existing?.completion.mode === "publish"
+                  ? "Leave blank to retain the current URL."
+                  : "Stored encrypted and never returned."
+              }
+            >
+              <input
+                type="password"
+                value={draft.publishRabbitMQURL}
+                onChange={(event) => update("publishRabbitMQURL", event.target.value)}
+                placeholder="amqps://user:password@broker/vhost"
+                autoComplete="new-password"
+                required={existing?.completion.mode !== "publish"}
+              />
+            </Field>
+            <Field label="Exchange" hint="Leave blank to use the default exchange.">
+              <input
+                className="mono"
+                value={draft.publishExchange}
+                onChange={(event) => update("publishExchange", event.target.value)}
+              />
+            </Field>
+            <Field label="Routing key">
+              <input
+                className="mono"
+                value={draft.publishRoutingKey}
+                onChange={(event) => update("publishRoutingKey", event.target.value)}
+                placeholder="windforce.completions"
+                required
+              />
+            </Field>
+          </>
+        ) : null}
+      </div>
+      {draft.completionMode === "poll" ? (
+        <div className="inlineNotice">
+          The admission response includes status_url and result_url. Reading them requires a
+          workspace access token or operator session; the ingress secret cannot read Runs.
+        </div>
+      ) : null}
+      {draft.completionMode === "none" ? (
+        <div className="inlineNotice warning">
+          The Run remains observable to operators, but this Trigger will not deliver its result.
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -712,6 +899,11 @@ function TriggerDetailSheet({
             ["Status", <TriggerEnabledBadge enabled={trigger.enabled} />],
             ["Kind", triggerKindLabel(trigger.kind)],
             ["Target", <span className="mono">{`${trigger.app}/${trigger.action}`}</span>],
+            ["Output", completionPolicyLabel(trigger)],
+            [
+              "HTTP response",
+              trigger.kind === "webhook" ? responsePolicyLabel(trigger) : "Not applicable",
+            ],
             ["Secret", trigger.has_secret ? "Configured · write-only" : "Not configured"],
             ["Updated", `${formatTime(trigger.updated_at)} · ${trigger.updated_by || "system"}`],
             ["Trigger ID", <span className="mono">{trigger.id}</span>],
@@ -747,7 +939,7 @@ function TriggerDetailSheet({
               onChanged={state.reload}
             />
           ) : null}
-          <TriggerDeliveries deliveries={state.data.deliveries} />
+          <TriggerDeliveries deliveries={state.data.deliveries} workspace={settings.workspace} />
           <TriggerAuditTrail audit={state.data.audit} />
         </>
       ) : null}
@@ -1068,7 +1260,13 @@ function suggestedRoutePath(trigger: TriggerDefinition): string {
   return `/hooks/${app}/${name}`.replace(/-+/g, "-");
 }
 
-function TriggerDeliveries({ deliveries }: { deliveries: TriggerDelivery[] }) {
+function TriggerDeliveries({
+  deliveries,
+  workspace,
+}: {
+  deliveries: TriggerDelivery[];
+  workspace: string;
+}) {
   return (
     <section className="sheetSection">
       <h3>Delivery history</h3>
@@ -1082,6 +1280,7 @@ function TriggerDeliveries({ deliveries }: { deliveries: TriggerDelivery[] }) {
                 <th>State</th>
                 <th>Delivery</th>
                 <th>Run</th>
+                <th>Output</th>
                 <th>When</th>
               </tr>
             </thead>
@@ -1097,6 +1296,17 @@ function TriggerDeliveries({ deliveries }: { deliveries: TriggerDelivery[] }) {
                   <td className="mono">{delivery.delivery_id}</td>
                   <td className="mono">{delivery.run_id || "—"}</td>
                   <td>
+                    <TriggerCompletionBadge state={delivery.completion_state} />
+                    {delivery.run_id && delivery.completion.mode === "poll" ? (
+                      <span className="cellSub mono">
+                        {`/api/v1/workspaces/${encodeURIComponent(workspace)}/runs/${encodeURIComponent(delivery.run_id)}/result`}
+                      </span>
+                    ) : null}
+                    {delivery.completion_error_summary ? (
+                      <span className="cellSub">{delivery.completion_error_summary}</span>
+                    ) : null}
+                  </td>
+                  <td>
                     {formatRelative(delivery.updated_at)}
                     <span className="cellSub">{formatTime(delivery.updated_at)}</span>
                   </td>
@@ -1108,6 +1318,48 @@ function TriggerDeliveries({ deliveries }: { deliveries: TriggerDelivery[] }) {
       )}
     </section>
   );
+}
+
+function TriggerCompletionBadge({ state }: { state: TriggerDelivery["completion_state"] }) {
+  const className =
+    state === "succeeded" || state === "available"
+      ? "badge badge-good"
+      : state === "failed"
+        ? "badge badge-critical"
+        : state === "retrying" || state === "delivering"
+          ? "badge badge-warning"
+          : "badge badge-neutral";
+  return <span className={className}>{completionStateLabel(state)}</span>;
+}
+
+function completionStateLabel(state: TriggerDelivery["completion_state"]): string {
+  if (state === "available") return "Ready to poll";
+  if (state === "succeeded") return "Delivered";
+  if (state === "failed") return "Failed";
+  if (state === "retrying") return "Retrying";
+  if (state === "delivering") return "Delivering";
+  if (state === "pending") return "Pending";
+  if (state === "ignored") return "No output";
+  return "Waiting";
+}
+
+function completionPolicyLabel(trigger: TriggerDefinition): string {
+  if (trigger.completion.mode === "callback") {
+    return `HTTP callback · ${trigger.completion.callback?.endpoint || "endpoint missing"}`;
+  }
+  if (trigger.completion.mode === "publish") {
+    const publish = trigger.completion.publish;
+    return `RabbitMQ · ${publish?.exchange || "(default exchange)"}/${publish?.routing_key || "routing key missing"}`;
+  }
+  if (trigger.completion.mode === "poll") return "Invocation API polling";
+  return "No output";
+}
+
+function responsePolicyLabel(trigger: TriggerDefinition): string {
+  if (trigger.response.mode === "wait") {
+    return `Wait up to ${trigger.response.timeout_seconds || 30}s`;
+  }
+  return "202 Accepted";
 }
 
 function TriggerAuditTrail({ audit }: { audit: TriggerAudit[] }) {

@@ -415,6 +415,19 @@ export type WebhookDeliveryQuery = {
 };
 
 export type TriggerKind = "webhook" | "schedule" | "rabbitmq";
+export type TriggerCompletionMode = "none" | "poll" | "callback" | "publish";
+export type TriggerResponseMode = "async" | "wait";
+
+export type TriggerCompletionPolicy = {
+  mode: TriggerCompletionMode;
+  callback?: { endpoint: string };
+  publish?: { exchange?: string; routing_key: string };
+};
+
+export type TriggerResponsePolicy = {
+  mode: TriggerResponseMode;
+  timeout_seconds?: number;
+};
 
 export type TriggerDefinition = {
   id: string;
@@ -426,6 +439,8 @@ export type TriggerDefinition = {
   action: string;
   credential_ref?: string;
   config: Record<string, unknown>;
+  completion: TriggerCompletionPolicy;
+  response: TriggerResponsePolicy;
   has_secret: boolean;
   created_by: string;
   updated_by: string;
@@ -441,6 +456,8 @@ export type TriggerPayload = {
   action: string;
   credential_ref?: string;
   config: Record<string, unknown>;
+  completion: TriggerCompletionPolicy;
+  response?: TriggerResponsePolicy;
   secret_config?: Record<string, unknown>;
 };
 
@@ -457,6 +474,21 @@ export type TriggerDelivery = {
   attempt: number;
   error_summary?: string;
   scheduled_for?: string;
+  completion: TriggerCompletionPolicy;
+  completion_state:
+    | "waiting"
+    | "ignored"
+    | "available"
+    | "pending"
+    | "delivering"
+    | "retrying"
+    | "succeeded"
+    | "failed";
+  completion_attempt: number;
+  completion_next_attempt_at?: string;
+  completion_response_status?: number;
+  completion_error_summary?: string;
+  completion_completed_at?: string;
   created_at: string;
   updated_at: string;
 };
