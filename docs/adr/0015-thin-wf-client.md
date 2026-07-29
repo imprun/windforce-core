@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-07-28).
+Superseded by [ADR 0018](0018-client-release-boundary.md) (2026-07-29).
 
 ## Context
 

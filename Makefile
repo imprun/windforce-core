@@ -1,4 +1,4 @@
-.PHONY: help fmt test test-python-sdk test-postgres test-rabbitmq build cli-build web-deps web-install web-dev web-build web-embed web-test web-typecheck clean dev \
+.PHONY: help fmt test test-python-sdk test-postgres test-rabbitmq build web-deps web-install web-dev web-build web-embed web-test web-typecheck clean dev \
 	compose-up compose-db compose-rabbitmq compose-server compose-worker compose-dev compose-dev-worker compose-dev-build compose-dev-logs compose-build compose-down compose-reset compose-logs compose-ps postgres-dsn \
 	dev-standalone dev-standalone-postgres dev-server dev-worker worker-once \
 	webhook-receiver \
@@ -9,13 +9,6 @@
 
 APP := windforce-core
 CMD := ./cmd/windforce-core
-CLI_APP := wf
-CLI_CMD := ./cmd/wf
-LEGACY_CLI_APP := windforce
-LEGACY_CLI_CMD := ./cmd/windforce
-ifeq ($(OS),Windows_NT)
-EXEEXT := .exe
-endif
 
 LOCAL_GO_WIN := .tmp/tools/go/bin/go.exe
 LOCAL_GO_UNIX := .tmp/tools/go/bin/go
@@ -41,8 +34,6 @@ WFL_TMP ?= .tmp
 DEV_DIR ?= $(WFL_TMP)/dev
 BIN_DIR ?= $(WFL_TMP)/bin
 BIN ?= $(BIN_DIR)/$(APP)
-CLI_BIN ?= $(BIN_DIR)/$(CLI_APP)$(EXEEXT)
-LEGACY_CLI_BIN ?= $(BIN_DIR)/$(LEGACY_CLI_APP)$(EXEEXT)
 VERSION ?= dev
 STORE ?= $(DEV_DIR)/store
 CATALOG ?= $(DEV_DIR)/catalog.json
@@ -115,7 +106,6 @@ help:
 	@echo "  test-postgres          run PostgreSQL integration test against docker compose"
 	@echo "  test-rabbitmq          run RabbitMQ trigger integration test against docker compose"
 	@echo "  build                  build $(BIN)"
-	@echo "  cli-build              build wf at $(CLI_BIN) and the legacy windforce alias"
 	@echo "  dev-standalone         run local JSON-state standalone server"
 	@echo "  dev-standalone-postgres run PostgreSQL-backed standalone server"
 	@echo "  dev-server             run server process with PostgreSQL state"
@@ -186,14 +176,9 @@ test-postgres: compose-db
 test-rabbitmq: compose-rabbitmq
 	WINDFORCE_RABBITMQ_TEST_URL="$(RABBITMQ_URL)" $(GO) test ./internal/trigger ./internal/completion -run RabbitMQ -count=1 -v
 
-build: cli-build
+build:
 	@mkdir -p "$(BIN_DIR)"
 	$(GO) build -ldflags "-X main.version=$(VERSION)" -o "$(BIN)" $(CMD)
-
-cli-build:
-	@mkdir -p "$(BIN_DIR)"
-	$(GO) build -ldflags "-X github.com/imprun/windforce-core/internal/controlcli.Version=$(VERSION)" -o "$(CLI_BIN)" $(CLI_CMD)
-	$(GO) build -ldflags "-X github.com/imprun/windforce-core/internal/controlcli.Version=$(VERSION)" -o "$(LEGACY_CLI_BIN)" $(LEGACY_CLI_CMD)
 
 compose-up:
 	$(COMPOSE) --profile backend up -d server web
