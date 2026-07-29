@@ -105,7 +105,7 @@ mode stores it in the state JSON file; PostgreSQL mode stores it in shared state
 tables. `--catalog` names an optional catalog snapshot that is imported
 idempotently at startup.
 
-The Docker Compose server maps every HTTP plane to `127.0.0.1:18091`. The local Web UI is a Vite development server (run with Bun) on `127.0.0.1:18090/ui/` and proxies API calls to the server. The supported thin `wf` CLI uses the same Control Plane API for direct and hosted Cells without installing a server or worker. The legacy `windforce` command remains available during migration. See the [`wf` CLI guide](docs/cli.md).
+The Docker Compose server maps every HTTP plane to `127.0.0.1:18091`. The local Web UI is a Vite development server (run with Bun) on `127.0.0.1:18090/ui/` and proxies API calls to the server. This repository ships only the neutral `windforce-core` runtime. Users who want a separately installed client can use the public [`imprun` CLI](https://github.com/imprun/cli), which consumes the same HTTP APIs without adding hosted Identity or tenant policy to Core.
 
 The Web UI is live during local development. Run `make web-dev` for a host dev
 server, or `make compose-up` for the Compose-managed dev server. The production

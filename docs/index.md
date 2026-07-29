@@ -23,8 +23,7 @@ The product is organized around two independent paths:
    Register, Sync, Publish Release, and Run in order.
 3. [Architecture](architecture.md) defines the Control, Trigger, and Execution
    Plane boundaries.
-4. [wf command-line client](cli.md) covers installation, contexts, releases, Runs, jobs, and provisioning automation.
-5. [wf CLI roadmap](wf-cli-roadmap.md) defines the thin client product boundary, quality contract, and delivery gates.
+4. The separately released [Imprun CLI](https://github.com/imprun/cli) consumes Core's HTTP contracts without becoming part of the runtime.
 
 ## Documentation hosting
 
