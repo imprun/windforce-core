@@ -110,6 +110,76 @@ The app detail Monitoring tab narrows the workspace job aggregates to a single a
 3. Switch the window between 1h, 24h, and 7d.
 4. Watch the failure rate; the workspace-wide picture lives on the Monitoring page.
 
+## Manage external clients
+
+The client registry keeps credential state and the latest change compact while preserving direct access to each client.
+
+![Manage external clients](../assets/ui/client-registry.png)
+
+1. Open Client Registry.
+2. Scan the client name, Invocation API token state, and latest change.
+3. Open a client name for input settings or choose Edit for identity and token management.
+
+## Review clients on a narrow screen
+
+The compact client table keeps its information hierarchy and remains horizontally scrollable on narrow screens.
+
+![Review clients on a narrow screen](../assets/ui/client-registry-mobile.png)
+
+1. Open Client Registry on a narrow screen.
+2. Review the client identity and credential status first.
+3. Scroll the table horizontally when the latest change or edit action is needed.
+
+## Register an external client
+
+Client registration presents one primary identity field and explains the one-time token before creation.
+
+![Register an external client](../assets/ui/client-register.png)
+
+1. Open Client Registry and choose Register Client.
+2. Enter the external client name.
+3. Create the client to receive its one-time Invocation API token.
+
+## Edit a client and its token
+
+Client identity, token lifecycle, and deletion are separated into clear sections with one primary save action.
+
+![Edit a client and its token](../assets/ui/client-edit.png)
+
+1. Open Client Registry and choose Edit.
+2. Update the client name or manage its Invocation API token.
+3. Revoke the active token before deleting the client.
+
+## Edit a client in Korean
+
+The client identity, token lifecycle, and danger zone preserve their hierarchy with Korean labels.
+
+![Edit a client in Korean](../assets/ui/client-edit-korean.png)
+
+1. Switch the console to Korean and open Client Registry.
+2. Choose Edit for a client.
+3. Confirm the token status, actions, and deletion guidance remain readable without crowding.
+
+## Confirm an irreversible token action
+
+Token rotation uses the shared in-product confirmation dialog instead of a browser-native prompt.
+
+![Confirm an irreversible token action](../assets/ui/client-token-confirmation.png)
+
+1. Open a client for editing.
+2. Choose Rotate token.
+3. Review the immediate invalidation warning before confirming or canceling.
+
+## Copy a newly issued client token
+
+The one-time token stays in a stable copy row and the copy button itself confirms success.
+
+![Copy a newly issued client token](../assets/ui/client-token-copy.png)
+
+1. Register a client to issue its one-time token.
+2. Copy the token into the calling system.
+3. Confirm the button changes to Copied before closing the dialog.
+
 ## Manage App Triggers
 
 The App Triggers tab keeps inbound Webhook, Schedule, and RabbitMQ sources beside the Action contract they invoke.

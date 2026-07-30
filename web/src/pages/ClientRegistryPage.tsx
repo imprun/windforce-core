@@ -57,13 +57,12 @@ export function ClientRegistryPage() {
           />
         ) : (
           <div className="tableWrap">
-            <table className="table" id="clientList">
+            <table className="table clientRegistryTable" id="clientList">
               <thead>
                 <tr>
                   <th>{translate("common.name")}</th>
-                  <th>{translate("settings.apiToken")}</th>
-                  <th>{translate("common.updated")}</th>
-                  <th>{translate("common.updatedBy")}</th>
+                  <th>{translate("clients.invocationToken")}</th>
+                  <th>{translate("clients.lastChange")}</th>
                   <th aria-label={translate("common.rowActions")} />
                 </tr>
               </thead>
@@ -76,15 +75,27 @@ export function ClientRegistryPage() {
                       </Link>
                     </td>
                     <td>
-                      {client.has_token
-                        ? translate("workspace.status.active")
-                        : translate("clients.notIssued")}
+                      <span
+                        className={client.has_token ? "badge badge-good" : "badge badge-neutral"}
+                      >
+                        <span className="badgeIcon" aria-hidden="true">
+                          {client.has_token ? "✓" : "○"}
+                        </span>
+                        {client.has_token
+                          ? translate("workspace.status.active")
+                          : translate("clients.notIssued")}
+                      </span>
                     </td>
-                    <td title={formatTime(client.updated_at)}>
-                      <span className="cellTitle">{formatRelative(client.updated_at)}</span>
-                      <span className="cellSub">{formatTime(client.updated_at)}</span>
+                    <td>
+                      <time
+                        className="cellTitle"
+                        dateTime={client.updated_at}
+                        title={formatTime(client.updated_at)}
+                      >
+                        {formatRelative(client.updated_at)}
+                      </time>
+                      <span className="cellSub mono">{client.updated_by}</span>
                     </td>
-                    <td>{client.updated_by}</td>
                     <td className="rowActions">
                       <button
                         className="button small"

@@ -216,6 +216,7 @@ export function Modal({
   children,
   id,
   wide,
+  compact,
 }: {
   title: string;
   subtitle?: string;
@@ -223,12 +224,15 @@ export function Modal({
   children: ReactNode;
   id?: string;
   wide?: boolean;
+  compact?: boolean;
 }) {
+  const dialogClass = wide ? "dialog wide" : compact ? "dialog compact" : "dialog";
+
   return (
     <DialogPrimitive.Root open onOpenChange={(open) => !open && onClose()}>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="modalBackdrop" />
-        <DialogPrimitive.Content className={wide ? "dialog wide" : "dialog"} id={id}>
+        <DialogPrimitive.Content className={dialogClass} id={id}>
           <header className="dialogHeader">
             <div>
               <DialogPrimitive.Title>{title}</DialogPrimitive.Title>
@@ -248,6 +252,39 @@ export function Modal({
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>
+  );
+}
+
+export function ConfirmDialog({
+  title,
+  description,
+  confirmLabel,
+  onConfirm,
+  onCancel,
+  tone = "danger",
+}: {
+  title: string;
+  description: string;
+  confirmLabel: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+  tone?: "danger" | "primary";
+}) {
+  return (
+    <Modal title={title} subtitle={description} onClose={onCancel} compact>
+      <footer className="dialogFooter dialogFooterEnd">
+        <button className="button" type="button" onClick={onCancel}>
+          {translate("common.cancel")}
+        </button>
+        <button
+          className={tone === "danger" ? "button danger filled" : "button primary"}
+          type="button"
+          onClick={onConfirm}
+        >
+          {confirmLabel}
+        </button>
+      </footer>
+    </Modal>
   );
 }
 
