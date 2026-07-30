@@ -1,8 +1,11 @@
+import { Check, Copy } from "lucide-react";
 import { useState } from "react";
-import { Field, Modal } from "../components/ui";
+import { ConfirmDialog, Field, Modal } from "../components/ui";
 import { type Client, errorMessage } from "../lib/api";
 import { useApp } from "../lib/app-context";
 import { translate } from "../shared/i18n";
+
+type ConfirmationKind = "close" | "rotate" | "revoke" | "delete";
 
 export function ClientDialog({
   client,
@@ -19,6 +22,8 @@ export function ClientDialog({
   const [name, setName] = useState(client?.name || "");
   const [hasToken, setHasToken] = useState(client?.has_token || false);
   const [issuedToken, setIssuedToken] = useState("");
+  const [tokenCopied, setTokenCopied] = useState(false);
+  const [confirmation, setConfirmation] = useState<ConfirmationKind | null>(null);
   const [pendingRefresh, setPendingRefresh] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -30,8 +35,9 @@ export function ClientDialog({
     else onClose();
   }
 
-  function close() {
-    if (issuedToken && !window.confirm(translate("clients.closeWithoutCopying"))) {
+  function requestClose() {
+    if (issuedToken && !tokenCopied) {
+      setConfirmation("close");
       return;
     }
     finish();
@@ -52,6 +58,7 @@ export function ClientDialog({
       } else {
         const result = await api.createClient({ name: normalizedName });
         setIssuedToken(result.api_token);
+        setTokenCopied(false);
         setHasToken(result.client.has_token);
         setPendingRefresh(true);
         notify("ok", translate("clients.created", { name: normalizedName }));
@@ -65,14 +72,12 @@ export function ClientDialog({
 
   async function rotateToken() {
     if (!client) return;
-    if (hasToken && !window.confirm(translate("clients.rotateConfirm"))) {
-      return;
-    }
     setBusy(true);
     setError("");
     try {
       const result = await api.rotateClientToken(client.id);
       setIssuedToken(result.api_token);
+      setTokenCopied(false);
       setHasToken(true);
       setPendingRefresh(true);
       notify("ok", translate("clients.tokenIssued", { name: client.name }));
@@ -85,9 +90,6 @@ export function ClientDialog({
 
   async function revokeToken() {
     if (!client || !hasToken) return;
-    if (!window.confirm(translate("clients.revokeConfirm"))) {
-      return;
-    }
     setBusy(true);
     setError("");
     try {
@@ -105,7 +107,7 @@ export function ClientDialog({
   async function copyToken() {
     try {
       await navigator.clipboard.writeText(issuedToken);
-      notify("ok", translate("clients.tokenCopied"));
+      setTokenCopied(true);
     } catch (cause) {
       setError(errorMessage(cause));
     }
@@ -117,7 +119,6 @@ export function ClientDialog({
       setError(translate("clients.revokeBeforeDelete"));
       return;
     }
-    if (!window.confirm(translate("clients.deleteConfirm", { name: client.name }))) return;
     setBusy(true);
     setError("");
     try {
@@ -130,101 +131,187 @@ export function ClientDialog({
     }
   }
 
+  function requestRotateToken() {
+    if (hasToken) {
+      setConfirmation("rotate");
+      return;
+    }
+    void rotateToken();
+  }
+
+  function confirmAction() {
+    const action = confirmation;
+    setConfirmation(null);
+    if (action === "close") {
+      finish();
+    } else if (action === "rotate") {
+      void rotateToken();
+    } else if (action === "revoke") {
+      void revokeToken();
+    } else if (action === "delete") {
+      void remove();
+    }
+  }
+
+  const confirmationDialog = confirmation ? (
+    <ConfirmDialog
+      title={translate(`clients.confirm.${confirmation}.title`)}
+      description={
+        confirmation === "delete" && client
+          ? translate("clients.deleteConfirm", { name: client.name })
+          : translate(
+              confirmation === "close"
+                ? "clients.closeWithoutCopying"
+                : confirmation === "rotate"
+                  ? "clients.rotateConfirm"
+                  : "clients.revokeConfirm",
+            )
+      }
+      confirmLabel={translate(`clients.confirm.${confirmation}.action`)}
+      onCancel={() => setConfirmation(null)}
+      onConfirm={confirmAction}
+    />
+  ) : null;
+
   if (issuedToken) {
     return (
-      <Modal title={translate("clients.saveToken")} onClose={close}>
-        <div className="inlineNotice">{translate("clients.saveTokenHint")}</div>
-        <Field label={translate("settings.apiToken")}>
-          <input
-            className="mono"
-            readOnly
-            value={issuedToken}
-            onFocus={(event) => event.currentTarget.select()}
-          />
-        </Field>
-        {error ? <div className="inlineNotice error">{error}</div> : null}
-        <footer className="dialogFooter">
-          <span />
-          <div className="dialogFooterActions">
-            <button className="button" type="button" onClick={() => void copyToken()}>
-              {translate("clients.copyToken")}
-            </button>
-            <button className="button primary" type="button" onClick={finish}>
+      <>
+        <Modal
+          id="client-token-dialog"
+          title={translate("clients.saveToken")}
+          onClose={requestClose}
+        >
+          <div className="inlineNotice">{translate("clients.saveTokenHint")}</div>
+          <Field label={translate("settings.apiToken")}>
+            <div className="clientTokenCopyRow">
+              <input
+                className="mono"
+                readOnly
+                value={issuedToken}
+                onFocus={(event) => event.currentTarget.select()}
+              />
+              <button className="button" type="button" onClick={() => void copyToken()}>
+                {tokenCopied ? (
+                  <Check size={16} aria-hidden="true" />
+                ) : (
+                  <Copy size={16} aria-hidden="true" />
+                )}
+                <span aria-live="polite">
+                  {tokenCopied ? translate("common.copied") : translate("clients.copyToken")}
+                </span>
+              </button>
+            </div>
+          </Field>
+          {error ? <div className="inlineNotice error">{error}</div> : null}
+          <footer className="dialogFooter dialogFooterEnd">
+            <button className="button primary" type="button" onClick={requestClose}>
               {translate("common.done")}
             </button>
-          </div>
-        </footer>
-      </Modal>
+          </footer>
+        </Modal>
+        {confirmationDialog}
+      </>
     );
   }
 
   return (
-    <Modal
-      title={client ? translate("clients.edit") : translate("clients.register")}
-      onClose={close}
-    >
-      <div className="formGrid">
-        <Field label={translate("common.name")}>
-          <input maxLength={200} value={name} onChange={(event) => setName(event.target.value)} />
-        </Field>
-        {client ? (
-          <Field label={translate("clients.invocationToken")}>
-            <div>
-              <p>
-                {hasToken ? translate("workspace.status.active") : translate("clients.notIssued")}
-              </p>
-              <div className="dialogFooterActions">
-                <button className="button" type="button" disabled={busy} onClick={rotateToken}>
-                  {hasToken ? translate("clients.rotateToken") : translate("clients.issueToken")}
-                </button>
+    <>
+      <Modal
+        id={client ? "client-edit-dialog" : "client-register-dialog"}
+        title={client ? translate("clients.edit") : translate("clients.register")}
+        subtitle={client ? translate("clients.editHint") : translate("clients.registrationHint")}
+        onClose={requestClose}
+      >
+        <div className="clientDialogForm">
+          <Field label={translate("common.name")}>
+            <input
+              id="clientName"
+              maxLength={200}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+            />
+          </Field>
+          {client ? (
+            <>
+              <section className="clientCredentialSection" aria-labelledby="client-token-heading">
+                <div className="clientSectionHeading">
+                  <div>
+                    <h3 id="client-token-heading">{translate("clients.invocationToken")}</h3>
+                    <p>{translate("clients.tokenScopeHint")}</p>
+                  </div>
+                  <span className={hasToken ? "badge badge-good" : "badge badge-neutral"}>
+                    <span className="badgeIcon" aria-hidden="true">
+                      {hasToken ? "✓" : "○"}
+                    </span>
+                    {hasToken
+                      ? translate("workspace.status.active")
+                      : translate("clients.notIssued")}
+                  </span>
+                </div>
+                <div className="clientCredentialActions">
+                  <button
+                    className="button"
+                    type="button"
+                    disabled={busy}
+                    onClick={requestRotateToken}
+                  >
+                    {hasToken ? translate("clients.rotateToken") : translate("clients.issueToken")}
+                  </button>
+                  <button
+                    className="button danger"
+                    type="button"
+                    disabled={busy || !hasToken}
+                    onClick={() => setConfirmation("revoke")}
+                  >
+                    {translate("clients.revokeToken")}
+                  </button>
+                </div>
+              </section>
+              <section className="dangerZone compact clientDangerZone">
+                <div>
+                  <strong>{translate("clients.deleteClient")}</strong>
+                  <p>
+                    {hasToken
+                      ? translate("clients.revokeBeforeDelete")
+                      : translate("clients.deleteHint")}
+                  </p>
+                </div>
                 <button
                   className="button danger"
                   type="button"
-                  disabled={busy || !hasToken}
-                  onClick={revokeToken}
+                  disabled={busy || hasToken}
+                  onClick={() => setConfirmation("delete")}
                 >
-                  {translate("clients.revokeToken")}
+                  {translate("common.delete")}
                 </button>
-              </div>
-              <p className="fieldHint">{translate("clients.tokenScopeHint")}</p>
-            </div>
-          </Field>
-        ) : (
-          <div className="inlineNotice">{translate("clients.registrationTokenHint")}</div>
-        )}
-      </div>
-      {error ? <div className="inlineNotice error">{error}</div> : null}
-      <footer className="dialogFooter">
-        <span>
-          {client ? (
-            <button
-              className="button danger"
-              type="button"
-              disabled={busy || hasToken}
-              onClick={remove}
-            >
-              {translate("common.delete")}
-            </button>
-          ) : null}
-        </span>
-        <div className="dialogFooterActions">
-          <button className="button" type="button" disabled={busy} onClick={close}>
-            {translate("common.cancel")}
-          </button>
-          <button
-            className="button primary"
-            type="button"
-            disabled={busy || !dirty || !normalizedName}
-            onClick={save}
-          >
-            {busy
-              ? translate("common.saving")
-              : client
-                ? translate("trigger.saveChanges")
-                : translate("clients.create")}
-          </button>
+              </section>
+            </>
+          ) : (
+            <div className="inlineNotice">{translate("clients.registrationTokenHint")}</div>
+          )}
         </div>
-      </footer>
-    </Modal>
+        {error ? <div className="inlineNotice error">{error}</div> : null}
+        <footer className="dialogFooter dialogFooterEnd">
+          <div className="dialogFooterActions">
+            <button className="button" type="button" disabled={busy} onClick={requestClose}>
+              {translate("common.cancel")}
+            </button>
+            <button
+              className="button primary"
+              type="button"
+              disabled={busy || !dirty || !normalizedName}
+              onClick={() => void save()}
+            >
+              {busy
+                ? translate("common.saving")
+                : client
+                  ? translate("trigger.saveChanges")
+                  : translate("clients.create")}
+            </button>
+          </div>
+        </footer>
+      </Modal>
+      {confirmationDialog}
+    </>
   );
 }

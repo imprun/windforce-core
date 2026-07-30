@@ -1008,6 +1008,17 @@ p {
   background: var(--status-critical-bg);
 }
 
+.button.danger.filled {
+  border-color: var(--critical);
+  background: var(--critical);
+  color: var(--critical-foreground);
+}
+
+.button.danger.filled:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--critical) 88%, var(--foreground));
+  background: color-mix(in srgb, var(--critical) 88%, var(--foreground));
+}
+
 .button.small {
   padding: 4px 10px;
   font-size: 13px;
@@ -1192,6 +1203,28 @@ textarea {
 
 .rowActions .button + .button {
   margin-left: 6px;
+}
+
+.clientRegistryTable {
+  min-width: 40rem;
+  table-layout: fixed;
+}
+
+.clientRegistryTable th:nth-child(1) {
+  width: 32%;
+}
+
+.clientRegistryTable th:nth-child(2) {
+  width: 22%;
+}
+
+.clientRegistryTable th:nth-child(4) {
+  width: 6rem;
+}
+
+.clientRegistryTable th:last-child,
+.clientRegistryTable td:last-child {
+  text-align: right;
 }
 
 .iconButton {
@@ -2676,6 +2709,10 @@ textarea {
   width: min(760px, 100%);
 }
 
+.dialog.compact {
+  width: min(28rem, 100%);
+}
+
 .dialogHeader {
   display: flex;
   align-items: flex-start;
@@ -2714,6 +2751,72 @@ textarea {
 .dialogFooterActions {
   display: flex;
   gap: 8px;
+}
+
+.dialogFooterEnd {
+  justify-content: flex-end;
+}
+
+.clientDialogForm {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.clientCredentialSection {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--surface-2);
+}
+
+.clientSectionHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.clientSectionHeading h3 {
+  font-size: 0.875rem;
+  font-weight: 660;
+}
+
+.clientSectionHeading p {
+  max-width: 26rem;
+  margin-top: var(--space-1);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+}
+
+.clientCredentialActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.clientDangerZone {
+  margin-top: 0;
+}
+
+.clientDangerZone strong {
+  font-size: 0.8125rem;
+}
+
+.clientDangerZone p {
+  font-size: 0.75rem;
+}
+
+.clientTokenCopyRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.clientTokenCopyRow input {
+  min-width: 0;
 }
 
 .dialogForm {
@@ -3094,6 +3197,27 @@ textarea {
   .workspaceCommandRow,
   .dangerZone {
     align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .clientSectionHeading,
+  .clientTokenCopyRow {
+    grid-template-columns: 1fr;
+  }
+
+  .clientSectionHeading {
+    display: grid;
+  }
+
+  .clientCredentialActions,
+  .clientCredentialActions .button,
+  .clientDangerZone .button,
+  .clientTokenCopyRow .button {
+    width: 100%;
+  }
+
+  .clientCredentialActions {
+    align-items: stretch;
     flex-direction: column;
   }
 
