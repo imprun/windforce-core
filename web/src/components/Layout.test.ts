@@ -35,10 +35,10 @@ describe("primaryNavItems", () => {
     expect(layoutSource).not.toContain(">Browser access<");
   });
 
-  test("uses a globe and names the locale that the switcher will activate", () => {
+  test("uses a globe, displays the current locale, and names the locale it will activate", () => {
     expect(layoutSource).toContain("<Globe2");
     expect(layoutSource).toContain('locale === "ko" ? "en" : "ko"');
-    expect(layoutSource).toContain('nextLocale === "ko" ? translate("language.korean") : "EN"');
+    expect(layoutSource).toContain('locale === "ko" ? translate("language.korean") : "EN"');
     expect(layoutSource).not.toContain("가/A");
   });
 });

@@ -42,8 +42,8 @@ The embedded console supports Korean across navigation and product screens while
 
 ![Use the console in Korean](../assets/ui/korean-console.png)
 
-1. Select the globe and 한국어 action in the top bar.
-2. Confirm navigation, page headings, status labels, validation, and errors use Korean.
+1. Confirm the globe action displays the current language: EN in English and 한국어 in Korean.
+2. Select the globe action, then confirm navigation, page headings, status labels, validation, and errors use Korean.
 3. Reload the page and confirm the selected language remains active.
 4. Keep API paths, app and Action keys, event types, logs, and user-entered values unchanged.
 
