@@ -5,6 +5,8 @@ description: Control, Invocation, Trigger, and Worker Plane ownership in Windfor
 
 Windforce Core separates deployment management, Run invocation, protocol ingress, and worker execution into planes with package boundaries and system-to-system HTTP specifications. Those boundaries are deployed through three process roles: `server`, `worker`, and `standalone`.
 
+[Run admission architecture](concepts/run-admission.md) is the human-readable current reference for the relationship between SDKs, the Invocation API, AdmissionService, Triggers, Gateways, Runs, Jobs, workspaces, and Core instances. The OpenAPI served at `/api/v1/openapi.json` is the machine-readable Invocation contract. ADRs preserve decision history and rationale rather than replacing these current-state documents.
+
 ```text
 operators / CI / clients / external adapters
                     |
@@ -185,26 +187,30 @@ External trigger processes do not load this SPI. They use a least-privilege
 
 ## HTTP Route Binding and Router Provider
 
-Webhook Trigger admission and external routing are separate lifecycle
-resources. A Trigger owns signature verification, delivery idempotency, target
-selection and Run admission. An HTTP Route Binding owns portable desired
-`hostname`, `path`, `visibility`, `provider` fields and provider-reported
-`state`, `public_url`, `error_summary`, and `observed_generation`.
+Built-in Webhook exposure and generic external HTTP invocation are separate capabilities.
+
+A built-in Webhook Trigger owns signature verification, delivery idempotency, target selection, response policy, completion policy and Run admission. Its HTTP Route Binding owns portable desired `hostname`, `path`, `visibility`, `provider` fields and provider-reported `state`, `public_url`, `error_summary`, and `observed_generation`.
 
 ```text
-public hostname/path
+public hostname/path for a configured built-in Webhook
   -> external Router Provider
   -> POST /api/v1/workspaces/{workspace}/triggers/{trigger}/events
   -> TriggerSubmitter
   -> AdmissionService
 ```
 
-Core exposes desired state through the Control API and never talks to a
-Kubernetes API. A self-hosted controller may create Gateway API `HTTPRoute`
-resources and rewrite to the canonical ingress service. Imprun Cloud uses its
-existing wildcard `*.cloud.imprun.dev` Gateway route and keeps alias,
-tenant/workspace authorization, DNS and certificate policy in the Cloud
-Gateway repository.
+Core exposes this desired state through the Control API and never talks to a Kubernetes API. A provider may materialize a Gateway API `HTTPRoute` or a hosted alias for the built-in Webhook ingress.
+
+A Gateway acting as an external semantic adapter follows a different path:
+
+```text
+public hostname/path
+  -> HTTP invocation adapter
+  -> POST /api/v1/workspaces/{workspace}/runs or /runs/wait
+  -> AdmissionService
+```
+
+The adapter owns external authentication and payload mapping, resolves the target Cell, App and Action, and calls the selected Cell with a scoped Service Principal. A transparent network rewrite to the built-in Trigger ingress is not equivalent to generic external invocation. [Run admission architecture](concepts/run-admission.md) defines the decision rule and complete request flows.
 
 Desired updates increment `generation` and return to `pending`. Provider status
 updates cannot modify desired fields, and a stale generation cannot make the
@@ -212,9 +218,7 @@ binding `ready`. Delete uses a tombstone until provider cleanup is observed, so
 Trigger deletion cannot silently leave an external route behind. Provider
 unavailability never removes or replaces the canonical ingress.
 
-The system-to-system reconciliation specification and ownership decision are
-defined in
-[ADR 0015](adr/0015-provider-neutral-http-route-bindings.md).
+The historical decision that introduced the current built-in Webhook Route Binding is recorded in [ADR 0015](adr/0015-provider-neutral-http-route-bindings.md).
 
 ## SDK Boundary
 
@@ -228,7 +232,7 @@ Core. The former execution SDK package has no v0.3 compatibility import.
 ## Process Roles
 
 | Role | Responsibility |
-|---|---|
+| --- | --- |
 | `server` | Control `/api/w`, Invocation `/api/v1`, Worker `/worker/v1`, embedded Web UI, inbound Trigger adapters, outbound Webhook Dispatcher, and retention loops |
 | `worker` | Queue claim and action execution, using shared PostgreSQL state or the remote worker API selected by `--api-url` |
 | `standalone` | `server` and `worker` in one process |

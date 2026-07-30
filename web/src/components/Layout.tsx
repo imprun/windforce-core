@@ -1,11 +1,11 @@
 import {
   Activity,
   AppWindow,
-  Check,
   ChevronDown,
   CircleUserRound,
   ContactRound,
   Eraser,
+  Globe2,
   KeyRound,
   LogOut,
   Menu,
@@ -94,54 +94,26 @@ function ThemeToggle() {
 
 function LocaleSwitcher() {
   const locale = useLocale();
-  const currentLanguage =
-    locale === "ko" ? translate("language.korean") : translate("language.english");
-  const itemClass =
-    "flex cursor-pointer select-none items-center justify-between gap-3 rounded px-2 py-2 text-sm outline-none data-[highlighted]:bg-muted";
+  const nextLocale: Locale = locale === "ko" ? "en" : "ko";
+  const nextLanguage =
+    nextLocale === "ko" ? translate("language.korean") : translate("language.english");
+  const nextLanguageLabel = nextLocale === "ko" ? translate("language.korean") : "EN";
 
   function changeLocale(nextLocale: Locale) {
     void setLocale(nextLocale);
   }
 
   return (
-    <DropdownMenuPrimitive.Root modal={false}>
-      <DropdownMenuPrimitive.Trigger asChild>
-        <button
-          type="button"
-          className="icon-control"
-          aria-label={translate("language.changeTo", { language: currentLanguage })}
-          title={translate("language.label")}
-        >
-          <span className="text-xs font-semibold leading-none tracking-tighter" aria-hidden="true">
-            가/A
-          </span>
-        </button>
-      </DropdownMenuPrimitive.Trigger>
-      <DropdownMenuPrimitive.Portal>
-        <DropdownMenuPrimitive.Content
-          align="end"
-          sideOffset={8}
-          className="z-[100] min-w-40 rounded-md border border-border bg-surface p-1 text-foreground shadow-lg"
-        >
-          <DropdownMenuPrimitive.Label className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
-            {translate("language.label")}
-          </DropdownMenuPrimitive.Label>
-          {(["en", "ko"] as const).map((option) => (
-            <DropdownMenuPrimitive.Item
-              className={itemClass}
-              data-locale={option}
-              key={option}
-              onSelect={() => changeLocale(option)}
-            >
-              <span>
-                {option === "ko" ? translate("language.korean") : translate("language.english")}
-              </span>
-              {locale === option ? <Check size={15} aria-hidden="true" /> : null}
-            </DropdownMenuPrimitive.Item>
-          ))}
-        </DropdownMenuPrimitive.Content>
-      </DropdownMenuPrimitive.Portal>
-    </DropdownMenuPrimitive.Root>
+    <button
+      type="button"
+      className="icon-control locale-control"
+      aria-label={translate("language.changeTo", { language: nextLanguage })}
+      title={translate("language.changeTo", { language: nextLanguage })}
+      onClick={() => changeLocale(nextLocale)}
+    >
+      <Globe2 size={16} aria-hidden="true" />
+      <span aria-hidden="true">{nextLanguageLabel}</span>
+    </button>
   );
 }
 

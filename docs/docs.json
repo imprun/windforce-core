@@ -19,6 +19,7 @@
           "concepts/core-concepts",
           "concepts/workspaces",
           "concepts/release-lifecycle",
+          "concepts/run-admission",
           "concepts/provisioning",
           "architecture"
         ]

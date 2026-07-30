@@ -9,6 +9,8 @@ and out-of-process trigger adapters use the same `/api/v1` routes. The
 authenticated principal determines permissions; the request body cannot assert
 identity.
 
+[Run admission architecture](run-admission.md) explains how this HTTP adapter differs from the in-process AdmissionService, an Invocation SDK, a built-in Trigger and an external Gateway adapter.
+
 The machine-readable specification and examples are stored with the server at
 `internal/server/invocation/v1/`. A running Core serves the same OpenAPI source
 of truth from `GET /api/v1/openapi.json`.

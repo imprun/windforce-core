@@ -8,6 +8,8 @@ Run admissions. They do not bypass release resolution, schema validation,
 InputConfig, authorization, idempotency, or the durable Run-plus-first-Job
 transaction.
 
+[Run admission architecture](run-admission.md) distinguishes a stored Trigger resource from the stateless Invocation API and separates built-in Webhook exposure from external Gateway-to-Invocation routing.
+
 ## Built-in and external triggers
 
 Built-in `webhook`, `schedule`, and `rabbitmq` adapters run inside the `server`
