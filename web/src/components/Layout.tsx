@@ -97,7 +97,7 @@ function LocaleSwitcher() {
   const nextLocale: Locale = locale === "ko" ? "en" : "ko";
   const nextLanguage =
     nextLocale === "ko" ? translate("language.korean") : translate("language.english");
-  const nextLanguageLabel = nextLocale === "ko" ? translate("language.korean") : "EN";
+  const currentLanguageLabel = locale === "ko" ? translate("language.korean") : "EN";
 
   function changeLocale(nextLocale: Locale) {
     void setLocale(nextLocale);
@@ -112,7 +112,7 @@ function LocaleSwitcher() {
       onClick={() => changeLocale(nextLocale)}
     >
       <Globe2 size={16} aria-hidden="true" />
-      <span aria-hidden="true">{nextLanguageLabel}</span>
+      <span aria-hidden="true">{currentLanguageLabel}</span>
     </button>
   );
 }
