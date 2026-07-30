@@ -2,14 +2,18 @@ import { describe, expect, test } from "vitest";
 import { settingsNavItems } from "./SettingsNav";
 
 describe("settingsNavItems", () => {
-  test("keeps operational settings before read-only information", () => {
+  test("organizes settings by workspace responsibility and keeps system diagnostics last", () => {
     expect(settingsNavItems.map((item) => item.labelKey)).toEqual([
-      "settingsNav.general",
       "settingsNav.workspace",
       "settingsNav.access",
-      "settingsNav.provisioning",
       "settingsNav.webhooks",
-      "settingsNav.info",
+      "settingsNav.configuration",
+      "settingsNav.system",
     ]);
+  });
+
+  test("treats the settings root and legacy info route as compatible aliases", () => {
+    expect(settingsNavItems[0]?.match("/settings")).toBe(true);
+    expect(settingsNavItems.at(-1)?.match("/settings/info")).toBe(true);
   });
 });

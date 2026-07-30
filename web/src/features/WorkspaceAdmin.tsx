@@ -1,4 +1,5 @@
 import { Check, Copy } from "lucide-react";
+import { useState } from "react";
 import type { Workspace } from "../lib/api";
 import { useApp } from "../lib/app-context";
 import { useRouter } from "../lib/router";
@@ -52,23 +53,24 @@ export function WorkspaceActivation({
 }
 
 export function OneTimeWorkspaceToken({ token }: { token: string }) {
-  const { notify } = useApp();
+  const [copied, setCopied] = useState(false);
   return (
     <div className="oneTimeToken">
       <p className="fieldLabel">{translate("workspace.oneTimeToken")}</p>
       <div className="copyField">
         <code>{token}</code>
         <button
-          className="button iconButton"
+          className="button small"
           type="button"
           title={translate("workspace.copyToken")}
           aria-label={translate("workspace.copyToken")}
           onClick={async () => {
             await navigator.clipboard.writeText(token);
-            notify("ok", translate("workspace.tokenCopied"));
+            setCopied(true);
           }}
         >
-          <Copy size={16} aria-hidden="true" />
+          {copied ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}
+          {copied ? translate("common.copied") : translate("workspace.copyToken")}
         </button>
       </div>
       <p className="fieldHint">{translate("workspace.oneTimeTokenHint")}</p>

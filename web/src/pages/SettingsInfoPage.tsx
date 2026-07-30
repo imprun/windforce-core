@@ -1,27 +1,47 @@
 import { CheckCircle2, CircleAlert, ServerCog } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Layout } from "../components/Layout";
 import { SettingsNav } from "../components/SettingsNav";
 import { DefinitionList, ErrorNotice, Loading, Panel } from "../components/ui";
 import { errorMessage, type SystemInfo } from "../lib/api";
 import { useApp } from "../lib/app-context";
-import { translate } from "../shared/i18n";
+import { type TranslationKey, translate } from "../shared/i18n";
+
+const SYSTEM_INFO_LABELS: Record<string, TranslationKey> = {
+  admin_token_configured: "info.label.adminToken",
+  artifact_store: "info.label.artifactStore",
+  catalog: "info.label.catalog",
+  control_api: "info.label.controlAPI",
+  execution_bundles: "info.label.executionBundles",
+  git_sources: "info.label.gitSources",
+  http_route_provider: "info.label.httpRouteProvider",
+  http_routes: "info.label.httpRoutes",
+  http_routes_count: "info.label.httpRoutesCount",
+  http_routes_error: "info.label.httpRoutesError",
+  http_routes_ready: "info.label.httpRoutesReady",
+  invocation_api: "info.label.invocationAPI",
+  job_token_configured: "info.label.jobToken",
+  managed_workspaces: "info.label.managedWorkspaces",
+  metrics: "info.label.metrics",
+  previous_secret_key: "info.label.previousSecretKey",
+  sample_root: "info.label.sampleRoot",
+  schedules_count: "info.label.schedulesCount",
+  secret_key_configured: "info.label.secretKey",
+  state_store: "info.label.stateStore",
+  syncer: "info.label.syncer",
+  trigger_api: "info.label.triggerAPI",
+  triggers_count: "info.label.triggersCount",
+  wait_ms: "info.label.waitMs",
+  web_ui: "info.label.webUI",
+  worker_api: "info.label.workerAPI",
+  worker_token_configured: "info.label.workerToken",
+};
 
 export function SettingsInfoPage() {
-  const { api, settings } = useApp();
+  const { api } = useApp();
   const [info, setInfo] = useState<SystemInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const browserItems: Array<[string, ReactNode]> = [
-    [translate("settingsNav.workspace"), settings.workspace || "default"],
-    [translate("settings.actor"), settings.actor || translate("info.notSet")],
-    [
-      translate("settings.apiToken"),
-      settings.token ? translate("info.configuredInBrowser") : translate("common.notConfigured"),
-    ],
-    [translate("info.apiBase"), `/api/w/${encodeURIComponent(settings.workspace || "default")}`],
-  ];
-
   async function loadInfo() {
     setLoading(true);
     setError("");
@@ -56,7 +76,7 @@ export function SettingsInfoPage() {
 
   return (
     <Layout
-      title={translate("navigation.settings")}
+      title={translate("info.pageTitle")}
       subtitle={translate("info.subtitle")}
       actions={
         <button
@@ -89,17 +109,13 @@ export function SettingsInfoPage() {
                   <strong>
                     {info.ready ? translate("info.ready") : translate("info.notReady")}
                   </strong>
-                  <span>{info.service}</span>
+                  <span>{translate("info.controlPlaneStatus")}</span>
                 </div>
               </div>
               <DefinitionList
                 items={[
-                  [translate("info.service"), info.service],
+                  [translate("info.serviceID"), info.service],
                   [translate("settingsNav.workspace"), info.workspace],
-                  [
-                    translate("info.readiness"),
-                    info.ready ? translate("info.ready") : translate("info.notReady"),
-                  ],
                 ]}
               />
             </div>
@@ -133,7 +149,7 @@ export function SettingsInfoPage() {
             >
               <DefinitionList
                 items={Object.entries(info.runtime_config).map(([key, value]) => [
-                  labelize(key),
+                  systemInfoLabel(key),
                   formatSystemInfoValue(value),
                 ])}
               />
@@ -141,13 +157,6 @@ export function SettingsInfoPage() {
           </div>
         </>
       ) : null}
-
-      <Panel
-        title={translate("info.browserSettings")}
-        subtitle={translate("info.browserSettingsHint")}
-      >
-        <DefinitionList items={browserItems} />
-      </Panel>
     </Layout>
   );
 }
@@ -158,10 +167,10 @@ function FlagList({ values }: { values: Record<string, boolean> }) {
     <div className="settingsInfoFlags">
       {entries.map(([key, enabled]) => (
         <div className="settingsInfoFlag" key={key}>
+          <strong>{systemInfoLabel(key)}</strong>
           <span className={enabled ? "badge badge-good" : "badge badge-neutral"}>
             {enabled ? translate("common.enabled") : translate("info.notEnabled")}
           </span>
-          <strong>{labelize(key)}</strong>
         </div>
       ))}
     </div>
@@ -174,6 +183,11 @@ function labelize(key: string): string {
     .filter(Boolean)
     .map((part) => part[0]?.toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+export function systemInfoLabel(key: string): string {
+  const translationKey = SYSTEM_INFO_LABELS[key];
+  return translationKey ? translate(translationKey) : labelize(key);
 }
 
 export function formatSystemInfoValue(value: unknown): string {

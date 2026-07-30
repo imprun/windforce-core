@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from "vitest";
 import { setLocale } from "../shared/i18n";
-import { formatSystemInfoValue } from "./SettingsInfoPage";
+import { formatSystemInfoValue, systemInfoLabel } from "./SettingsInfoPage";
 
 describe("formatSystemInfoValue", () => {
   beforeEach(() => setLocale("en"));
@@ -13,5 +13,10 @@ describe("formatSystemInfoValue", () => {
   test("keeps empty values compact", () => {
     expect(formatSystemInfoValue("")).toBe("—");
     expect(formatSystemInfoValue(null)).toBe("—");
+  });
+
+  test("uses readable labels for known runtime capabilities", () => {
+    expect(systemInfoLabel("invocation_api")).toBe("Invocation API");
+    expect(systemInfoLabel("http_routes_count")).toBe("HTTP route count");
   });
 });

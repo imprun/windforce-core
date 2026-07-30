@@ -1628,7 +1628,7 @@ textarea {
 .settingsInfoFlag strong {
   min-width: 0;
   font-size: 13px;
-  text-align: right;
+  text-align: left;
 }
 
 .inputSettingSummaryTable {
@@ -2892,18 +2892,49 @@ textarea {
 }
 
 .workspaceSingleSetting {
-  display: grid;
-  grid-template-columns: minmax(240px, 520px) max-content;
-  align-items: end;
-  justify-content: start;
-  gap: 12px;
-  margin-top: 18px;
-  padding-top: 16px;
+  max-width: 42rem;
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
   border-top: 1px solid var(--border);
 }
 
 .workspaceTokenCreate {
   max-width: 42rem;
+}
+
+.workspaceTokenRegistry {
+  margin-top: var(--space-6);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border);
+}
+
+.workspaceTokenRegistryHeader {
+  display: grid;
+  gap: var(--space-1);
+  margin-bottom: var(--space-4);
+}
+
+.workspaceTokenRegistryHeader h3,
+.workspaceTokenRegistryHeader p {
+  margin: 0;
+}
+
+.workspaceTokenRegistryHeader h3 {
+  font-size: var(--text-base);
+}
+
+.workspaceTokenRegistryHeader p {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.workspaceTokensEmpty .emptyState {
+  min-height: 7rem;
+  padding: var(--space-5);
+}
+
+.workspaceTokensEmpty .emptyMark {
+  display: none;
 }
 
 .workspaceCommandRow,
@@ -2933,7 +2964,7 @@ textarea {
 
 .copyField {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 34px;
+  grid-template-columns: minmax(0, 1fr) max-content;
   gap: 8px;
   align-items: center;
 }
@@ -2950,14 +2981,52 @@ textarea {
 
 .cliConnectionGrid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
+}
+
+.accessFlowNotice {
   margin-bottom: 18px;
 }
 
-.cliProfileCommand .copyField code {
-  white-space: normal;
-  overflow-wrap: anywhere;
+.hostedAccessSummary {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.hostedAccessSummary > svg {
+  width: 28px;
+  height: 28px;
+  color: var(--success);
+}
+
+.hostedCLIAction,
+.localAccessFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.hostedCLIAction p {
+  max-width: 52rem;
+  color: var(--text-secondary);
+}
+
+.localAccessGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.localAccessFooter {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.workspaceTokenTable {
+  min-width: 680px;
 }
 
 .workspaceAuditTable th:last-child,
@@ -3186,18 +3255,25 @@ textarea {
     width: 20%;
   }
 
-  .workspaceSingleSetting {
-    grid-template-columns: 1fr;
-  }
-
-  .workspaceSingleSetting .button {
-    width: 100%;
-  }
-
   .workspaceCommandRow,
   .dangerZone {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .hostedCLIAction,
+  .localAccessFooter {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .hostedCLIAction .button,
+  .localAccessFooter .button {
+    width: 100%;
+  }
+
+  .localAccessGrid {
+    grid-template-columns: 1fr;
   }
 
   .clientSectionHeading,

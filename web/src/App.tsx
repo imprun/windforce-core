@@ -7,7 +7,6 @@ import { ClientRegistryPage } from "./pages/ClientRegistryPage";
 import { MonitoringPage } from "./pages/MonitoringPage";
 import { ProvisioningPage } from "./pages/ProvisioningPage";
 import { SettingsInfoPage } from "./pages/SettingsInfoPage";
-import { SettingsPage } from "./pages/SettingsPage";
 import { WebhookCreatePage } from "./pages/WebhookCreatePage";
 import { WebhookDetailPage } from "./pages/WebhookDetailPage";
 import { WebhookSettingsPage } from "./pages/WebhookSettingsPage";
@@ -74,9 +73,10 @@ export function App() {
   if (matchRoute("/settings/workspaces", path)) return <WorkspacesPage />;
   if (matchRoute("/settings/workspace", path)) return <WorkspaceSettingsPage />;
   if (matchRoute("/settings/access", path)) return <WorkspaceAccessSettingsPage />;
+  if (matchRoute("/settings/system", path)) return <SettingsInfoPage />;
   if (matchRoute("/settings/info", path)) return <SettingsInfoPage />;
   if (matchRoute("/settings/provisioning", path)) return <ProvisioningPage />;
   if (matchRoute("/provisioning", path)) return <ProvisioningPage />;
-  if (matchRoute("/settings", path)) return <SettingsPage />;
+  if (matchRoute("/settings", path)) return <WorkspaceSettingsPage />;
   return <AppsPage />;
 }
