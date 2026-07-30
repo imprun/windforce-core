@@ -21,9 +21,9 @@ The product is organized around two independent paths:
    revisions, releases, stores, caches, fingerprints, Runs, and Jobs.
 2. [Release and execution lifecycle](concepts/release-lifecycle.md) explains
    Register, Sync, Publish Release, and Run in order.
-3. [Architecture](architecture.md) defines the Control, Trigger, and Execution
-   Plane boundaries.
-4. The separately released [Imprun CLI](https://github.com/imprun/cli) consumes Core's HTTP contracts without becoming part of the runtime.
+3. [Run admission architecture](concepts/run-admission.md) distinguishes SDKs, the Invocation API, AdmissionService, Triggers, Gateways, Runs, and Jobs.
+4. [Architecture](architecture.md) defines the Control, Trigger, Invocation, Execution, and Worker Plane boundaries.
+5. The separately released [Imprun CLI](https://github.com/imprun/cli) consumes Core's HTTP contracts without becoming part of the runtime.
 
 ## Documentation hosting
 

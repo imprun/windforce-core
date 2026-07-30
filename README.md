@@ -524,12 +524,13 @@ forever. `WINDFORCE_LITE_WEBHOOK_RETENTION_INTERVAL`,
 
 ## Runtime architecture
 
-Windforce Core has three explicit planes:
+Windforce Core separates four public or runtime boundaries from one internal execution layer:
 
 - Control Plane manages sources, releases, configuration, and audit history.
-- Trigger Plane contains built-in adapters that call the admission service and
-  external adapters that call the Invocation API.
-- Execution Plane admits Runs, owns the PostgreSQL queue, and runs Jobs.
+- Invocation Plane exposes the canonical `/api/v1` Run lifecycle.
+- Trigger Plane contains built-in adapters that call AdmissionService and external adapters that call the Invocation API.
+- Worker Plane owns registration, claim, lease, logs and completion through `/worker/v1`.
+- The internal Execution layer owns AdmissionService, Runs, Jobs, the PostgreSQL queue and runtime execution state.
 
 Run admission resolves and pins the active release before a Job is enqueued.
 Workers poll the queue, fetch the pinned execution bundle, validate its
@@ -556,10 +557,9 @@ Process roles are:
 
 Protocol adapters adapt routes, request terms, environment variables, and
 response envelopes at the edge. In-tree adapters call
-`execution.Service.CreateRun` in-process; external adapters call the equivalent
+`AdmissionService.CreateRun` in-process; external adapters call the equivalent
 HTTP contract through an SDK. Neither path owns source sync, queue records, or
-the Windforce catalog model. See [Architecture](docs/architecture.md) for the
-dependency rules.
+the Windforce catalog model. See [Run admission architecture](docs/concepts/run-admission.md) for the SDK, Invocation API, AdmissionService, Trigger and Gateway boundaries, and [Architecture](docs/architecture.md) for the complete plane dependency rules.
 
 ## Lightweight Admin UI
 
