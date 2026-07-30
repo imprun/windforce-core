@@ -2,7 +2,14 @@ import { Archive } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Layout } from "../components/Layout";
 import { SettingsNav } from "../components/SettingsNav";
-import { DefinitionList, ErrorNotice, Field, Loading, Panel } from "../components/ui";
+import {
+  ConfirmDialog,
+  DefinitionList,
+  ErrorNotice,
+  Field,
+  Loading,
+  Panel,
+} from "../components/ui";
 import { WorkspaceStatus } from "../features/WorkspaceAdmin";
 import type { Workspace } from "../lib/api";
 import { errorMessage } from "../lib/api";
@@ -18,7 +25,7 @@ export function WorkspaceSettingsPage() {
 
   return (
     <Layout
-      title={translate("navigation.settings")}
+      title={translate("workspaceSettings.pageTitle")}
       subtitle={translate("workspaceSettings.subtitle")}
     >
       <SettingsNav />
@@ -43,6 +50,7 @@ function WorkspaceSettings({
   const [name, setName] = useState(workspace.name);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [confirmArchive, setConfirmArchive] = useState(false);
 
   useEffect(() => setName(workspace.name), [workspace.name]);
 
@@ -62,8 +70,7 @@ function WorkspaceSettings({
   }
 
   async function archive() {
-    if (!window.confirm(translate("workspaceSettings.archiveConfirm", { name: workspace.name })))
-      return;
+    setConfirmArchive(false);
     setSaving(true);
     setError("");
     try {
@@ -100,25 +107,29 @@ function WorkspaceSettings({
             label={translate("workspaces.displayName")}
             hint={translate("workspaceSettings.displayNameHint")}
           >
-            <input
-              value={name}
-              disabled={workspace.status === "archived"}
-              onChange={(event) => setName(event.target.value)}
-            />
+            <div className="fieldWithAction">
+              <input
+                value={name}
+                disabled={workspace.status === "archived"}
+                onChange={(event) => setName(event.target.value)}
+              />
+              <button
+                className="button primary"
+                type="button"
+                disabled={
+                  saving ||
+                  workspace.status === "archived" ||
+                  !name.trim() ||
+                  name.trim() === workspace.name
+                }
+                onClick={save}
+              >
+                {saving
+                  ? translate("common.saving")
+                  : translate("workspaceSettings.saveDisplayName")}
+              </button>
+            </div>
           </Field>
-          <button
-            className="button primary"
-            type="button"
-            disabled={
-              saving ||
-              workspace.status === "archived" ||
-              !name.trim() ||
-              name.trim() === workspace.name
-            }
-            onClick={save}
-          >
-            {saving ? translate("common.saving") : translate("workspaceSettings.saveDisplayName")}
-          </button>
         </div>
       </Panel>
 
@@ -136,7 +147,12 @@ function WorkspaceSettings({
               <strong>{translate("workspaceSettings.archive")}</strong>
               <p>{translate("workspaceSettings.archiveWarning")}</p>
             </div>
-            <button className="button danger" type="button" disabled={saving} onClick={archive}>
+            <button
+              className="button danger"
+              type="button"
+              disabled={saving}
+              onClick={() => setConfirmArchive(true)}
+            >
               <Archive size={16} aria-hidden="true" />{" "}
               {saving
                 ? translate("workspaceSettings.archiving")
@@ -145,6 +161,15 @@ function WorkspaceSettings({
           </div>
         )}
       </Panel>
+      {confirmArchive ? (
+        <ConfirmDialog
+          title={translate("workspaceSettings.archiveTitle")}
+          description={translate("workspaceSettings.archiveConfirm", { name: workspace.name })}
+          confirmLabel={translate("workspaceSettings.archive")}
+          onConfirm={() => void archive()}
+          onCancel={() => setConfirmArchive(false)}
+        />
+      ) : null}
     </>
   );
 }

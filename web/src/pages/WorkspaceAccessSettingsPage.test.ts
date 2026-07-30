@@ -14,4 +14,16 @@ describe("workspace access settings", () => {
     expect(accessPageSource).toContain('id="workspaceTokenName"');
     expect(accessPageSource).toContain('type="submit"');
   });
+
+  test("separates hosted access from Core-local credentials", () => {
+    expect(accessPageSource).toContain("<HostedAccessPanels");
+    expect(accessPageSource).toContain("<StandaloneAccessSettings");
+    expect(accessPageSource).toContain("<CLIConnectionPanel");
+    expect(accessPageSource).toContain("<LocalBrowserAccessPanel");
+  });
+
+  test("uses the shared confirmation dialog for token rotation and revocation", () => {
+    expect(accessPageSource).toContain("<ConfirmDialog");
+    expect(accessPageSource).not.toContain("window.confirm");
+  });
 });

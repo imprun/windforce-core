@@ -161,7 +161,10 @@ export function ProvisioningPage() {
   }
 
   return (
-    <Layout title={translate("navigation.settings")} subtitle={translate("provisioning.subtitle")}>
+    <Layout
+      title={translate("provisioning.pageTitle")}
+      subtitle={translate("provisioning.subtitle")}
+    >
       <SettingsNav />
       {error ? <ErrorNotice message={error} /> : null}
 

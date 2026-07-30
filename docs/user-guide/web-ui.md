@@ -240,7 +240,7 @@ Provisioning exports a redacted workspace snapshot and imports repeatable app, c
 
 ![Import and export provisioning state](../assets/ui/provisioning.png)
 
-1. Open Settings from the sidebar and choose Provisioning.
+1. Open Settings from the sidebar and choose Configuration.
 2. Export the current workspace as YAML or JSON for review.
 3. Paste or load a provisioning document, run Dry-run, then Apply only after validation succeeds.
 
@@ -255,17 +255,18 @@ A configured Router Provider reports the friendly URL and reconciliation state w
 3. When a Router Provider is configured, review the friendly public URL and its observed state.
 4. Add, edit, or delete the route independently from the Trigger definition.
 
-## Connect the CLI and set browser access
+## Connect standalone access
 
-General settings shows CLI connection metadata and adapts browser access to standalone or hosted mode.
+Access settings connects workspace tokens to the CLI and keeps browser-local credentials isolated to standalone mode.
 
-![Connect the CLI and set browser access](../assets/ui/settings.png)
+![Connect standalone access](../assets/ui/settings.png)
 
-1. Open Settings from the sidebar.
-2. Copy the control plane URL, workspace ID, token environment name, or complete profile command from CLI connection.
-3. Set the named environment variable to the one-time token issued from the workspace Access tab; token values are not included in copied commands.
-4. In standalone mode, set the API token and local audit actor when required.
-5. In hosted mode, use the read-only authenticated host session instead of local token and actor inputs.
+1. Open Settings from the sidebar and choose Access.
+2. Create and store a named workspace token for the CLI or integration.
+3. Copy the control-plane URL and workspace ID into the CLI or integration.
+4. Choose how the CLI stores or receives its credential outside the Web UI.
+5. Configure browser-local token and audit actor values only for a standalone console.
+6. In hosted mode, use the host console instead of Core-local token controls.
 
 ## Inspect a Trigger on a narrow screen
 
@@ -288,6 +289,16 @@ The top-bar breadcrumb keeps runtime scope visible and provides the entry point 
 2. Select a workspace to change the active application and monitoring scope.
 3. Choose Manage workspaces to create or switch workspaces; configure the active workspace from Settings.
 
+## Connect standalone access on mobile
+
+Access settings keep credential creation, issued-token review, and CLI setup usable on a narrow screen.
+
+![Connect standalone access on mobile](../assets/ui/settings-mobile.png)
+
+1. Open Settings and choose Access.
+2. Issue a named workspace token without horizontal page overflow.
+3. Continue to the CLI and local-browser sections in the same responsibility-focused flow.
+
 ## Navigate on a narrow screen
 
 The application shell keeps every primary engine destination available from an accessible mobile drawer.
@@ -298,6 +309,17 @@ The application shell keeps every primary engine destination available from an a
 2. Choose a workspace-scoped product destination.
 3. Use the account control at the bottom for hosted account context or standalone local access.
 4. Close the drawer with its close control, the backdrop, or the Escape key.
+
+## Inspect system configuration
+
+System settings presents control-plane readiness, APIs, backends, security configuration, and runtime values without browser-local credential duplication.
+
+![Inspect system configuration](../assets/ui/system-settings.png)
+
+1. Open Settings from the sidebar and choose System.
+2. Check control-plane readiness and the active service and workspace.
+3. Review enabled APIs, backend integrations, and security configuration.
+4. Use runtime configuration for diagnostics; secret values are never shown.
 
 ## Switch workspace on a narrow screen
 
