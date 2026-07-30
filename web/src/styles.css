@@ -152,6 +152,20 @@ a {
   color: var(--foreground);
 }
 
+.locale-control {
+  width: auto;
+  flex-basis: auto;
+  gap: 0.25rem;
+  padding-inline: 0.5rem;
+  color: var(--foreground);
+}
+
+.locale-control span {
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1;
+}
+
 .mobileNavTrigger {
   display: none;
 }
