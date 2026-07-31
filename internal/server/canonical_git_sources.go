@@ -606,7 +606,7 @@ func (h *Handler) resolveGitSourceCreds(ctx context.Context, workspaceID string,
 		return "", err
 	}
 	if variable.IsSecret {
-		return h.decryptSecretVariable(ctx, workspaceID, variable.Value)
+		return h.decryptSecretVariable(ctx, workspaceID, variable.Path, variable.Value)
 	}
 	return variable.Value, nil
 }

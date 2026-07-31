@@ -1082,12 +1082,17 @@ func TestGitSourceCredsRefResolvesWorkspaceVariableOnly(t *testing.T) {
 	tempDir := t.TempDir()
 	store := state.NewLocalStore(filepath.Join(tempDir, "state.json"))
 	secretKey := "git-source-test-secret"
-	dek := litecrypto.DeriveWorkspaceKey(secretKey, "ws-a")
-	scopedToken, err := litecrypto.Encrypt(dek, "scoped-token")
+	handler := New(Config{Store: store, SecretKey: secretKey}).(*Handler)
+	credentialRef := secretbackend.Reference{
+		WorkspaceID: "ws-a",
+		Kind:        "variable",
+		Path:        "secrets/git/token",
+	}
+	scopedToken, err := handler.secretBackend.Store(context.Background(), credentialRef, "scoped-token")
 	if err != nil {
 		t.Fatal(err)
 	}
-	sharedToken, err := litecrypto.Encrypt(dek, "shared-token")
+	sharedToken, err := handler.secretBackend.Store(context.Background(), credentialRef, "shared-token")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1098,7 +1103,6 @@ func TestGitSourceCredsRefResolvesWorkspaceVariableOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("secrets/git/missing", "env-token")
-	handler := New(Config{Store: store, SecretKey: secretKey}).(*Handler)
 
 	token, err := handler.resolveGitSourceCreds(context.Background(), "ws-a", "secrets/git/token")
 	if err != nil {
