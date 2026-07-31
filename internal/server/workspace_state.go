@@ -167,10 +167,11 @@ func (h *Handler) encryptSecretVariable(ctx context.Context, workspaceID string,
 	}, value)
 }
 
-func (h *Handler) decryptSecretVariable(ctx context.Context, workspaceID string, value string) (string, error) {
+func (h *Handler) decryptSecretVariable(ctx context.Context, workspaceID string, path string, value string) (string, error) {
 	return h.secretBackend.Resolve(ctx, secretbackend.Reference{
 		WorkspaceID: workspaceID,
 		Kind:        "variable",
+		Path:        path,
 	}, value)
 }
 
