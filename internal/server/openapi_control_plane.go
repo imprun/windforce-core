@@ -149,7 +149,7 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 					oapiWorkspaceParam(workspaceID),
 					oapiQueryParam("app_key", "Optional app key filter.", oapiStringSchema(), false),
 					oapiQueryParam("client_id", "Optional client id filter.", oapiStringSchema(), false),
-					oapiQueryParam("category", "Optional event category filter.", map[string]any{"type": "string", "enum": []any{"workspace", "repository", "release", "client", "input_settings", "webhook"}}, false),
+					oapiQueryParam("category", "Optional event category filter.", map[string]any{"type": "string", "enum": []any{"workspace", "repository", "release", "client", "input_settings", "runtime_configuration", "webhook"}}, false),
 					oapiQueryParam("actor", "Optional case-insensitive actor filter.", oapiStringSchema(), false),
 					oapiQueryParam("git_source_id", "Optional numeric git source id filter.", oapiIntegerSchema(), false),
 					oapiQueryParam("since", "RFC3339 lower bound for created_at.", oapiStringSchema(), false),
@@ -594,7 +594,7 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 					oapiQueryParam("app", "Optional exact app key scope for console lookup.", oapiStringSchema(), false),
 				},
 				"responses": withErrors(map[string]any{
-					"200": oapiResponse("Variable value.", oapiSchemaRef("VariableValueResponse")),
+					"200": oapiResponse("Variable metadata. Secret values are omitted outside runtime callbacks.", oapiSchemaRef("VariableValueResponse")),
 				}, "401", "403", "404"),
 			},
 		},
@@ -613,7 +613,60 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 				}, "401", "403"),
 			},
 		},
+		"/api/w/{workspace}/resource-types": map[string]any{
+			"get": map[string]any{
+				"operationId": "listResourceTypes",
+				"summary":     "List resource types",
+				"parameters":  []any{oapiWorkspaceParam(workspaceID)},
+				"responses": withErrors(map[string]any{
+					"200": oapiResponse("Registered JSON Schema resource types.", map[string]any{"type": "array", "items": oapiSchemaRef("ResourceType")}),
+				}, "401", "403"),
+			},
+			"post": map[string]any{
+				"operationId": "setResourceType",
+				"summary":     "Create or replace a resource type version",
+				"parameters":  []any{oapiWorkspaceParam(workspaceID)},
+				"requestBody": oapiJSONBody(oapiSchemaRef("ResourceType"), true),
+				"responses": withErrors(map[string]any{
+					"201": oapiResponse("Stored resource type.", oapiSchemaRef("ResourceType")),
+				}, "400", "401", "403"),
+			},
+		},
+		"/api/w/{workspace}/resource-types/{name}/{version}": map[string]any{
+			"get": map[string]any{
+				"operationId": "getResourceType",
+				"summary":     "Get a resource type version",
+				"parameters": []any{
+					oapiWorkspaceParam(workspaceID),
+					oapiPathParam("name", "Resource type name."),
+					oapiPathParam("version", "Resource type version."),
+				},
+				"responses": withErrors(map[string]any{
+					"200": oapiResponse("Resource type.", oapiSchemaRef("ResourceType")),
+				}, "401", "403", "404"),
+			},
+			"delete": map[string]any{
+				"operationId": "deleteResourceType",
+				"summary":     "Delete an unused resource type version",
+				"parameters": []any{
+					oapiWorkspaceParam(workspaceID),
+					oapiPathParam("name", "Resource type name."),
+					oapiPathParam("version", "Resource type version."),
+				},
+				"responses": withErrors(map[string]any{
+					"204": map[string]any{"description": "Deleted."},
+				}, "401", "403", "404", "409"),
+			},
+		},
 		"/api/w/{workspace}/resources": map[string]any{
+			"get": map[string]any{
+				"operationId": "listResources",
+				"summary":     "List JSON resources",
+				"parameters":  []any{oapiWorkspaceParam(workspaceID)},
+				"responses": withErrors(map[string]any{
+					"200": oapiResponse("Resources with unresolved references.", map[string]any{"type": "array", "items": oapiSchemaRef("Resource")}),
+				}, "401", "403"),
+			},
 			"post": map[string]any{
 				"operationId": "setResource",
 				"summary":     "Set a JSON resource",
@@ -624,6 +677,17 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 				}, "400", "401", "403"),
 			},
 		},
+		"/api/w/{workspace}/resources/p/{path}": map[string]any{
+			"delete": map[string]any{
+				"operationId": "deleteResource",
+				"summary":     "Delete a resource by path",
+				"description": "The {path} segment represents the remaining path after /resources/p/ and may contain slashes.",
+				"parameters":  []any{oapiWorkspaceParam(workspaceID), oapiPathParam("path", "Resource path.")},
+				"responses": withErrors(map[string]any{
+					"204": map[string]any{"description": "Deleted."},
+				}, "401", "403", "404"),
+			},
+		},
 		"/api/w/{workspace}/resources/get/p/{path}": map[string]any{
 			"get": map[string]any{
 				"operationId": "getResource",
@@ -631,7 +695,7 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 				"description": "The {path} segment represents the remaining path after /resources/get/p/ and may contain slashes.",
 				"parameters":  []any{oapiWorkspaceParam(workspaceID), oapiPathParam("path", "Resource path.")},
 				"responses": withErrors(map[string]any{
-					"200": oapiResponse("Stored JSON value or null.", oapiSchemaRef("JSONValue")),
+					"200": oapiResponse("Stored JSON with unresolved references for operators; Job callbacks receive the Admission-allowed resolved value.", oapiSchemaRef("JSONValue")),
 				}, "401", "403", "404"),
 			},
 		},
@@ -780,6 +844,7 @@ func controlPlaneSchemas() map[string]any {
 		"tag_override":          nullableString,
 		"timeout_s":             nullableInteger,
 		"required_capabilities": stringArray,
+		"runtime_access":        oapiSchemaRef("RuntimeAccess"),
 		"updated_at":            oapiDateTimeSchema(),
 	}
 	appActionProperties := cloneSchemaProperties(actionProperties)
@@ -787,6 +852,14 @@ func controlPlaneSchemas() map[string]any {
 	appActionProperties["effective_route_tag"] = oapiStringSchema()
 
 	return map[string]any{
+		"RuntimeAccess": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"variables": stringArray,
+				"resources": stringArray,
+			},
+			"required": []any{"variables", "resources"},
+		},
 		"Workspace": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -1032,19 +1105,23 @@ func controlPlaneSchemas() map[string]any {
 		"AuditEvent": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"id":            oapiStringSchema(),
-				"category":      map[string]any{"type": "string", "enum": []any{"workspace", "repository", "release", "client", "input_settings", "webhook"}},
-				"kind":          oapiStringSchema(),
-				"summary":       oapiStringSchema(),
-				"detail":        oapiStringSchema(),
-				"app_key":       oapiStringSchema(),
-				"action_key":    oapiStringSchema(),
-				"client_id":     oapiStringSchema(),
-				"client_name":   oapiStringSchema(),
-				"git_source_id": oapiIntegerSchema(),
-				"actor":         oapiStringSchema(),
-				"changes":       oapiSchemaRef("AuditChanges"),
-				"created_at":    oapiDateTimeSchema(),
+				"id":                  oapiStringSchema(),
+				"category":            map[string]any{"type": "string", "enum": []any{"workspace", "repository", "release", "client", "input_settings", "runtime_configuration", "webhook"}},
+				"kind":                oapiStringSchema(),
+				"summary":             oapiStringSchema(),
+				"detail":              oapiStringSchema(),
+				"app_key":             oapiStringSchema(),
+				"action_key":          oapiStringSchema(),
+				"client_id":           oapiStringSchema(),
+				"client_name":         oapiStringSchema(),
+				"git_source_id":       oapiIntegerSchema(),
+				"job_id":              oapiStringSchema(),
+				"attempt":             oapiIntegerSchema(),
+				"runtime_config_path": oapiStringSchema(),
+				"source":              oapiStringSchema(),
+				"actor":               oapiStringSchema(),
+				"changes":             oapiSchemaRef("AuditChanges"),
+				"created_at":          oapiDateTimeSchema(),
 			},
 			"required": []any{"id", "category", "kind", "summary", "actor", "created_at"},
 		},
@@ -1408,11 +1485,32 @@ func controlPlaneSchemas() map[string]any {
 		"VariableValueResponse": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"path":      oapiStringSchema(),
-				"value":     oapiStringSchema(),
-				"is_secret": oapiBooleanSchema(),
+				"path":       oapiStringSchema(),
+				"value":      oapiStringSchema(),
+				"is_secret":  oapiBooleanSchema(),
+				"configured": oapiBooleanSchema(),
 			},
-			"required": []any{"path", "value", "is_secret"},
+			"required": []any{"path", "is_secret"},
+		},
+		"ResourceType": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"name":        oapiStringSchema(),
+				"version":     oapiStringSchema(),
+				"schema":      oapiSchemaRef("JSONValue"),
+				"description": oapiStringSchema(),
+			},
+			"required": []any{"name", "version", "schema"},
+		},
+		"Resource": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"path":          oapiStringSchema(),
+				"value":         oapiSchemaRef("JSONValue"),
+				"resource_type": oapiStringSchema(),
+				"description":   oapiStringSchema(),
+			},
+			"required": []any{"path", "value", "resource_type", "description"},
 		},
 		"SetResourceRequest": map[string]any{
 			"type": "object",

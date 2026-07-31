@@ -240,7 +240,7 @@ Provisioning exports a redacted workspace snapshot and imports repeatable app, c
 
 ![Import and export provisioning state](../assets/ui/provisioning.png)
 
-1. Open Settings from the sidebar and choose Configuration.
+1. Open Settings from the sidebar and choose Provisioning.
 2. Export the current workspace as YAML or JSON for review.
 3. Paste or load a provisioning document, run Dry-run, then Apply only after validation succeeds.
 
@@ -329,6 +329,49 @@ The compact top-bar breadcrumb keeps workspace context visible and opens the sam
 
 1. Open the workspace control in the top-bar breadcrumb.
 2. Choose another workspace or open Manage workspaces without opening the navigation drawer.
+
+## Manage runtime configuration
+
+Variables, write-only Secret Variables, typed Resources, and versioned Resource Types share one workspace-scoped console.
+
+![Manage runtime configuration](../assets/ui/runtime-configuration.png)
+
+1. Open Settings and choose Runtime configuration.
+2. Use Variables for scalar values and mark credentials as write-only Secrets.
+3. Use Resources for structured JSON that can compose exact $var:path and $res:path references.
+4. Register a versioned Resource Type when a Resource needs JSON Schema validation.
+5. Declare the required paths in each Action runtimeAccess block before publishing a release.
+
+## Review runtime configuration in dark mode
+
+Dark mode preserves the distinction between ordinary values, write-only Secrets, tabs, and destructive actions.
+
+![Review runtime configuration in dark mode](../assets/ui/runtime-configuration-dark.png)
+
+1. Switch the execution workspace to dark mode.
+2. Open Settings and choose Runtime configuration.
+3. Confirm Secret status and destructive actions remain identifiable without relying on color alone.
+
+## Compose a typed Resource
+
+The Resource editor keeps JSON, exact references, and Resource Type selection together without exposing Secret values.
+
+![Compose a typed Resource](../assets/ui/runtime-configuration-resource-dialog.png)
+
+1. Open Runtime configuration and choose Resources.
+2. Create a Resource and select its versioned Resource Type.
+3. Compose the JSON value with exact $var:path or $res:path strings.
+4. Save only after the Resource passes its registered JSON Schema.
+
+## Review runtime configuration on a narrow screen
+
+The settings navigation and security notice remain readable while dense runtime data stays horizontally scrollable.
+
+![Review runtime configuration on a narrow screen](../assets/ui/runtime-configuration-mobile.png)
+
+1. Open Runtime configuration on a narrow screen.
+2. Switch between Variables, Resources, and Resource Types from the compact tab bar.
+3. Scroll a dense table horizontally to reach previews and row actions.
 
 ## Collapse the sidebar
 

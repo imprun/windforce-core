@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/imprun/windforce-core/internal/contract"
+	"github.com/imprun/windforce-core/internal/resourceconfig"
 )
 
 func (s *PostgresStore) AppendLogs(ctx context.Context, jobID string, workspaceID string, chunk string) error {
@@ -122,7 +123,11 @@ ORDER BY app_key, path
 
 func (s *PostgresStore) SetVariable(ctx context.Context, workspaceID string, appKey string, path string, value string, isSecret bool, description string) error {
 	workspaceID = contract.NormalizeWorkspace(workspaceID)
-	_, err := s.pool.Exec(ctx, `
+	path, err := contract.NormalizeRuntimeConfigPath(path)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidState, err)
+	}
+	_, err = s.pool.Exec(ctx, `
 INSERT INTO variable (workspace_id, app_key, path, value, is_secret, description)
 VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (workspace_id, app_key, path)
@@ -195,6 +200,11 @@ WHERE workspace_id=$1 AND app_key=$2 AND path=$3
 }
 
 func (s *PostgresStore) SetResource(ctx context.Context, workspaceID string, path string, value json.RawMessage, resourceType string, description string) error {
+	normalizedPath, err := contract.NormalizeRuntimeConfigPath(path)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidState, err)
+	}
+	path = normalizedPath
 	if len(value) == 0 {
 		value = json.RawMessage("{}")
 	}
@@ -202,7 +212,23 @@ func (s *PostgresStore) SetResource(ctx context.Context, workspaceID string, pat
 		return errors.New("resource value is not valid JSON")
 	}
 	workspaceID = contract.NormalizeWorkspace(workspaceID)
-	_, err := s.pool.Exec(ctx, `
+	if resourceType != "" {
+		name, version, err := resourceconfig.ParseTypeReference(resourceType)
+		if err != nil {
+			return fmt.Errorf("%w: %v", ErrInvalidState, err)
+		}
+		registered, found, err := s.GetResourceType(ctx, workspaceID, name, version)
+		if err != nil {
+			return err
+		}
+		if !found {
+			return ErrNotFound
+		}
+		if err := resourceconfig.ValidateValue(registered.Schema, value); err != nil {
+			return fmt.Errorf("%w: %v", ErrInvalidState, err)
+		}
+	}
+	_, err = s.pool.Exec(ctx, `
 INSERT INTO resource (workspace_id, path, value, resource_type, description)
 VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (workspace_id, path)

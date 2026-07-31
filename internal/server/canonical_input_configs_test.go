@@ -31,7 +31,12 @@ func TestCanonicalInputConfigLifecycleAndExecutionAdmission(t *testing.T) {
 	deployment := contract.Deployment{
 		Workspace: "ws-a", App: "shop", Commit: "abc123", Entrypoint: "main.py",
 		BundleDigest: testExecutionBundleDigest,
-		Actions:      map[string]contract.Action{"orders": {}},
+		Actions: map[string]contract.Action{"orders": {
+			OperatorSettingsSchemaBody: json.RawMessage(`{
+				"type":"object",
+				"properties":{"token":{"type":"string","writeOnly":true}}
+			}`),
+		}},
 	}
 	server := httptest.NewServer(New(Config{
 		Store: store, Catalog: inputConfigTestCatalog{deployment: deployment}, AdminToken: "test-admin",
@@ -79,9 +84,11 @@ func TestCanonicalInputConfigLifecycleAndExecutionAdmission(t *testing.T) {
 	do(http.MethodPost, "/api/w/ws-a/clients", `{"name":"Client A"}`, http.StatusCreated, &created)
 	client := created.Client
 	invocationToken = created.APIToken
+	do(http.MethodPost, "/api/w/ws-a/variables", `{"path":"secrets/api-token","value":"protected","is_secret":true,"app_key":"shop"}`, http.StatusOK, nil)
 	do(http.MethodPut, "/api/w/ws-a/apps/shop/input-configs", `{"config":{"region":"kr"},"locked_keys":[]}`, http.StatusOK, nil)
 	do(http.MethodPut, "/api/w/ws-a/apps/shop/input-configs", `{"config":{"_SCRAPING_RUNTIME":{"authSession":{"serviceUrl":"http://example.invalid"}}},"locked_keys":[]}`, http.StatusBadRequest, nil)
-	do(http.MethodPut, "/api/w/ws-a/apps/shop/input-configs", `{"action_key":"orders","client_id":"`+client.ID+`","config":{"tenant":"server-only"},"locked_keys":["tenant"]}`, http.StatusOK, nil)
+	do(http.MethodPut, "/api/w/ws-a/apps/shop/input-configs", `{"action_key":"orders","client_id":"`+client.ID+`","config":{"tenant":"server-only","token":"plaintext"},"locked_keys":["tenant","token"]}`, http.StatusBadRequest, nil)
+	do(http.MethodPut, "/api/w/ws-a/apps/shop/input-configs", `{"action_key":"orders","client_id":"`+client.ID+`","config":{"tenant":"server-only","token":"$var:secrets/api-token"},"locked_keys":["tenant","token"]}`, http.StatusOK, nil)
 	do(http.MethodPut, "/api/w/ws-a/apps/shop/input-configs", `{"config":{},"locked_keys":["missing"]}`, http.StatusBadRequest, nil)
 
 	var appConfigs []state.InputConfig

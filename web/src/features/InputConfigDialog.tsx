@@ -1,6 +1,6 @@
 import { BookOpen, Lock, Plus, Save, Trash2, Unlock } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Field, Modal, SelectControl } from "../components/ui";
+import { ConfirmDialog, Field, Modal, SelectControl } from "../components/ui";
 import { actionDisplayName } from "../lib/action-label";
 import {
   type ActionView,
@@ -98,6 +98,7 @@ export function InputConfigDialog({
   }>({ input: {}, operator: {}, loading: false, error: "" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const identityLocked = Boolean(existing);
   const definitions = useMemo(
     () => inputSettingDefinitions(schemaState.input, schemaState.operator),
@@ -169,7 +170,7 @@ export function InputConfigDialog({
   }
 
   async function remove() {
-    if (!existing || !window.confirm(translate("inputSettings.deleteLayerConfirm"))) return;
+    if (!existing) return;
     setBusy(true);
     setError("");
     try {
@@ -188,234 +189,257 @@ export function InputConfigDialog({
       ? translate("inputSettings.allClientsDefaultShort")
       : fixedClient?.name || fixedClientID;
   return (
-    <Modal
-      title={existing ? translate("inputSettings.editTitle") : translate("inputSettings.addTitle")}
-      subtitle={translate("inputSettings.dialogSubtitle", { app: appKey })}
-      onClose={onClose}
-      wide
-    >
-      <div className="formGrid">
-        <Field label={translate("inputSettings.clientScope")}>
-          {fixedClientID !== undefined ? (
-            <input value={fixedClientLabel} disabled />
-          ) : (
+    <>
+      <Modal
+        title={
+          existing ? translate("inputSettings.editTitle") : translate("inputSettings.addTitle")
+        }
+        subtitle={translate("inputSettings.dialogSubtitle", { app: appKey })}
+        onClose={onClose}
+        wide
+      >
+        <div className="formGrid">
+          <Field label={translate("inputSettings.clientScope")}>
+            {fixedClientID !== undefined ? (
+              <input value={fixedClientLabel} disabled />
+            ) : (
+              <SelectControl
+                value={clientID}
+                disabled={identityLocked}
+                onChange={setClientID}
+                ariaLabel={translate("inputSettings.clientScope")}
+                options={[
+                  { value: "", label: translate("inputSettings.allClientsDefaultShort") },
+                  ...clients.map((client) => ({ value: client.id, label: client.name })),
+                ]}
+              />
+            )}
+          </Field>
+          <Field label={translate("inputSettings.actionScope")}>
             <SelectControl
-              value={clientID}
+              value={actionKey}
               disabled={identityLocked}
-              onChange={setClientID}
-              ariaLabel={translate("inputSettings.clientScope")}
+              onChange={setActionKey}
+              ariaLabel={translate("inputSettings.actionScope")}
               options={[
-                { value: "", label: translate("inputSettings.allClientsDefaultShort") },
-                ...clients.map((client) => ({ value: client.id, label: client.name })),
+                { value: "", label: translate("inputSettings.allActionsDefault") },
+                ...actions.map((action) => ({
+                  value: action.action_key,
+                  label: `${actionDisplayName(action.display_name) || action.action_key} · ${action.action_key}`,
+                })),
               ]}
             />
-          )}
-        </Field>
-        <Field label={translate("inputSettings.actionScope")}>
-          <SelectControl
-            value={actionKey}
-            disabled={identityLocked}
-            onChange={setActionKey}
-            ariaLabel={translate("inputSettings.actionScope")}
-            options={[
-              { value: "", label: translate("inputSettings.allActionsDefault") },
-              ...actions.map((action) => ({
-                value: action.action_key,
-                label: `${actionDisplayName(action.display_name) || action.action_key} · ${action.action_key}`,
-              })),
-            ]}
-          />
-        </Field>
-      </div>
-
-      {!actionKey ? (
-        <div className="inlineNotice info">{translate("inputSettings.chooseActionHint")}</div>
-      ) : schemaState.loading ? (
-        <div className="inlineNotice info">{translate("inputSettings.loadingDocumented")}</div>
-      ) : schemaState.error ? (
-        <div className="inlineNotice warning">
-          {translate("inputSettings.documentedLoadFailed")} {schemaState.error}
+          </Field>
         </div>
-      ) : definitions.length === 0 ? (
-        <div className="inlineNotice info">{translate("inputSettings.noDocumentedSettings")}</div>
-      ) : (
-        <div className="inputConfigCatalogSummary">
-          <BookOpen size={16} aria-hidden="true" />
-          <span>
-            {translate("inputSettings.documentedSummary", {
-              operator: operatorDefinitions.length,
-              request: requestDefinitions.length,
-            })}
-          </span>
-        </div>
-      )}
 
-      <div className="inputConfigEditor">
-        {rows.map((row, index) => {
-          const definition = definitions.find((candidate) => candidate.key === row.key);
-          const custom = row.custom || Boolean(row.key && !definition);
-          return (
-            <div className="inputConfigRow" key={index}>
-              <div className="inputConfigKeyField">
-                <label htmlFor={`input-setting-key-${index}`}>
-                  {translate("inputSettings.settingKey")}
-                </label>
-                {actionKey && !schemaState.loading && definitions.length > 0 ? (
-                  <SelectControl
-                    id={`input-setting-key-${index}`}
-                    value={custom ? "__custom__" : row.key}
-                    onChange={(key) => {
-                      if (key === "__custom__") {
+        {!actionKey ? (
+          <div className="inlineNotice info">{translate("inputSettings.chooseActionHint")}</div>
+        ) : schemaState.loading ? (
+          <div className="inlineNotice info">{translate("inputSettings.loadingDocumented")}</div>
+        ) : schemaState.error ? (
+          <div className="inlineNotice warning">
+            {translate("inputSettings.documentedLoadFailed")} {schemaState.error}
+          </div>
+        ) : definitions.length === 0 ? (
+          <div className="inlineNotice info">{translate("inputSettings.noDocumentedSettings")}</div>
+        ) : (
+          <div className="inputConfigCatalogSummary">
+            <BookOpen size={16} aria-hidden="true" />
+            <span>
+              {translate("inputSettings.documentedSummary", {
+                operator: operatorDefinitions.length,
+                request: requestDefinitions.length,
+              })}
+            </span>
+          </div>
+        )}
+
+        <div className="inputConfigEditor">
+          {rows.map((row, index) => {
+            const definition = definitions.find((candidate) => candidate.key === row.key);
+            const custom = row.custom || Boolean(row.key && !definition);
+            return (
+              <div className="inputConfigRow" key={index}>
+                <div className="inputConfigKeyField">
+                  <label htmlFor={`input-setting-key-${index}`}>
+                    {translate("inputSettings.settingKey")}
+                  </label>
+                  {actionKey && !schemaState.loading && definitions.length > 0 ? (
+                    <SelectControl
+                      id={`input-setting-key-${index}`}
+                      value={custom ? "__custom__" : row.key}
+                      onChange={(key) => {
+                        if (key === "__custom__") {
+                          updateRow(index, {
+                            key: definition ? "" : row.key,
+                            custom: true,
+                            valueText: definition ? "" : row.valueText,
+                          });
+                          return;
+                        }
+                        const selected = definitions.find((candidate) => candidate.key === key);
                         updateRow(index, {
-                          key: definition ? "" : row.key,
-                          custom: true,
-                          valueText: definition ? "" : row.valueText,
+                          key,
+                          custom: false,
+                          valueText: selected ? formatInputSettingExample(selected.example) : "",
                         });
-                        return;
+                      }}
+                      ariaLabel={translate("inputSettings.settingKeyNamed", { index: index + 1 })}
+                      options={[
+                        { value: "", label: translate("inputSettings.selectDocumentedKey") },
+                        ...operatorDefinitions.map((candidate) => ({
+                          value: candidate.key,
+                          label: `${candidate.title ? `${candidate.title} · ` : ""}${candidate.key}`,
+                          description: translate("inputSettings.operatorSetting"),
+                        })),
+                        ...requestDefinitions.map((candidate) => ({
+                          value: candidate.key,
+                          label: `${candidate.title ? `${candidate.title} · ` : ""}${candidate.key}`,
+                          description: translate("inputSettings.requestField"),
+                        })),
+                        { value: "__custom__", label: translate("inputSettings.customKey") },
+                      ]}
+                    />
+                  ) : (
+                    <input
+                      id={`input-setting-key-${index}`}
+                      className="mono"
+                      value={row.key}
+                      placeholder="SETTING_KEY"
+                      onChange={(event) =>
+                        updateRow(index, { key: event.target.value, custom: true })
                       }
-                      const selected = definitions.find((candidate) => candidate.key === key);
-                      updateRow(index, {
-                        key,
-                        custom: false,
-                        valueText: selected ? formatInputSettingExample(selected.example) : "",
-                      });
-                    }}
-                    ariaLabel={translate("inputSettings.settingKeyNamed", { index: index + 1 })}
-                    options={[
-                      { value: "", label: translate("inputSettings.selectDocumentedKey") },
-                      ...operatorDefinitions.map((candidate) => ({
-                        value: candidate.key,
-                        label: `${candidate.title ? `${candidate.title} · ` : ""}${candidate.key}`,
-                        description: translate("inputSettings.operatorSetting"),
-                      })),
-                      ...requestDefinitions.map((candidate) => ({
-                        value: candidate.key,
-                        label: `${candidate.title ? `${candidate.title} · ` : ""}${candidate.key}`,
-                        description: translate("inputSettings.requestField"),
-                      })),
-                      { value: "__custom__", label: translate("inputSettings.customKey") },
-                    ]}
+                      aria-label={translate("inputSettings.settingKeyNamed", { index: index + 1 })}
+                    />
+                  )}
+                  {custom && actionKey && definitions.length > 0 ? (
+                    <input
+                      className="mono inputConfigCustomKey"
+                      value={row.key}
+                      placeholder="CUSTOM_SETTING_KEY"
+                      onChange={(event) =>
+                        updateRow(index, { key: event.target.value, custom: true })
+                      }
+                      aria-label={translate("inputSettings.customSettingKeyNamed", {
+                        index: index + 1,
+                      })}
+                    />
+                  ) : null}
+                </div>
+                <div className="inputConfigValueField">
+                  <label htmlFor={`input-setting-value-${index}`}>
+                    {translate("inputSettings.appliedValue")}
+                  </label>
+                  <InputSettingValueEditor
+                    id={`input-setting-value-${index}`}
+                    row={row}
+                    definition={definition}
+                    onChange={(valueText) => updateRow(index, { valueText })}
+                  />
+                </div>
+                <div className="inputConfigRowActions">
+                  <button
+                    className={
+                      row.locked ? "button small primary iconButton" : "button small iconButton"
+                    }
+                    type="button"
+                    title={
+                      row.locked
+                        ? translate("inputSettings.lockedHint")
+                        : translate("inputSettings.unlockedHint")
+                    }
+                    aria-label={
+                      row.locked
+                        ? translate("inputSettings.unlockKey")
+                        : translate("inputSettings.lockKey")
+                    }
+                    aria-pressed={row.locked}
+                    onClick={() => updateRow(index, { locked: !row.locked })}
+                  >
+                    {row.locked ? (
+                      <Lock size={16} aria-hidden="true" />
+                    ) : (
+                      <Unlock size={16} aria-hidden="true" />
+                    )}
+                  </button>
+                  <button
+                    className="button small iconButton"
+                    type="button"
+                    title={translate("inputSettings.removeKey")}
+                    aria-label={translate("inputSettings.removeKey")}
+                    onClick={() =>
+                      setRows((current) => current.filter((_, rowIndex) => rowIndex !== index))
+                    }
+                  >
+                    <Trash2 size={16} aria-hidden="true" />
+                  </button>
+                </div>
+                {definition ? (
+                  <InputSettingGuide
+                    definition={definition}
+                    onUseExample={() =>
+                      updateRow(index, { valueText: formatInputSettingExample(definition.example) })
+                    }
                   />
                 ) : (
-                  <input
-                    id={`input-setting-key-${index}`}
-                    className="mono"
-                    value={row.key}
-                    placeholder="SETTING_KEY"
-                    onChange={(event) =>
-                      updateRow(index, { key: event.target.value, custom: true })
-                    }
-                    aria-label={translate("inputSettings.settingKeyNamed", { index: index + 1 })}
-                  />
+                  <p className="inputConfigCustomHelp">
+                    {translate("inputSettings.customKeyHint")}
+                  </p>
                 )}
-                {custom && actionKey && definitions.length > 0 ? (
-                  <input
-                    className="mono inputConfigCustomKey"
-                    value={row.key}
-                    placeholder="CUSTOM_SETTING_KEY"
-                    onChange={(event) =>
-                      updateRow(index, { key: event.target.value, custom: true })
-                    }
-                    aria-label={translate("inputSettings.customSettingKeyNamed", {
-                      index: index + 1,
-                    })}
-                  />
-                ) : null}
               </div>
-              <div className="inputConfigValueField">
-                <label htmlFor={`input-setting-value-${index}`}>
-                  {translate("inputSettings.appliedValue")}
-                </label>
-                <InputSettingValueEditor
-                  id={`input-setting-value-${index}`}
-                  row={row}
-                  definition={definition}
-                  onChange={(valueText) => updateRow(index, { valueText })}
-                />
-              </div>
-              <div className="inputConfigRowActions">
-                <button
-                  className={
-                    row.locked ? "button small primary iconButton" : "button small iconButton"
-                  }
-                  type="button"
-                  title={
-                    row.locked
-                      ? translate("inputSettings.lockedHint")
-                      : translate("inputSettings.unlockedHint")
-                  }
-                  aria-label={
-                    row.locked
-                      ? translate("inputSettings.unlockKey")
-                      : translate("inputSettings.lockKey")
-                  }
-                  aria-pressed={row.locked}
-                  onClick={() => updateRow(index, { locked: !row.locked })}
-                >
-                  {row.locked ? (
-                    <Lock size={16} aria-hidden="true" />
-                  ) : (
-                    <Unlock size={16} aria-hidden="true" />
-                  )}
-                </button>
-                <button
-                  className="button small iconButton"
-                  type="button"
-                  title={translate("inputSettings.removeKey")}
-                  aria-label={translate("inputSettings.removeKey")}
-                  onClick={() =>
-                    setRows((current) => current.filter((_, rowIndex) => rowIndex !== index))
-                  }
-                >
-                  <Trash2 size={16} aria-hidden="true" />
-                </button>
-              </div>
-              {definition ? (
-                <InputSettingGuide
-                  definition={definition}
-                  onUseExample={() =>
-                    updateRow(index, { valueText: formatInputSettingExample(definition.example) })
-                  }
-                />
-              ) : (
-                <p className="inputConfigCustomHelp">{translate("inputSettings.customKeyHint")}</p>
-              )}
-            </div>
-          );
-        })}
-        <button
-          className="button small inputConfigAdd"
-          type="button"
-          onClick={() =>
-            setRows((current) => [...current, { key: "", valueText: "", locked: false }])
-          }
-        >
-          <Plus size={16} aria-hidden="true" />
-          {translate("inputSettings.addKey")}
-        </button>
-      </div>
-
-      {error ? <div className="inlineNotice error">{error}</div> : null}
-      <footer className="dialogFooter">
-        <span>
-          {existing ? (
-            <button className="button danger" type="button" disabled={busy} onClick={remove}>
-              <Trash2 size={16} aria-hidden="true" />
-              {translate("inputSettings.deleteLayer")}
-            </button>
-          ) : null}
-        </span>
-        <div className="dialogFooterActions">
-          <button className="button" type="button" disabled={busy} onClick={onClose}>
-            {translate("common.cancel")}
-          </button>
-          <button className="button primary" type="button" disabled={busy} onClick={save}>
-            <Save size={16} aria-hidden="true" />
-            {busy ? translate("common.saving") : translate("inputSettings.save")}
+            );
+          })}
+          <button
+            className="button small inputConfigAdd"
+            type="button"
+            onClick={() =>
+              setRows((current) => [...current, { key: "", valueText: "", locked: false }])
+            }
+          >
+            <Plus size={16} aria-hidden="true" />
+            {translate("inputSettings.addKey")}
           </button>
         </div>
-      </footer>
-    </Modal>
+
+        {error ? <div className="inlineNotice error">{error}</div> : null}
+        <footer className="dialogFooter">
+          <span>
+            {existing ? (
+              <button
+                className="button danger"
+                type="button"
+                disabled={busy}
+                onClick={() => setConfirmDelete(true)}
+              >
+                <Trash2 size={16} aria-hidden="true" />
+                {translate("inputSettings.deleteLayer")}
+              </button>
+            ) : null}
+          </span>
+          <div className="dialogFooterActions">
+            <button className="button" type="button" disabled={busy} onClick={onClose}>
+              {translate("common.cancel")}
+            </button>
+            <button className="button primary" type="button" disabled={busy} onClick={save}>
+              <Save size={16} aria-hidden="true" />
+              {busy ? translate("common.saving") : translate("inputSettings.save")}
+            </button>
+          </div>
+        </footer>
+      </Modal>
+      {confirmDelete ? (
+        <ConfirmDialog
+          title={translate("inputSettings.deleteLayer")}
+          description={translate("inputSettings.deleteLayerConfirm")}
+          confirmLabel={translate("common.delete")}
+          onCancel={() => setConfirmDelete(false)}
+          onConfirm={() => {
+            setConfirmDelete(false);
+            void remove();
+          }}
+        />
+      ) : null}
+    </>
   );
 }
 
@@ -432,6 +456,17 @@ function InputSettingValueEditor({
 }) {
   if (definition?.constValue !== undefined) {
     return <input id={id} className="mono" value={row.valueText} disabled />;
+  }
+  if (definition?.secretReference) {
+    return (
+      <input
+        id={id}
+        className="mono"
+        value={stringValueText(row.valueText)}
+        placeholder="$var:secrets/api-token"
+        onChange={(event) => onChange(JSON.stringify(event.target.value))}
+      />
+    );
   }
   if (definition?.enumValues?.length) {
     return (
@@ -505,6 +540,9 @@ function InputSettingGuide({
               : translate("inputSettings.requestField")}
           </span>
           <span className="badge neutral mono">{definition.type}</span>
+          {definition.secretReference ? (
+            <span className="badge warning">{translate("inputSettings.secretReference")}</span>
+          ) : null}
         </div>
         <button className="button small" type="button" onClick={onUseExample}>
           {translate("inputSettings.useExample")}
@@ -543,6 +581,15 @@ function InputSettingGuide({
       </div>
     </aside>
   );
+}
+
+function stringValueText(valueText: string): string {
+  try {
+    const value = JSON.parse(valueText);
+    return typeof value === "string" ? value : valueText;
+  } catch {
+    return valueText;
+  }
 }
 
 function normalizedEnumValue(valueText: string, values: unknown[]): string {

@@ -20,8 +20,16 @@
           "concepts/workspaces",
           "concepts/release-lifecycle",
           "concepts/run-admission",
+          "concepts/runtime-configuration",
           "concepts/provisioning",
           "architecture"
+        ]
+      },
+      {
+        "group": "한국어",
+        "pages": [
+          "ko/concepts/run-admission",
+          "ko/concepts/runtime-configuration"
         ]
       }
     ]

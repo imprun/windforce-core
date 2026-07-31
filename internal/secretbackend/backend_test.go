@@ -1,0 +1,131 @@
+package secretbackend
+
+import (
+	"context"
+	"testing"
+
+	wfcrypto "github.com/imprun/windforce-core/internal/crypto"
+)
+
+type staticKeys struct {
+	key     string
+	version int32
+}
+
+func (s staticKeys) GetWorkspaceKeyVersioned(context.Context, string) (string, int32, error) {
+	return s.key, s.version, nil
+}
+
+func TestDatabaseUsesWrappedWorkspaceDEK(t *testing.T) {
+	wrapped, version, err := wfcrypto.NewWrappedDEK("instance-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend := NewDatabase(staticKeys{key: wrapped, version: version}, "instance-secret", "")
+	reference := Reference{WorkspaceID: "ws-a", Kind: "variable", Path: "api/token"}
+
+	stored, err := backend.Store(context.Background(), reference, "secret-value")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored == "secret-value" {
+		t.Fatal("database backend stored plaintext")
+	}
+	if len(stored) < len(boundCiphertextPrefix) || stored[:len(boundCiphertextPrefix)] != boundCiphertextPrefix {
+		t.Fatalf("stored value does not use bound ciphertext format: %q", stored)
+	}
+	resolved, err := backend.Resolve(context.Background(), reference, stored)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved != "secret-value" {
+		t.Fatalf("resolved = %q, want secret-value", resolved)
+	}
+}
+
+func TestDatabaseBindsCiphertextToWorkspaceKindAndPath(t *testing.T) {
+	wrapped, version, err := wfcrypto.NewWrappedDEK("instance-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend := NewDatabase(staticKeys{key: wrapped, version: version}, "instance-secret", "")
+	original := Reference{WorkspaceID: "ws-a", Kind: "variable", Path: "api/token"}
+	stored, err := backend.Store(context.Background(), original, "secret-value")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, changed := range []Reference{
+		{WorkspaceID: "ws-b", Kind: "variable", Path: "api/token"},
+		{WorkspaceID: "ws-a", Kind: "resource", Path: "api/token"},
+		{WorkspaceID: "ws-a", Kind: "variable", Path: "api/other"},
+	} {
+		if _, err := backend.Resolve(context.Background(), changed, stored); err == nil {
+			t.Fatalf("ciphertext resolved for changed reference %#v", changed)
+		}
+	}
+}
+
+func TestDatabaseResolvesLegacyUnboundCiphertext(t *testing.T) {
+	wrapped, version, err := wfcrypto.NewWrappedDEK("instance-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dek, err := wfcrypto.ResolveDEK(wrapped, version, []string{wfcrypto.DeriveKEK("instance-secret")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy, err := wfcrypto.Encrypt(dek, "legacy-value")
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend := NewDatabase(staticKeys{key: wrapped, version: version}, "instance-secret", "")
+	resolved, err := backend.Resolve(
+		context.Background(),
+		Reference{WorkspaceID: "ws-a", Kind: "variable", Path: "legacy"},
+		legacy,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved != "legacy-value" {
+		t.Fatalf("resolved = %q, want legacy-value", resolved)
+	}
+}
+
+func TestDatabaseResolvesLegacyPreviousSecret(t *testing.T) {
+	legacy, err := wfcrypto.Encrypt(wfcrypto.DeriveWorkspaceKey("old-secret", "ws-a"), "legacy-value")
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend := NewDatabase(nil, "new-secret", "old-secret")
+
+	resolved, err := backend.Resolve(
+		context.Background(),
+		Reference{WorkspaceID: "ws-a", Kind: "variable", Path: "legacy"},
+		legacy,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved != "legacy-value" {
+		t.Fatalf("resolved = %q, want legacy-value", resolved)
+	}
+}
+
+func TestDatabaseResolvesLegacyPreviousSecretWhenKeyProviderHasNoWorkspaceKey(t *testing.T) {
+	reference := Reference{WorkspaceID: "ws-a", Kind: "variable", Path: "legacy"}
+	legacy, err := wfcrypto.Encrypt(wfcrypto.DeriveWorkspaceKey("old-secret", "ws-a"), "legacy-value")
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend := NewDatabase(staticKeys{}, "new-secret", "old-secret")
+
+	resolved, err := backend.Resolve(context.Background(), reference, legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved != "legacy-value" {
+		t.Fatalf("resolved = %q, want legacy-value", resolved)
+	}
+}

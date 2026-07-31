@@ -12,6 +12,7 @@ export type InputSettingDefinition = {
   fields: SchemaField[];
   enumValues?: unknown[];
   constValue?: unknown;
+  secretReference: boolean;
   example: unknown;
   schema: JSONRecord;
 };
@@ -53,6 +54,7 @@ function addDefinitions(
     const property = asRecord(rawProperty);
     if (!property) continue;
     const document = describeSchema(property);
+    const secretReference = property.writeOnly === true || property["x-windforce-secret"] === true;
     definitions.set(key, {
       key,
       source,
@@ -62,13 +64,22 @@ function addDefinitions(
       fields: document.fields,
       enumValues: Array.isArray(property.enum) ? property.enum : undefined,
       constValue: Object.hasOwn(property, "const") ? property.const : undefined,
-      example: document.example.value,
+      secretReference,
+      example: secretReference
+        ? `$var:secrets/${key.replaceAll("_", "-").toLowerCase()}`
+        : document.example.value,
       schema: property,
     });
   }
 }
 
 function validateSchemaValue(schema: JSONRecord, value: unknown, path: string): string | undefined {
+  if (schema.writeOnly === true || schema["x-windforce-secret"] === true) {
+    if (typeof value !== "string" || !/^\$var:[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(value)) {
+      return translate("inputSettings.validation.secretReference", { path });
+    }
+    return undefined;
+  }
   if (Object.hasOwn(schema, "const") && !sameJSON(schema.const, value)) {
     return translate("inputSettings.validation.mustBe", {
       path,

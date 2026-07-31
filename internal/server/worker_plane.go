@@ -204,8 +204,12 @@ func (h *Handler) workerPlaneClaim(w http.ResponseWriter, r *http.Request) {
 	}
 	workspaceID := contract.NormalizeWorkspace(job.Payload.Workspace)
 	prepared, err := h.store.DecryptInput(r.Context(), workspaceID, job.Payload.Input)
-	if err == nil {
+	if err == nil && !job.Payload.InputConfigResolved {
 		prepared, err = h.store.ResolveInput(r.Context(), workspaceID, job.Payload.App, job.Payload.Action, job.Payload.ClientID, prepared)
+	}
+	var secretValues []string
+	if err == nil {
+		prepared, secretValues, err = h.runtimeResolver.ResolveRuntimeInput(r.Context(), job, prepared)
 	}
 	if err != nil {
 		result := contract.JobResult{
@@ -229,13 +233,15 @@ func (h *Handler) workerPlaneClaim(w http.ResponseWriter, r *http.Request) {
 			Workspace: workspaceID,
 			JobID:     job.ID,
 			Subject:   job.Payload.PermissionedAs,
+			Attempt:   job.Attempt,
 			Exp:       time.Now().Add(ttl).Unix(),
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"job":       job,
-		"lease":     leaseToWire(lease),
-		"job_token": jobToken,
+		"job":           job,
+		"lease":         leaseToWire(lease),
+		"job_token":     jobToken,
+		"secret_values": secretValues,
 	})
 }
 

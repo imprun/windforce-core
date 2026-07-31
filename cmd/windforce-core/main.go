@@ -28,6 +28,8 @@ import (
 	"github.com/imprun/windforce-core/internal/remoteworker"
 	"github.com/imprun/windforce-core/internal/runner"
 	"github.com/imprun/windforce-core/internal/runtime"
+	"github.com/imprun/windforce-core/internal/runtimeconfig"
+	"github.com/imprun/windforce-core/internal/secretbackend"
 	"github.com/imprun/windforce-core/internal/server"
 	"github.com/imprun/windforce-core/internal/state"
 	"github.com/imprun/windforce-core/internal/syncer"
@@ -168,6 +170,8 @@ func runServer(args []string, mode string) int {
 	secretKey := effectiveSecretKey(rawSecretKey)
 	secretKeyPrevious := tokenFromEnv(*secretKeyPreviousEnv)
 	configureInputCrypto(stateStore, secretKey, secretKeyPrevious)
+	secretStore := secretbackend.NewDatabase(stateStore, secretKey, secretKeyPrevious)
+	runtimeResolver := runtimeconfig.New(stateStore, secretStore)
 	if strings.TrimSpace(*provisionDir) != "" {
 		docs, err := provisioning.LoadDir(strings.TrimSpace(*provisionDir))
 		if err != nil {
@@ -256,6 +260,7 @@ func runServer(args []string, mode string) int {
 		JobTokenSecret:        jobTokenSecret,
 		SecretKey:             secretKey,
 		SecretKeyPrevious:     secretKeyPrevious,
+		SecretBackend:         secretStore,
 		MetricsHandler:        triggerMetrics.Handler(webhookMetrics.Handler(webhookStore)),
 		UIHostURL:             *uiHostURL,
 		UIHostLabel:           *uiHostLabel,
@@ -295,6 +300,7 @@ func runServer(args []string, mode string) int {
 			LogJobPayloads:   *logJobPayloads,
 			TeeJobLogs:       *teeJobLogs,
 			RuntimeBindings:  runtimeBindings,
+			RuntimeResolver:  runtimeResolver,
 		}
 		go func() {
 			if err := processor.RunLoop(runCtx, *poll); err != nil {
@@ -477,6 +483,7 @@ func runWorker(args []string) int {
 	secretKey := effectiveSecretKey(rawSecretKey)
 	secretKeyPrevious := tokenFromEnv(*secretKeyPreviousEnv)
 	configureInputCrypto(stateStore, secretKey, secretKeyPrevious)
+	secretStore := secretbackend.NewDatabase(stateStore, secretKey, secretKeyPrevious)
 	processor := worker.Processor{
 		Store: stateStore,
 		Runner: &runtime.Runner{
@@ -500,6 +507,7 @@ func runWorker(args []string) int {
 		LogJobPayloads:   *logJobPayloads,
 		TeeJobLogs:       *teeJobLogs,
 		RuntimeBindings:  runtimeBindings,
+		RuntimeResolver:  runtimeconfig.New(stateStore, secretStore),
 	}
 	if *once {
 		processed, err := processor.ProcessOne(context.Background())

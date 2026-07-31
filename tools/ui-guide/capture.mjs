@@ -174,8 +174,10 @@ async function createPlaywrightBrowser(config) {
         }
       });
       return {
-        async goto() {
-          await page.goto(config.baseUrl, { waitUntil: "networkidle" });
+        async goto(target = "") {
+          await page.goto(target ? new URL(target, config.baseUrl).href : config.baseUrl, {
+            waitUntil: "networkidle",
+          });
         },
         async click(selector) {
           await page.locator(selector).first().click();
@@ -355,9 +357,13 @@ class CdpPage {
     }
   }
 
-  async goto() {
-    await this.send("Page.navigate", { url: this.config.baseUrl }, this.sessionId);
-    await this.waitForFunction(() => document.readyState === "complete");
+  async goto(target = "") {
+    const url = target ? new URL(target, this.config.baseUrl).href : this.config.baseUrl;
+    await this.send("Page.navigate", { url }, this.sessionId);
+    await this.waitForFunction(
+      (expected) => location.href === expected && document.readyState === "complete",
+      url,
+    );
     await delay(500);
   }
 

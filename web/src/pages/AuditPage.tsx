@@ -85,6 +85,10 @@ export function AuditPage() {
                 { value: "release", label: translate("audit.release") },
                 { value: "client", label: translate("navigation.clientRegistry") },
                 { value: "input_settings", label: translate("audit.inputSettings") },
+                {
+                  value: "runtime_configuration",
+                  label: translate("audit.runtimeConfiguration"),
+                },
                 { value: "webhook", label: translate("settingsNav.webhooks") },
               ]}
             />

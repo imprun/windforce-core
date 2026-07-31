@@ -26,13 +26,13 @@ func TestDevelopmentPayloadLogsIncludeCompleteValues(t *testing.T) {
 	log.SetOutput(&output)
 	defer log.SetOutput(previous)
 
-	logJobInput(true, "job-a", "app-a", "action-a", []byte(`{"account":"visible-local-value"}`))
+	logJobInput(true, "job-a", "app-a", "action-a", []byte(`{"account":"visible-local-value"}`), nil)
 	logJobExecution(true, "job-a", "app-a", "action-a", contract.JobResult{
 		ExitCode: 7,
 		Stdout:   "complete stdout",
 		Stderr:   "complete stderr",
 		Output:   json.RawMessage(`{"result":"complete output"}`),
-	})
+	}, nil)
 
 	logged := output.String()
 	for _, expected := range []string{
@@ -53,10 +53,95 @@ func TestPayloadLogsAreDisabledByDefault(t *testing.T) {
 	log.SetOutput(&output)
 	defer log.SetOutput(previous)
 
-	logJobInput(false, "job-a", "app-a", "action-a", []byte(`{"secret":"hidden"}`))
-	logJobExecution(false, "job-a", "app-a", "action-a", contract.JobResult{Output: json.RawMessage(`{"secret":"hidden"}`)})
+	logJobInput(false, "job-a", "app-a", "action-a", []byte(`{"secret":"hidden"}`), nil)
+	logJobExecution(false, "job-a", "app-a", "action-a", contract.JobResult{Output: json.RawMessage(`{"secret":"hidden"}`)}, nil)
 	if output.Len() != 0 {
 		t.Fatalf("disabled payload logging wrote: %s", output.String())
+	}
+}
+
+func TestPayloadLogsMaskResolvedSecrets(t *testing.T) {
+	var output bytes.Buffer
+	previous := log.Writer()
+	log.SetOutput(&output)
+	defer log.SetOutput(previous)
+
+	const secret = "do-not-log-this"
+	logJobInput(true, "job-a", "app-a", "action-a", []byte(`{"token":"do-not-log-this"}`), []string{secret})
+	logJobExecution(true, "job-a", "app-a", "action-a", contract.JobResult{
+		Stdout: secret,
+		Output: json.RawMessage(`{"token":"do-not-log-this"}`),
+	}, []string{secret})
+	if strings.Contains(output.String(), secret) {
+		t.Fatalf("payload log exposed resolved secret: %s", output.String())
+	}
+}
+
+type maskingTestResolver struct{}
+
+func (maskingTestResolver) ResolveRuntimeInput(context.Context, state.Job, json.RawMessage) (json.RawMessage, []string, error) {
+	return json.RawMessage(`{"token":"cross-boundary-secret"}`), []string{"cross-boundary-secret"}, nil
+}
+
+type maskingTestRunner struct{}
+
+func (maskingTestRunner) Run(_ context.Context, request actionruntime.RunRequest) (contract.JobResult, error) {
+	request.LogSink([]byte("before cross-bound"))
+	request.LogSink([]byte("ary-secret after"))
+	return contract.JobResult{
+		Output: json.RawMessage(`{"token":"cross-boundary-secret"}`),
+		Stdout: "cross-boundary-secret",
+		Stderr: "cross-boundary-secret",
+		Error:  "cross-boundary-secret",
+	}, nil
+}
+
+func TestProcessOneMasksResolvedSecretsBeforeLogsAndResultStorage(t *testing.T) {
+	ctx := context.Background()
+	store := state.NewLocalStore(filepath.Join(t.TempDir(), "state.json"))
+	store.ConfigureInputCrypto("masking-test-key", "")
+	deployment := contract.Deployment{
+		Workspace: "ws-a",
+		App:       "app",
+		Commit:    "commit-a",
+		Actions: map[string]contract.Action{
+			"run": {Action: "run"},
+		},
+	}
+	run := state.NewRun("test", "run-mask", "app", "run", deployment, json.RawMessage(`{"token":"$var:token"}`))
+	run.InputConfigResolved = true
+	job := state.NewActionJob(run, run.Input)
+	if err := store.CreateRunAndEnqueue(ctx, run, job); err != nil {
+		t.Fatal(err)
+	}
+	processor := Processor{
+		Store:           store,
+		Runner:          maskingTestRunner{},
+		WorkerID:        "worker-a",
+		LeaseTTL:        time.Minute,
+		RuntimeResolver: maskingTestResolver{},
+	}
+	processed, err := processor.ProcessOne(ctx)
+	if err != nil || !processed {
+		t.Fatalf("ProcessOne processed=%v err=%v", processed, err)
+	}
+	completed, err := store.GetRun(ctx, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(completed.Result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "cross-boundary-secret") {
+		t.Fatalf("stored result exposed secret: %s", encoded)
+	}
+	logs, found, err := store.GetLogs(ctx, "ws-a", completed.Result.JobID)
+	if err != nil || !found {
+		t.Fatalf("GetLogs found=%v err=%v", found, err)
+	}
+	if strings.Contains(logs, "cross-boundary-secret") {
+		t.Fatalf("stored logs exposed secret: %q", logs)
 	}
 }
 

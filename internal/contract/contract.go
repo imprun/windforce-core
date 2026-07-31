@@ -112,7 +112,70 @@ type Action struct {
 	TimeoutMs                  int64           `json:"timeoutMs,omitempty"`
 	Capabilities               *[]string       `json:"capabilities,omitempty"`
 	RunsOn                     *[]string       `json:"runsOn,omitempty"`
+	RuntimeAccess              RuntimeAccess   `json:"runtimeAccess,omitempty"`
 	UpdatedAt                  *time.Time      `json:"updatedAt,omitempty"`
+}
+
+// RuntimeAccess is the release-owned allowlist for Action SDK lookups.
+// Admission augments it with references discovered in the effective input and
+// pins the result on the Job. Values are never pinned here.
+type RuntimeAccess struct {
+	Variables []string `json:"variables,omitempty"`
+	Resources []string `json:"resources,omitempty"`
+}
+
+func NormalizeRuntimeAccess(access RuntimeAccess) (RuntimeAccess, error) {
+	variables, err := normalizeRuntimeConfigPaths(access.Variables)
+	if err != nil {
+		return RuntimeAccess{}, fmt.Errorf("variables: %w", err)
+	}
+	resources, err := normalizeRuntimeConfigPaths(access.Resources)
+	if err != nil {
+		return RuntimeAccess{}, fmt.Errorf("resources: %w", err)
+	}
+	if len(variables)+len(resources) > 256 {
+		return RuntimeAccess{}, fmt.Errorf("runtime access exceeds 256 paths")
+	}
+	return RuntimeAccess{Variables: variables, Resources: resources}, nil
+}
+
+func NormalizeRuntimeConfigPath(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" || len(value) > 512 || !utf8.ValidString(value) || strings.Contains(value, `\`) {
+		return "", fmt.Errorf("invalid runtime configuration path %q", value)
+	}
+	segments := strings.Split(value, "/")
+	if len(segments) > 32 {
+		return "", fmt.Errorf("runtime configuration path %q exceeds 32 segments", value)
+	}
+	for _, segment := range segments {
+		if segment == "" || segment == "." || segment == ".." {
+			return "", fmt.Errorf("invalid runtime configuration path %q", value)
+		}
+		for _, item := range segment {
+			if !validPortableKeyRune(item) && item != '.' && item != '-' {
+				return "", fmt.Errorf("invalid runtime configuration path %q", value)
+			}
+		}
+	}
+	return value, nil
+}
+
+func normalizeRuntimeConfigPaths(values []string) ([]string, error) {
+	unique := map[string]struct{}{}
+	for _, value := range values {
+		normalized, err := NormalizeRuntimeConfigPath(value)
+		if err != nil {
+			return nil, err
+		}
+		unique[normalized] = struct{}{}
+	}
+	result := make([]string, 0, len(unique))
+	for value := range unique {
+		result = append(result, value)
+	}
+	sort.Strings(result)
+	return result, nil
 }
 
 // ActionAdapter is reserved for runtime integrations outside source manifests.
@@ -160,6 +223,8 @@ func PinExecutionDeployment(deployment Deployment, actionKey string) Deployment 
 	pinned.Actions = make(map[string]Action, 1)
 	if action, ok := deployment.Actions[actionKey]; ok {
 		action.Command = append([]string(nil), action.Command...)
+		action.RuntimeAccess.Variables = append([]string(nil), action.RuntimeAccess.Variables...)
+		action.RuntimeAccess.Resources = append([]string(nil), action.RuntimeAccess.Resources...)
 		action.InputSchemaBody = append(json.RawMessage(nil), action.InputSchemaBody...)
 		action.OutputSchemaBody = append(json.RawMessage(nil), action.OutputSchemaBody...)
 		action.OperatorSettingsSchemaBody = append(json.RawMessage(nil), action.OperatorSettingsSchemaBody...)

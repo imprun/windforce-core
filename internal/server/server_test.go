@@ -23,6 +23,7 @@ import (
 	"github.com/imprun/windforce-core/internal/contract"
 	litecrypto "github.com/imprun/windforce-core/internal/crypto"
 	"github.com/imprun/windforce-core/internal/gitsource"
+	"github.com/imprun/windforce-core/internal/secretbackend"
 	"github.com/imprun/windforce-core/internal/state"
 	"github.com/imprun/windforce-core/internal/syncer"
 	"github.com/imprun/windforce-core/internal/token"
@@ -401,14 +402,16 @@ func TestCanonicalVariablesAndResourcesAPI(t *testing.T) {
 		t.Fatalf("shared variable status = %d, want %d", sharedVariableResp.StatusCode, http.StatusOK)
 	}
 	var sharedVariableBody struct {
-		Path     string `json:"path"`
-		Value    string `json:"value"`
-		IsSecret bool   `json:"is_secret"`
+		Path       string `json:"path"`
+		Value      string `json:"value"`
+		IsSecret   bool   `json:"is_secret"`
+		Configured bool   `json:"configured"`
 	}
 	if err := json.NewDecoder(sharedVariableResp.Body).Decode(&sharedVariableBody); err != nil {
 		t.Fatal(err)
 	}
-	if sharedVariableBody.Path != "config/token" || sharedVariableBody.Value != "shared" || !sharedVariableBody.IsSecret {
+	if sharedVariableBody.Path != "config/token" || sharedVariableBody.Value != "" ||
+		!sharedVariableBody.IsSecret || !sharedVariableBody.Configured {
 		t.Fatalf("shared variable body = %#v", sharedVariableBody)
 	}
 	storedShared, found, err := store.GetVariableExact(context.Background(), "ws-a", "", "config/token")
@@ -421,7 +424,11 @@ func TestCanonicalVariablesAndResourcesAPI(t *testing.T) {
 	if storedShared.Value == "shared" {
 		t.Fatalf("secret variable was stored in plaintext")
 	}
-	decryptedShared, err := litecrypto.Decrypt(litecrypto.DeriveWorkspaceKey(secretKey, "ws-a"), storedShared.Value)
+	decryptedShared, err := secretbackend.NewDatabase(store, secretKey, "").Resolve(
+		context.Background(),
+		secretbackend.Reference{WorkspaceID: "ws-a", Kind: "variable", Path: "config/token"},
+		storedShared.Value,
+	)
 	if err != nil {
 		t.Fatalf("decrypt stored secret: %v", err)
 	}
@@ -448,6 +455,7 @@ func TestCanonicalVariablesAndResourcesAPI(t *testing.T) {
 	}
 	run := state.NewRun("windforce", "run-variable-scope", "echo", "echo", deployment, json.RawMessage(`{}`))
 	job := state.NewActionJob(run, nil)
+	job.Payload.RuntimeAccess.Variables = []string{"config/token"}
 	if err := store.CreateRunAndEnqueue(context.Background(), run, job); err != nil {
 		t.Fatal(err)
 	}
@@ -470,14 +478,19 @@ func TestCanonicalVariablesAndResourcesAPI(t *testing.T) {
 	if err := json.NewDecoder(forgedJobResp.Body).Decode(&forgedJobBody); err != nil {
 		t.Fatal(err)
 	}
-	if forgedJobBody.Value != "shared" {
-		t.Fatalf("forged job header variable body = %#v, want shared scope", forgedJobBody)
+	if forgedJobBody.Value != "" {
+		t.Fatalf("operator variable body exposed secret = %#v", forgedJobBody)
 	}
 
+	claimed, _, err := store.ClaimJobForWorker(context.Background(), "worker-variable-scope", nil, nil, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
 	jobToken := token.MintJob("job-secret", token.JobClaims{
 		Workspace: "ws-a",
 		JobID:     job.ID,
 		Subject:   "runner@example.test",
+		Attempt:   claimed.Attempt,
 		Exp:       time.Now().Add(time.Minute).Unix(),
 	})
 	jobVariableReq, err := http.NewRequest(http.MethodGet, server.URL+"/api/w/ws-a/variables/get/p/config/token", nil)
@@ -540,6 +553,13 @@ func TestCanonicalVariablesAndResourcesAPI(t *testing.T) {
 		t.Fatalf("delete variable status = %d, want %d", deleteResp.StatusCode, http.StatusNoContent)
 	}
 
+	if err := store.SetResourceType(context.Background(), "ws-a", state.ResourceType{
+		Name:    "json",
+		Version: "1",
+		Schema:  json.RawMessage(`{"type":"object","properties":{"headless":{"type":"boolean"}},"required":["headless"]}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
 	setResourceResp, err := http.Post(server.URL+"/api/w/ws-a/resources", "application/json", bytes.NewBufferString(`{"path":"browser/profile","value":{"headless":true},"resource_type":"json"}`))
 	if err != nil {
 		t.Fatal(err)
@@ -598,6 +618,149 @@ func TestCanonicalVariablesAndResourcesAPI(t *testing.T) {
 	}
 	if string(bytes.TrimSpace(nullBody)) != "{}" {
 		t.Fatalf("default resource body = %q, want {}", nullBody)
+	}
+}
+
+func TestResourceTypeAPIAndRuntimeResourceResolution(t *testing.T) {
+	ctx := context.Background()
+	store := state.NewLocalStore(filepath.Join(t.TempDir(), "state.json"))
+	server := httptest.NewServer(New(Config{
+		Store:          store,
+		JobTokenSecret: "job-secret",
+		SecretKey:      "resource-type-test-secret",
+	}))
+	defer server.Close()
+
+	invalidType, err := http.Post(
+		server.URL+"/api/w/ws-a/resource-types",
+		"application/json",
+		bytes.NewBufferString(`{"name":"database","version":"1","schema":{"type":"not-a-json-schema-type"}}`),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer invalidType.Body.Close()
+	if invalidType.StatusCode != http.StatusBadRequest {
+		t.Fatalf("invalid resource type status = %d, want 400", invalidType.StatusCode)
+	}
+
+	createdType, err := http.Post(
+		server.URL+"/api/w/ws-a/resource-types",
+		"application/json",
+		bytes.NewBufferString(`{"name":"database","version":"1","description":"Database connection","schema":{"type":"object","properties":{"url":{"type":"string"},"token":{"type":"string"}},"required":["url","token"]}}`),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer createdType.Body.Close()
+	if createdType.StatusCode != http.StatusCreated {
+		t.Fatalf("create resource type status = %d, want 201", createdType.StatusCode)
+	}
+
+	secretResponse, err := http.Post(
+		server.URL+"/api/w/ws-a/variables",
+		"application/json",
+		bytes.NewBufferString(`{"app_key":"app","path":"database/token","value":"runtime-secret","is_secret":true}`),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer secretResponse.Body.Close()
+	if secretResponse.StatusCode != http.StatusOK {
+		t.Fatalf("set secret status = %d", secretResponse.StatusCode)
+	}
+	resourceResponse, err := http.Post(
+		server.URL+"/api/w/ws-a/resources",
+		"application/json",
+		bytes.NewBufferString(`{"path":"database/main","resource_type":"database@1","value":{"url":"postgres://db/main","token":"$var:database/token"}}`),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resourceResponse.Body.Close()
+	if resourceResponse.StatusCode != http.StatusOK {
+		t.Fatalf("set resource status = %d", resourceResponse.StatusCode)
+	}
+
+	listResponse, err := http.Get(server.URL + "/api/w/ws-a/resource-types")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listResponse.Body.Close()
+	var resourceTypes []state.ResourceType
+	if err := json.NewDecoder(listResponse.Body).Decode(&resourceTypes); err != nil {
+		t.Fatal(err)
+	}
+	if len(resourceTypes) != 1 || resourceTypes[0].Name != "database" {
+		t.Fatalf("resource types = %#v", resourceTypes)
+	}
+
+	deleteRequest, err := http.NewRequest(http.MethodDelete, server.URL+"/api/w/ws-a/resource-types/database/1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deleteResponse, err := http.DefaultClient.Do(deleteRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer deleteResponse.Body.Close()
+	if deleteResponse.StatusCode != http.StatusConflict {
+		t.Fatalf("delete in-use resource type status = %d, want 409", deleteResponse.StatusCode)
+	}
+
+	deployment := contract.Deployment{
+		Workspace: "ws-a",
+		App:       "app",
+		Commit:    "commit-a",
+		Actions: map[string]contract.Action{
+			"run": {Action: "run"},
+		},
+	}
+	run := state.NewRun("http", "run-resource-resolution", "app", "run", deployment, json.RawMessage(`{}`))
+	job := state.NewActionJob(run, nil)
+	job.Payload.RuntimeAccess = contract.RuntimeAccess{
+		Variables: []string{"database/token"},
+		Resources: []string{"database/main"},
+	}
+	if err := store.CreateRunAndEnqueue(ctx, run, job); err != nil {
+		t.Fatal(err)
+	}
+	claimed, _, err := store.ClaimJobForWorker(ctx, "worker-a", nil, nil, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jobToken := token.MintJob("job-secret", token.JobClaims{
+		Workspace: "ws-a",
+		JobID:     claimed.ID,
+		Attempt:   claimed.Attempt,
+		Exp:       time.Now().Add(time.Minute).Unix(),
+	})
+	request, err := http.NewRequest(http.MethodGet, server.URL+"/api/w/ws-a/resources/get/p/database/main", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer "+jobToken)
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("runtime resource status = %d, want 200", response.StatusCode)
+	}
+	var resolved map[string]string
+	if err := json.NewDecoder(response.Body).Decode(&resolved); err != nil {
+		t.Fatal(err)
+	}
+	if resolved["token"] != "runtime-secret" || resolved["url"] != "postgres://db/main" {
+		t.Fatalf("resolved resource = %#v", resolved)
+	}
+	audits, err := store.ListSecretAccessAudits(ctx, "ws-a", job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(audits) != 1 || audits[0].Path != "database/token" || audits[0].Source != "sdk" {
+		t.Fatalf("secret access audits = %#v", audits)
 	}
 }
 
@@ -661,6 +824,7 @@ func TestCanonicalVariableAppScopeShadowing(t *testing.T) {
 		}
 		run := state.NewRun("windforce", "run-"+appKey, appKey, "run", deployment, json.RawMessage(`{}`))
 		job := state.NewActionJob(run, nil)
+		job.Payload.RuntimeAccess.Variables = []string{"token", "only-a"}
 		if err := store.CreateRunAndEnqueue(context.Background(), run, job); err != nil {
 			t.Fatal(err)
 		}
@@ -668,10 +832,18 @@ func TestCanonicalVariableAppScopeShadowing(t *testing.T) {
 	}
 	mintJobToken := func(jobID string) string {
 		t.Helper()
+		claimed, _, err := store.ClaimJobForWorker(context.Background(), "worker-"+jobID, nil, nil, time.Minute)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if claimed.ID != jobID {
+			t.Fatalf("claimed job = %q, want %q", claimed.ID, jobID)
+		}
 		return token.MintJob("job-secret", token.JobClaims{
 			Workspace: "ws-a",
 			JobID:     jobID,
 			Subject:   "runner@example.test",
+			Attempt:   claimed.Attempt,
 			Exp:       time.Now().Add(time.Minute).Unix(),
 		})
 	}
@@ -748,7 +920,12 @@ func TestJobTokenAuthorizesOnlySDKCallbacks(t *testing.T) {
 	}
 	run := state.NewRun("windforce", "run-job-token", "echo", "run", deployment, json.RawMessage(`{}`))
 	job := state.NewActionJob(run, nil)
+	job.Payload.RuntimeAccess.Variables = []string{"config/token"}
 	if err := store.CreateRunAndEnqueue(context.Background(), run, job); err != nil {
+		t.Fatal(err)
+	}
+	claimed, lease, err := store.ClaimJobForWorker(context.Background(), "worker-job-token", nil, nil, time.Minute)
+	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.ArchiveWorkspace(context.Background(), "ws-a", "admin"); err != nil {
@@ -767,6 +944,7 @@ func TestJobTokenAuthorizesOnlySDKCallbacks(t *testing.T) {
 		Workspace: "ws-a",
 		JobID:     job.ID,
 		Subject:   "runner@example.test",
+		Attempt:   claimed.Attempt,
 		Exp:       time.Now().Add(time.Minute).Unix(),
 	})
 	req, err := http.NewRequest(http.MethodGet, server.URL+"/api/w/ws-a/variables/get/p/config/token", nil)
@@ -790,6 +968,26 @@ func TestJobTokenAuthorizesOnlySDKCallbacks(t *testing.T) {
 	}
 	if body.Value != "scoped" {
 		t.Fatalf("job-scoped variable = %q, want scoped", body.Value)
+	}
+	if err := store.CompleteJobSucceeded(context.Background(), lease, contract.JobResult{
+		JobID:  job.ID,
+		App:    "echo",
+		Action: "run",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	staleReq, err := http.NewRequest(http.MethodGet, server.URL+"/api/w/ws-a/variables/get/p/config/token", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	staleReq.Header.Set("Authorization", "Bearer "+jobToken)
+	staleResp, err := http.DefaultClient.Do(staleReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = staleResp.Body.Close()
+	if staleResp.StatusCode != http.StatusConflict {
+		t.Fatalf("terminal job token variable status = %d, want %d", staleResp.StatusCode, http.StatusConflict)
 	}
 
 	forbiddenReq, err := http.NewRequest(http.MethodGet, server.URL+"/api/w/ws-a/apps", nil)

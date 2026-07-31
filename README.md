@@ -172,7 +172,12 @@ Every app source has a `windforce.json` file:
   "actions": {
     "echo": {
       "inputSchema": "input.schema.json",
-      "outputSchema": "output.schema.json"
+      "outputSchema": "output.schema.json",
+      "operatorSettingsSchema": "operator-settings.schema.json",
+      "runtimeAccess": {
+        "variables": ["deployment/region", "secrets/api-token"],
+        "resources": ["connections/main"]
+      }
     }
   }
 }
@@ -183,6 +188,10 @@ manifest shape. `entrypoint` and `scriptLang` are app-level; actions branch
 inside that entrypoint. `timeout` is the app default and an action may override
 it with its own `timeout` in seconds. Source manifests do not declare action
 commands or adapters; integration adapters live outside the app source contract.
+`runtimeAccess` declares the maximum Variable and Resource paths available to
+an action. InputConfig may contain exact `$var:path` and `$res:path` values;
+Admission validates and pins their transitive access without resolving Secret
+plaintext. See [Runtime configuration and secrets](docs/concepts/runtime-configuration.md).
 The execution bundle builder supports canonical `typescript`, `python`, and
 `go` entrypoints. Other `scriptLang` values use the Bun preparation path and
 must pass entrypoint validation before a release is published.
@@ -311,8 +320,12 @@ Implemented control-plane endpoints:
 - `GET|POST /api/w/{workspace}/variables`
 - `GET /api/w/{workspace}/variables/get/p/{path}`
 - `DELETE /api/w/{workspace}/variables/p/{path}`
-- `POST /api/w/{workspace}/resources`
+- `GET|POST /api/w/{workspace}/resources`
 - `GET /api/w/{workspace}/resources/get/p/{path}`
+- `DELETE /api/w/{workspace}/resources/p/{path}`
+- `GET|POST /api/w/{workspace}/resource-types`
+- `GET|DELETE /api/w/{workspace}/resource-types/{name}/{version}`
+- `GET /api/w/{workspace}/audit-events?category=runtime_configuration`
 
 All out-of-process callers, including protocol adapters, use the canonical
 Invocation API:

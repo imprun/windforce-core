@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test } from "vitest";
+import { inputSettingDefinitions } from "../lib/input-setting-schema";
 import { setLocale } from "../shared/i18n";
 import { inputConfigPayload } from "./InputConfigDialog";
 
@@ -37,5 +38,28 @@ describe("inputConfigPayload", () => {
     expect(() =>
       inputConfigPayload([{ key: "region", valueText: "kr", locked: false }], "", ""),
     ).toThrow("valid JSON");
+  });
+
+  test("requires secret annotations to use an exact variable reference", () => {
+    const definitions = inputSettingDefinitions(
+      {},
+      { properties: { token: { type: "string", writeOnly: true } } },
+    );
+    expect(() =>
+      inputConfigPayload(
+        [{ key: "token", valueText: '"plaintext"', locked: true }],
+        "orders",
+        "",
+        definitions,
+      ),
+    ).toThrow("$var:");
+    expect(
+      inputConfigPayload(
+        [{ key: "token", valueText: '"$var:secrets/token"', locked: true }],
+        "orders",
+        "",
+        definitions,
+      ).config,
+    ).toEqual({ token: "$var:secrets/token" });
   });
 });

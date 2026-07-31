@@ -36,6 +36,10 @@ type canonicalAuditEvent struct {
 	GitSourceID           int64                  `json:"git_source_id,omitempty"`
 	WebhookSubscriptionID string                 `json:"webhook_subscription_id,omitempty"`
 	WebhookDeliveryID     string                 `json:"webhook_delivery_id,omitempty"`
+	JobID                 string                 `json:"job_id,omitempty"`
+	Attempt               int                    `json:"attempt,omitempty"`
+	RuntimeConfigPath     string                 `json:"runtime_config_path,omitempty"`
+	Source                string                 `json:"source,omitempty"`
 	Actor                 string                 `json:"actor"`
 	Changes               *canonicalAuditChanges `json:"changes,omitempty"`
 	CreatedAt             time.Time              `json:"created_at"`
@@ -102,6 +106,14 @@ func (h *Handler) handleCanonicalAuditEvents(w http.ResponseWriter, r *http.Requ
 			event.GitSourceID = sourceByApp[record.AppKey]
 			events = append(events, event)
 		}
+		secretAudit, err := h.store.ListSecretAccessAudits(r.Context(), workspaceID, "")
+		if err != nil {
+			writeStateError(w, err)
+			return
+		}
+		for _, record := range secretAudit {
+			events = append(events, newSecretAccessAuditEvent(record))
+		}
 		if webhookStore, ok := h.store.(webhook.Store); ok {
 			webhookAudit, err := webhookStore.ListAudit(r.Context(), workspaceID)
 			if err != nil {
@@ -130,6 +142,31 @@ func (h *Handler) handleCanonicalAuditEvents(w http.ResponseWriter, r *http.Requ
 		filtered = filtered[:query.Limit]
 	}
 	writeJSON(w, http.StatusOK, filtered)
+}
+
+func newSecretAccessAuditEvent(record state.SecretAccessAudit) canonicalAuditEvent {
+	detail := fmt.Sprintf(
+		"Secret variable %s resolved for job %s attempt %d via %s",
+		record.Path,
+		record.JobID,
+		record.Attempt,
+		record.Source,
+	)
+	return canonicalAuditEvent{
+		ID:                "runtime-configuration:" + record.ID,
+		Category:          "runtime_configuration",
+		Kind:              "secret_resolved",
+		Summary:           canonicalAuditSummary("runtime_configuration", "secret_resolved"),
+		Detail:            detail,
+		AppKey:            record.AppKey,
+		ActionKey:         record.ActionKey,
+		JobID:             record.JobID,
+		Attempt:           record.Attempt,
+		RuntimeConfigPath: record.Path,
+		Source:            record.Source,
+		Actor:             "runtime",
+		CreatedAt:         record.CreatedAt,
+	}
 }
 
 func catalogAuditEvents(snapshot catalog.Snapshot, workspaceID string) []canonicalAuditEvent {
@@ -286,7 +323,7 @@ func parseCanonicalAuditQuery(r *http.Request) (canonicalAuditQuery, error) {
 		Limit:    100,
 	}
 	if query.Category != "" {
-		validCategories := map[string]bool{"workspace": true, "repository": true, "release": true, "client": true, "input_settings": true, "webhook": true}
+		validCategories := map[string]bool{"workspace": true, "repository": true, "release": true, "client": true, "input_settings": true, "runtime_configuration": true, "webhook": true}
 		if !validCategories[query.Category] {
 			return canonicalAuditQuery{}, fmt.Errorf("invalid audit category")
 		}
@@ -370,6 +407,7 @@ func canonicalAuditSummary(category string, kind string) string {
 		"deleted":                       "Client removed",
 		"input_settings_set":            "Input settings updated",
 		"input_settings_deleted":        "Input settings removed",
+		"secret_resolved":               "Secret variable resolved",
 		"webhook_subscription_created":  "Webhook subscription created",
 		"webhook_subscription_updated":  "Webhook subscription updated",
 		"webhook_subscription_disabled": "Webhook subscription disabled",

@@ -2502,6 +2502,51 @@ textarea {
   gap: 30px;
 }
 
+.runtimeAccessSummary {
+  margin-bottom: 30px;
+  border-top: 1px solid var(--border);
+  padding-top: 22px;
+}
+
+.runtimeAccessSummaryHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.runtimeAccessSummaryHeader h3 {
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.runtimeAccessSummaryHeader p,
+.runtimeAccessEmpty {
+  margin-top: 4px;
+  color: var(--text-secondary);
+}
+
+.runtimeAccessGroups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.runtimeAccessPaths {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 7px;
+}
+
+@media (max-width: 640px) {
+  .runtimeAccessSummaryHeader {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
 .schemaSection {
   border-top: 1px solid var(--border);
   padding-top: 22px;
@@ -3508,6 +3553,86 @@ textarea {
 
 .settingsNav {
   margin-bottom: 16px;
+}
+
+.runtimeConfigIntro {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.runtimeConfigIntro svg,
+.runtimeConfigTabs svg,
+.runtimeConfigTable .button svg {
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 auto;
+}
+
+.runtimeConfigTabs {
+  margin-top: var(--space-4);
+}
+
+.runtimeConfigTabs .tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.runtimeConfigSectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin: var(--space-4) 0 var(--space-3);
+}
+
+.runtimeConfigSectionHeader p {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+}
+
+.runtimeConfigTable td:first-child {
+  min-width: 13rem;
+}
+
+.runtimeConfigTable .rowActions {
+  width: 10.5rem;
+  vertical-align: middle;
+}
+
+.runtimeConfigTable .rowActionsInner {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  white-space: nowrap;
+}
+
+.runtimeConfigValue {
+  display: inline-block;
+  max-width: 24rem;
+  overflow: hidden;
+  color: var(--foreground);
+  font-family: var(--font-family-mono);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.runtimeConfigEditor {
+  min-height: 18rem;
+  resize: vertical;
+  tab-size: 2;
+}
+
+@media (max-width: 720px) {
+  .runtimeConfigSectionHeader {
+    align-items: flex-start;
+  }
+
 }
 
 .webhookSummaryBar {

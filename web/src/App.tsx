@@ -6,6 +6,7 @@ import { ClientDetailPage } from "./pages/ClientDetailPage";
 import { ClientRegistryPage } from "./pages/ClientRegistryPage";
 import { MonitoringPage } from "./pages/MonitoringPage";
 import { ProvisioningPage } from "./pages/ProvisioningPage";
+import { RuntimeConfigurationPage } from "./pages/RuntimeConfigurationPage";
 import { SettingsInfoPage } from "./pages/SettingsInfoPage";
 import { WebhookCreatePage } from "./pages/WebhookCreatePage";
 import { WebhookDetailPage } from "./pages/WebhookDetailPage";
@@ -75,6 +76,7 @@ export function App() {
   if (matchRoute("/settings/access", path)) return <WorkspaceAccessSettingsPage />;
   if (matchRoute("/settings/system", path)) return <SettingsInfoPage />;
   if (matchRoute("/settings/info", path)) return <SettingsInfoPage />;
+  if (matchRoute("/settings/runtime-configuration", path)) return <RuntimeConfigurationPage />;
   if (matchRoute("/settings/provisioning", path)) return <ProvisioningPage />;
   if (matchRoute("/provisioning", path)) return <ProvisioningPage />;
   if (matchRoute("/settings", path)) return <WorkspaceSettingsPage />;

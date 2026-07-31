@@ -72,6 +72,7 @@ var (
 	ErrNotFound      = errors.New("not found")
 	ErrNoQueuedJob   = errors.New("no queued job")
 	ErrConflict      = errors.New("conflict")
+	ErrForbidden     = errors.New("forbidden")
 	ErrInvalidState  = errors.New("invalid state")
 	ErrInvalidLease  = errors.New("invalid lease")
 	ErrNoCompletion  = errors.New("no pending trigger completion")
@@ -107,34 +108,35 @@ type Run struct {
 }
 
 type JobPayload struct {
-	Workspace             string          `json:"workspace,omitempty"`
-	GitSourceID           string          `json:"gitSourceId,omitempty"`
-	Commit                string          `json:"commit,omitempty"`
-	App                   string          `json:"app"`
-	Action                string          `json:"action"`
-	Version               string          `json:"version,omitempty"`
-	Tag                   string          `json:"tag,omitempty"`
-	DeploymentTag         string          `json:"deploymentTag,omitempty"`
-	DeploymentTagOverride *string         `json:"deploymentTagOverride,omitempty"`
-	Entrypoint            string          `json:"entrypoint,omitempty"`
-	Runtime               string          `json:"runtime,omitempty"`
-	ScriptLang            string          `json:"scriptLang,omitempty"`
-	TimeoutS              int32           `json:"timeout,omitempty"`
-	MaxConcurrent         *int32          `json:"maxConcurrent,omitempty"`
-	RequiredCapabilities  []string        `json:"requiredCapabilities,omitempty"`
-	RequiredLabels        []string        `json:"requiredLabels,omitempty"`
-	DeploymentID          *string         `json:"deploymentId,omitempty"`
-	BundleDigest          string          `json:"bundleDigest,omitempty"`
-	BundleURI             string          `json:"bundleUri,omitempty"`
-	ObjectURI             string          `json:"objectUri,omitempty"`
-	TriggerKind           string          `json:"triggerKind,omitempty"`
-	TriggerHeaders        json.RawMessage `json:"triggerHeaders,omitempty"`
-	ScheduledFor          string          `json:"scheduledFor,omitempty"`
-	ActionSpec            contract.Action `json:"actionSpec,omitempty"`
-	InputSchema           json.RawMessage `json:"inputSchema,omitempty"`
-	OutputSchema          json.RawMessage `json:"outputSchema,omitempty"`
-	Input                 json.RawMessage `json:"input,omitempty"`
-	InputConfigResolved   bool            `json:"inputConfigResolved,omitempty"`
+	Workspace             string                 `json:"workspace,omitempty"`
+	GitSourceID           string                 `json:"gitSourceId,omitempty"`
+	Commit                string                 `json:"commit,omitempty"`
+	App                   string                 `json:"app"`
+	Action                string                 `json:"action"`
+	Version               string                 `json:"version,omitempty"`
+	Tag                   string                 `json:"tag,omitempty"`
+	DeploymentTag         string                 `json:"deploymentTag,omitempty"`
+	DeploymentTagOverride *string                `json:"deploymentTagOverride,omitempty"`
+	Entrypoint            string                 `json:"entrypoint,omitempty"`
+	Runtime               string                 `json:"runtime,omitempty"`
+	ScriptLang            string                 `json:"scriptLang,omitempty"`
+	TimeoutS              int32                  `json:"timeout,omitempty"`
+	MaxConcurrent         *int32                 `json:"maxConcurrent,omitempty"`
+	RequiredCapabilities  []string               `json:"requiredCapabilities,omitempty"`
+	RequiredLabels        []string               `json:"requiredLabels,omitempty"`
+	DeploymentID          *string                `json:"deploymentId,omitempty"`
+	BundleDigest          string                 `json:"bundleDigest,omitempty"`
+	BundleURI             string                 `json:"bundleUri,omitempty"`
+	ObjectURI             string                 `json:"objectUri,omitempty"`
+	TriggerKind           string                 `json:"triggerKind,omitempty"`
+	TriggerHeaders        json.RawMessage        `json:"triggerHeaders,omitempty"`
+	ScheduledFor          string                 `json:"scheduledFor,omitempty"`
+	ActionSpec            contract.Action        `json:"actionSpec,omitempty"`
+	InputSchema           json.RawMessage        `json:"inputSchema,omitempty"`
+	OutputSchema          json.RawMessage        `json:"outputSchema,omitempty"`
+	Input                 json.RawMessage        `json:"input,omitempty"`
+	InputConfigResolved   bool                   `json:"inputConfigResolved,omitempty"`
+	RuntimeAccess         contract.RuntimeAccess `json:"runtimeAccess,omitempty"`
 	// Deployment is retained only to decode jobs created before compact pins.
 	Deployment     *contract.Deployment `json:"deployment,omitempty"`
 	CorrelationID  string               `json:"correlationId,omitempty"`
@@ -289,6 +291,13 @@ type Resource struct {
 	Description  string          `json:"description"`
 }
 
+type ResourceType struct {
+	Name        string          `json:"name"`
+	Version     string          `json:"version"`
+	Schema      json.RawMessage `json:"schema"`
+	Description string          `json:"description"`
+}
+
 type Client struct {
 	ID          string    `json:"id"`
 	WorkspaceID string    `json:"workspace_id"`
@@ -376,6 +385,18 @@ type InputConfigAudit struct {
 	CreatedAt   time.Time `json:"created_at"`
 }
 
+type SecretAccessAudit struct {
+	ID          string    `json:"id"`
+	WorkspaceID string    `json:"workspace_id"`
+	JobID       string    `json:"job_id"`
+	Attempt     int       `json:"attempt"`
+	AppKey      string    `json:"app_key"`
+	ActionKey   string    `json:"action_key"`
+	Path        string    `json:"path"`
+	Source      string    `json:"source"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
 type Workspace struct {
 	ID     string `json:"id"`
 	Name   string `json:"name"`
@@ -387,6 +408,11 @@ type Workspace struct {
 	UpdatedBy string    `json:"updated_by"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type WorkspaceKey struct {
+	Key        string `json:"key"`
+	KEKVersion int32  `json:"kek_version"`
 }
 
 type WorkspaceToken struct {
@@ -621,6 +647,7 @@ type Snapshot struct {
 	JobState               map[string]map[string]json.RawMessage  `json:"jobState"`
 	Variables              map[string]map[string]Variable         `json:"variables"`
 	Resources              map[string]map[string]Resource         `json:"resources"`
+	ResourceTypes          map[string]map[string]ResourceType     `json:"resourceTypes"`
 	Clients                map[string]map[string]Client           `json:"clients"`
 	ClientAudits           map[string][]ClientAudit               `json:"clientAudits"`
 	ClientTokenVersion     int                                    `json:"clientTokenVersion,omitempty"`
@@ -628,6 +655,7 @@ type Snapshot struct {
 	ServicePrincipalAudits map[string][]ServicePrincipalAudit     `json:"servicePrincipalAudits"`
 	InputConfigs           map[string]map[string]InputConfig      `json:"inputConfigs"`
 	InputConfigAudits      map[string][]InputConfigAudit          `json:"inputConfigAudits"`
+	SecretAccessAudits     map[string][]SecretAccessAudit         `json:"secretAccessAudits,omitempty"`
 	LegacyClients          map[string]map[string]Client           `json:"apiClients,omitempty"`
 	LegacyClientAudits     map[string][]ClientAudit               `json:"apiClientAudits,omitempty"`
 	ReleaseCatalog         catalog.Snapshot                       `json:"releaseCatalog"`
@@ -642,6 +670,7 @@ type Snapshot struct {
 	HTTPRouteBindingAudits map[string][]HTTPRouteBindingAudit     `json:"httpRouteBindingAudits"`
 	Workers                map[string]WorkerRecord                `json:"workers,omitempty"`
 	Workspaces             map[string]Workspace                   `json:"workspaces"`
+	WorkspaceKeys          map[string]WorkspaceKey                `json:"workspaceKeys,omitempty"`
 	WorkspaceTokens        map[string]map[string]WorkspaceToken   `json:"workspaceTokens"`
 	WorkspaceAudits        []WorkspaceAudit                       `json:"workspaceAudits"`
 }
@@ -659,6 +688,7 @@ type Store interface {
 	RotateWorkspaceToken(ctx context.Context, workspaceID string, id string, tokenHash string, actor string) (WorkspaceToken, error)
 	RevokeWorkspaceToken(ctx context.Context, workspaceID string, id string, actor string) (WorkspaceToken, error)
 	ListWorkspaceAudit(ctx context.Context, workspaceID string) ([]WorkspaceAudit, error)
+	GetWorkspaceKeyVersioned(ctx context.Context, workspaceID string) (string, int32, error)
 	CreateRunAndEnqueue(ctx context.Context, run Run, job Job) error
 	GetRun(ctx context.Context, runID string) (Run, error)
 	GetJob(ctx context.Context, workspaceID string, jobID string) (Job, Run, bool, error)
@@ -676,8 +706,14 @@ type Store interface {
 	GetVariable(ctx context.Context, workspaceID string, appKey string, path string) (Variable, bool, error)
 	GetVariableExact(ctx context.Context, workspaceID string, appKey string, path string) (Variable, bool, error)
 	DeleteVariable(ctx context.Context, workspaceID string, appKey string, path string) error
+	ListResources(ctx context.Context, workspaceID string) ([]Resource, error)
 	SetResource(ctx context.Context, workspaceID string, path string, value json.RawMessage, resourceType string, description string) error
 	GetResource(ctx context.Context, workspaceID string, path string) (Resource, bool, error)
+	DeleteResource(ctx context.Context, workspaceID string, path string) error
+	ListResourceTypes(ctx context.Context, workspaceID string) ([]ResourceType, error)
+	SetResourceType(ctx context.Context, workspaceID string, resourceType ResourceType) error
+	GetResourceType(ctx context.Context, workspaceID string, name string, version string) (ResourceType, bool, error)
+	DeleteResourceType(ctx context.Context, workspaceID string, name string, version string) error
 	ListClients(ctx context.Context, workspaceID string) ([]Client, error)
 	GetClient(ctx context.Context, workspaceID string, id string) (Client, error)
 	GetClientByTokenHash(ctx context.Context, workspaceID string, tokenHash string) (Client, error)
@@ -702,6 +738,8 @@ type Store interface {
 	SetInputConfig(ctx context.Context, config InputConfig, actor string) (InputConfig, error)
 	DeleteInputConfig(ctx context.Context, workspaceID string, appKey string, actionKey string, clientID string, actor string) error
 	ListInputConfigAudit(ctx context.Context, workspaceID string, appKey string, clientID string) ([]InputConfigAudit, error)
+	AppendSecretAccessAudit(ctx context.Context, record SecretAccessAudit) error
+	ListSecretAccessAudits(ctx context.Context, workspaceID string, jobID string) ([]SecretAccessAudit, error)
 	ResolveInput(ctx context.Context, workspaceID string, appKey string, actionKey string, clientID string, request json.RawMessage) (json.RawMessage, error)
 	DecryptInput(ctx context.Context, workspaceID string, input json.RawMessage) (json.RawMessage, error)
 	ListTriggers(ctx context.Context, workspaceID string) ([]TriggerDefinition, error)
@@ -833,13 +871,17 @@ func NewActionJob(run Run, input json.RawMessage) Job {
 			OutputSchema:          outputSchema,
 			Input:                 cloneRaw(input),
 			InputConfigResolved:   run.InputConfigResolved,
-			CorrelationID:         run.CorrelationID,
-			Env:                   append([]string(nil), run.Env...),
-			CreatedBy:             actorCreatedBy(run),
-			PermissionedAs:        actorPermissionedAs(run),
-			ClientID:              run.ClientID,
-			PrincipalKind:         run.PrincipalKind,
-			PrincipalID:           run.PrincipalID,
+			RuntimeAccess: contract.RuntimeAccess{
+				Variables: append([]string{}, actionSpec.RuntimeAccess.Variables...),
+				Resources: append([]string{}, actionSpec.RuntimeAccess.Resources...),
+			},
+			CorrelationID:  run.CorrelationID,
+			Env:            append([]string(nil), run.Env...),
+			CreatedBy:      actorCreatedBy(run),
+			PermissionedAs: actorPermissionedAs(run),
+			ClientID:       run.ClientID,
+			PrincipalKind:  run.PrincipalKind,
+			PrincipalID:    run.PrincipalID,
 		},
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/imprun/windforce-core/internal/catalog"
 	"github.com/imprun/windforce-core/internal/contract"
 	controlevent "github.com/imprun/windforce-core/internal/event"
+	"github.com/imprun/windforce-core/internal/resourceconfig"
 	"github.com/imprun/windforce-core/internal/webhook"
 )
 
@@ -34,14 +35,14 @@ func (s *LocalStore) ConfigureInputCrypto(secretKey string, previous string) {
 }
 
 func (s *LocalStore) encryptInput(ctx context.Context, workspaceID string, input json.RawMessage) (json.RawMessage, error) {
-	return encryptInputAtRest(ctx, nil, inputCryptoConfig{
+	return encryptInputAtRest(ctx, s, inputCryptoConfig{
 		SecretKey:         s.SecretKey,
 		SecretKeyPrevious: s.SecretKeyPrevious,
 	}, workspaceID, input)
 }
 
 func (s *LocalStore) decryptInput(ctx context.Context, workspaceID string, input json.RawMessage) (json.RawMessage, error) {
-	return decryptInputAtRest(ctx, nil, inputCryptoConfig{
+	return decryptInputAtRest(ctx, s, inputCryptoConfig{
 		SecretKey:         s.SecretKey,
 		SecretKeyPrevious: s.SecretKeyPrevious,
 	}, workspaceID, input)
@@ -52,14 +53,14 @@ func (s *LocalStore) DecryptInput(ctx context.Context, workspaceID string, input
 }
 
 func (s *LocalStore) encryptResult(ctx context.Context, workspaceID string, result json.RawMessage) (json.RawMessage, error) {
-	return encryptResultAtRest(ctx, nil, inputCryptoConfig{
+	return encryptResultAtRest(ctx, s, inputCryptoConfig{
 		SecretKey:         s.SecretKey,
 		SecretKeyPrevious: s.SecretKeyPrevious,
 	}, workspaceID, result)
 }
 
 func (s *LocalStore) decryptResult(ctx context.Context, workspaceID string, result json.RawMessage) (json.RawMessage, error) {
-	return decryptResultAtRest(ctx, nil, inputCryptoConfig{
+	return decryptResultAtRest(ctx, s, inputCryptoConfig{
 		SecretKey:         s.SecretKey,
 		SecretKeyPrevious: s.SecretKeyPrevious,
 	}, workspaceID, result)
@@ -411,6 +412,10 @@ func (s *LocalStore) ListVariables(ctx context.Context, workspaceID string) ([]V
 
 func (s *LocalStore) SetVariable(ctx context.Context, workspaceID string, appKey string, path string, value string, isSecret bool, description string) error {
 	workspaceID = contract.NormalizeWorkspace(workspaceID)
+	path, err := contract.NormalizeRuntimeConfigPath(path)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidState, err)
+	}
 	return s.update(ctx, func(snapshot *Snapshot, now time.Time) error {
 		if snapshot.Variables[workspaceID] == nil {
 			snapshot.Variables[workspaceID] = map[string]Variable{}
@@ -461,6 +466,11 @@ func (s *LocalStore) DeleteVariable(ctx context.Context, workspaceID string, app
 }
 
 func (s *LocalStore) SetResource(ctx context.Context, workspaceID string, path string, value json.RawMessage, resourceType string, description string) error {
+	normalizedPath, err := contract.NormalizeRuntimeConfigPath(path)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidState, err)
+	}
+	path = normalizedPath
 	if len(value) == 0 {
 		value = json.RawMessage("{}")
 	}
@@ -468,6 +478,22 @@ func (s *LocalStore) SetResource(ctx context.Context, workspaceID string, path s
 		return errors.New("resource value is not valid JSON")
 	}
 	workspaceID = contract.NormalizeWorkspace(workspaceID)
+	if resourceType != "" {
+		name, version, err := resourceconfig.ParseTypeReference(resourceType)
+		if err != nil {
+			return fmt.Errorf("%w: %v", ErrInvalidState, err)
+		}
+		registered, found, err := s.GetResourceType(ctx, workspaceID, name, version)
+		if err != nil {
+			return err
+		}
+		if !found {
+			return ErrNotFound
+		}
+		if err := resourceconfig.ValidateValue(registered.Schema, value); err != nil {
+			return fmt.Errorf("%w: %v", ErrInvalidState, err)
+		}
+	}
 	return s.update(ctx, func(snapshot *Snapshot, now time.Time) error {
 		if snapshot.Resources[workspaceID] == nil {
 			snapshot.Resources[workspaceID] = map[string]Resource{}
@@ -1032,6 +1058,9 @@ func ensureSnapshot(snapshot *Snapshot) {
 	if snapshot.Resources == nil {
 		snapshot.Resources = map[string]map[string]Resource{}
 	}
+	if snapshot.ResourceTypes == nil {
+		snapshot.ResourceTypes = map[string]map[string]ResourceType{}
+	}
 	if snapshot.Clients == nil {
 		snapshot.Clients = snapshot.LegacyClients
 		if snapshot.Clients == nil {
@@ -1056,6 +1085,9 @@ func ensureSnapshot(snapshot *Snapshot) {
 	}
 	if snapshot.InputConfigAudits == nil {
 		snapshot.InputConfigAudits = map[string][]InputConfigAudit{}
+	}
+	if snapshot.SecretAccessAudits == nil {
+		snapshot.SecretAccessAudits = map[string][]SecretAccessAudit{}
 	}
 	if snapshot.WebhookSubscriptions == nil {
 		snapshot.WebhookSubscriptions = map[string]WebhookSubscriptionRecord{}
@@ -1086,6 +1118,9 @@ func ensureSnapshot(snapshot *Snapshot) {
 	}
 	if snapshot.Workspaces == nil {
 		snapshot.Workspaces = map[string]Workspace{}
+	}
+	if snapshot.WorkspaceKeys == nil {
+		snapshot.WorkspaceKeys = map[string]WorkspaceKey{}
 	}
 	if snapshot.WorkspaceTokens == nil {
 		snapshot.WorkspaceTokens = map[string]map[string]WorkspaceToken{}

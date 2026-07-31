@@ -149,6 +149,7 @@ function auditCategoryLabel(category: string): string {
   if (category === "release") return translate("audit.release");
   if (category === "client") return translate("navigation.clientRegistry");
   if (category === "input_settings") return translate("audit.inputSettings");
+  if (category === "runtime_configuration") return translate("audit.runtimeConfiguration");
   if (category === "webhook") return translate("settingsNav.webhooks");
   if (category === "workspace") return translate("settingsNav.workspace");
   return category;

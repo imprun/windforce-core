@@ -423,3 +423,39 @@ func TestParsePreservesSchemaPathsForMaterialization(t *testing.T) {
 		t.Fatalf("schema paths = input:%q output:%q", run.InputSchema, run.OutputSchema)
 	}
 }
+
+func TestParseNormalizesRuntimeAccess(t *testing.T) {
+	app, err := Parse([]byte(`{
+  "app": "echo",
+  "entrypoint": "main.ts",
+  "actions": {
+    "run": {
+      "runtimeAccess": {
+        "variables": [" credentials/token ", "credentials/token"],
+        "resources": ["database/main"]
+      }
+    }
+  }
+}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	action := app.Actions["run"]
+	if !reflect.DeepEqual(action.RuntimeAccess.Variables, []string{"credentials/token"}) ||
+		!reflect.DeepEqual(action.RuntimeAccess.Resources, []string{"database/main"}) {
+		t.Fatalf("runtime access = %#v", action.RuntimeAccess)
+	}
+}
+
+func TestParseRejectsInvalidRuntimeAccessPath(t *testing.T) {
+	_, err := Parse([]byte(`{
+  "app": "echo",
+  "entrypoint": "main.ts",
+  "actions": {
+    "run": {"runtimeAccess": {"variables": ["../secret"]}}
+  }
+}`))
+	if err == nil || !strings.Contains(err.Error(), "runtimeAccess") {
+		t.Fatalf("Parse error = %v, want runtimeAccess validation", err)
+	}
+}

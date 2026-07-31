@@ -18,8 +18,13 @@ export const settingsNavItems = [
     match: (path: string) => path.startsWith("/settings/webhooks"),
   },
   {
+    to: "/settings/runtime-configuration",
+    labelKey: "settingsNav.runtimeConfiguration" as TranslationKey,
+    match: (path: string) => path === "/settings/runtime-configuration",
+  },
+  {
     to: "/settings/provisioning",
-    labelKey: "settingsNav.configuration" as TranslationKey,
+    labelKey: "settingsNav.provisioning" as TranslationKey,
     match: (path: string) => path === "/settings/provisioning",
   },
   {

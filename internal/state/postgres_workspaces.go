@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/imprun/windforce-core/internal/contract"
+	wfcrypto "github.com/imprun/windforce-core/internal/crypto"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -38,6 +40,17 @@ func (s *PostgresStore) GetWorkspace(ctx context.Context, workspaceID string) (W
 }
 
 func (s *PostgresStore) CreateWorkspace(ctx context.Context, workspaceID string, name string, actor string) (Workspace, error) {
+	var (
+		wrappedDEK string
+		kekVersion int32
+	)
+	if strings.TrimSpace(s.SecretKey) != "" {
+		var err error
+		wrappedDEK, kekVersion, err = wfcrypto.NewWrappedDEK(s.SecretKey)
+		if err != nil {
+			return Workspace{}, fmt.Errorf("create workspace data-encryption key: %w", err)
+		}
+	}
 	var created Workspace
 	err := s.withTx(ctx, func(tx pgx.Tx) error {
 		var err error
@@ -47,6 +60,14 @@ VALUES ($1, $2, $3, $4, $4)
 RETURNING `+workspaceColumns, workspaceID, name, WorkspaceActive, actor))
 		if err != nil {
 			return workspacePostgresError(err)
+		}
+		if wrappedDEK != "" {
+			if _, err := tx.Exec(ctx, `
+INSERT INTO workspace_key (workspace_id, key, kek_version)
+VALUES ($1, $2, $3)
+`, workspaceID, wrappedDEK, kekVersion); err != nil {
+				return fmt.Errorf("store workspace data-encryption key: %w", err)
+			}
 		}
 		return insertWorkspaceAudit(ctx, tx, workspaceID, "created", "", actor)
 	})
