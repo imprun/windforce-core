@@ -1,12 +1,15 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/imprun/windforce-core/internal/contract"
+	"github.com/imprun/windforce-core/internal/runtimeconfig"
 	"github.com/imprun/windforce-core/internal/state"
 )
 
@@ -82,6 +85,10 @@ func (h *Handler) handleCanonicalSetInputConfig(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusBadRequest, "config must be a JSON object")
 		return
 	}
+	if err := h.validateInputConfigSecretReferences(r.Context(), workspaceID, appKey, deployment, request.ActionKey, configJSON); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid secret setting reference: "+err.Error())
+		return
+	}
 	config, err := h.store.SetInputConfig(r.Context(), state.InputConfig{
 		WorkspaceID: contract.NormalizeWorkspace(workspaceID),
 		AppKey:      appKey,
@@ -99,6 +106,32 @@ func (h *Handler) handleCanonicalSetInputConfig(w http.ResponseWriter, r *http.R
 		return
 	}
 	writeJSON(w, http.StatusOK, config)
+}
+
+func (h *Handler) validateInputConfigSecretReferences(
+	ctx context.Context,
+	workspaceID string,
+	appKey string,
+	deployment contract.Deployment,
+	actionKey string,
+	config json.RawMessage,
+) error {
+	reader := h.newCanonicalSchemaReader(ctx, deployment)
+	defer reader.Close()
+	resolver := runtimeconfig.New(h.store, nil)
+	for key, action := range deployment.Actions {
+		if actionKey != "" && key != actionKey {
+			continue
+		}
+		schema, err := reader.Read(action.OperatorSettingsSchema, action.OperatorSettingsSchemaBody)
+		if err != nil {
+			return fmt.Errorf("action %s operator settings schema: %w", key, err)
+		}
+		if _, err := resolver.ValidateSecretReferences(ctx, workspaceID, appKey, schema, config); err != nil {
+			return fmt.Errorf("action %s: %w", key, err)
+		}
+	}
+	return nil
 }
 
 func (h *Handler) handleCanonicalDeleteInputConfig(w http.ResponseWriter, r *http.Request, workspaceID string, appKey string) {

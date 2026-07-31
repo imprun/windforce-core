@@ -257,18 +257,19 @@ type canonicalAppHistoryItem struct {
 }
 
 type canonicalActionModel struct {
-	ID                   string    `json:"id"`
-	WorkspaceID          string    `json:"workspace_id"`
-	AppKey               string    `json:"app_key"`
-	ActionKey            string    `json:"action_key"`
-	DisplayName          string    `json:"display_name,omitempty"`
-	InputSchema          []byte    `json:"input_schema"`
-	OutputSchema         []byte    `json:"output_schema"`
-	Tag                  *string   `json:"tag,omitempty"`
-	TagOverride          *string   `json:"tag_override,omitempty"`
-	TimeoutS             *int32    `json:"timeout_s,omitempty"`
-	RequiredCapabilities []string  `json:"required_capabilities,omitempty"`
-	UpdatedAt            time.Time `json:"updated_at"`
+	ID                   string                 `json:"id"`
+	WorkspaceID          string                 `json:"workspace_id"`
+	AppKey               string                 `json:"app_key"`
+	ActionKey            string                 `json:"action_key"`
+	DisplayName          string                 `json:"display_name,omitempty"`
+	InputSchema          []byte                 `json:"input_schema"`
+	OutputSchema         []byte                 `json:"output_schema"`
+	Tag                  *string                `json:"tag,omitempty"`
+	TagOverride          *string                `json:"tag_override,omitempty"`
+	TimeoutS             *int32                 `json:"timeout_s,omitempty"`
+	RequiredCapabilities []string               `json:"required_capabilities,omitempty"`
+	RuntimeAccess        contract.RuntimeAccess `json:"runtime_access"`
+	UpdatedAt            time.Time              `json:"updated_at"`
 }
 
 type canonicalActionSchemaView struct {
@@ -408,7 +409,11 @@ func (h *Handler) newCanonicalActionModel(schemaReader *canonicalSchemaReader, d
 		TagOverride:          cloneStringPtr(action.TagOverride),
 		TimeoutS:             cloneInt32Ptr(action.TimeoutS),
 		RequiredCapabilities: cloneStringSlicePtr(action.Capabilities),
-		UpdatedAt:            canonicalActionUpdatedAt(deployment, action),
+		RuntimeAccess: contract.RuntimeAccess{
+			Variables: append([]string{}, action.RuntimeAccess.Variables...),
+			Resources: append([]string{}, action.RuntimeAccess.Resources...),
+		},
+		UpdatedAt: canonicalActionUpdatedAt(deployment, action),
 	}, nil
 }
 

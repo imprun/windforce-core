@@ -701,8 +701,18 @@ func exerciseStoreVariablesAndResources(t *testing.T, store Store) {
 		t.Fatalf("post-delete variable found=%v variable=%#v", found, variable)
 	}
 
+	if err := store.SetResourceType(ctx, "ws-a", ResourceType{
+		Name:    "json",
+		Version: "1",
+		Schema:  json.RawMessage(`{"type":"object","properties":{"headless":{"type":"boolean"}},"required":["headless"]}`),
+	}); err != nil {
+		t.Fatalf("SetResourceType returned error: %v", err)
+	}
 	if err := store.SetResource(ctx, "ws-a", "browser/profile", json.RawMessage(`{"headless":true}`), "json", "browser settings"); err != nil {
 		t.Fatalf("SetResource returned error: %v", err)
+	}
+	if err := store.SetResource(ctx, "ws-a", "browser/invalid", json.RawMessage(`{"headless":"yes"}`), "json", "invalid"); !errors.Is(err, ErrInvalidState) {
+		t.Fatalf("invalid typed resource error = %v, want invalid state", err)
 	}
 	resource, found, err := store.GetResource(ctx, "ws-a", "browser/profile")
 	if err != nil {
@@ -714,6 +724,19 @@ func exerciseStoreVariablesAndResources(t *testing.T, store Store) {
 	}
 	if !found || !got["headless"] || resource.ResourceType != "json" {
 		t.Fatalf("resource found=%v resource=%#v", found, resource)
+	}
+	if err := store.DeleteResourceType(ctx, "ws-a", "json", "1"); !errors.Is(err, ErrConflict) {
+		t.Fatalf("delete resource type in use error = %v, want conflict", err)
+	}
+	if err := store.SetResourceType(ctx, "ws-a", ResourceType{
+		Name:    "unused",
+		Version: "1",
+		Schema:  json.RawMessage(`{"type":"object"}`),
+	}); err != nil {
+		t.Fatalf("SetResourceType unused returned error: %v", err)
+	}
+	if err := store.DeleteResourceType(ctx, "ws-a", "unused", "1"); err != nil {
+		t.Fatalf("DeleteResourceType unused returned error: %v", err)
 	}
 	if err := store.SetResource(ctx, "ws-a", "browser/default", nil, "", "default settings"); err != nil {
 		t.Fatalf("SetResource nil value returned error: %v", err)

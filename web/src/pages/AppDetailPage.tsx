@@ -665,6 +665,7 @@ function ActionReferenceDetail({ app, action }: { app: AppSummary; action: Actio
           </div>
         </div>
       </header>
+      <RuntimeAccessSummary action={action} />
       {schemas.error ? <ErrorNotice message={schemas.error} onRetry={schemas.reload} /> : null}
       <SchemaReference
         schemas={schemas.data}
@@ -673,6 +674,54 @@ function ActionReferenceDetail({ app, action }: { app: AppSummary; action: Actio
         actionKey={action.action_key}
       />
     </article>
+  );
+}
+
+function RuntimeAccessSummary({ action }: { action: ActionView }) {
+  const variables = action.runtime_access?.variables || [];
+  const resources = action.runtime_access?.resources || [];
+  return (
+    <section className="runtimeAccessSummary">
+      <div className="runtimeAccessSummaryHeader">
+        <div>
+          <h3>{translate("appDetail.runtimeAccess")}</h3>
+          <p>{translate("appDetail.runtimeAccessDescription")}</p>
+        </div>
+        <Link className="button small" to="/settings/runtime-configuration">
+          {translate("appDetail.manageRuntimeConfiguration")}
+        </Link>
+      </div>
+      {variables.length || resources.length ? (
+        <div className="runtimeAccessGroups">
+          {variables.length ? (
+            <div>
+              <span className="cellSub">{translate("runtimeConfig.tab.variables")}</span>
+              <div className="runtimeAccessPaths">
+                {variables.map((path) => (
+                  <code className="badge neutral" key={`variable-${path}`}>
+                    $var:{path}
+                  </code>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          {resources.length ? (
+            <div>
+              <span className="cellSub">{translate("runtimeConfig.tab.resources")}</span>
+              <div className="runtimeAccessPaths">
+                {resources.map((path) => (
+                  <code className="badge neutral" key={`resource-${path}`}>
+                    $res:{path}
+                  </code>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <p className="runtimeAccessEmpty">{translate("appDetail.runtimeAccessEmpty")}</p>
+      )}
+    </section>
   );
 }
 

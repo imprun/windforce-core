@@ -125,6 +125,53 @@ func TestWorkerPlaneClaimAndComplete(t *testing.T) {
 	}
 }
 
+func TestWorkerPlaneClaimPreservesAdmissionResolvedInput(t *testing.T) {
+	server, store := newWorkerPlaneServer(t)
+
+	deployment := contract.Deployment{
+		Workspace: "ws-a",
+		App:       "echo",
+		Commit:    "commit-a",
+		Actions:   map[string]contract.Action{"run": {Action: "run", Command: []string{"helper"}}},
+	}
+	run := state.NewRun(
+		"windforce",
+		"run-input-config-resolved",
+		"echo",
+		"run",
+		deployment,
+		json.RawMessage(`{"message":"admitted"}`),
+	)
+	run.InputConfigResolved = true
+	job := state.NewActionJob(run, nil)
+	if err := store.CreateRunAndEnqueue(context.Background(), run, job); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SetInputConfig(context.Background(), state.InputConfig{
+		WorkspaceID: "ws-a",
+		AppKey:      "echo",
+		ActionKey:   "run",
+		Config:      json.RawMessage(`{"injected_after_admission":true}`),
+	}, "operator"); err != nil {
+		t.Fatal(err)
+	}
+
+	resp, payload := workerPlanePost(t, server.URL+"/worker/v1/claims", "admin-secret",
+		`{"worker_id":"w-remote"}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("claim = %d: %s", resp.StatusCode, payload)
+	}
+	var claim struct {
+		Job state.Job `json:"job"`
+	}
+	if err := json.Unmarshal([]byte(payload), &claim); err != nil {
+		t.Fatal(err)
+	}
+	if got := string(claim.Job.Payload.Input); got != `{"message":"admitted"}` {
+		t.Fatalf("claim input = %s, want admission-resolved input", got)
+	}
+}
+
 func TestWorkerPlaneArtifactStreamsTar(t *testing.T) {
 	tempDir := t.TempDir()
 	store := state.NewLocalStore(filepath.Join(tempDir, "state.json"))

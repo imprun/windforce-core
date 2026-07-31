@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/imprun/windforce-core/internal/contract"
+	wfcrypto "github.com/imprun/windforce-core/internal/crypto"
 )
 
 func TestLocalWorkspaceTokenMigrationPreservesLegacyCredential(t *testing.T) {
@@ -53,6 +54,7 @@ func TestLocalWorkspaceTokenMigrationPreservesLegacyCredential(t *testing.T) {
 func TestLocalWorkspaceLifecycleAndNamedTokens(t *testing.T) {
 	ctx := context.Background()
 	store := NewLocalStore(filepath.Join(t.TempDir(), "state.json"))
+	store.ConfigureInputCrypto("local-workspace-test-secret", "")
 
 	defaultWorkspace, err := store.GetWorkspace(ctx, contract.DefaultWorkspace)
 	if err != nil || defaultWorkspace.Status != WorkspaceActive {
@@ -65,6 +67,24 @@ func TestLocalWorkspaceLifecycleAndNamedTokens(t *testing.T) {
 	}
 	if created.Name != "Team A" {
 		t.Fatalf("created workspace = %#v", created)
+	}
+	storedKey, version, err := store.GetWorkspaceKeyVersioned(ctx, "team-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if version != wfcrypto.WrappedDEKVersion {
+		t.Fatalf("workspace key version = %d, want %d", version, wfcrypto.WrappedDEKVersion)
+	}
+	dek, err := wfcrypto.ResolveDEK(
+		storedKey,
+		version,
+		[]string{wfcrypto.DeriveKEK("local-workspace-test-secret")},
+	)
+	if err != nil {
+		t.Fatalf("resolve workspace DEK: %v", err)
+	}
+	if dek == "" || dek == wfcrypto.DeriveWorkspaceKey("local-workspace-test-secret", "team-a") {
+		t.Fatal("workspace DEK was not generated randomly")
 	}
 	if _, err := store.CreateWorkspace(ctx, "team-a", "Duplicate", "admin"); !errors.Is(err, ErrConflict) {
 		t.Fatalf("duplicate create error = %v", err)
@@ -131,11 +151,13 @@ func TestPostgresWorkspaceLifecycle(t *testing.T) {
 	if err := store.Migrate(ctx); err != nil {
 		t.Fatal(err)
 	}
+	store.ConfigureInputCrypto("postgres-workspace-test-secret", "")
 
 	workspaceID := fmt.Sprintf("test-ws-%d", time.Now().UnixNano())
 	defer func() {
 		_, _ = store.pool.Exec(context.Background(), `DELETE FROM workspace_audit WHERE workspace_id=$1`, workspaceID)
 		_, _ = store.pool.Exec(context.Background(), `DELETE FROM workspace_token WHERE workspace_id=$1`, workspaceID)
+		_, _ = store.pool.Exec(context.Background(), `DELETE FROM workspace_key WHERE workspace_id=$1`, workspaceID)
 		_, _ = store.pool.Exec(context.Background(), `DELETE FROM workspace_registry WHERE id=$1`, workspaceID)
 	}()
 
@@ -145,6 +167,24 @@ func TestPostgresWorkspaceLifecycle(t *testing.T) {
 	}
 	if created.ID != workspaceID {
 		t.Fatalf("created workspace = %#v", created)
+	}
+	storedKey, version, err := store.GetWorkspaceKeyVersioned(ctx, workspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if version != wfcrypto.WrappedDEKVersion {
+		t.Fatalf("workspace key version = %d, want %d", version, wfcrypto.WrappedDEKVersion)
+	}
+	dek, err := wfcrypto.ResolveDEK(
+		storedKey,
+		version,
+		[]string{wfcrypto.DeriveKEK("postgres-workspace-test-secret")},
+	)
+	if err != nil {
+		t.Fatalf("resolve workspace DEK: %v", err)
+	}
+	if dek == "" || dek == wfcrypto.DeriveWorkspaceKey("postgres-workspace-test-secret", workspaceID) {
+		t.Fatal("workspace DEK was not generated randomly")
 	}
 	token, err := store.CreateWorkspaceToken(ctx, workspaceID, "CLI", HashWorkspaceToken("secret-a"), "admin")
 	if err != nil {

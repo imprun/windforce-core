@@ -24,6 +24,7 @@ type JobClaims struct {
 	Workspace string `json:"ws"`
 	JobID     string `json:"job"`
 	Subject   string `json:"sub"`
+	Attempt   int    `json:"attempt"`
 	Exp       int64  `json:"exp"`
 }
 

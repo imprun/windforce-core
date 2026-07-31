@@ -19,6 +19,8 @@ import (
 	executionpkg "github.com/imprun/windforce-core/internal/execution"
 	"github.com/imprun/windforce-core/internal/executionbundle"
 	gitsourcepkg "github.com/imprun/windforce-core/internal/gitsource"
+	"github.com/imprun/windforce-core/internal/runtimeconfig"
+	"github.com/imprun/windforce-core/internal/secretbackend"
 	"github.com/imprun/windforce-core/internal/state"
 	"github.com/imprun/windforce-core/internal/syncer"
 	"github.com/imprun/windforce-core/internal/token"
@@ -54,6 +56,7 @@ type Config struct {
 	JobTokenSecret        string
 	SecretKey             string
 	SecretKeyPrevious     string
+	SecretBackend         secretbackend.Backend
 	SampleRoot            string
 	Wait                  time.Duration
 	MetricsHandler        http.Handler
@@ -80,6 +83,8 @@ type Handler struct {
 	jobTokenSecret        string
 	secretKey             string
 	secretKeyPrevious     string
+	secretBackend         secretbackend.Backend
+	runtimeResolver       *runtimeconfig.Resolver
 	sampleRoot            string
 	wait                  time.Duration
 	metricsHandler        http.Handler
@@ -96,6 +101,7 @@ type jobPrincipal struct {
 	Workspace string
 	JobID     string
 	Subject   string
+	Attempt   int
 }
 
 type principalContextKey struct{}
@@ -160,6 +166,15 @@ func New(config Config) http.Handler {
 	if admission == nil {
 		admission = executionpkg.NewService(config.Store, config.Catalog, bundleStore)
 	}
+	secretBackend := config.SecretBackend
+	if secretBackend == nil {
+		var keys secretbackend.WorkspaceKeyProvider
+		if provider, ok := config.Store.(secretbackend.WorkspaceKeyProvider); ok {
+			keys = provider
+		}
+		secretBackend = secretbackend.NewDatabase(keys, secretKey, config.SecretKeyPrevious)
+	}
+	runtimeResolver := runtimeconfig.New(config.Store, secretBackend)
 	return &Handler{
 		store:                 config.Store,
 		catalog:               config.Catalog,
@@ -174,6 +189,8 @@ func New(config Config) http.Handler {
 		jobTokenSecret:        config.JobTokenSecret,
 		secretKey:             secretKey,
 		secretKeyPrevious:     config.SecretKeyPrevious,
+		secretBackend:         secretBackend,
+		runtimeResolver:       runtimeResolver,
 		sampleRoot:            config.SampleRoot,
 		wait:                  config.Wait,
 		execution:             admission,
@@ -279,6 +296,24 @@ func (h *Handler) handleAPI(w http.ResponseWriter, r *http.Request) bool {
 		h.handleListVariables(w, r, parts[2])
 		return true
 	}
+	if len(parts) == 4 && parts[0] == "api" && parts[1] == "w" && parts[3] == "resource-types" && r.Method == http.MethodGet {
+		h.handleListResourceTypes(w, r, parts[2])
+		return true
+	}
+	if len(parts) == 4 && parts[0] == "api" && parts[1] == "w" && parts[3] == "resource-types" && r.Method == http.MethodPost {
+		h.handleSetResourceType(w, r, parts[2])
+		return true
+	}
+	if len(parts) == 6 && parts[0] == "api" && parts[1] == "w" && parts[3] == "resource-types" {
+		switch r.Method {
+		case http.MethodGet:
+			h.handleGetResourceType(w, r, parts[2], parts[4], parts[5])
+			return true
+		case http.MethodDelete:
+			h.handleDeleteResourceType(w, r, parts[2], parts[4], parts[5])
+			return true
+		}
+	}
 	if len(parts) == 4 && parts[0] == "api" && parts[1] == "w" && parts[3] == "variables" && r.Method == http.MethodPost {
 		h.handleSetVariable(w, r, parts[2])
 		return true
@@ -289,6 +324,14 @@ func (h *Handler) handleAPI(w http.ResponseWriter, r *http.Request) bool {
 	}
 	if len(parts) == 4 && parts[0] == "api" && parts[1] == "w" && parts[3] == "resources" && r.Method == http.MethodPost {
 		h.handleSetResource(w, r, parts[2])
+		return true
+	}
+	if len(parts) == 4 && parts[0] == "api" && parts[1] == "w" && parts[3] == "resources" && r.Method == http.MethodGet {
+		h.handleListResources(w, r, parts[2])
+		return true
+	}
+	if len(parts) >= 6 && parts[0] == "api" && parts[1] == "w" && parts[3] == "resources" && parts[4] == "p" && r.Method == http.MethodDelete {
+		h.handleDeleteResource(w, r, parts[2], joinPathParts(parts, 5))
 		return true
 	}
 	if len(parts) == 4 && parts[0] == "api" && parts[1] == "w" && parts[3] == "openapi.json" && r.Method == http.MethodGet {
@@ -694,6 +737,8 @@ func writeStateError(w http.ResponseWriter, err error) {
 		status = http.StatusNotFound
 	} else if errors.Is(err, state.ErrInvalidState) || errors.Is(err, state.ErrConflict) {
 		status = http.StatusConflict
+	} else if errors.Is(err, state.ErrForbidden) {
+		status = http.StatusForbidden
 	}
 	writeError(w, status, err.Error())
 }
@@ -725,6 +770,7 @@ func (h *Handler) authorizeAPIRequest(r *http.Request) (*http.Request, int, stri
 			Workspace: claims.Workspace,
 			JobID:     claims.JobID,
 			Subject:   claims.Subject,
+			Attempt:   claims.Attempt,
 		}
 		return r.WithContext(context.WithValue(r.Context(), principalContextKey{}, principal)), 0, ""
 	}

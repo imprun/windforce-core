@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"time"
 
-	"github.com/imprun/windforce-core/internal/crypto"
+	"github.com/imprun/windforce-core/internal/contract"
+	"github.com/imprun/windforce-core/internal/secretbackend"
 	"github.com/imprun/windforce-core/internal/state"
 )
 
@@ -92,9 +94,19 @@ func (h *Handler) handleSetVariable(w http.ResponseWriter, r *http.Request, work
 		writeError(w, http.StatusBadRequest, "invalid app key")
 		return
 	}
+	normalizedPath, err := contract.NormalizeRuntimeConfigPath(request.Path)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	request.Path = normalizedPath
 	value := request.Value
 	if request.IsSecret {
-		encrypted, err := h.encryptSecretVariable(r.Context(), workspaceID, request.Value)
+		encrypted, err := h.secretBackend.Store(r.Context(), secretbackend.Reference{
+			WorkspaceID: workspaceID,
+			Kind:        "variable",
+			Path:        request.Path,
+		}, request.Value)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
@@ -102,7 +114,7 @@ func (h *Handler) handleSetVariable(w http.ResponseWriter, r *http.Request, work
 		value = encrypted
 	}
 	if err := h.store.SetVariable(r.Context(), workspaceID, request.AppKey, request.Path, value, request.IsSecret, request.Description); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeStateError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"path": request.Path, "app_key": request.AppKey})
@@ -113,19 +125,22 @@ func (h *Handler) handleGetVariable(w http.ResponseWriter, r *http.Request, work
 		writeError(w, http.StatusServiceUnavailable, "state store is not configured")
 		return
 	}
-	var (
-		variable state.Variable
-		found    bool
-		err      error
-	)
-	if appKey, ok, lookupErr := h.jobVariableScope(r, workspaceID); lookupErr != nil {
-		writeError(w, http.StatusInternalServerError, lookupErr.Error())
+	job, runtime, scopeErr := h.jobRuntimeScope(r, workspaceID)
+	if scopeErr != nil {
+		writeStateError(w, scopeErr)
 		return
-	} else if ok {
-		variable, found, err = h.store.GetVariable(r.Context(), workspaceID, appKey, variablePath)
-	} else {
-		variable, found, err = h.store.GetVariableExact(r.Context(), workspaceID, r.URL.Query().Get("app"), variablePath)
 	}
+	if runtime {
+		value, secret, err := h.runtimeResolver.ResolveJobVariable(r.Context(), job, variablePath)
+		if err != nil {
+			writeStateError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"path": variablePath, "value": value, "is_secret": secret})
+		return
+	}
+
+	variable, found, err := h.store.GetVariableExact(r.Context(), workspaceID, r.URL.Query().Get("app"), variablePath)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -134,79 +149,51 @@ func (h *Handler) handleGetVariable(w http.ResponseWriter, r *http.Request, work
 		writeError(w, http.StatusNotFound, "variable not found")
 		return
 	}
-	value := variable.Value
 	if variable.IsSecret {
-		decrypted, err := h.decryptSecretVariable(r.Context(), workspaceID, variable.Value)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "decrypt: "+err.Error())
-			return
-		}
-		value = decrypted
+		writeJSON(w, http.StatusOK, map[string]any{
+			"path":       variable.Path,
+			"is_secret":  true,
+			"configured": variable.Value != "",
+		})
+		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"path": variable.Path, "value": value, "is_secret": variable.IsSecret})
-}
-
-type workspaceKeyProvider interface {
-	GetWorkspaceKeyVersioned(ctx context.Context, workspaceID string) (string, int32, error)
+	writeJSON(w, http.StatusOK, map[string]any{"path": variable.Path, "value": variable.Value, "is_secret": false})
 }
 
 func (h *Handler) encryptSecretVariable(ctx context.Context, workspaceID string, value string) (string, error) {
-	key, err := h.workspaceDEK(ctx, workspaceID)
-	if err != nil {
-		return "", err
-	}
-	return crypto.Encrypt(key, value)
+	return h.secretBackend.Store(ctx, secretbackend.Reference{
+		WorkspaceID: workspaceID,
+		Kind:        "variable",
+	}, value)
 }
 
 func (h *Handler) decryptSecretVariable(ctx context.Context, workspaceID string, value string) (string, error) {
-	key, err := h.workspaceDEK(ctx, workspaceID)
-	if err != nil {
-		return "", err
-	}
-	return crypto.Decrypt(key, value)
+	return h.secretBackend.Resolve(ctx, secretbackend.Reference{
+		WorkspaceID: workspaceID,
+		Kind:        "variable",
+	}, value)
 }
 
-// workspaceDEK mirrors canonical Windforce secret resolution: use a stored
-// workspace DEK when the store exposes one, otherwise fall back to the legacy
-// SECRET_KEY-derived per-workspace key.
-func (h *Handler) workspaceDEK(ctx context.Context, workspaceID string) (string, error) {
-	if keyStore, ok := h.store.(workspaceKeyProvider); ok {
-		key, version, err := keyStore.GetWorkspaceKeyVersioned(ctx, workspaceID)
-		if err != nil {
-			return "", err
-		}
-		if key != "" {
-			return crypto.ResolveDEK(key, version, h.keks())
-		}
-	}
-	return crypto.DeriveWorkspaceKey(h.secretKey, workspaceID), nil
-}
-
-func (h *Handler) keks() []string {
-	keks := []string{crypto.DeriveKEK(h.secretKey)}
-	if h.secretKeyPrevious != "" {
-		keks = append(keks, crypto.DeriveKEK(h.secretKeyPrevious))
-	}
-	return keks
-}
-
-func (h *Handler) jobVariableScope(r *http.Request, workspaceID string) (string, bool, error) {
+func (h *Handler) jobRuntimeScope(r *http.Request, workspaceID string) (state.Job, bool, error) {
 	principal := jobPrincipalFrom(r.Context())
 	if principal == nil || principal.JobID == "" {
-		return "", false, nil
+		return state.Job{}, false, nil
 	}
-	jobID := principal.JobID
-	if jobID == "" {
-		return "", false, nil
-	}
-	job, _, found, err := h.store.GetJob(r.Context(), workspaceID, jobID)
+	job, _, found, err := h.store.GetJob(r.Context(), workspaceID, principal.JobID)
 	if err != nil {
-		return "", true, err
+		return state.Job{}, true, err
 	}
 	if !found {
-		return "", true, nil
+		return state.Job{}, true, state.ErrNotFound
 	}
-	return job.Payload.App, true, nil
+	if principal.Attempt <= 0 || job.Attempt != principal.Attempt {
+		return state.Job{}, true, state.ErrInvalidState
+	}
+	if job.State != state.JobRunning || job.LeaseOwner == "" ||
+		job.LeaseExpiresAt == nil || !job.LeaseExpiresAt.After(time.Now()) {
+		return state.Job{}, true, state.ErrInvalidState
+	}
+	return job, true, nil
 }
 
 func (h *Handler) handleDeleteVariable(w http.ResponseWriter, r *http.Request, workspaceID string, variablePath string) {
@@ -242,10 +229,19 @@ func (h *Handler) handleSetResource(w http.ResponseWriter, r *http.Request, work
 		return
 	}
 	if err := h.store.SetResource(r.Context(), workspaceID, request.Path, request.Value, request.ResourceType, request.Description); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeStateError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"path": request.Path})
+}
+
+func (h *Handler) handleListResources(w http.ResponseWriter, r *http.Request, workspaceID string) {
+	resources, err := h.store.ListResources(r.Context(), workspaceID)
+	if err != nil {
+		writeStateError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, resources)
 }
 
 func (h *Handler) handleGetResource(w http.ResponseWriter, r *http.Request, workspaceID string, resourcePath string) {
@@ -253,16 +249,40 @@ func (h *Handler) handleGetResource(w http.ResponseWriter, r *http.Request, work
 		writeError(w, http.StatusServiceUnavailable, "state store is not configured")
 		return
 	}
-	resource, found, err := h.store.GetResource(r.Context(), workspaceID, resourcePath)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+	job, runtime, scopeErr := h.jobRuntimeScope(r, workspaceID)
+	if scopeErr != nil {
+		writeStateError(w, scopeErr)
 		return
 	}
-	if !found {
-		writeError(w, http.StatusNotFound, "resource not found")
-		return
+	var value json.RawMessage
+	if runtime {
+		resolved, err := h.runtimeResolver.ResolveJobResource(r.Context(), job, resourcePath)
+		if err != nil {
+			writeStateError(w, err)
+			return
+		}
+		value = resolved.Value
+	} else {
+		resource, found, err := h.store.GetResource(r.Context(), workspaceID, resourcePath)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if !found {
+			writeError(w, http.StatusNotFound, "resource not found")
+			return
+		}
+		value = resource.Value
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(rawOrNull(resource.Value))
+	_, _ = w.Write(rawOrNull(value))
+}
+
+func (h *Handler) handleDeleteResource(w http.ResponseWriter, r *http.Request, workspaceID string, resourcePath string) {
+	if err := h.store.DeleteResource(r.Context(), workspaceID, resourcePath); err != nil {
+		writeStateError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

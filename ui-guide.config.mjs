@@ -151,6 +151,57 @@ export default {
         locked_keys: ["message"],
       },
     });
+    await api("/variables", {
+      method: "POST",
+      headers: { "x-windforce-actor": "ui-guide@example.test" },
+      body: {
+        path: "deployment/region",
+        value: "ap-northeast-2",
+        is_secret: false,
+        description: "Primary runtime region",
+      },
+    });
+    await api("/variables", {
+      method: "POST",
+      headers: { "x-windforce-actor": "ui-guide@example.test" },
+      body: {
+        path: "credentials/partner-token",
+        value: "ui-guide-secret",
+        is_secret: true,
+        description: "Partner API credential",
+      },
+    });
+    await api("/resource-types", {
+      method: "POST",
+      headers: { "x-windforce-actor": "ui-guide@example.test" },
+      body: {
+        name: "http-connection",
+        version: "1.0.0",
+        description: "HTTP endpoint with a Secret Variable reference",
+        schema: {
+          type: "object",
+          properties: {
+            base_url: { type: "string" },
+            token: { type: "string" },
+          },
+          required: ["base_url", "token"],
+          additionalProperties: false,
+        },
+      },
+    });
+    await api("/resources", {
+      method: "POST",
+      headers: { "x-windforce-actor": "ui-guide@example.test" },
+      body: {
+        path: "partners/acme",
+        resource_type: "http-connection@1.0.0",
+        description: "Acme partner connection",
+        value: {
+          base_url: "https://api.example.test",
+          token: "$var:credentials/partner-token",
+        },
+      },
+    });
     await waitForClientConfigRun(clientToken.client.id, clientToken.api_token);
     // The standalone local store replaces its JSON file after the worker
     // publishes the terminal result. Let that final Windows file operation

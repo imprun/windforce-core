@@ -7,7 +7,8 @@ describe("settingsNavItems", () => {
       "settingsNav.workspace",
       "settingsNav.access",
       "settingsNav.webhooks",
-      "settingsNav.configuration",
+      "settingsNav.runtimeConfiguration",
+      "settingsNav.provisioning",
       "settingsNav.system",
     ]);
   });

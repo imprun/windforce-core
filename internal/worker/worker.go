@@ -10,6 +10,7 @@ import (
 
 	"github.com/imprun/windforce-core/internal/contract"
 	actionruntime "github.com/imprun/windforce-core/internal/runtime"
+	"github.com/imprun/windforce-core/internal/secretmask"
 	"github.com/imprun/windforce-core/internal/state"
 )
 
@@ -35,6 +36,11 @@ type Processor struct {
 	LogJobPayloads    bool
 	TeeJobLogs        bool
 	RuntimeBindings   RuntimeBindings
+	RuntimeResolver   RuntimeInputResolver
+}
+
+type RuntimeInputResolver interface {
+	ResolveRuntimeInput(ctx context.Context, job state.Job, input json.RawMessage) (json.RawMessage, []string, error)
 }
 
 // workerID resolves a stable identity for both the claim path and the
@@ -113,7 +119,27 @@ func (p *Processor) ProcessOne(ctx context.Context) (bool, error) {
 			return completeProcessed(p.Store.CompleteJobFailed(ctx, lease, result))
 		}
 	}
-	logJobInput(p.LogJobPayloads, job.ID, job.Payload.App, job.Payload.Action, input)
+	var secretValues []string
+	if p.RuntimeResolver != nil {
+		input, secretValues, err = p.RuntimeResolver.ResolveRuntimeInput(runCtx, job, input)
+		if err != nil {
+			outcome = "failed"
+			jobError = "could not resolve runtime configuration"
+			result := contract.JobResult{
+				JobID:    job.ID,
+				App:      job.Payload.App,
+				Action:   job.Payload.Action,
+				Output:   actionruntime.ErrorResult("RuntimeConfigurationError", jobError),
+				ExitCode: -1,
+				Error:    jobError,
+			}
+			return completeProcessed(p.Store.CompleteJobFailed(ctx, lease, result))
+		}
+	}
+	if provider, ok := p.Store.(SecretValueProvider); ok {
+		secretValues = append(secretValues, provider.SecretValuesFor(job.ID)...)
+	}
+	logJobInput(p.LogJobPayloads, job.ID, job.Payload.App, job.Payload.Action, input, secretValues)
 	input = state.StripReservedRuntimeInput(input)
 	input, err = p.RuntimeBindings.Apply(input)
 	if err != nil {
@@ -133,8 +159,16 @@ func (p *Processor) ProcessOne(ctx context.Context) (bool, error) {
 	if provider, ok := p.Store.(JobTokenProvider); ok {
 		jobToken = provider.JobTokenFor(job.ID)
 	}
+	emitLog := func(chunk []byte) {
+		_ = p.Store.AppendLogs(context.Background(), job.ID, workspaceID, string(chunk))
+		if p.TeeJobLogs {
+			log.Printf("worker job log job=%s app=%s action=%s chunk=%q", job.ID, job.Payload.App, job.Payload.Action, string(chunk))
+		}
+	}
+	maskedLogs := secretmask.NewStream(secretValues, emitLog)
 	result, runErr := p.Runner.Run(runCtx, actionruntime.RunRequest{
 		JobID:           job.ID,
+		Attempt:         job.Attempt,
 		WorkspaceID:     workspaceID,
 		Deployment:      job.Payload.PinnedDeployment(),
 		Action:          job.Payload.Action,
@@ -149,21 +183,20 @@ func (p *Processor) ProcessOne(ctx context.Context) (bool, error) {
 		WorkerGroup:     p.Group,
 		EgressProxyAddr: p.EgressProxyAddr,
 		LogSink: func(chunk []byte) {
-			_ = p.Store.AppendLogs(context.Background(), job.ID, workspaceID, string(chunk))
-			if p.TeeJobLogs {
-				log.Printf("worker job log job=%s app=%s action=%s chunk=%q", job.ID, job.Payload.App, job.Payload.Action, string(chunk))
-			}
+			maskedLogs.Write(chunk)
 		},
 		LogFlushInterval: p.LogFlushInterval,
 		LogCapBytes:      p.LogCapBytes,
 	})
-	logJobExecution(p.LogJobPayloads, job.ID, job.Payload.App, job.Payload.Action, result)
+	maskedLogs.Flush()
+	result = maskJobResult(result, secretValues)
+	logJobExecution(p.LogJobPayloads, job.ID, job.Payload.App, job.Payload.Action, result, secretValues)
 	result.JobID = job.ID
 	result.Stdout = ""
 	result.Stderr = ""
 	if runErr != nil {
 		if result.Error == "" {
-			result.Error = runErr.Error()
+			result.Error = secretmask.String(runErr.Error(), secretValues)
 		}
 		if len(result.Output) == 0 {
 			result.Output = namedErrorResult(runErr, result.Error)
@@ -205,17 +238,28 @@ func (p *Processor) ProcessOne(ctx context.Context) (bool, error) {
 	return completeProcessed(p.Store.CompleteJobSucceeded(ctx, lease, result))
 }
 
-func logJobInput(enabled bool, jobID string, app string, action string, input []byte) {
+func logJobInput(enabled bool, jobID string, app string, action string, input []byte, secrets []string) {
 	if enabled {
-		log.Printf("worker job input job=%s app=%s action=%s payload=%s", jobID, app, action, input)
+		log.Printf("worker job input job=%s app=%s action=%s payload=%s", jobID, app, action, secretmask.Bytes(input, secrets))
 	}
 }
 
-func logJobExecution(enabled bool, jobID string, app string, action string, result contract.JobResult) {
+func logJobExecution(enabled bool, jobID string, app string, action string, result contract.JobResult, secrets []string) {
 	if enabled {
 		log.Printf("worker job execution job=%s app=%s action=%s exit_code=%d stdout=%q stderr=%q output=%s",
-			jobID, app, action, result.ExitCode, result.Stdout, result.Stderr, result.Output)
+			jobID, app, action, result.ExitCode,
+			secretmask.String(result.Stdout, secrets),
+			secretmask.String(result.Stderr, secrets),
+			secretmask.Bytes(result.Output, secrets))
 	}
+}
+
+func maskJobResult(result contract.JobResult, secrets []string) contract.JobResult {
+	result.Output = secretmask.Bytes(result.Output, secrets)
+	result.Stdout = secretmask.String(result.Stdout, secrets)
+	result.Stderr = secretmask.String(result.Stderr, secrets)
+	result.Error = secretmask.String(result.Error, secrets)
+	return result
 }
 
 func (p *Processor) startHeartbeat(lease state.Lease, cancel context.CancelFunc) func() {

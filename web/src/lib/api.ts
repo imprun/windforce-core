@@ -96,6 +96,38 @@ export type InputConfigAudit = {
   created_at: string;
 };
 
+export type Variable = {
+  app_key: string;
+  path: string;
+  value: string;
+  is_secret: boolean;
+  description: string;
+};
+
+export type SetVariablePayload = {
+  app_key?: string;
+  path: string;
+  value: string;
+  is_secret: boolean;
+  description?: string;
+};
+
+export type Resource = {
+  path: string;
+  value: unknown;
+  resource_type: string;
+  description: string;
+};
+
+export type ResourcePayload = Resource;
+
+export type ResourceType = {
+  name: string;
+  version: string;
+  schema: Record<string, unknown>;
+  description: string;
+};
+
 export type ProbeResult = {
   reachable: boolean;
   branch?: string;
@@ -162,6 +194,10 @@ export type ActionView = {
   tag_override?: string;
   timeout_s?: number;
   required_capabilities?: string[];
+  runtime_access?: {
+    variables?: string[];
+    resources?: string[];
+  };
   updated_at: string;
   effective_capabilities?: string[];
   effective_route_tag?: string;
@@ -258,6 +294,10 @@ export type AuditEvent = {
   git_source_id?: number;
   webhook_subscription_id?: string;
   webhook_delivery_id?: string;
+  job_id?: string;
+  attempt?: number;
+  runtime_config_path?: string;
+  source?: string;
   actor: string;
   changes?: AuditChanges;
   created_at: string;
@@ -565,14 +605,6 @@ export type RegisterSourcePayload = {
   creds_ref?: string;
 };
 
-export type SetVariablePayload = {
-  path: string;
-  value: string;
-  description?: string;
-  is_secret?: boolean;
-  app_key?: string;
-};
-
 export type PatchSourcePayload = {
   name?: string;
   repo_url?: string;
@@ -732,8 +764,50 @@ export class WindforceApi {
     return this.request("/git_sources/probe", { method: "POST", body: payload });
   }
 
-  setVariable(payload: SetVariablePayload): Promise<{ path: string; is_secret: boolean }> {
+  setVariable(payload: SetVariablePayload): Promise<{ path: string; app_key: string }> {
     return this.request("/variables", { method: "POST", body: payload });
+  }
+
+  variables(): Promise<Variable[]> {
+    return this.request("/variables");
+  }
+
+  async deleteVariable(path: string, appKey = ""): Promise<void> {
+    const params = new URLSearchParams();
+    if (appKey) params.set("app", appKey);
+    const query = params.toString();
+    await this.request(`/variables/p/${encodePath(path)}${query ? `?${query}` : ""}`, {
+      method: "DELETE",
+    });
+  }
+
+  resources(): Promise<Resource[]> {
+    return this.request("/resources");
+  }
+
+  setResource(payload: ResourcePayload): Promise<{ path: string }> {
+    return this.request("/resources", { method: "POST", body: payload });
+  }
+
+  async deleteResource(path: string): Promise<void> {
+    await this.request(`/resources/p/${encodePath(path)}`, { method: "DELETE" });
+  }
+
+  resourceTypes(): Promise<ResourceType[]> {
+    return this.request("/resource-types");
+  }
+
+  setResourceType(payload: ResourceType): Promise<ResourceType> {
+    return this.request("/resource-types", { method: "POST", body: payload });
+  }
+
+  async deleteResourceType(name: string, version: string): Promise<void> {
+    await this.request(
+      `/resource-types/${encodeURIComponent(name)}/${encodeURIComponent(version)}`,
+      {
+        method: "DELETE",
+      },
+    );
   }
 
   createSample(appKey: string): Promise<{ source: GitSource; sync_result: DeployResult }> {
@@ -1125,4 +1199,12 @@ function httpErrorCode(status: number): ApiErrorCode {
   if (status === 409) return "http.conflict";
   if (status === 429) return "http.rate_limited";
   return "http.server_error";
+}
+
+function encodePath(path: string): string {
+  return path
+    .split("/")
+    .filter(Boolean)
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
 }

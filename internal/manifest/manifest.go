@@ -106,6 +106,10 @@ func Parse(data []byte) (contract.App, error) {
 			}
 		}
 		applyAppDefaults(app, &action)
+		action.RuntimeAccess, err = contract.NormalizeRuntimeAccess(action.RuntimeAccess)
+		if err != nil {
+			return contract.App{}, fmt.Errorf("action %s.%s runtimeAccess: %w", app.App, name, err)
+		}
 		if err := validateExecutableAction(app.App, name, action); err != nil {
 			return contract.App{}, err
 		}

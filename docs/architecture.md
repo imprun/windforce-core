@@ -7,6 +7,10 @@ Windforce Core separates deployment management, Run invocation, protocol ingress
 
 [Run admission architecture](concepts/run-admission.md) is the human-readable current reference for the relationship between SDKs, the Invocation API, AdmissionService, Triggers, Gateways, Runs, Jobs, workspaces, and Core instances. The OpenAPI served at `/api/v1/openapi.json` is the machine-readable Invocation contract. ADRs preserve decision history and rationale rather than replacing these current-state documents.
 
+[Runtime configuration and secrets](concepts/runtime-configuration.md) is the
+current reference for Variable, Resource, InputConfig, SecretBackend, Job
+runtime access, and worker resolution.
+
 ```text
 operators / CI / clients / external adapters
                     |
@@ -116,7 +120,7 @@ Run admission performs one atomic decision:
 
 1. Resolve the active app release in the requested workspace.
 2. Validate the action and worker capability routing.
-3. Resolve InputConfig once, enforce LockedKeys, and validate the merged input against the active action schema.
+3. Resolve InputConfig once, enforce LockedKeys, validate `$var/$res` references without reading Secret plaintext, close and pin runtime access, and validate the merged input against the active action schema.
 4. Materialize the action input and output schemas.
 5. Pin the effective input, deployment, commit, entrypoint, runtime, schemas, route, and timeout.
 6. Create the caller-visible Run and its first internal Job in one transaction.

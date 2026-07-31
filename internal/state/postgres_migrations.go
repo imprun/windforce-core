@@ -120,6 +120,29 @@ CREATE TABLE IF NOT EXISTS resource (
     PRIMARY KEY (workspace_id, path)
 );
 
+CREATE TABLE IF NOT EXISTS resource_type (
+    workspace_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    version TEXT NOT NULL,
+    schema JSONB NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (workspace_id, name, version)
+);
+
+CREATE TABLE IF NOT EXISTS secret_access_audit (
+    id BIGSERIAL PRIMARY KEY,
+    workspace_id TEXT NOT NULL,
+    job_id TEXT NOT NULL,
+    attempt INTEGER NOT NULL,
+    app_key TEXT NOT NULL,
+    action_key TEXT NOT NULL,
+    path TEXT NOT NULL,
+    source TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS secret_access_audit_workspace_job_created_idx
+ON secret_access_audit (workspace_id, job_id, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS workspace_key (
     workspace_id TEXT PRIMARY KEY,
     key TEXT NOT NULL,

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/imprun/windforce-core/internal/contract"
+	"github.com/imprun/windforce-core/internal/runtimeconfig"
 	"github.com/imprun/windforce-core/internal/state"
 )
 
@@ -24,6 +25,8 @@ type Store interface {
 	GetJobByRunID(ctx context.Context, workspaceID string, runID string) (state.Job, state.Run, bool, error)
 	CancelRun(ctx context.Context, runID string, reason string) (state.Run, error)
 	GetClient(ctx context.Context, workspaceID string, id string) (state.Client, error)
+	GetVariable(ctx context.Context, workspaceID string, appKey string, path string) (state.Variable, bool, error)
+	GetResource(ctx context.Context, workspaceID string, path string) (state.Resource, bool, error)
 	ResolveInput(ctx context.Context, workspaceID string, appKey string, actionKey string, clientID string, request json.RawMessage) (json.RawMessage, error)
 }
 
@@ -207,6 +210,8 @@ func (s *AdmissionService) CreateRun(ctx context.Context, request CreateRunReque
 			Message: "active release has no execution bundle; publish the synchronized source again",
 		}
 	}
+	reader := NewSchemaReader(ctx, s.bundles, deployment)
+	defer reader.Close()
 	resolvedInput, err := s.store.ResolveInput(ctx, request.Workspace, request.App, request.Action, clientID, request.Input)
 	if err != nil {
 		var locked *state.LockedKeysError
@@ -215,13 +220,45 @@ func (s *AdmissionService) CreateRun(ctx context.Context, request CreateRunReque
 		}
 		return Admission{}, &Fault{Kind: FaultInternal, Message: "could not validate input settings", Err: err}
 	}
+	runtimeResolver := runtimeconfig.New(s.store, nil)
+	operatorSettingsSchema, err := reader.Read(actionSpec.OperatorSettingsSchema, actionSpec.OperatorSettingsSchemaBody)
+	if err != nil {
+		return Admission{}, &Fault{Kind: FaultInternal, Message: fmt.Sprintf("operator settings schema for %s/%s: %v", request.App, request.Action, err), Err: err}
+	}
+	if _, err := runtimeResolver.ValidateSecretReferences(
+		ctx,
+		request.Workspace,
+		request.App,
+		operatorSettingsSchema,
+		resolvedInput,
+	); err != nil {
+		return Admission{}, &Fault{
+			Kind:    FaultInvalidRequest,
+			Message: "invalid secret setting reference: " + err.Error(),
+			Err:     err,
+		}
+	}
+	runtimeAccess, err := runtimeResolver.BuildAccess(
+		ctx,
+		request.Workspace,
+		request.App,
+		actionSpec.RuntimeAccess,
+		resolvedInput,
+	)
+	if err != nil {
+		return Admission{}, &Fault{
+			Kind:    FaultInvalidRequest,
+			Message: "invalid runtime configuration references: " + err.Error(),
+			Err:     err,
+		}
+	}
+	actionSpec.RuntimeAccess = runtimeAccess
+	deployment.Actions[request.Action] = actionSpec
 
 	adapter := strings.TrimSpace(request.Adapter)
 	if adapter == "" {
 		adapter = "http"
 	}
-	reader := NewSchemaReader(ctx, s.bundles, deployment)
-	defer reader.Close()
 	inputSchema, err := reader.Read(actionSpec.InputSchema, actionSpec.InputSchemaBody)
 	if err != nil {
 		return Admission{}, &Fault{Kind: FaultInternal, Message: fmt.Sprintf("input schema for %s/%s: %v", request.App, request.Action, err), Err: err}
@@ -248,6 +285,7 @@ func (s *AdmissionService) CreateRun(ctx context.Context, request CreateRunReque
 		run.PrincipalID = principal.ID
 	}
 	job := state.NewActionJob(run, cloneRaw(resolvedInput))
+	job.Payload.RuntimeAccess = runtimeAccess
 	job.Payload.TriggerKind = strings.TrimSpace(request.TriggerKind)
 	if job.Payload.TriggerKind == "" {
 		job.Payload.TriggerKind = adapter

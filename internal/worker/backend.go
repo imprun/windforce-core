@@ -33,3 +33,10 @@ type Backend interface {
 type JobTokenProvider interface {
 	JobTokenFor(jobID string) string
 }
+
+// SecretValueProvider is implemented by prepared remote backends. Values are
+// kept in memory only and let the worker mask logs and terminal results before
+// they cross back into the engine.
+type SecretValueProvider interface {
+	SecretValuesFor(jobID string) []string
+}

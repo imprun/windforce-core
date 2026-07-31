@@ -143,6 +143,12 @@ func TestCanonicalAuditEventsAggregateAndFilter(t *testing.T) {
 	}, actor); err != nil {
 		t.Fatal(err)
 	}
+	if err := store.AppendSecretAccessAudit(ctx, state.SecretAccessAudit{
+		WorkspaceID: "ws-a", JobID: "job-a", Attempt: 2, AppKey: "shop", ActionKey: "orders",
+		Path: "secrets/api-token", Source: "input",
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	server := httptest.NewServer(New(Config{Store: store, Catalog: catalogStore}))
 	defer server.Close()
@@ -177,7 +183,7 @@ func TestCanonicalAuditEventsAggregateAndFilter(t *testing.T) {
 			releaseEvents++
 		}
 	}
-	for _, category := range []string{"workspace", "repository", "release", "client", "input_settings"} {
+	for _, category := range []string{"workspace", "repository", "release", "client", "input_settings", "runtime_configuration"} {
 		if !categories[category] {
 			t.Fatalf("missing category %q in %#v", category, all)
 		}
@@ -198,6 +204,12 @@ func TestCanonicalAuditEventsAggregateAndFilter(t *testing.T) {
 	workspaceEvents := get("/api/w/ws-a/audit-events?category=workspace")
 	if len(workspaceEvents) != 1 || workspaceEvents[0].Summary != "Workspace created" {
 		t.Fatalf("workspace events = %#v, want workspace creation", workspaceEvents)
+	}
+	runtimeEvents := get("/api/w/ws-a/audit-events?category=runtime_configuration")
+	if len(runtimeEvents) != 1 || runtimeEvents[0].JobID != "job-a" ||
+		runtimeEvents[0].RuntimeConfigPath != "secrets/api-token" ||
+		runtimeEvents[0].Detail == "" {
+		t.Fatalf("runtime configuration events = %#v", runtimeEvents)
 	}
 }
 

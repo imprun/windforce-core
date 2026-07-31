@@ -33,6 +33,7 @@ type Runner struct {
 
 type RunRequest struct {
 	JobID            string
+	Attempt          int
 	WorkspaceID      string
 	Deployment       contract.Deployment
 	Action           string
@@ -391,6 +392,7 @@ func (r *Runner) jobToken(req RunRequest, action contract.Action, workspace stri
 		Workspace: workspace,
 		JobID:     req.JobID,
 		Subject:   permissionedAs,
+		Attempt:   req.Attempt,
 		Exp:       expiresAt,
 	})
 }

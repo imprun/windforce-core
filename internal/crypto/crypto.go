@@ -28,8 +28,16 @@ func aeadFor(key string) (cipher.AEAD, error) {
 	return cipher.NewGCM(block)
 }
 
-// Encrypt returns base64(nonce || ciphertext).
+// Encrypt returns base64(nonce || ciphertext). It is retained for encrypted
+// records written before a record identity was authenticated as associated
+// data.
 func Encrypt(key, plaintext string) (string, error) {
+	return EncryptWithAAD(key, plaintext, nil)
+}
+
+// EncryptWithAAD authenticates associated data without storing it in the
+// ciphertext. Callers use this to bind ciphertext to its logical record.
+func EncryptWithAAD(key, plaintext string, associatedData []byte) (string, error) {
 	aead, err := aeadFor(key)
 	if err != nil {
 		return "", err
@@ -38,12 +46,18 @@ func Encrypt(key, plaintext string) (string, error) {
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
 		return "", err
 	}
-	ct := aead.Seal(nonce, nonce, []byte(plaintext), nil)
+	ct := aead.Seal(nonce, nonce, []byte(plaintext), associatedData)
 	return base64.StdEncoding.EncodeToString(ct), nil
 }
 
 // Decrypt reverses Encrypt.
 func Decrypt(key, encoded string) (string, error) {
+	return DecryptWithAAD(key, encoded, nil)
+}
+
+// DecryptWithAAD reverses EncryptWithAAD and fails when the ciphertext is
+// presented with a different logical record identity.
+func DecryptWithAAD(key, encoded string, associatedData []byte) (string, error) {
 	aead, err := aeadFor(key)
 	if err != nil {
 		return "", err
@@ -57,7 +71,7 @@ func Decrypt(key, encoded string) (string, error) {
 		return "", errors.New("ciphertext too short")
 	}
 	nonce, ct := raw[:ns], raw[ns:]
-	pt, err := aead.Open(nil, nonce, ct, nil)
+	pt, err := aead.Open(nil, nonce, ct, associatedData)
 	if err != nil {
 		return "", err
 	}

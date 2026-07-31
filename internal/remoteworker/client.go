@@ -28,16 +28,18 @@ type Client struct {
 	token   string
 	http    *http.Client
 
-	mu        sync.Mutex
-	jobTokens map[string]string
+	mu           sync.Mutex
+	jobTokens    map[string]string
+	secretValues map[string][]string
 }
 
 func New(baseURL, token string) *Client {
 	return &Client{
-		baseURL:   strings.TrimRight(baseURL, "/"),
-		token:     token,
-		http:      &http.Client{Timeout: 60 * time.Second},
-		jobTokens: map[string]string{},
+		baseURL:      strings.TrimRight(baseURL, "/"),
+		token:        token,
+		http:         &http.Client{Timeout: 60 * time.Second},
+		jobTokens:    map[string]string{},
+		secretValues: map[string][]string{},
 	}
 }
 
@@ -143,9 +145,10 @@ func fromLease(l state.Lease) leaseWire {
 
 func (c *Client) ClaimJobForWorker(ctx context.Context, workerID string, tags []string, labels []string, leaseTTL time.Duration) (state.Job, state.Lease, error) {
 	var out struct {
-		Job      state.Job `json:"job"`
-		Lease    leaseWire `json:"lease"`
-		JobToken string    `json:"job_token"`
+		Job          state.Job `json:"job"`
+		Lease        leaseWire `json:"lease"`
+		JobToken     string    `json:"job_token"`
+		SecretValues []string  `json:"secret_values"`
 	}
 	status, err := c.do(ctx, http.MethodPost, "/worker/v1/claims", map[string]any{
 		"worker_id":    workerID,
@@ -161,6 +164,7 @@ func (c *Client) ClaimJobForWorker(ctx context.Context, workerID string, tags []
 	}
 	c.mu.Lock()
 	c.jobTokens[out.Job.ID] = out.JobToken
+	c.secretValues[out.Job.ID] = append([]string(nil), out.SecretValues...)
 	c.mu.Unlock()
 	return out.Job, toLease(out.Lease), nil
 }
@@ -170,6 +174,12 @@ func (c *Client) JobTokenFor(jobID string) string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.jobTokens[jobID]
+}
+
+func (c *Client) SecretValuesFor(jobID string) []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]string(nil), c.secretValues[jobID]...)
 }
 
 // DecryptInput is an identity: claims arrive prepared (ADR 0010 §2).
@@ -218,6 +228,7 @@ func (c *Client) complete(ctx context.Context, lease state.Lease, outcome string
 	_, err := c.do(ctx, http.MethodPost, "/worker/v1/jobs/"+lease.JobID+"/complete", body, nil)
 	c.mu.Lock()
 	delete(c.jobTokens, lease.JobID)
+	delete(c.secretValues, lease.JobID)
 	c.mu.Unlock()
 	return err
 }

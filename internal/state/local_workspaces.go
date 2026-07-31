@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/imprun/windforce-core/internal/contract"
+	wfcrypto "github.com/imprun/windforce-core/internal/crypto"
 )
 
 const (
@@ -117,6 +118,14 @@ func (s *LocalStore) GetWorkspace(ctx context.Context, workspaceID string) (Work
 }
 
 func (s *LocalStore) CreateWorkspace(ctx context.Context, workspaceID string, name string, actor string) (Workspace, error) {
+	var workspaceKey WorkspaceKey
+	if strings.TrimSpace(s.SecretKey) != "" {
+		wrapped, version, err := wfcrypto.NewWrappedDEK(s.SecretKey)
+		if err != nil {
+			return Workspace{}, fmt.Errorf("create workspace data-encryption key: %w", err)
+		}
+		workspaceKey = WorkspaceKey{Key: wrapped, KEKVersion: version}
+	}
 	var created Workspace
 	err := s.update(ctx, func(snapshot *Snapshot, now time.Time) error {
 		if _, exists := snapshot.Workspaces[workspaceID]; exists {
@@ -124,10 +133,25 @@ func (s *LocalStore) CreateWorkspace(ctx context.Context, workspaceID string, na
 		}
 		created = Workspace{ID: workspaceID, Name: name, Status: WorkspaceActive, CreatedBy: actor, UpdatedBy: actor, CreatedAt: now, UpdatedAt: now}
 		snapshot.Workspaces[workspaceID] = created
+		if workspaceKey.Key != "" {
+			snapshot.WorkspaceKeys[workspaceID] = workspaceKey
+		}
 		appendLocalWorkspaceAudit(snapshot, workspaceID, "created", "", actor, now)
 		return nil
 	})
 	return created, err
+}
+
+func (s *LocalStore) GetWorkspaceKeyVersioned(ctx context.Context, workspaceID string) (string, int32, error) {
+	snapshot, err := s.Load(ctx)
+	if err != nil {
+		return "", 0, err
+	}
+	key, ok := snapshot.WorkspaceKeys[contract.NormalizeWorkspace(workspaceID)]
+	if !ok {
+		return "", 0, nil
+	}
+	return key.Key, key.KEKVersion, nil
 }
 
 func (s *LocalStore) UpdateWorkspace(ctx context.Context, workspaceID string, name string, actor string) (Workspace, error) {

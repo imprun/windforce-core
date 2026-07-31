@@ -138,6 +138,46 @@ describe("WindforceApi release flow", () => {
   });
 });
 
+describe("WindforceApi runtime configuration", () => {
+  test("uses canonical workspace paths and preserves slash-separated keys", async () => {
+    const requests: Array<{ url: string; method: string; body: string }> = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input, init) => {
+      requests.push({
+        url: String(input),
+        method: init?.method || "GET",
+        body: String(init?.body || ""),
+      });
+      const url = String(input);
+      const responseBody =
+        url.endsWith("/variables") || url.endsWith("/resources") || url.endsWith("/resource-types")
+          ? []
+          : {};
+      return new Response(JSON.stringify(responseBody), { status: 200 });
+    }) as typeof fetch;
+    try {
+      const api = new WindforceApi({ workspace: "ops", token: "", actor: "operator" });
+      await api.variables();
+      await api.resources();
+      await api.resourceTypes();
+      await api.deleteVariable("credentials/api key", "orders");
+      await api.deleteResource("database/main");
+      await api.deleteResourceType("database", "1");
+
+      expect(requests.map(({ url, method }) => [url, method])).toEqual([
+        ["/api/w/ops/variables", "GET"],
+        ["/api/w/ops/resources", "GET"],
+        ["/api/w/ops/resource-types", "GET"],
+        ["/api/w/ops/variables/p/credentials/api%20key?app=orders", "DELETE"],
+        ["/api/w/ops/resources/p/database/main", "DELETE"],
+        ["/api/w/ops/resource-types/database/1", "DELETE"],
+      ]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
 describe("WindforceApi webhooks", () => {
   test("treats a null app scope from the API as all apps", () => {
     expect(webhookAppKeys({ app_keys: null } as WebhookSubscription)).toEqual([]);
