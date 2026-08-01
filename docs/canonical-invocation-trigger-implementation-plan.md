@@ -1,6 +1,6 @@
 # Canonical Invocation과 Trigger 구현 계획
 
-- 상태: Phase 4 완료, Phase 5 stable release와 최종 배포 검증 대기
+- 상태: Phase 0~5 완료 — `v0.3.1` stable release, GitOps 배포와 canonical live probe 완료
 - 결정 문서: [ADR 0013](adr/0013-canonical-invocation-and-trigger-boundary.md)
 - Master tracking: [#137](https://github.com/imprun/windforce-core/issues/137)
 - Phase 1 tracking: [#139](https://github.com/imprun/windforce-core/issues/139)
@@ -23,8 +23,17 @@
   `data-team/dhworker/windforce-invocation-adapter`로 이름과 책임을 명확히 바꾸고 MR `!1`에서
   canonical `/runs/wait`, Run ID와 idempotency 규격을 구현했다. Legacy
   `data-team/dhworker/triggers`는 별도 pinned engine 대상으로 동결한다.
-- Phase 5 완료 증거인 stable `v0.3.0` tag, 최종 Core/consumer image digest, GitOps revision과
-  canonical live probe는 아직 이 문서의 완료 상태로 기록하지 않는다.
+- Core stable release는 `v0.3.1` (`322ffbdd22ac31e86d3f493b108bd9e28aadc44d`)이며
+  서명된 checksum, Linux/macOS/Windows host smoke와 image publication을 통과했다. Cell OCI
+  index는 `sha256:8e1f7193014fd9427d995b32e7afabfa4ca56f57f4d479e50cfbf45f68e79d22`다.
+- Imprun Cloud는 GitOps revision
+  `c59b91d69e466a7ba56f5a408cdf5bb2ea00db56`에서 해당 digest를 고정했다. Control Plane
+  image는 `sha256:e1366f3c9748d208b98af066f28f361507db48f3741458d5bc078d55b4bdc70f`다.
+- Gale canonical migration commit은 `200449e140b6bd4265879cf927ded6b46446cbb9`이고, Cloud의
+  active Gale release는 이 migration을 포함하는 `e1c3c800961e90dc21dbe23bd91459fd78439553`다.
+- demo와 Gale Cell은 모두 새 digest에서 첫 기동 `Ready=true`, restart `0`을 기록했다.
+  Gale Cell의 health/readiness와 scoped Service Principal `gale/health` wait/replay probe는
+  HTTP 200과 동일 Run ID를 반환했다. 임시 principal은 즉시 폐기하고 삭제했다.
 
 ## 목표와 완료 조건
 
@@ -148,20 +157,28 @@ Built-in trigger test는 server의 HTTP listener를 거치지 않았음을 injec
 - [x] Core control CLI, README, architecture, concepts와 generated OpenAPI를 current canonical 통신 규격으로 갱신한다.
 - [x] `data-team/dhworker/triggers`는 pinned legacy engine 대상으로 동결하고 별도 adapter 전환을 기록한다. 이 adapter 때문에 canonical API에 arbitrary `env`나 identity impersonation을 추가하지 않는다.
 
-각 repository는 자신의 branch, test, CI와 배포를 소유한다. `windforce-core` PR 하나에 다른 child repository 변경을 섞지 않는다. 운영 Consumer migration PR은 Core v0.3.0 release candidate OpenAPI와 JSON fixture를 사용해 merge 전에 검증하되 production에는 cutover window 전 배포하지 않는다. `wf-triggers`는 운영 전환 대상이 아니므로 안정된 규격을 소비하는 별도 첫 배포 절차를 따른다.
+각 repository는 자신의 branch, test, CI와 배포를 소유한다. `windforce-core` PR 하나에 다른 child repository 변경을 섞지 않는다. 운영 Consumer migration PR은 Core v0.3.0 release candidate OpenAPI와 JSON fixture를 사용해 merge 전에 검증하되 production에는 cutover window 전 배포하지 않는다. `windforce-invocation-adapter`는 운영 전환 대상이 아니므로 안정된 규격을 소비하는 별도 첫 배포 절차를 따른다.
 
-### Phase 5 — v0.3.0 coordinated cutover
+### Phase 5 — stable release와 pre-production cutover
 
-- [ ] Core release candidate, Gale과 Imprun gateway migration commit SHA, CI 결과, image digest와 rollback release set을 변경 기록에 고정한다.
-- [ ] Maintenance window를 시작하고 external invocation ingress를 drain한 뒤 새 Run admission이 없는지 확인한다.
-- [ ] Windforce Core v0.3.0을 배포하고 canonical operator/service/client smoke를 실행한다.
-- [ ] Imprun gateway와 Gale을 준비된 canonical release로 전환한다.
-- [ ] Run create/replay/wait/status/result/cancel, Gale submission-uncertain reconciliation과 tenant gateway live probe를 통과시킨다.
-- [ ] Probe가 모두 통과하면 ingress를 재개하고, 하나라도 실패하면 전체 Core와 consumer를 사전에 고정한 v0.2 release set으로 rollback한다.
+- [x] Core, Gale과 Imprun gateway의 canonical commit, CI, stable release, image digest와 GitOps revision을 변경 기록에 고정한다.
+- [x] 이 환경은 사용자 트래픽이 없는 pre-production 상태였으므로 승인된 big-bang 전환으로 수행하고 ingress drain/resume 단계는 적용하지 않는다.
+- [x] Windforce Core `v0.3.0`을 배포한 뒤 rollout에서 발견된 LocalStore crash-recovery 결함을 #94와 PR #180으로 수정해 `v0.3.1`을 배포한다.
+- [x] Imprun gateway와 Gale active release가 준비된 canonical migration commit을 포함하는지 확인한다.
+- [x] 전체 lifecycle/authorization은 exact-SHA Core CI로, 실제 배포는 Cell health/readiness와 scoped `gale/health` wait/replay/result probe로 검증한다.
+- [x] demo와 Gale Cell이 새 digest에서 restart `0`으로 안정화되고 lock-timeout log가 없음을 확인한다.
 
-Cutover 완료 증거는 known consumer의 canonical commit/CI, 실제 image digest, deployment revision과 live probe를 포함해야 한다. Unknown consumer가 발견되면 maintenance window를 취소하고 inventory부터 갱신한다.
+계획 당시의 `v0.2` 전체 rollback set은 운영에 진입한 적이 없고 Gale/Cloud canonical consumer와
+호환되는 배포 집합도 아니므로 실제 cutover gate에서 제외했다. 직전의 완전한 canonical checkpoint는
+GitOps `c767dfde3164569b4fd7c810aba354311859b1f5`와 Core `v0.3.0` OCI
+`sha256:db7ca72c9a5d5363c48d879928ee025c36c436eeccd8f17ac34adf4f208e8a23`다.
+Legacy handler를 되살리는 rollback은 허용하지 않으며, canonical release set 단위로 되돌리거나
+검증된 patch로 roll-forward한다.
 
 ## Cross-repository 순서
+
+다음 순서는 실제 사용자 트래픽이 있는 환경의 후속 전환 절차다. 이번 pre-production 최초
+canonical 배포에서는 drain과 resume 단계가 적용되지 않았다.
 
 ```text
 OpenAPI/JSON fixture와 Core v0.3 release candidate
@@ -195,9 +212,15 @@ Core와 downstream의 production 전환은 같은 maintenance window에 수행�
 
 ## Rollback과 데이터 변경 원칙
 
-Big-bang 전환의 rollback 단위는 Windforce Core, Imprun gateway와 Gale의 고정된 release set 전체다. 일부 운영 consumer만 legacy로 되돌리거나 제거된 handler를 production hotfix로 복원하지 않는다. 비운영 `wf-triggers`는 rollback 단위가 아니다.
+Big-bang 전환의 rollback 단위는 Windforce Core, Imprun gateway와 Gale의 고정된 canonical
+release set 전체다. 일부 consumer만 legacy로 되돌리거나 제거된 handler를 production hotfix로
+복원하지 않는다. 비운영 `windforce-invocation-adapter`는 rollback 단위가 아니다.
 
-Service principal과 Trigger storage migration은 v0.3.0에서도 additive로 만들고 rollback한 v0.2 binary가 기존 Run/Job을 읽을 수 있어야 한다. Legacy HTTP/SDK code는 제거하지만 기존 Run/Job column을 같은 release에서 destructive하게 삭제하지 않는다. Data cleanup은 cutover 안정화 뒤 별도 migration으로 다룬다.
+Service principal과 Trigger storage migration은 additive로 유지한다. Legacy HTTP/SDK code는 제거하지만
+기존 Run/Job column을 같은 release에서 destructive하게 삭제하지 않는다. `v0.2.0` Core artifact
+(`sha256:2218427b247a13539af51d43f6685094ea8f6a658e28a58ce11211c6508a071c`)는 보존하지만,
+canonical Gale/Cloud가 배포된 뒤에는 단독 runtime rollback 대상으로 사용하지 않는다. Data cleanup은
+cutover 안정화 뒤 별도 migration으로 다룬다.
 
 Canonical admission 자체에 문제가 생기면 공통 AdmissionService와 consumer release set을 함께 rollback한다. 두 admission implementation을 동시에 운영하는 임시 수정은 금지한다.
 
