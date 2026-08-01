@@ -570,6 +570,17 @@ CREATE INDEX IF NOT EXISTS jobs_claim_idx
     ON jobs (priority, created_at)
     WHERE state = 'queued';
 
+CREATE INDEX IF NOT EXISTS jobs_claim_tag_idx
+    ON jobs ((NULLIF(btrim(payload->>'tag'), '')), priority, created_at, id)
+    WHERE state = 'queued';
+
+CREATE INDEX IF NOT EXISTS jobs_running_app_idx
+    ON jobs (
+        (COALESCE(NULLIF(payload->>'workspace', ''), NULLIF(payload->'deployment'->>'workspace', ''), 'default')),
+        (COALESCE(NULLIF(payload->>'app', ''), NULLIF(payload->'deployment'->>'app', ''), ''))
+    )
+    WHERE state = 'running';
+
 CREATE INDEX IF NOT EXISTS jobs_lease_idx
     ON jobs (lease_expires_at)
     WHERE state = 'running';

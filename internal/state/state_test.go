@@ -384,6 +384,137 @@ func TestPostgresStoreClaimJobEnforcesMaxConcurrent(t *testing.T) {
 	exerciseStoreMaxConcurrent(t, store)
 }
 
+func TestPostgresClaimCandidatesFilterBeforeLockingAndBoundEachBatch(t *testing.T) {
+	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("WINDFORCE_LITE_POSTGRES_TEST_DSN is not set")
+	}
+	store, err := OpenPostgresStore(context.Background(), dsn)
+	if err != nil {
+		t.Fatalf("OpenPostgresStore returned error: %v", err)
+	}
+	defer store.Close()
+	if err := store.Migrate(context.Background()); err != nil {
+		t.Fatalf("Migrate returned error: %v", err)
+	}
+	truncate := func() {
+		t.Helper()
+		if _, err := store.pool.Exec(context.Background(), `TRUNCATE job_logs, run_events, human_tasks, jobs, runs RESTART IDENTITY CASCADE`); err != nil {
+			t.Fatalf("TRUNCATE returned error: %v", err)
+		}
+	}
+	enqueue := func(app string, tag string, labels []string, maxConcurrent *int32) Job {
+		t.Helper()
+		deployment := contract.Deployment{
+			Workspace:      "ws-a",
+			App:            app,
+			Commit:         "claim-test-commit",
+			Tag:            tag,
+			RequiredLabels: labels,
+			MaxConcurrent:  maxConcurrent,
+			Actions: map[string]contract.Action{
+				"run": {Action: "run"},
+			},
+		}
+		run := NewRun("test", "", deployment.App, "run", deployment, json.RawMessage(`{}`))
+		job := NewActionJob(run, nil)
+		if err := store.CreateRunAndEnqueue(context.Background(), run, job); err != nil {
+			t.Fatalf("CreateRunAndEnqueue returned error: %v", err)
+		}
+		return job
+	}
+
+	truncate()
+	enqueue("claim-test", "gpu", []string{"linux"}, nil)
+	wanted := enqueue("claim-test", "cpu", []string{"linux"}, nil)
+	filterTx, err := store.pool.Begin(context.Background())
+	if err != nil {
+		t.Fatalf("begin filter transaction: %v", err)
+	}
+	defer func() { _ = filterTx.Rollback(context.Background()) }()
+	candidates, err := postgresClaimCandidates(
+		context.Background(), filterTx,
+		map[string]struct{}{"missing": {}}, map[string]struct{}{"linux": {}},
+	)
+	if err != nil {
+		t.Fatalf("postgresClaimCandidates returned error: %v", err)
+	}
+	if len(candidates) != 0 {
+		t.Fatalf("mismatched candidates = %#v, want none", candidates)
+	}
+	claimContext, cancelClaim := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancelClaim()
+	claimed, _, err := store.ClaimJobForWorker(claimContext, "cpu-worker", []string{"cpu"}, []string{"linux"}, time.Minute)
+	if err != nil {
+		t.Fatalf("matching claim while mismatched transaction remains open: %v", err)
+	}
+	if claimed.ID != wanted.ID {
+		t.Fatalf("claimed job = %q, want %q", claimed.ID, wanted.ID)
+	}
+	if err := filterTx.Rollback(context.Background()); err != nil {
+		t.Fatalf("rollback filter transaction: %v", err)
+	}
+
+	truncate()
+	for range postgresClaimCandidateBatchSize + 6 {
+		enqueue("claim-test", "gpu", []string{"linux"}, nil)
+	}
+	firstTx, err := store.pool.Begin(context.Background())
+	if err != nil {
+		t.Fatalf("begin first batch transaction: %v", err)
+	}
+	defer func() { _ = firstTx.Rollback(context.Background()) }()
+	first, err := postgresClaimCandidates(
+		context.Background(), firstTx,
+		map[string]struct{}{"gpu": {}}, map[string]struct{}{"linux": {}},
+	)
+	if err != nil {
+		t.Fatalf("first postgresClaimCandidates returned error: %v", err)
+	}
+	if len(first) != postgresClaimCandidateBatchSize {
+		t.Fatalf("first candidate batch length = %d, want %d", len(first), postgresClaimCandidateBatchSize)
+	}
+	secondTx, err := store.pool.Begin(context.Background())
+	if err != nil {
+		t.Fatalf("begin second batch transaction: %v", err)
+	}
+	defer func() { _ = secondTx.Rollback(context.Background()) }()
+	second, err := postgresClaimCandidates(
+		context.Background(), secondTx,
+		map[string]struct{}{"gpu": {}}, map[string]struct{}{"linux": {}},
+	)
+	if err != nil {
+		t.Fatalf("second postgresClaimCandidates returned error: %v", err)
+	}
+	if len(second) != 6 {
+		t.Fatalf("second candidate batch length = %d, want 6", len(second))
+	}
+	if err := secondTx.Rollback(context.Background()); err != nil {
+		t.Fatalf("rollback second batch transaction: %v", err)
+	}
+	if err := firstTx.Rollback(context.Background()); err != nil {
+		t.Fatalf("rollback first batch transaction: %v", err)
+	}
+
+	truncate()
+	limit := int32(1)
+	enqueue("limited", "gpu", []string{"linux"}, &limit)
+	if _, _, err := store.ClaimJobForWorker(context.Background(), "limited-worker", []string{"gpu"}, []string{"linux"}, time.Minute); err != nil {
+		t.Fatalf("claim limited running job: %v", err)
+	}
+	for range postgresClaimCandidateBatchSize {
+		enqueue("limited", "gpu", []string{"linux"}, &limit)
+	}
+	wanted = enqueue("available", "gpu", []string{"linux"}, nil)
+	claimed, _, err = store.ClaimJobForWorker(context.Background(), "available-worker", []string{"gpu"}, []string{"linux"}, time.Minute)
+	if err != nil {
+		t.Fatalf("claim behind saturated app: %v", err)
+	}
+	if claimed.ID != wanted.ID {
+		t.Fatalf("claimed job behind saturated app = %q, want %q", claimed.ID, wanted.ID)
+	}
+}
+
 func TestJobSummarySkipsBreakdownsWithOnlyOldCompletedJobs(t *testing.T) {
 	deployment := contract.Deployment{
 		Workspace: "default",
