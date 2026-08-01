@@ -33,6 +33,8 @@ const humanTaskColumns = `
 	created_at, completed_at, expires_at
 `
 
+const postgresClaimCandidateBatchSize = 64
+
 type PostgresStore struct {
 	pool              *pgxpool.Pool
 	SecretKey         string
@@ -439,24 +441,8 @@ WHERE state='running' AND lease_expires_at < $1 AND canceled_by IS NULL
 			return err
 		}
 		expiresAt := now.Add(leaseTTL)
-		rows, err := tx.Query(ctx, `SELECT `+jobColumns+` FROM jobs WHERE state=$1 ORDER BY priority ASC, created_at ASC FOR UPDATE SKIP LOCKED`, string(JobQueued))
+		candidates, err := postgresClaimCandidates(ctx, tx, allowedTags, offeredLabels)
 		if err != nil {
-			return err
-		}
-		candidates := []Job{}
-		for rows.Next() {
-			job, err := scanJob(rows)
-			if err != nil {
-				rows.Close()
-				return err
-			}
-			if !claimAllowed(job, allowedTags, offeredLabels) {
-				continue
-			}
-			candidates = append(candidates, job)
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
 			return err
 		}
 		var selected Job
@@ -505,6 +491,80 @@ WHERE id=$3 AND state IN ($4, $5)
 		return Job{}, Lease{}, err
 	}
 	return claimed, lease, nil
+}
+
+func postgresClaimCandidates(
+	ctx context.Context,
+	tx pgx.Tx,
+	allowedTags map[string]struct{},
+	offeredLabels map[string]struct{},
+) ([]Job, error) {
+	tags := claimFilterValues(allowedTags)
+	labels := claimFilterValues(offeredLabels)
+	rows, err := tx.Query(ctx, `
+SELECT `+jobColumns+`
+FROM jobs AS candidate
+CROSS JOIN LATERAL (
+  SELECT
+    COALESCE(NULLIF(candidate.payload->>'workspace', ''), NULLIF(candidate.payload->'deployment'->>'workspace', ''), 'default') AS workspace_id,
+    COALESCE(NULLIF(candidate.payload->>'app', ''), NULLIF(candidate.payload->'deployment'->>'app', ''), '') AS app_key,
+    COALESCE(NULLIF(candidate.payload->>'maxConcurrent', '')::integer, NULLIF(candidate.payload->'deployment'->>'maxConcurrent', '')::integer, 0) AS max_concurrent
+) AS claim
+WHERE candidate.state=$1
+  AND (
+    cardinality($2::text[]) = 0
+    OR NULLIF(btrim(candidate.payload->>'tag'), '') = ANY($2::text[])
+    OR NULLIF(btrim(candidate.payload->>'tag'), '') IS NULL
+  )
+  AND (
+    CASE
+      WHEN candidate.payload ? 'requiredLabels' THEN COALESCE(candidate.payload->'requiredLabels', '[]'::jsonb)
+      ELSE COALESCE(candidate.payload->'requiredCapabilities', '[]'::jsonb)
+    END
+  ) <@ to_jsonb($3::text[])
+  AND (
+    claim.max_concurrent <= 0
+    OR (
+      SELECT count(*)
+      FROM jobs AS running
+      WHERE running.state='running'
+        AND COALESCE(NULLIF(running.payload->>'workspace', ''), NULLIF(running.payload->'deployment'->>'workspace', ''), 'default') = claim.workspace_id
+        AND COALESCE(NULLIF(running.payload->>'app', ''), NULLIF(running.payload->'deployment'->>'app', ''), '') = claim.app_key
+    ) < claim.max_concurrent
+  )
+ORDER BY candidate.priority ASC, candidate.created_at ASC, candidate.id ASC
+LIMIT $4
+FOR UPDATE OF candidate SKIP LOCKED
+`, string(JobQueued), tags, labels, postgresClaimCandidateBatchSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	candidates := make([]Job, 0, postgresClaimCandidateBatchSize)
+	for rows.Next() {
+		job, err := scanJob(rows)
+		if err != nil {
+			return nil, err
+		}
+		// Keep the in-memory matcher as a compatibility guard for jobs written
+		// before effective route tags and labels were pinned into the payload.
+		if claimAllowed(job, allowedTags, offeredLabels) {
+			candidates = append(candidates, job)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return candidates, nil
+}
+
+func claimFilterValues(values map[string]struct{}) []string {
+	result := make([]string, 0, len(values))
+	for value := range values {
+		result = append(result, value)
+	}
+	return result
 }
 
 func (s *PostgresStore) HeartbeatJob(ctx context.Context, lease Lease, leaseTTL time.Duration) (HeartbeatResult, error) {
