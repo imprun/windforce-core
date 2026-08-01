@@ -1,12 +1,30 @@
 # Canonical Invocation과 Trigger 구현 계획
 
-- 상태: Accepted implementation baseline
+- 상태: Phase 4 완료, Phase 5 stable release와 최종 배포 검증 대기
 - 결정 문서: [ADR 0013](adr/0013-canonical-invocation-and-trigger-boundary.md)
 - Master tracking: [#137](https://github.com/imprun/windforce-core/issues/137)
 - Phase 1 tracking: [#139](https://github.com/imprun/windforce-core/issues/139)
 - 기준 버전: `v0.2.0` (`a92a42f`)
 
 이 문서는 `/api/v1`을 canonical Invocation API로 만들고 Trigger admission 경계를 도입하는 구현 순서, cross-repository 소유권, coordinated big-bang cutover와 rollback gate를 정의한다. 단계별 schema와 route는 ADR 0013을 좁힐 수 있지만 그 결정과 다른 실행 plane, caller-controlled identity 또는 queue 직접 쓰기를 추가할 수 없다. OpenAPI와 JSON example은 시스템 간 통신 규격의 기계 판독 가능한 정본이다.
+
+## 현재 구현 상태 (2026-08-01)
+
+- Core Phase 1~3은 PR [#141](https://github.com/imprun/windforce-core/pull/141),
+  [#145](https://github.com/imprun/windforce-core/pull/145),
+  [#149](https://github.com/imprun/windforce-core/pull/149)로 완료됐다. Canonical Run API,
+  principal/scope, legacy route 제거, `windforce-invocation` SDK와 Trigger SPI가 `main`에 있다.
+- Gale은 PR [#37](https://github.com/imprun/gale/pull/37)에서 canonical Run API로 전환했고,
+  PR [#79](https://github.com/imprun/gale/pull/79)에서 README 예제를 ADR 0023의 현재 규격과
+  일치시켰다.
+- Imprun Cloud gateway는 PR [#70](https://github.com/imprun/imprun/pull/70)에서 canonical
+  tenant Run API로 전환했고 PR [#71](https://github.com/imprun/imprun/pull/71)로 배포됐다.
+- 비운영 `data-team/dhworker/wf-triggers`는
+  `data-team/dhworker/windforce-invocation-adapter`로 이름과 책임을 명확히 바꾸고 MR `!1`에서
+  canonical `/runs/wait`, Run ID와 idempotency 규격을 구현했다. Legacy
+  `data-team/dhworker/triggers`는 별도 pinned engine 대상으로 동결한다.
+- Phase 5 완료 증거인 stable `v0.3.0` tag, 최종 Core/consumer image digest, GitOps revision과
+  canonical live probe는 아직 이 문서의 완료 상태로 기록하지 않는다.
 
 ## 목표와 완료 조건
 
@@ -23,12 +41,12 @@
 
 ## 소비자 인벤토리
 
-| 소유 저장소 | 현재 통신 규격 | 근거 | 이전 조치 | 제거 gate |
+| 소유 저장소 | 계획 수립 당시 통신 규격 | 근거 | 이전 조치 | 제거 gate |
 |---|---|---|---|---|
 | `imprun/windforce-core` | `/execution/v1`, `/api/v1/w/.../run`, `/api/w/.../jobs/run`, Python execution SDK | server handlers, OpenAPI, tests, CLI, README | Canonical handler/OpenAPI/SDK를 추가하고 기존 handler와 SDK를 같은 breaking release에서 제거 | Release candidate에 legacy route/OpenAPI/import가 없고 canonical 통신 규격 test 통과 |
-| `imprun/gale` | `/execution/v1/workspaces/{workspace}/runs`와 lifecycle, ADR 0023 | `src/gale/adapters/windforce.py`, `docs/adr/0023-use-windforce-execution-api-v1.md` | `/api/v1` service principal과 `Idempotency-Key` header로 이전하고 ADR 갱신 | Gale main test와 submission-uncertain reconciliation test 통과 |
+| `imprun/gale` | `/execution/v1/workspaces/{workspace}/runs`와 lifecycle, ADR 0023 | `src/gale/adapters/windforce.py`, `docs/adr/0023-use-windforce-canonical-run-api.md` | `/api/v1` service principal과 `Idempotency-Key` header로 이전하고 ADR 갱신 | Gale main test와 submission-uncertain reconciliation test 통과 |
 | `imprun/imprun` | Tenant gateway가 `/t/{tenant}/execution/v1/...` 전달, cell admin token 사용 | `internal/gateway`, `e2e/smoke_test.go`, decision ledger ADR-0003 | Tenant canonical prefix와 service credential custody로 이전하고 지원 engine version pin 갱신 | Gateway/E2E, Flux 배포와 tenant live probe 통과 |
-| `data-team/dhworker/wf-triggers` | 비운영 구현이 `/api/v1/w/{workspace}/run/{app}/{action}/wait`, `wfk_` token, `X-WF-Job-Id`를 참조 | `src/wf_triggers/windforce.py`, README와 tests; 운영 배포 없음 | 안정된 Core v0.3 OpenAPI를 기준으로 Canonical Run wait endpoint, `X-WF-Run-Id`와 Run ownership을 처음부터 구현 | Core 운영 cutover gate가 아님. 첫 배포 전에 dhworker envelope, timeout/idempotency test를 통과 |
+| `data-team/dhworker/wf-triggers` (현재 `windforce-invocation-adapter`) | 비운영 구현이 `/api/v1/w/{workspace}/run/{app}/{action}/wait`, `wfk_` token, `X-WF-Job-Id`를 참조 | 기존 Python 구현과 README/tests; 운영 배포 없음 | 독립 Go protocol adapter에서 canonical Run wait endpoint, `X-WF-Run-Id`와 Run ownership을 구현 | Core 운영 cutover gate가 아님. 첫 배포 전에 dhworker envelope, timeout/idempotency test를 통과 |
 | `data-team/dhworker/triggers` | Pinned `windforce-lite` execution SDK, caller `client_key`, per-job `env` | `pyproject.toml`, `src/dhworker_triggers/windforce.py` | 새 `wf-triggers`로 이전하거나 현재 pinned engine에 동결한다. Canonical Core에 `env`/identity impersonation을 다시 추가하지 않는다. | Windforce Core v0.3 cutover의 gate가 아니며 owner의 retire/migration 결정을 기록 |
 | `imprun/windforce-lite`와 오래된 `C:\\Users\\USER\\WORK\\gale` checkout | 과거 통신 규격 사본 | source/doc references | Owning upstream main만 이전하고 오래된 checkout이나 vendor 사본을 정본으로 편집하지 않는다. | 정본 repository main 기준으로만 판단 |
 
@@ -124,22 +142,22 @@ Built-in trigger test는 server의 HTTP listener를 거치지 않았음을 injec
 
 ### Phase 4 — Known consumer migration 준비
 
-1. `imprun/gale` adapter와 ADR 0023을 canonical Run API와 service principal로 이전한다. 기존 `EXECUTION_SUBMISSION_UNCERTAIN`, tenant-scoped idempotency와 reconciliation 의미는 유지한다.
-2. `imprun/imprun` gateway, decision ledger, console guide와 E2E를 canonical tenant prefix로 이전한다. Cell credential custody는 admin token 대신 least-privilege service token을 기본으로 하고 control 작업용 credential과 분리한다.
-3. 비운영 `data-team/dhworker/wf-triggers`는 Core v0.3 OpenAPI가 안정된 뒤 canonical wait와 `X-WF-Run-Id`를 기준으로 구현하고 기존 dhworker response envelope의 `TRACEID`에는 Run ID를 넣는다.
-4. Core control CLI, README, architecture, concepts와 generated OpenAPI를 current canonical 통신 규격으로 갱신한다.
-5. `data-team/dhworker/triggers` owner는 `wf-triggers` 전환 또는 pinned legacy engine 동결을 기록한다. 이 adapter 때문에 canonical API에 arbitrary `env`나 identity impersonation을 추가하지 않는다.
+- [x] `imprun/gale` adapter와 ADR 0023을 canonical Run API와 service principal로 이전한다. 기존 `EXECUTION_SUBMISSION_UNCERTAIN`, tenant-scoped idempotency와 reconciliation 의미는 유지한다.
+- [x] `imprun/imprun` gateway, decision ledger, console guide와 E2E를 canonical tenant prefix로 이전한다. Cell credential custody는 admin token 대신 least-privilege service token을 기본으로 하고 control 작업용 credential과 분리한다.
+- [x] 비운영 `data-team/dhworker/windforce-invocation-adapter`를 canonical wait와 `X-WF-Run-Id` 기준으로 구현하고 기존 dhworker response envelope의 `TRACEID`에는 Run ID를 넣는다.
+- [x] Core control CLI, README, architecture, concepts와 generated OpenAPI를 current canonical 통신 규격으로 갱신한다.
+- [x] `data-team/dhworker/triggers`는 pinned legacy engine 대상으로 동결하고 별도 adapter 전환을 기록한다. 이 adapter 때문에 canonical API에 arbitrary `env`나 identity impersonation을 추가하지 않는다.
 
 각 repository는 자신의 branch, test, CI와 배포를 소유한다. `windforce-core` PR 하나에 다른 child repository 변경을 섞지 않는다. 운영 Consumer migration PR은 Core v0.3.0 release candidate OpenAPI와 JSON fixture를 사용해 merge 전에 검증하되 production에는 cutover window 전 배포하지 않는다. `wf-triggers`는 운영 전환 대상이 아니므로 안정된 규격을 소비하는 별도 첫 배포 절차를 따른다.
 
 ### Phase 5 — v0.3.0 coordinated cutover
 
-1. Core release candidate, Gale과 Imprun gateway migration commit SHA, CI 결과, image digest와 rollback release set을 변경 기록에 고정한다.
-2. Maintenance window를 시작하고 external invocation ingress를 drain한 뒤 새 Run admission이 없는지 확인한다.
-3. Windforce Core v0.3.0을 배포하고 canonical operator/service/client smoke를 실행한다.
-4. Imprun gateway와 Gale을 준비된 canonical release로 전환한다.
-5. Run create/replay/wait/status/result/cancel, Gale submission-uncertain reconciliation과 tenant gateway live probe를 통과시킨다.
-6. Probe가 모두 통과하면 ingress를 재개하고, 하나라도 실패하면 전체 Core와 consumer를 사전에 고정한 v0.2 release set으로 rollback한다.
+- [ ] Core release candidate, Gale과 Imprun gateway migration commit SHA, CI 결과, image digest와 rollback release set을 변경 기록에 고정한다.
+- [ ] Maintenance window를 시작하고 external invocation ingress를 drain한 뒤 새 Run admission이 없는지 확인한다.
+- [ ] Windforce Core v0.3.0을 배포하고 canonical operator/service/client smoke를 실행한다.
+- [ ] Imprun gateway와 Gale을 준비된 canonical release로 전환한다.
+- [ ] Run create/replay/wait/status/result/cancel, Gale submission-uncertain reconciliation과 tenant gateway live probe를 통과시킨다.
+- [ ] Probe가 모두 통과하면 ingress를 재개하고, 하나라도 실패하면 전체 Core와 consumer를 사전에 고정한 v0.2 release set으로 rollback한다.
 
 Cutover 완료 증거는 known consumer의 canonical commit/CI, 실제 image digest, deployment revision과 live probe를 포함해야 한다. Unknown consumer가 발견되면 maintenance window를 취소하고 inventory부터 갱신한다.
 
