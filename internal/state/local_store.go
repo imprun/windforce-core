@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gofrs/flock"
 	"github.com/imprun/windforce-core/internal/catalog"
 	"github.com/imprun/windforce-core/internal/contract"
 	controlevent "github.com/imprun/windforce-core/internal/event"
@@ -975,38 +976,40 @@ func (s *LocalStore) updateWithClock(ctx context.Context, nowFunc nowFunc, fn fu
 }
 
 func (s *LocalStore) withLock(ctx context.Context, fn func() error) error {
+	return s.withLockTimeout(ctx, 10*time.Second, fn)
+}
+
+func (s *LocalStore) withLockTimeout(ctx context.Context, timeout time.Duration, fn func() error) (err error) {
 	if err := os.MkdirAll(filepath.Dir(s.Path), 0o755); err != nil {
 		return err
 	}
-	lockPath := s.Path + ".lock"
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		if err := ctx.Err(); err != nil {
-			return err
+
+	// The file is only a stable rendezvous point. Ownership is held by the
+	// operating-system lock and is therefore released when a process exits.
+	// Never remove the file after unlocking: another process may already have
+	// locked the same path, and unlinking it would split contenders across files.
+	fileLock := flock.New(s.Path+".lock", flock.SetPermissions(0o600))
+	lockContext, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	locked, lockErr := fileLock.TryLockContext(lockContext, 25*time.Millisecond)
+	if lockErr != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
 		}
-		file, err := os.OpenFile(lockPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-		if err == nil {
-			_, _ = fmt.Fprintf(file, "%d\n", os.Getpid())
-			_ = file.Close()
-			defer os.Remove(lockPath)
-			return fn()
-		}
-		if !errors.Is(err, os.ErrExist) {
-			return err
-		}
-		if staleLock(lockPath, 2*time.Minute) {
-			_ = os.Remove(lockPath)
-			continue
-		}
-		if time.Now().After(deadline) {
+		if errors.Is(lockErr, context.DeadlineExceeded) {
 			return ErrLockTimeout
 		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(25 * time.Millisecond):
-		}
+		return lockErr
 	}
+	if !locked {
+		return ErrLockTimeout
+	}
+	defer func() {
+		if unlockErr := fileLock.Unlock(); err == nil {
+			err = unlockErr
+		}
+	}()
+	return fn()
 }
 
 func (s *LocalStore) write(snapshot Snapshot) error {
@@ -1270,14 +1273,6 @@ func canceledJobResult(job Job, run Run, message string) *contract.JobResult {
 		ExitCode: -1,
 		Error:    message,
 	}
-}
-
-func staleLock(path string, maxAge time.Duration) bool {
-	info, err := os.Stat(path)
-	if err != nil {
-		return false
-	}
-	return time.Since(info.ModTime()) > maxAge
 }
 
 // PruneSettledJobs removes settled runs together with their jobs, logs,

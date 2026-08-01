@@ -3,6 +3,7 @@ module github.com/imprun/windforce-core
 go 1.23.0
 
 require (
+	github.com/gofrs/flock v0.12.1
 	github.com/jackc/pgx/v5 v5.5.5
 	github.com/rabbitmq/amqp091-go v1.13.0
 	github.com/robfig/cron/v3 v3.0.1
@@ -19,5 +20,6 @@ require (
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/stretchr/testify v1.10.0 // indirect
 	golang.org/x/crypto v0.37.0 // indirect
+	golang.org/x/sys v0.32.0 // indirect
 	golang.org/x/text v0.28.0 // indirect
 )
