@@ -2,6 +2,17 @@ package server
 
 func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any {
 	paths := map[string]any{
+		"/api/queue-demand-snapshots": map[string]any{
+			"post": map[string]any{
+				"operationId": "createQueueDemandSnapshot",
+				"summary":     "Read a fenced bulk queue-demand snapshot",
+				"description": "Instance-admin operation. Every selector result is evaluated against one authoritative store epoch, revision, and observed time.",
+				"requestBody": oapiJSONBody(oapiSchemaRef("QueueDemandSnapshotRequest"), true),
+				"responses": withErrors(map[string]any{
+					"200": oapiResponse("Fenced queue-demand snapshot.", oapiSchemaRef("QueueDemandSnapshot")),
+				}, "400", "401", "403", "413", "500", "503"),
+			},
+		},
 		"/api/workspaces": map[string]any{
 			"get": map[string]any{
 				"operationId": "listWorkspaces",
@@ -1652,6 +1663,51 @@ func controlPlaneSchemas() map[string]any {
 					},
 				}},
 			},
+		},
+		"QueueDemandSelector": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"key":          oapiStringSchema(),
+				"workspace_id": oapiStringSchema(),
+				"tags":         stringArray,
+				"labels":       stringArray,
+			},
+			"required": []any{"key", "workspace_id"},
+		},
+		"QueueDemandSnapshotRequest": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"selectors": map[string]any{
+					"type": "array", "minItems": 1, "maxItems": maxQueueDemandSelectors,
+					"items": oapiSchemaRef("QueueDemandSelector"),
+				},
+			},
+			"required": []any{"selectors"},
+		},
+		"QueueDemand": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"selector":             oapiSchemaRef("QueueDemandSelector"),
+				"eligible":             oapiIntegerSchema(),
+				"queued":               oapiIntegerSchema(),
+				"expired_reacquirable": oapiIntegerSchema(),
+				"claimed":              oapiIntegerSchema(),
+				"busy_workers":         oapiIntegerSchema(),
+				"oldest_eligible_at":   nullableDateTime,
+			},
+			"required": []any{"selector", "eligible", "queued", "expired_reacquirable", "claimed", "busy_workers"},
+		},
+		"QueueDemandSnapshot": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"store_epoch":       oapiStringSchema(),
+				"snapshot_revision": oapiIntegerSchema(),
+				"observed_at":       oapiDateTimeSchema(),
+				"items": map[string]any{
+					"type": "array", "items": oapiSchemaRef("QueueDemand"),
+				},
+			},
+			"required": []any{"store_epoch", "snapshot_revision", "observed_at", "items"},
 		},
 		"CancelJobRequest": map[string]any{
 			"type":       "object",

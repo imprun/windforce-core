@@ -1011,6 +1011,7 @@ func (s *LocalStore) withLock(ctx context.Context, fn func() error) error {
 
 func (s *LocalStore) write(snapshot Snapshot) error {
 	ensureSnapshot(&snapshot)
+	snapshot.SnapshotRevision++
 	if err := os.MkdirAll(filepath.Dir(s.Path), 0o755); err != nil {
 		return err
 	}
@@ -1027,12 +1028,15 @@ func (s *LocalStore) write(snapshot Snapshot) error {
 }
 
 func newSnapshot() Snapshot {
-	snapshot := Snapshot{}
+	snapshot := Snapshot{StoreEpoch: NewID("store")}
 	ensureSnapshot(&snapshot)
 	return snapshot
 }
 
 func ensureSnapshot(snapshot *Snapshot) {
+	if snapshot.StoreEpoch == "" {
+		snapshot.StoreEpoch = NewID("store")
+	}
 	catalog.NormalizeSnapshot(&snapshot.ReleaseCatalog)
 	if snapshot.Runs == nil {
 		snapshot.Runs = map[string]Run{}

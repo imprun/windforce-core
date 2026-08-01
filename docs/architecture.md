@@ -78,6 +78,13 @@ or rotation response, and every management change is included in the canonical
 workspace audit stream. Deleted subscriptions remain visible only through the
 explicit history query while pending deliveries are canceled.
 
+Instance-level capacity observers use the separate
+[queue demand observation](concepts/queue-demand-observation.md) contract.
+`POST /api/queue-demand-snapshots` evaluates multiple workspace/tag/label
+selectors against one persistent store fence. It is an admin-only observation
+surface; it does not reserve jobs or introduce hosting-product vocabulary into
+Core.
+
 ## Webhook Dispatcher
 
 The server runs a Webhook Dispatcher alongside its HTTP listener. The dispatcher reads only encrypted subscriptions, immutable event bodies, and delivery state. It claims work with a lease, signs the CloudEvents body, sends it outside the release transaction, and records success, terminal failure, or a scheduled retry. Every server replica may run the loop; PostgreSQL row locks prevent duplicate active claims while expired leases remain recoverable.
