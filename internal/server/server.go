@@ -824,7 +824,19 @@ func (h *Handler) validateWorkspaceRequest(r *http.Request, workspaceID string) 
 }
 
 func workspaceRequestChangesState(r *http.Request) bool {
-	return r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions && !isJobSDKCallback(r)
+	if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions || isJobSDKCallback(r) {
+		return false
+	}
+	return !isCredentialRevocation(r)
+}
+
+func isCredentialRevocation(r *http.Request) bool {
+	if r.Method != http.MethodDelete {
+		return false
+	}
+	parts := splitPath(r.URL.Path)
+	return len(parts) == 6 && parts[0] == "api" && parts[1] == "w" &&
+		(parts[3] == "clients" || parts[3] == "service-principals") && parts[5] == "token"
 }
 
 func bearer(r *http.Request) string {
