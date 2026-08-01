@@ -33,7 +33,7 @@ When no instance-admin token is configured, local development accepts requests w
 
 ## Lifecycle
 
-An active workspace accepts control-plane changes and new execution requests. Archiving a workspace preserves its state and audit records while blocking configuration changes, releases, trigger or webhook changes, and new Runs. Read operations, audit queries, and provisioning export remain available. Job-scoped SDK callbacks remain available so running jobs can settle.
+An active workspace accepts control-plane changes and new execution requests. Archiving a workspace preserves its state and audit records while blocking configuration changes, credential issuance or rotation, releases, trigger or webhook changes, and new Runs. Read operations, audit queries, provisioning export, and credential revocation remain available. Revocation stays available for workspace, client, and service-principal tokens so a compromised credential can always be disabled. Job-scoped SDK callbacks remain available so running jobs can settle.
 
 Workspace deletion and reactivation are not exposed. Use a separate workspace when a new active namespace is required.
 

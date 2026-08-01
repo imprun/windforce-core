@@ -85,6 +85,24 @@ func TestManagedWorkspaceAPIAndAuthorizationBoundary(t *testing.T) {
 	if newToken.StatusCode != http.StatusOK {
 		t.Fatalf("new token status = %d: %s", newToken.StatusCode, readResponse(t, newToken))
 	}
+	client := workspaceRequest(t, server.URL, http.MethodPost, "/api/w/team-a/clients", "instance-admin", `{"name":"Archived client"}`)
+	if client.StatusCode != http.StatusCreated {
+		t.Fatalf("client create status = %d: %s", client.StatusCode, readResponse(t, client))
+	}
+	var issuedClient struct {
+		Client clientView `json:"client"`
+	}
+	decodeResponse(t, client, &issuedClient)
+	clientPath := "/api/w/team-a/clients/" + issuedClient.Client.ID
+	servicePrincipal := workspaceRequest(t, server.URL, http.MethodPost, "/api/w/team-a/service-principals", "instance-admin", `{"name":"Archived service","scopes":["runs:create"]}`)
+	if servicePrincipal.StatusCode != http.StatusCreated {
+		t.Fatalf("service principal create status = %d: %s", servicePrincipal.StatusCode, readResponse(t, servicePrincipal))
+	}
+	var issuedServicePrincipal struct {
+		ServicePrincipal servicePrincipalView `json:"service_principal"`
+	}
+	decodeResponse(t, servicePrincipal, &issuedServicePrincipal)
+	servicePrincipalPath := "/api/w/team-a/service-principals/" + issuedServicePrincipal.ServicePrincipal.ID
 
 	archive := workspaceRequest(t, server.URL, http.MethodPost, "/api/workspaces/team-a/archive", "instance-admin", "")
 	if archive.StatusCode != http.StatusOK {
@@ -105,6 +123,36 @@ func TestManagedWorkspaceAPIAndAuthorizationBoundary(t *testing.T) {
 	rotateArchived := workspaceRequest(t, server.URL, http.MethodPost, "/api/workspaces/team-a/tokens/"+issued.Token.ID+"/rotate", "instance-admin", "")
 	if rotateArchived.StatusCode != http.StatusConflict {
 		t.Fatalf("archived token rotation status = %d: %s", rotateArchived.StatusCode, readResponse(t, rotateArchived))
+	}
+	rotateClientArchived := workspaceRequest(t, server.URL, http.MethodPost, clientPath+"/token", "instance-admin", "")
+	if rotateClientArchived.StatusCode != http.StatusConflict {
+		t.Fatalf("archived client token rotation status = %d: %s", rotateClientArchived.StatusCode, readResponse(t, rotateClientArchived))
+	}
+	patchClientArchived := workspaceRequest(t, server.URL, http.MethodPatch, clientPath, "instance-admin", `{"name":"Changed"}`)
+	if patchClientArchived.StatusCode != http.StatusConflict {
+		t.Fatalf("archived client update status = %d: %s", patchClientArchived.StatusCode, readResponse(t, patchClientArchived))
+	}
+	revokeClientArchived := workspaceRequest(t, server.URL, http.MethodDelete, clientPath+"/token", "instance-admin", "")
+	if revokeClientArchived.StatusCode != http.StatusOK {
+		t.Fatalf("archived client token revoke status = %d: %s", revokeClientArchived.StatusCode, readResponse(t, revokeClientArchived))
+	}
+	var revokedClient clientView
+	decodeResponse(t, revokeClientArchived, &revokedClient)
+	if revokedClient.HasToken {
+		t.Fatalf("archived client still has a token: %#v", revokedClient)
+	}
+	rotateServicePrincipalArchived := workspaceRequest(t, server.URL, http.MethodPost, servicePrincipalPath+"/token", "instance-admin", "")
+	if rotateServicePrincipalArchived.StatusCode != http.StatusConflict {
+		t.Fatalf("archived service principal token rotation status = %d: %s", rotateServicePrincipalArchived.StatusCode, readResponse(t, rotateServicePrincipalArchived))
+	}
+	revokeServicePrincipalArchived := workspaceRequest(t, server.URL, http.MethodDelete, servicePrincipalPath+"/token", "instance-admin", "")
+	if revokeServicePrincipalArchived.StatusCode != http.StatusOK {
+		t.Fatalf("archived service principal token revoke status = %d: %s", revokeServicePrincipalArchived.StatusCode, readResponse(t, revokeServicePrincipalArchived))
+	}
+	var revokedServicePrincipal servicePrincipalView
+	decodeResponse(t, revokeServicePrincipalArchived, &revokedServicePrincipal)
+	if revokedServicePrincipal.HasToken {
+		t.Fatalf("archived service principal still has a token: %#v", revokedServicePrincipal)
 	}
 	writeArchived := workspaceRequest(t, server.URL, http.MethodPost, "/api/w/team-a/variables", "instance-admin", `{"path":"x","value":"y"}`)
 	if writeArchived.StatusCode != http.StatusConflict {
