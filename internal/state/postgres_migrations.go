@@ -541,6 +541,31 @@ ALTER TABLE jobs ADD COLUMN IF NOT EXISTS canceled_reason TEXT;
 ALTER TABLE job_logs ADD COLUMN IF NOT EXISTS workspace_id TEXT NOT NULL DEFAULT 'default';
 ALTER TABLE workspace_key ADD COLUMN IF NOT EXISTS kek_version INTEGER NOT NULL DEFAULT 0;
 
+CREATE TABLE IF NOT EXISTS queue_snapshot_state (
+    singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton),
+    store_epoch TEXT NOT NULL,
+    revision BIGINT NOT NULL DEFAULT 0 CHECK (revision >= 0)
+);
+
+INSERT INTO queue_snapshot_state (singleton, store_epoch, revision)
+VALUES (TRUE, 'store_' || md5(random()::text || clock_timestamp()::text), 0)
+ON CONFLICT (singleton) DO NOTHING;
+
+CREATE OR REPLACE FUNCTION bump_queue_snapshot_revision()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    UPDATE queue_snapshot_state SET revision = revision + 1 WHERE singleton = TRUE;
+    RETURN NULL;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS jobs_queue_snapshot_revision ON jobs;
+CREATE TRIGGER jobs_queue_snapshot_revision
+AFTER INSERT OR UPDATE OR DELETE ON jobs
+FOR EACH STATEMENT EXECUTE FUNCTION bump_queue_snapshot_revision();
+
 CREATE INDEX IF NOT EXISTS jobs_claim_idx
     ON jobs (priority, created_at)
     WHERE state = 'queued';

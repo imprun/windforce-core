@@ -638,6 +638,8 @@ type JobLog struct {
 }
 
 type Snapshot struct {
+	StoreEpoch             string                                 `json:"storeEpoch,omitempty"`
+	SnapshotRevision       int64                                  `json:"snapshotRevision,omitempty"`
 	Sequence               int64                                  `json:"sequence"`
 	Runs                   map[string]Run                         `json:"runs"`
 	Jobs                   map[string]Job                         `json:"jobs"`
@@ -695,6 +697,7 @@ type Store interface {
 	GetJobByRunID(ctx context.Context, workspaceID string, runID string) (Job, Run, bool, error)
 	ListJobs(ctx context.Context, query JobListQuery) ([]JobListItem, error)
 	JobSummary(ctx context.Context, workspaceID string, recent time.Duration) (JobSummary, error)
+	QueueDemandSnapshot(ctx context.Context, selectors []QueueDemandSelector) (QueueDemandSnapshot, error)
 	RequeueQueuedJobsForApp(ctx context.Context, spec RequeueAppSpec) (int64, error)
 	GetHumanTask(ctx context.Context, taskID string) (HumanTask, error)
 	AppendLogs(ctx context.Context, jobID string, workspaceID string, chunk string) error
