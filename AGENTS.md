@@ -57,8 +57,9 @@ existing files only when touching them — no bulk reformatting.
 
 - Every commit is signed off under the DCO: `git commit -s`. See
   [CONTRIBUTING.md](CONTRIBUTING.md).
-- Verify before submitting: `make fmt`, `make build`, `make test`; for web UI
-  changes also `make web-test` and `make web-typecheck`.
+- Verify before submitting: `make fmt`, `make build-smoke`, `make test`; for web UI
+  changes also run `make web-test`, `make web-typecheck`, and
+  `make web-embed-verify`.
 - Conventional commit style: `feat: ...`, `fix: ...`, `docs: ...`.
 - Releases are SemVer `v*` tags; pre-1.0 minor releases may break.
 - Never commit secrets, tokens, internal endpoints, or local state

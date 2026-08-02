@@ -49,12 +49,17 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.12
+      - name: Install Web UI dependencies
+        working-directory: web
+        run: bun install --frozen-lockfile
+      - name: Verify embedded Web UI
+        run: make web-embed-verify
       - name: Verify formatting
         run: |
           go fmt ./...
           git diff --exit-code
-      - name: Build
-        run: make build
+      - name: Build and smoke
+        run: make build-smoke
       - name: Test
         run: make test
       - name: Test PostgreSQL storage
@@ -76,12 +81,10 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Build
-        run: go build -trimpath -o "${{ runner.temp }}/windforce-core.exe" ./cmd/windforce-core
-      - name: Smoke
-        shell: pwsh
-        run: |
-          & "${{ runner.temp }}/windforce-core.exe" version
+      - name: Install Make
+        run: choco install make --no-progress --yes
+      - name: Build and smoke through Makefile
+        run: make build-smoke
 
   macos:
     name: macOS

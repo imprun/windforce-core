@@ -26,8 +26,9 @@ that you have the right to submit the work under the project license.
 - Follow the existing commit style: `feat: ...`, `fix: ...`, `docs: ...`.
 - Update documentation (`README.md`, `docs/`) when behavior or contracts
   change; record notable design decisions as an ADR under `docs/adr/`.
-- Run `make fmt`, `make build`, and `make test` before submitting. Use
-  `make web-test` and `make web-typecheck` for web UI changes.
+- Run `make fmt`, `make build-smoke`, and `make test` before submitting. Use
+  `make web-test`, `make web-typecheck`, and `make web-embed-verify` for web UI
+  changes.
 
 ## Versioning
 
