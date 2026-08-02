@@ -1,4 +1,4 @@
-.PHONY: help fmt test test-python-sdk test-postgres test-rabbitmq build web-deps web-install web-dev web-build web-embed web-test web-typecheck clean dev \
+.PHONY: help fmt test test-python-sdk test-postgres test-rabbitmq build build-smoke web-deps web-install web-dev web-build web-embed web-embed-verify web-test web-typecheck clean dev \
 	compose-up compose-db compose-rabbitmq compose-server compose-worker compose-dev compose-dev-worker compose-dev-build compose-dev-logs compose-build compose-down compose-reset compose-logs compose-ps postgres-dsn \
 	dev-standalone dev-standalone-postgres dev-server dev-worker worker-once \
 	webhook-receiver \
@@ -33,7 +33,12 @@ endif
 WFL_TMP ?= .tmp
 DEV_DIR ?= $(WFL_TMP)/dev
 BIN_DIR ?= $(WFL_TMP)/bin
-BIN ?= $(BIN_DIR)/$(APP)
+ifeq ($(OS),Windows_NT)
+EXECUTABLE_SUFFIX ?= .exe
+else
+EXECUTABLE_SUFFIX ?=
+endif
+BIN ?= $(BIN_DIR)/$(APP)$(EXECUTABLE_SUFFIX)
 VERSION ?= dev
 STORE ?= $(DEV_DIR)/store
 CATALOG ?= $(DEV_DIR)/catalog.json
@@ -99,6 +104,7 @@ help:
 	@echo "  web-dev                run the local Vite Web UI dev server with live reload on WINDFORCE_LITE_WEB_PORT"
 	@echo "  web-build              build the Web UI to web/dist without touching Go embed assets"
 	@echo "  web-embed              build the Web UI and refresh the Go embed assets"
+	@echo "  web-embed-verify       fail when Web UI source and committed Go embed assets differ"
 	@echo "  web-test               run Web UI unit tests"
 	@echo "  web-typecheck          type-check the Web UI"
 	@echo "  test                   run go test ./..."
@@ -106,6 +112,7 @@ help:
 	@echo "  test-postgres          run PostgreSQL integration test against docker compose"
 	@echo "  test-rabbitmq          run RabbitMQ trigger integration test against docker compose"
 	@echo "  build                  build $(BIN)"
+	@echo "  build-smoke            build and execute the exact selected binary"
 	@echo "  dev-standalone         run local JSON-state standalone server"
 	@echo "  dev-standalone-postgres run PostgreSQL-backed standalone server"
 	@echo "  dev-server             run server process with PostgreSQL state"
@@ -157,6 +164,9 @@ web-embed: web-build
 	rm -rf internal/webui/assets
 	cp -r web/dist internal/webui/assets
 
+web-embed-verify: web-build
+	python tools/verify_web_embed.py web/dist internal/webui/assets
+
 web-test:
 	cd web && $(BUN) run test
 
@@ -166,6 +176,7 @@ web-typecheck:
 test:
 	$(GO) test ./...
 	python -m unittest discover -s sdk/python/tests -v
+	python -m unittest discover -s tools -p "*_test.py" -v
 
 test-python-sdk:
 	python -m unittest discover -s sdk/python/tests -v
@@ -179,6 +190,9 @@ test-rabbitmq: compose-rabbitmq
 build:
 	@mkdir -p "$(BIN_DIR)"
 	$(GO) build -ldflags "-X main.version=$(VERSION)" -o "$(BIN)" $(CMD)
+
+build-smoke: build
+	"$(BIN)" version
 
 compose-up:
 	$(COMPOSE) --profile backend up -d server web
