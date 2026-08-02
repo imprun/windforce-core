@@ -1,6 +1,9 @@
 package state
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // WorkerRecord is the worker registry entry (ADR 0009 §6): the observable
 // truth of which capabilities are alive right now. Slots is the worker's
@@ -11,8 +14,25 @@ type WorkerRecord struct {
 	Tags            []string  `json:"tags,omitempty"`
 	Labels          []string  `json:"labels,omitempty"`
 	Slots           int       `json:"slots"`
+	Status          string    `json:"status"`
 	StartedAt       time.Time `json:"startedAt"`
 	LastHeartbeatAt time.Time `json:"lastHeartbeatAt"`
+}
+
+const (
+	WorkerStatusActive   = "active"
+	WorkerStatusDraining = "draining"
+)
+
+func NormalizeWorkerStatus(value string) (string, error) {
+	switch value {
+	case "", WorkerStatusActive:
+		return WorkerStatusActive, nil
+	case WorkerStatusDraining:
+		return WorkerStatusDraining, nil
+	default:
+		return "", fmt.Errorf("unsupported worker status %q", value)
+	}
 }
 
 // WorkerLiveTTL is how recent a heartbeat must be for a worker to count as

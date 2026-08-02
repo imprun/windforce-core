@@ -145,8 +145,11 @@ func (r *Runner) validatePreparedSource(ctx context.Context, sourceDir string, d
 	if err != nil {
 		return err
 	}
-	language := firstNonEmpty(deployment.ScriptLang, "typescript")
-	if language == "go" {
+	language, err := contract.NormalizeScriptLanguage(deployment.ScriptLang)
+	if err != nil {
+		return err
+	}
+	if language == contract.ScriptLangGo {
 		normalized = goBinaryRel()
 	}
 	entrypointPath := filepath.Join(sourceDir, filepath.FromSlash(normalized))
@@ -157,13 +160,14 @@ func (r *Runner) validatePreparedSource(ctx context.Context, sourceDir string, d
 	}
 
 	switch language {
-	case "python":
+	case contract.ScriptLangPython:
 		return r.validatePythonEntrypoint(ctx, sourceDir, entrypointPath)
-	case "go":
+	case contract.ScriptLangGo:
 		return nil
-	default:
+	case contract.ScriptLangTypeScript:
 		return r.validateBunEntrypoint(ctx, sourceDir, entrypointPath)
 	}
+	return fmt.Errorf("unsupported scriptLang %q", language)
 }
 
 func deploymentUsesOnlyCommandAdapters(deployment contract.Deployment) bool {
@@ -216,6 +220,39 @@ func (r *Runner) validateBunEntrypoint(ctx context.Context, sourceDir string, en
 		return err
 	}
 	defer os.RemoveAll(outDir)
+
+	loader := "ts"
+	switch strings.ToLower(filepath.Ext(entrypointPath)) {
+	case ".tsx":
+		loader = "tsx"
+	case ".js", ".mjs", ".cjs":
+		loader = "js"
+	case ".jsx":
+		loader = "jsx"
+	}
+	const scanMainExport = `const source = await Bun.file(process.argv[1]).text();
+const result = new Bun.Transpiler({ loader: process.argv[2] }).scan(source);
+if (!result.exports.includes("main")) {
+  console.error("entrypoint must export a named main function");
+  process.exit(1);
+}`
+	scan := exec.CommandContext(
+		ctx,
+		firstNonEmpty(r.BunPath, "bun"),
+		"-e",
+		scanMainExport,
+		entrypointPath,
+		loader,
+	)
+	scan.Dir = sourceDir
+	scan.Env = appendPreparedSourceEnv(curatedPrepareEnv(), sourceDir, contract.ScriptLangTypeScript)
+	output, err := scan.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("bun entrypoint main export check: %w: %s", err, compactCommandOutput(output))
+	}
+
+	// The scanner checks the exported interface without importing the App. The
+	// build then validates the complete dependency graph, also without running it.
 	command := exec.CommandContext(
 		ctx,
 		firstNonEmpty(r.BunPath, "bun"),
@@ -225,8 +262,8 @@ func (r *Runner) validateBunEntrypoint(ctx context.Context, sourceDir string, en
 		"--outdir="+outDir,
 	)
 	command.Dir = sourceDir
-	command.Env = appendPreparedSourceEnv(curatedPrepareEnv(), sourceDir, "typescript")
-	output, err := command.CombinedOutput()
+	command.Env = appendPreparedSourceEnv(curatedPrepareEnv(), sourceDir, contract.ScriptLangTypeScript)
+	output, err = command.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("bun entrypoint check: %w: %s", err, compactCommandOutput(output))
 	}

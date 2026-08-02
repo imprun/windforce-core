@@ -143,8 +143,9 @@ func TestParsePreservesScriptLangForRuntimeDispatch(t *testing.T) {
 		name       string
 		scriptLang string
 	}{
+		{name: "typescript", scriptLang: "typescript"},
+		{name: "python", scriptLang: "python"},
 		{name: "go", scriptLang: "go"},
-		{name: "whitespace", scriptLang: " typescript "},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			app, err := Parse([]byte(`{
@@ -162,6 +163,18 @@ func TestParsePreservesScriptLangForRuntimeDispatch(t *testing.T) {
 				t.Fatalf("scriptLang/runtime = %q/%q, want %q", app.ScriptLang, app.Actions["run"].Runtime, test.scriptLang)
 			}
 		})
+	}
+}
+
+func TestParseRejectsUnsupportedScriptLang(t *testing.T) {
+	_, err := Parse([]byte(`{
+		"app": "echo",
+		"entrypoint": "main.rb",
+		"scriptLang": "ruby",
+		"actions": {"run": {}}
+	}`))
+	if err == nil || !strings.Contains(err.Error(), "unsupported scriptLang") {
+		t.Fatalf("Parse error = %v, want unsupported scriptLang", err)
 	}
 }
 

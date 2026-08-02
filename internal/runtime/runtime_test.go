@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	goruntime "runtime"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -376,15 +377,160 @@ export const main = createApp({
 	}
 }
 
-func TestPrepareSourceDefaultsUnknownScriptLangToTypeScriptSDK(t *testing.T) {
+func TestTypeScriptTier1RunsOpaqueApplicationSDK(t *testing.T) {
+	requireBunRuntime(t)
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	sdkDir := filepath.Join(sourceDir, "opaque-sdk")
+	if err := os.MkdirAll(sdkDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{
+		filepath.Join(sourceDir, "windforce.json"): `{"app":"opaque_sdk_app","entrypoint":"main.ts","scriptLang":"typescript","actions":{"run":{}}}`,
+		filepath.Join(sourceDir, "package.json"):   `{"name":"opaque-sdk-app","private":true,"type":"module","dependencies":{"@example/opaque-sdk":"file:./opaque-sdk"}}`,
+		filepath.Join(sdkDir, "package.json"):      `{"name":"@example/opaque-sdk","version":"1.0.0","type":"module","exports":"./index.ts"}`,
+		filepath.Join(sdkDir, "index.ts"): `export function withOpaqueSDK(handler) {
+  return async (coreCtx) => ({ sdk: "opaque-application-dependency", value: await handler(coreCtx) });
+}`,
+		filepath.Join(sourceDir, "main.ts"): `import { withOpaqueSDK } from "@example/opaque-sdk";
+export const main = withOpaqueSDK(async (coreCtx) => ({ app: coreCtx.app, action: coreCtx.action, input: coreCtx.input }));`,
+	}
+	for path, contents := range files {
+		if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	lock := exec.Command("bun", "install", "--lockfile-only", "--no-progress")
+	lock.Dir = sourceDir
+	if output, err := lock.CombinedOutput(); err != nil {
+		t.Fatalf("generate deterministic Bun lockfile: %v: %s", err, output)
+	}
+	if err := os.RemoveAll(filepath.Join(sourceDir, "node_modules")); err != nil {
+		t.Fatal(err)
+	}
+
+	store := bundle.NewLocalStore(filepath.Join(tempDir, "store"))
+	if err := store.Materialize(context.Background(), "workspace-a", "source-a", "commit-opaque", sourceDir); err != nil {
+		t.Fatal(err)
+	}
+	runner := Runner{
+		Store:         store,
+		ArtifactStore: executionbundle.NewLocalStore(filepath.Join(tempDir, "artifacts")),
+		CacheRoot:     filepath.Join(tempDir, "cache"),
+	}
+	deployment := buildExecutionBundleForTest(t, &runner, contract.Deployment{
+		Workspace:   "workspace-a",
+		GitSourceID: "source-a",
+		App:         "opaque_sdk_app",
+		Commit:      "commit-opaque",
+		Entrypoint:  "main.ts",
+		ScriptLang:  contract.ScriptLangTypeScript,
+		Actions:     map[string]contract.Action{"run": {Action: "run"}},
+	})
+	result, err := runner.Run(context.Background(), RunRequest{
+		Deployment:  deployment,
+		JobID:       "job-opaque",
+		WorkspaceID: "workspace-a",
+		Action:      "run",
+		Input:       json.RawMessage(`{"message":"hello"}`),
+	})
+	if err != nil || result.ExitCode != 0 {
+		t.Fatalf("Run error=%v result=%#v", err, result)
+	}
+	var output struct {
+		SDK   string `json:"sdk"`
+		Value struct {
+			App    string            `json:"app"`
+			Action string            `json:"action"`
+			Input  map[string]string `json:"input"`
+		} `json:"value"`
+	}
+	if err := json.Unmarshal(result.Output, &output); err != nil {
+		t.Fatalf("output is not JSON: %v: %s", err, result.Output)
+	}
+	if output.SDK != "opaque-application-dependency" || output.Value.App != "opaque_sdk_app" ||
+		output.Value.Action != "run" || output.Value.Input["message"] != "hello" {
+		t.Fatalf("output = %#v", output)
+	}
+}
+
+func TestPrepareSourceRejectsUnsupportedScriptLang(t *testing.T) {
 	sourceDir := t.TempDir()
 	runner := Runner{}
-	if err := runner.prepareSource(context.Background(), sourceDir, "ruby", "main.rb"); err != nil {
-		t.Fatalf("prepareSource returned error: %v", err)
+	if err := runner.prepareSource(context.Background(), sourceDir, "ruby", "main.rb"); err == nil || !strings.Contains(err.Error(), "unsupported scriptLang") {
+		t.Fatalf("prepareSource error = %v, want unsupported scriptLang", err)
 	}
-	injected := filepath.Join(sourceDir, "node_modules", "windforce-client", "package.json")
-	if _, err := os.Stat(injected); err != nil {
-		t.Fatalf("injected SDK missing: %v", err)
+}
+
+func TestBuildExecutionBundleRequiresTypeScriptMainWithoutExecutingApp(t *testing.T) {
+	requireBunRuntime(t)
+	for _, test := range []struct {
+		name        string
+		source      func(string) string
+		wantError   string
+		wantPublish bool
+	}{
+		{
+			name: "missing main",
+			source: func(string) string {
+				return `export const other = async () => ({ ok: true })`
+			},
+			wantError: "main",
+		},
+		{
+			name: "valid main is not executed",
+			source: func(sentinel string) string {
+				return `import { writeFileSync } from "node:fs";
+writeFileSync(` + strconv.Quote(filepath.ToSlash(sentinel)) + `, "executed");
+export async function main(ctx: unknown) { return ctx; }`
+			},
+			wantPublish: true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			tempDir := t.TempDir()
+			sourceDir := filepath.Join(tempDir, "source")
+			if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			sentinel := filepath.Join(tempDir, "app-executed")
+			if err := os.WriteFile(filepath.Join(sourceDir, "main.ts"), []byte(test.source(sentinel)), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			store := bundle.NewLocalStore(filepath.Join(tempDir, "store"))
+			if err := store.Materialize(context.Background(), "workspace-a", "source-a", "commit-a", sourceDir); err != nil {
+				t.Fatal(err)
+			}
+			runner := Runner{
+				Store:         store,
+				ArtifactStore: executionbundle.NewLocalStore(filepath.Join(tempDir, "artifacts")),
+				CacheRoot:     filepath.Join(tempDir, "cache"),
+			}
+			deployment, err := runner.BuildExecutionBundle(context.Background(), contract.Deployment{
+				Workspace:   "workspace-a",
+				GitSourceID: "source-a",
+				App:         "opaque-sdk-app",
+				Commit:      "commit-a",
+				Entrypoint:  "main.ts",
+				ScriptLang:  "typescript",
+				Actions:     map[string]contract.Action{"run": {Action: "run"}},
+			})
+			if test.wantError != "" {
+				if err == nil || !strings.Contains(strings.ToLower(err.Error()), test.wantError) {
+					t.Fatalf("BuildExecutionBundle error = %v, want %q", err, test.wantError)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("BuildExecutionBundle returned error: %v", err)
+			}
+			if !test.wantPublish || deployment.BundleDigest == "" {
+				t.Fatalf("published deployment = %#v", deployment)
+			}
+			if _, err := os.Stat(sentinel); !os.IsNotExist(err) {
+				t.Fatalf("publication executed application code: %v", err)
+			}
+		})
 	}
 }
 

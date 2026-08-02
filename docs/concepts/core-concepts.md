@@ -64,11 +64,7 @@ and `--cache <cache>`, their relevant layout is:
 <cache>/execution-bundles/<digest>/
 ```
 
-`<cache>/src` is the release builder's preparation cache. It is not a source
-directory used by workers during Job execution. When the Control Plane and
-workers run as separate services, they must be configured to see the same
-persistent execution artifact root. The current implementation does not fetch
-execution bundles from S3 or another remote object service.
+`<cache>/src` is the release builder's preparation cache. It is not a source directory used by workers during Job execution. In local-worker mode, the worker reads the configured filesystem-backed Execution Artifact Store. A remote worker does not mount that filesystem: it fetches the pinned digest through `GET /worker/v1/artifacts/{digest}`, and Core streams the artifact from its configured store. The current server-side Artifact Store is filesystem-backed; S3 or another remote object service is not yet a server-side store implementation.
 
 ```text
 Git repository

@@ -18,11 +18,37 @@ const (
 	DefaultRouteTag    = "default"
 	DefaultTimeoutS    = int32(300)
 
+	ScriptLangTypeScript = "typescript"
+	ScriptLangPython     = "python"
+	ScriptLangGo         = "go"
+
 	ActionAdapterJSONFile = "json-file"
 	ActionAdapterCommand  = "command"
 
 	CapabilityBrowser = "browser"
 )
+
+// NormalizeScriptLanguage applies the backwards-compatible TypeScript default
+// while rejecting languages for which Core has no launcher contract. Unknown
+// values must never fall through to Bun implicitly.
+func NormalizeScriptLanguage(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ScriptLangTypeScript, nil
+	}
+	switch value {
+	case ScriptLangTypeScript, ScriptLangPython, ScriptLangGo:
+		return value, nil
+	default:
+		return "", fmt.Errorf(
+			"unsupported scriptLang %q; supported values are %s, %s, and %s",
+			value,
+			ScriptLangTypeScript,
+			ScriptLangPython,
+			ScriptLangGo,
+		)
+	}
+}
 
 // Labels are the open worker-matching vocabulary (ADR 0009). The sys/
 // prefix is reserved for operator-granted placement labels and is

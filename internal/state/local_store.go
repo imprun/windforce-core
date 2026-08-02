@@ -1374,8 +1374,17 @@ func (s *LocalStore) RegisterWorker(ctx context.Context, record WorkerRecord) er
 		if record.Slots <= 0 {
 			record.Slots = 1
 		}
+		status, err := NormalizeWorkerStatus(record.Status)
+		if err != nil {
+			return err
+		}
+		record.Status = status
 		if record.StartedAt.IsZero() {
-			record.StartedAt = now
+			if existing, ok := snapshot.Workers[record.ID]; ok && !existing.StartedAt.IsZero() {
+				record.StartedAt = existing.StartedAt
+			} else {
+				record.StartedAt = now
+			}
 		}
 		record.LastHeartbeatAt = now
 		snapshot.Workers[record.ID] = record

@@ -1098,6 +1098,10 @@ func (s *PostgresStore) RegisterWorker(ctx context.Context, record WorkerRecord)
 	if record.Slots <= 0 {
 		record.Slots = 1
 	}
+	status, err := NormalizeWorkerStatus(record.Status)
+	if err != nil {
+		return err
+	}
 	tags, err := json.Marshal(append([]string{}, record.Tags...))
 	if err != nil {
 		return err
@@ -1107,16 +1111,16 @@ func (s *PostgresStore) RegisterWorker(ctx context.Context, record WorkerRecord)
 		return err
 	}
 	_, err = s.pool.Exec(ctx, `
-INSERT INTO worker_registry (id, worker_group, tags, labels, slots, started_at, last_heartbeat_at)
-VALUES ($1, $2, $3, $4, $5, now(), now())
+INSERT INTO worker_registry (id, worker_group, tags, labels, slots, status, started_at, last_heartbeat_at)
+VALUES ($1, $2, $3, $4, $5, $6, now(), now())
 ON CONFLICT (id) DO UPDATE SET
     worker_group = EXCLUDED.worker_group,
     tags = EXCLUDED.tags,
     labels = EXCLUDED.labels,
     slots = EXCLUDED.slots,
-    started_at = now(),
+    status = EXCLUDED.status,
     last_heartbeat_at = now()`,
-		record.ID, record.Group, tags, labels, record.Slots)
+		record.ID, record.Group, tags, labels, record.Slots, status)
 	return err
 }
 
@@ -1144,7 +1148,7 @@ DELETE FROM worker_registry WHERE last_heartbeat_at < now() - $1::interval`,
 		return nil, err
 	}
 	rows, err := s.pool.Query(ctx, `
-SELECT id, worker_group, tags, labels, slots, started_at, last_heartbeat_at
+SELECT id, worker_group, tags, labels, slots, status, started_at, last_heartbeat_at
 FROM worker_registry ORDER BY id`)
 	if err != nil {
 		return nil, err
@@ -1154,7 +1158,7 @@ FROM worker_registry ORDER BY id`)
 	for rows.Next() {
 		var record WorkerRecord
 		var tags, labels []byte
-		if err := rows.Scan(&record.ID, &record.Group, &tags, &labels, &record.Slots, &record.StartedAt, &record.LastHeartbeatAt); err != nil {
+		if err := rows.Scan(&record.ID, &record.Group, &tags, &labels, &record.Slots, &record.Status, &record.StartedAt, &record.LastHeartbeatAt); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal(tags, &record.Tags); err != nil {

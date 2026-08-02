@@ -21,10 +21,12 @@ The product is organized around two independent paths:
    revisions, releases, stores, caches, fingerprints, Runs, and Jobs.
 2. [Release and execution lifecycle](concepts/release-lifecycle.md) explains
    Register, Sync, Publish Release, and Run in order.
-3. [Run admission architecture](concepts/run-admission.md) distinguishes SDKs, the Invocation API, AdmissionService, Triggers, Gateways, Runs, and Jobs.
-4. [Runtime configuration and secrets](concepts/runtime-configuration.md) explains Variable, Resource, InputConfig, SecretBackend, and Job-scoped resolution.
-5. [Architecture](architecture.md) defines the Control, Trigger, Invocation, Execution, and Worker Plane boundaries.
-6. The separately released [Imprun CLI](https://github.com/imprun/cli) consumes Core's HTTP contracts without becoming part of the runtime.
+3. [Worker execution lifecycle](concepts/worker-execution.md) defines the canonical pinned-bundle fetch, launcher, and completion sequence.
+4. [App runtime interface and SDK boundaries](concepts/app-runtime-interface.md) separates the Core host context, Invocation SDK, Core Author SDK, and Domain Authoring SDK responsibilities.
+5. [Run admission architecture](concepts/run-admission.md) distinguishes SDKs, the Invocation API, AdmissionService, Triggers, Gateways, Runs, and Jobs.
+6. [Runtime configuration and secrets](concepts/runtime-configuration.md) explains Variable, Resource, InputConfig, SecretBackend, and Job-scoped resolution.
+7. [Architecture](architecture.md) defines the Control, Trigger, Invocation, Execution, and Worker Plane boundaries.
+8. The separately released [Imprun CLI](https://github.com/imprun/cli) consumes Core's HTTP contracts without becoming part of the runtime.
 
 ## Documentation hosting
 

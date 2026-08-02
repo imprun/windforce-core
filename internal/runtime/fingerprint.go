@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/imprun/windforce-core/internal/contract"
 	windforcegoclient "github.com/imprun/windforce-core/internal/sdk/go"
 	windforcepyclient "github.com/imprun/windforce-core/internal/sdk/python"
 	windforceclient "github.com/imprun/windforce-core/internal/sdk/typescript"
@@ -32,7 +33,10 @@ type sourceReadyRecord struct {
 }
 
 func sourceReadyValue(ctx context.Context, scriptLang string, pythonPath string, bunPath string, goPath string) (string, error) {
-	language := normalizedScriptLanguage(scriptLang)
+	language, err := contract.NormalizeScriptLanguage(scriptLang)
+	if err != nil {
+		return "", err
+	}
 	executable, args := runtimeIdentityCommand(language, pythonPath, bunPath, goPath)
 	cacheKey := language + "\x00" + executable
 	runtimeIdentity, ok := sourceRuntimeFingerprints.Load(cacheKey)
@@ -67,15 +71,6 @@ func sourceReadyValue(ctx context.Context, scriptLang string, pythonPath string,
 		return "", err
 	}
 	return string(data), nil
-}
-
-func normalizedScriptLanguage(scriptLang string) string {
-	switch scriptLang {
-	case "python", "go":
-		return scriptLang
-	default:
-		return "typescript"
-	}
 }
 
 func runtimeIdentityCommand(language string, pythonPath string, bunPath string, goPath string) (string, []string) {

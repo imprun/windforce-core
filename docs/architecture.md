@@ -233,12 +233,15 @@ The historical decision that introduced the current built-in Webhook Route Bindi
 
 ## SDK Boundary
 
-The v0.3 reference client is `windforce-invocation` /
-`windforce_invocation.WindforceInvocationClient`. It provides create, status,
-wait, result, cancel, and app-description operations over `/api/v1`. SDK
-implementations are HTTP clients only. PostgreSQL schemas, Job IDs, bundle
-paths, and catalog storage are private implementation details of Windforce
-Core. The former execution SDK package has no v0.3 compatibility import.
+Windforce Core does not identify or classify the SDKs used by an App. It exposes two SDK-neutral system interfaces, and optional libraries consume them.
+
+- The Invocation SDK is an external HTTP client. The v0.3 reference client is `windforce-invocation` / `windforce_invocation.WindforceInvocationClient`. It provides create, status, wait, result, cancel, and app-description operations over `/api/v1`.
+- The App runtime interface is `main(ctx)` and `WindforceContext`. Core injects its Author SDK as a language helper, but runtime acceptance does not depend on which SDK packages the App imports.
+- Every other SDK is an opaque App dependency inside the prepared bundle. It may adapt `WindforceContext` into any application API, but Core neither observes nor interprets that adaptation.
+
+PostgreSQL schemas, Job IDs, bundle paths, catalog storage, `WF_*` process transport, and Worker Plane authority are private implementation details of Windforce Core. Application SDKs do not receive Core credentials or choose a worker, launcher, bundle revision, lease, or completion path. Core does not inspect an SDK identity, context, version, or module envelope. The former execution SDK package has no v0.3 compatibility import.
+
+See [App runtime interface and SDK boundaries](concepts/app-runtime-interface.md) for the SDK-neutral Core and App boundary. [ADR 0021](adr/0021-keep-application-sdks-opaque-to-core.md) records the decision rationale.
 
 ## Process Roles
 

@@ -42,6 +42,33 @@ Workspace is an organizational scoping partition inside one engine instance,
 not a tenant isolation boundary — do not design features that treat it as one.
 Tenant isolation is obtained by running one engine instance per tenant.
 
+## Worker execution contract
+
+Before changing `internal/worker`, `internal/runtime`, `internal/executor`, `internal/executionbundle`, `internal/remoteworker`, or the release publication pipeline, read [docs/concepts/worker-execution.md](docs/concepts/worker-execution.md). It is the current canonical description of how a pinned Job becomes a process execution.
+
+Preserve these invariants:
+
+- Release publication, not Job execution, reads the Source Store, installs dependencies, injects SDKs, compiles source, validates the entrypoint, and publishes the content-addressed execution bundle.
+- A Job pins the complete Deployment and execution bundle digest at admission. A worker never resolves the current active release again.
+- A worker obtains and validates the pinned execution bundle before it creates per-Job runtime files or starts Bun, Python, Go, or an adapter command.
+- `input.json` is invocation data, not application source. The launcher imports or executes the entrypoint from the fetched worker-local bundle cache.
+- Workers never clone Git or receive repository credentials. A missing, corrupt, or incompatible execution bundle fails the Job; there is no Git or build fallback.
+- Cache publication remains content-addressed and crash-safe: fetch into a temporary sibling, verify, atomically promote, and write the ready marker only after validation.
+- Local and remote workers have the same execution semantics. Remote workers claim, fetch artifacts, append logs, and complete Jobs only through `/worker/v1`; they do not access the server database or artifact filesystem directly.
+- `scriptLang` is normalized once to `typescript`, `python`, or `go`; an empty value means TypeScript and every unknown value is rejected before preparation. Never add an implicit launcher fallback.
+- TypeScript publication statically verifies a named `main` export and builds the dependency graph without importing or executing the App.
+- On shutdown, a worker stops claiming, reports `draining`, lets the active Job run for `--drain-timeout`, cancels it only after that deadline, completes the lease, and then deregisters. Offline is represented by registry absence.
+
+Any change to this ordering, pinning boundary, bundle identity, ready-marker meaning, or Worker Plane artifact protocol changes execution semantics and requires documentation, focused lifecycle tests, and an ADR.
+
+## App and SDK boundary
+
+Before changing the language wrappers, `internal/sdk`, `WindforceContext`, private `WF_*` transport, or App entrypoint behavior, read [docs/concepts/app-runtime-interface.md](docs/concepts/app-runtime-interface.md) and [ADR 0021](docs/adr/0021-keep-application-sdks-opaque-to-core.md).
+
+Core owns the generic `main(coreCtx)` host interface, Core Author SDK, launcher transport, Job-scoped access, and worker lifecycle. Every SDK used by an App is an opaque App dependency. Core must not inspect or classify SDK identity, import an SDK context, understand its module envelope, negotiate its version, or transfer service credentials and Worker Plane authority to it. `runsOn` and worker labels remain Core scheduling inputs regardless of whether the App uses a scraping SDK, Playwright, Puppeteer, a mobile SDK, or no SDK.
+
+Some App repositories generate a canonical deployment artifact instead of storing `windforce.json` in author source. Their external builder owns `--describe` or equivalent SDK-specific discovery, schema-file emission, dependency bundling, and creation of the deployment Git or snapshot. Core begins at the canonical `windforce.json` plus entrypoint boundary and must not execute author code to discover an SDK manifest.
+
 ## Decisions
 
 Engine contract decisions are recorded as public ADRs in

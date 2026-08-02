@@ -113,6 +113,7 @@ func (c *Client) RegisterWorker(ctx context.Context, record state.WorkerRecord) 
 		"tags":   record.Tags,
 		"labels": record.Labels,
 		"slots":  record.Slots,
+		"status": record.Status,
 	}, nil)
 	return err
 }

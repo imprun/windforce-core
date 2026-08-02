@@ -173,7 +173,7 @@ func TestSyncMaterializesSourceBundle(t *testing.T) {
 	}
 }
 
-func TestSyncPreservesUnwiredScriptLangForRuntimeDispatch(t *testing.T) {
+func TestSyncRejectsUnsupportedScriptLangBeforeMaterializing(t *testing.T) {
 	tempDir := t.TempDir()
 	sourceDir := filepath.Join(tempDir, "source")
 	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
@@ -193,18 +193,15 @@ func TestSyncPreservesUnwiredScriptLangForRuntimeDispatch(t *testing.T) {
 	store := bundle.NewLocalStore(filepath.Join(tempDir, "store"))
 	syncer := Syncer{Store: store}
 
-	deployment, err := syncer.Sync(context.Background(), Source{
+	_, err := syncer.Sync(context.Background(), Source{
 		Workspace:   "workspace-a",
 		GitSourceID: "source-a",
 		App:         "echo",
 		Commit:      "commit-a",
 		LocalDir:    sourceDir,
 	})
-	if err != nil {
-		t.Fatalf("Sync returned error: %v", err)
-	}
-	if deployment.ScriptLang != "ruby" || deployment.Actions["echo"].Runtime != "ruby" {
-		t.Fatalf("scriptLang/runtime = %q/%q, want ruby", deployment.ScriptLang, deployment.Actions["echo"].Runtime)
+	if err == nil || !strings.Contains(err.Error(), "unsupported scriptLang") {
+		t.Fatalf("Sync error = %v, want unsupported scriptLang", err)
 	}
 }
 

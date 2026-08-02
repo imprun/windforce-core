@@ -46,9 +46,11 @@ func Parse(data []byte) (contract.App, error) {
 	if app.Entrypoint != "" && (filepath.IsAbs(app.Entrypoint) || strings.HasPrefix(app.Entrypoint, "/") || strings.Contains(app.Entrypoint, "..")) {
 		return contract.App{}, fmt.Errorf("app %s entrypoint %q must be a relative path inside the app", app.App, app.Entrypoint)
 	}
-	if app.ScriptLang == "" {
-		app.ScriptLang = "typescript"
+	scriptLang, err := contract.NormalizeScriptLanguage(app.ScriptLang)
+	if err != nil {
+		return contract.App{}, fmt.Errorf("app %s: %w", app.App, err)
 	}
+	app.ScriptLang = scriptLang
 	if app.TimeoutS == 0 {
 		app.TimeoutS = contract.DefaultTimeoutS
 	}

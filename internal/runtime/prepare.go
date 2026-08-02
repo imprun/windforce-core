@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/imprun/windforce-core/internal/contract"
 	"github.com/imprun/windforce-core/internal/pythonruntime"
 	windforcegoclient "github.com/imprun/windforce-core/internal/sdk/go"
 	windforcepyclient "github.com/imprun/windforce-core/internal/sdk/python"
@@ -116,8 +117,12 @@ func (r *Runner) prepareTimeout() time.Duration {
 }
 
 func (r *Runner) prepareSource(ctx context.Context, sourceDir string, scriptLang string, entrypoint string) error {
-	switch scriptLang {
-	case "python":
+	language, err := contract.NormalizeScriptLanguage(scriptLang)
+	if err != nil {
+		return err
+	}
+	switch language {
+	case contract.ScriptLangPython:
 		pythonPath := firstNonEmpty(r.PythonPath, defaultPythonPath())
 		if fileExists(filepath.Join(sourceDir, "requirements.txt")) {
 			if err := pythonInstallRequirements(ctx, pythonPath, sourceDir, r.prepareTimeout()); err != nil {
@@ -131,7 +136,7 @@ func (r *Runner) prepareSource(ctx context.Context, sourceDir string, scriptLang
 		if err := injectPythonSDK(sourceDir); err != nil {
 			return fmt.Errorf("inject python sdk: %w", err)
 		}
-	case "go":
+	case contract.ScriptLangGo:
 		goPath := firstNonEmpty(r.GoPath, "go")
 		if err := injectGoSDK(goPath, sourceDir); err != nil {
 			return fmt.Errorf("inject go sdk: %w", err)
@@ -139,7 +144,7 @@ func (r *Runner) prepareSource(ctx context.Context, sourceDir string, scriptLang
 		if err := goBuild(ctx, goPath, sourceDir, entrypoint, r.prepareTimeout()); err != nil {
 			return fmt.Errorf("go build: %w", err)
 		}
-	default:
+	case contract.ScriptLangTypeScript:
 		if fileExists(filepath.Join(sourceDir, "package.json")) {
 			if err := bunInstall(ctx, firstNonEmpty(r.BunPath, "bun"), sourceDir, r.prepareTimeout()); err != nil {
 				return fmt.Errorf("bun install: %w", err)

@@ -149,15 +149,21 @@ A run request is admitted and executed as follows:
 1. Resolve the active app deployment and requested action.
 2. Pin the deployment, action schemas, routing, and execution settings into a
    Run and Job in one state-store transaction.
-3. Fetch the pinned execution bundle digest from the Execution Artifact Store
+3. Claim the Job and resolve its effective invocation input.
+4. Fetch the pinned execution bundle digest from the Execution Artifact Store
    into the worker-local bundle cache.
-4. Verify the bundle digest and preparation fingerprint, then execute the
-   app-level entrypoint from the fetched bundle.
-5. Build the Windforce `ctx` object from `input.json` and `WF_*` environment.
-6. Treat non-zero exit codes and action-declared failure payloads as failed
+5. Verify the bundle digest and preparation fingerprint before creating the
+   per-Job runtime files or starting a process.
+6. Write `input.json` and the language launcher wrapper, build the Windforce
+   `ctx`, and execute the app-level entrypoint from the fetched bundle.
+7. Treat non-zero exit codes and action-declared failure payloads as failed
    Jobs.
-7. Store stdout/stderr as job logs and expose the action output through the
+8. Store stdout/stderr as job logs and expose the action output through the
    job result API.
+
+The canonical ordering, cache safety rules, local and remote worker transport, and coding-agent checklist are documented in [Worker execution lifecycle](docs/concepts/worker-execution.md).
+
+The SDK-neutral Core `main(ctx)` host interface and the rule that every App SDK remains an opaque bundle dependency are defined in [App runtime interface and SDK boundaries](docs/concepts/app-runtime-interface.md).
 
 ## Manifest
 
@@ -193,7 +199,8 @@ an action. InputConfig may contain exact `$var:path` and `$res:path` values;
 Admission validates and pins their transitive access without resolving Secret
 plaintext. See [Runtime configuration and secrets](docs/concepts/runtime-configuration.md).
 The execution bundle builder supports canonical `typescript`, `python`, and
-`go` entrypoints. Other `scriptLang` values use the Bun preparation path and
+`go` entrypoints. `scriptLang` defaults to `typescript`; any other value is
+rejected instead of falling through to Bun. TypeScript is a Tier 1 runtime and
 must pass entrypoint validation before a release is published.
 
 Deployment prepares a content-addressed execution bundle for TypeScript,
@@ -273,6 +280,9 @@ when omitted, the worker claims every queued tag for simple local development.
 `worker --log-flush-interval 2s --log-cap-bytes 20971520` matches the canonical
 default of incremental job log flushing with a 20 MiB per-job cap; set
 `--log-cap-bytes 0` only for local debugging.
+`worker --drain-timeout 30s` controls graceful shutdown: the Worker stops new
+claims, reports `draining`, lets the active Job finish for that period, and
+then cancels it if necessary before deregistering.
 
 Implemented control-plane endpoints:
 

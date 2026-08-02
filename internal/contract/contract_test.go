@@ -7,6 +7,30 @@ import (
 	"testing"
 )
 
+func TestNormalizeScriptLanguage(t *testing.T) {
+	for _, test := range []struct {
+		input string
+		want  string
+	}{
+		{input: "", want: ScriptLangTypeScript},
+		{input: "  ", want: ScriptLangTypeScript},
+		{input: " typescript ", want: ScriptLangTypeScript},
+		{input: "python", want: ScriptLangPython},
+		{input: "go", want: ScriptLangGo},
+	} {
+		got, err := NormalizeScriptLanguage(test.input)
+		if err != nil {
+			t.Fatalf("NormalizeScriptLanguage(%q) returned error: %v", test.input, err)
+		}
+		if got != test.want {
+			t.Fatalf("NormalizeScriptLanguage(%q) = %q, want %q", test.input, got, test.want)
+		}
+	}
+	if _, err := NormalizeScriptLanguage("ruby"); err == nil || !strings.Contains(err.Error(), "unsupported scriptLang") {
+		t.Fatalf("NormalizeScriptLanguage(ruby) error = %v, want unsupported scriptLang", err)
+	}
+}
+
 func TestValidAppKeyAcceptsLiteAndFCodeKeys(t *testing.T) {
 	valid := []string{"greet", "a1", "my_app", "4MDCPCM", "CESTORE", "A1", "1greet"}
 	invalid := []string{"", "a", " Greet", "greet ", "my-app", "my.app", "with space", "a/b", "\uD55C\uAE00"}

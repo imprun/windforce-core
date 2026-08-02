@@ -19,6 +19,8 @@
           "concepts/core-concepts",
           "concepts/workspaces",
           "concepts/release-lifecycle",
+          "concepts/worker-execution",
+          "concepts/app-runtime-interface",
           "concepts/run-admission",
           "concepts/runtime-configuration",
           "concepts/provisioning",
@@ -29,6 +31,8 @@
         "group": "한국어",
         "pages": [
           "ko/concepts/workspaces",
+          "ko/concepts/worker-execution",
+          "ko/concepts/app-runtime-interface",
           "ko/concepts/run-admission",
           "ko/concepts/runtime-configuration"
         ]

@@ -559,6 +559,152 @@ func TestProcessorHeartbeatCancelsRunningAction(t *testing.T) {
 	}
 }
 
+type drainTestRunner struct {
+	started  chan struct{}
+	release  chan struct{}
+	canceled chan struct{}
+}
+
+func (r *drainTestRunner) Run(ctx context.Context, _ actionruntime.RunRequest) (contract.JobResult, error) {
+	close(r.started)
+	select {
+	case <-r.release:
+		return contract.JobResult{Output: json.RawMessage(`{"drained":true}`)}, nil
+	case <-ctx.Done():
+		close(r.canceled)
+		return contract.JobResult{ExitCode: -1, Error: ctx.Err().Error()}, ctx.Err()
+	}
+}
+
+func TestRunLoopDrainsActiveJobBeforeGoingOffline(t *testing.T) {
+	processor, stateStore, run := newDrainTestProcessor(t, 500*time.Millisecond)
+	runner := processor.Runner.(*drainTestRunner)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- processor.RunLoop(ctx, 10*time.Millisecond) }()
+
+	select {
+	case <-runner.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("worker did not start the queued job")
+	}
+	cancel()
+	waitForWorkerStatus(t, stateStore, processor.WorkerID, state.WorkerStatusDraining)
+	select {
+	case <-runner.canceled:
+		t.Fatal("active job was canceled before the drain timeout")
+	case <-time.After(75 * time.Millisecond):
+	}
+	close(runner.release)
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("RunLoop returned error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("worker did not finish draining")
+	}
+	workers, err := stateStore.ListWorkers(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(workers) != 0 {
+		t.Fatalf("workers after drain = %#v, want offline (absent)", workers)
+	}
+	completed, err := stateStore.GetRun(context.Background(), run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if completed.State != state.RunSucceeded {
+		t.Fatalf("run state = %s, want %s", completed.State, state.RunSucceeded)
+	}
+}
+
+func TestRunLoopCancelsActiveJobAfterDrainTimeout(t *testing.T) {
+	processor, stateStore, run := newDrainTestProcessor(t, 50*time.Millisecond)
+	runner := processor.Runner.(*drainTestRunner)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- processor.RunLoop(ctx, 10*time.Millisecond) }()
+
+	select {
+	case <-runner.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("worker did not start the queued job")
+	}
+	cancel()
+	waitForWorkerStatus(t, stateStore, processor.WorkerID, state.WorkerStatusDraining)
+	select {
+	case <-runner.canceled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("active job was not canceled after the drain timeout")
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("RunLoop returned error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("worker did not go offline after forced drain")
+	}
+	completed, err := stateStore.GetRun(context.Background(), run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if completed.State != state.RunFailed {
+		t.Fatalf("run state = %s, want %s", completed.State, state.RunFailed)
+	}
+}
+
+func newDrainTestProcessor(t *testing.T, drainTimeout time.Duration) (Processor, *state.LocalStore, state.Run) {
+	t.Helper()
+	stateStore := state.NewLocalStore(filepath.Join(t.TempDir(), "state.json"))
+	stateStore.ConfigureInputCrypto("test-secret-key", "")
+	deployment := contract.Deployment{
+		Workspace:  "workspace-a",
+		App:        "opaque-sdk-app",
+		Entrypoint: "main.ts",
+		ScriptLang: contract.ScriptLangTypeScript,
+		Actions:    map[string]contract.Action{"run": {Action: "run"}},
+	}
+	run := state.NewRun("windforce", state.NewID("run"), deployment.App, "run", deployment, json.RawMessage(`{"message":"hello"}`))
+	if err := stateStore.CreateRunAndEnqueue(context.Background(), run, state.NewActionJob(run, nil)); err != nil {
+		t.Fatal(err)
+	}
+	runner := &drainTestRunner{
+		started:  make(chan struct{}),
+		release:  make(chan struct{}),
+		canceled: make(chan struct{}),
+	}
+	return Processor{
+		Store:             stateStore,
+		Runner:            runner,
+		WorkerID:          "worker-drain",
+		Group:             "test",
+		LeaseTTL:          time.Second,
+		HeartbeatInterval: 20 * time.Millisecond,
+		DrainTimeout:      drainTimeout,
+	}, stateStore, run
+}
+
+func waitForWorkerStatus(t *testing.T, store *state.LocalStore, workerID string, status string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		workers, err := store.ListWorkers(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, worker := range workers {
+			if worker.ID == workerID && worker.Status == status {
+				return
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("worker %s did not reach status %s", workerID, status)
+}
+
 func newProcessorTestHarness(t *testing.T, helperMode string) (Processor, *state.LocalStore, state.Run) {
 	t.Helper()
 	tempDir := t.TempDir()

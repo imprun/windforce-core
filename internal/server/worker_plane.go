@@ -132,12 +132,18 @@ func (h *Handler) workerPlaneRegister(w http.ResponseWriter, r *http.Request) {
 		Tags   []string `json:"tags"`
 		Labels []string `json:"labels"`
 		Slots  int      `json:"slots"`
+		Status string   `json:"status"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	labels, err := contract.NormalizeLabels(req.Labels, true)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	status, err := state.NormalizeWorkerStatus(req.Status)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -151,6 +157,7 @@ func (h *Handler) workerPlaneRegister(w http.ResponseWriter, r *http.Request) {
 		Tags:   req.Tags,
 		Labels: labels,
 		Slots:  req.Slots,
+		Status: status,
 	}); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

@@ -123,6 +123,8 @@ snapshot embedded in it. The worker then:
 Job processing does not clone a repository, resolve repository credentials,
 install dependencies, inject an SDK, or compile application source.
 
+See [Worker execution lifecycle](worker-execution.md) for the canonical ordering of input resolution, bundle acquisition, per-Job file creation, launcher startup, result collection, and remote Worker Plane transport.
+
 ## State changes at a glance
 
 | Operation | Reads Git | Writes Source Store | Writes Artifact Store | Changes active release | Creates a Job |

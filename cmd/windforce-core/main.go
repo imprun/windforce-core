@@ -114,6 +114,7 @@ func runServer(args []string, mode string) int {
 	prepareTimeout := flags.Duration("prepare-timeout", 0, "source prepare timeout; defaults to 5m")
 	poll := flags.Duration("poll", 500*time.Millisecond, "standalone worker poll interval")
 	leaseTTL := flags.Duration("lease", 30*time.Second, "worker job lease TTL")
+	drainTimeout := flags.Duration("drain-timeout", 30*time.Second, "maximum time to drain an active job during shutdown")
 	logFlushInterval := flags.Duration("log-flush-interval", defaultLogFlushInterval, "worker log flush interval")
 	logCapBytes := flags.Int("log-cap-bytes", defaultLogCapBytes, "per-job log size cap in bytes; 0 disables the cap")
 	logJobPayloads := flags.Bool("log-job-payloads", false, "log complete decrypted job input and execution output")
@@ -135,6 +136,10 @@ func runServer(args []string, mode string) int {
 	publicAPIBurst := flags.Int("public-api-burst", 100, "maximum public API request burst per instance")
 	webhookDispatcherFlags := bindWebhookDispatcherFlags(flags, "webhook-")
 	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if *drainTimeout <= 0 {
+		fmt.Fprintf(os.Stderr, "%s: --drain-timeout must be greater than zero\n", mode)
 		return 2
 	}
 	if *publicAPIRPS <= 0 || *publicAPIBurst <= 0 {
@@ -295,6 +300,7 @@ func runServer(args []string, mode string) int {
 			Labels:           parseLabels(*workerLabels),
 			EgressProxyAddr:  strings.TrimSpace(*egressProxy),
 			LeaseTTL:         *leaseTTL,
+			DrainTimeout:     *drainTimeout,
 			LogFlushInterval: *logFlushInterval,
 			LogCapBytes:      *logCapBytes,
 			LogJobPayloads:   *logJobPayloads,
@@ -399,6 +405,7 @@ func runWorker(args []string) int {
 	secretKeyPreviousEnv := flags.String("secret-key-previous-env", "SECRET_KEY_PREVIOUS", "environment variable that contains the previous instance secret during rotation")
 	poll := flags.Duration("poll", 500*time.Millisecond, "job poll interval")
 	leaseTTL := flags.Duration("lease", 30*time.Second, "job lease TTL")
+	drainTimeout := flags.Duration("drain-timeout", 30*time.Second, "maximum time to drain an active job during shutdown")
 	logFlushInterval := flags.Duration("log-flush-interval", defaultLogFlushInterval, "worker log flush interval")
 	logCapBytes := flags.Int("log-cap-bytes", defaultLogCapBytes, "per-job log size cap in bytes; 0 disables the cap")
 	logJobPayloads := flags.Bool("log-job-payloads", false, "log complete decrypted job input and execution output")
@@ -416,13 +423,19 @@ func runWorker(args []string) int {
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
+	if *drainTimeout <= 0 {
+		fmt.Fprintln(os.Stderr, "worker: --drain-timeout must be greater than zero")
+		return 2
+	}
+	runCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
 	runtimeBindings, err := worker.NewRuntimeBindings(*authSessionURL, *authSessionTokenEnv, *authSessionTokenFile, *authSessionTimeout)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "worker runtime bindings: %v\n", err)
 		return 1
 	}
 
-	stateStore, closeState, err := openStateStore(context.Background(), *stateBackend, *statePath, *databaseURL, *migrate)
+	stateStore, closeState, err := openStateStore(runCtx, *stateBackend, *statePath, *databaseURL, *migrate)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "worker state: %v\n", err)
 		return 1
@@ -453,6 +466,7 @@ func runWorker(args []string) int {
 			Labels:           parseLabels(*workerLabels),
 			EgressProxyAddr:  strings.TrimSpace(*egressProxy),
 			LeaseTTL:         *leaseTTL,
+			DrainTimeout:     *drainTimeout,
 			LogFlushInterval: *logFlushInterval,
 			LogCapBytes:      *logCapBytes,
 			LogJobPayloads:   *logJobPayloads,
@@ -468,7 +482,7 @@ func runWorker(args []string) int {
 			_ = writeJSON(os.Stdout, map[string]bool{"processed": processed})
 			return 0
 		}
-		if err := processor.RunLoop(context.Background(), *poll); err != nil {
+		if err := processor.RunLoop(runCtx, *poll); err != nil {
 			fmt.Fprintf(os.Stderr, "worker: %v\n", err)
 			return 1
 		}
@@ -502,6 +516,7 @@ func runWorker(args []string) int {
 		Labels:           parseLabels(*workerLabels),
 		EgressProxyAddr:  strings.TrimSpace(*egressProxy),
 		LeaseTTL:         *leaseTTL,
+		DrainTimeout:     *drainTimeout,
 		LogFlushInterval: *logFlushInterval,
 		LogCapBytes:      *logCapBytes,
 		LogJobPayloads:   *logJobPayloads,
@@ -519,7 +534,7 @@ func runWorker(args []string) int {
 		return 0
 	}
 
-	if err := processor.RunLoop(context.Background(), *poll); err != nil {
+	if err := processor.RunLoop(runCtx, *poll); err != nil {
 		fmt.Fprintf(os.Stderr, "worker: %v\n", err)
 		return 1
 	}

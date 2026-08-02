@@ -637,9 +637,13 @@ CREATE TABLE IF NOT EXISTS worker_registry (
     tags              jsonb NOT NULL DEFAULT '[]'::jsonb,
     labels            jsonb NOT NULL DEFAULT '[]'::jsonb,
     slots             integer NOT NULL DEFAULT 1,
+    status            text NOT NULL DEFAULT 'active',
     started_at        timestamptz NOT NULL,
     last_heartbeat_at timestamptz NOT NULL
 );
+
+ALTER TABLE worker_registry
+    ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'active';
 
 CREATE INDEX IF NOT EXISTS webhook_audit_workspace_idx
     ON webhook_audit (workspace_id, created_at DESC, id DESC);

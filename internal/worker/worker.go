@@ -30,6 +30,7 @@ type Processor struct {
 	Slots             int
 	EgressProxyAddr   string
 	LeaseTTL          time.Duration
+	DrainTimeout      time.Duration
 	HeartbeatInterval time.Duration
 	LogFlushInterval  time.Duration
 	LogCapBytes       int
@@ -53,11 +54,15 @@ func (p *Processor) workerID() string {
 }
 
 func (p *Processor) ProcessOne(ctx context.Context) (bool, error) {
+	return p.processOne(ctx, ctx)
+}
+
+func (p *Processor) processOne(claimCtx context.Context, executionCtx context.Context) (bool, error) {
 	if p.Store == nil {
 		return false, errors.New("state store is required")
 	}
 	workerID := p.workerID()
-	job, lease, err := p.Store.ClaimJobForWorker(ctx, workerID, p.Tags, p.Labels, p.LeaseTTL)
+	job, lease, err := p.Store.ClaimJobForWorker(claimCtx, workerID, p.Tags, p.Labels, p.LeaseTTL)
 	if errors.Is(err, state.ErrNoQueuedJob) {
 		return false, nil
 	}
@@ -78,8 +83,9 @@ func (p *Processor) ProcessOne(ctx context.Context) (bool, error) {
 		workspaceID = job.Payload.PinnedDeployment().SourceWorkspace()
 	}
 	workspaceID = contract.NormalizeWorkspace(workspaceID)
-	runCtx, cancel := context.WithCancel(ctx)
+	runCtx, cancel := context.WithCancel(executionCtx)
 	defer cancel()
+	completeCtx := context.WithoutCancel(executionCtx)
 	stopHeartbeat := p.startHeartbeat(lease, cancel)
 	defer stopHeartbeat()
 	input, err := p.Store.DecryptInput(runCtx, workspaceID, job.Payload.Input)
@@ -94,7 +100,7 @@ func (p *Processor) ProcessOne(ctx context.Context) (bool, error) {
 			ExitCode: -1,
 			Error:    "could not decrypt job input",
 		}
-		return completeProcessed(p.Store.CompleteJobFailed(ctx, lease, result))
+		return completeProcessed(p.Store.CompleteJobFailed(completeCtx, lease, result))
 	}
 	if !job.Payload.InputConfigResolved {
 		input, err = p.Store.ResolveInput(runCtx, workspaceID, job.Payload.App, job.Payload.Action, job.Payload.ClientID, input)
@@ -116,7 +122,7 @@ func (p *Processor) ProcessOne(ctx context.Context) (bool, error) {
 				ExitCode: -1,
 				Error:    message,
 			}
-			return completeProcessed(p.Store.CompleteJobFailed(ctx, lease, result))
+			return completeProcessed(p.Store.CompleteJobFailed(completeCtx, lease, result))
 		}
 	}
 	var secretValues []string
@@ -133,7 +139,7 @@ func (p *Processor) ProcessOne(ctx context.Context) (bool, error) {
 				ExitCode: -1,
 				Error:    jobError,
 			}
-			return completeProcessed(p.Store.CompleteJobFailed(ctx, lease, result))
+			return completeProcessed(p.Store.CompleteJobFailed(completeCtx, lease, result))
 		}
 	}
 	if provider, ok := p.Store.(SecretValueProvider); ok {
@@ -153,7 +159,7 @@ func (p *Processor) ProcessOne(ctx context.Context) (bool, error) {
 			ExitCode: -1,
 			Error:    "could not apply runtime bindings",
 		}
-		return completeProcessed(p.Store.CompleteJobFailed(ctx, lease, result))
+		return completeProcessed(p.Store.CompleteJobFailed(completeCtx, lease, result))
 	}
 	jobToken := ""
 	if provider, ok := p.Store.(JobTokenProvider); ok {
@@ -203,7 +209,7 @@ func (p *Processor) ProcessOne(ctx context.Context) (bool, error) {
 		}
 		outcome = "failed"
 		jobError = result.Error
-		return completeProcessed(p.Store.CompleteJobFailed(ctx, lease, result))
+		return completeProcessed(p.Store.CompleteJobFailed(completeCtx, lease, result))
 	}
 	if result.ExitCode != 0 {
 		if result.Error == "" {
@@ -214,13 +220,13 @@ func (p *Processor) ProcessOne(ctx context.Context) (bool, error) {
 		}
 		outcome = "failed"
 		jobError = result.Error
-		return completeProcessed(p.Store.CompleteJobFailed(ctx, lease, result))
+		return completeProcessed(p.Store.CompleteJobFailed(completeCtx, lease, result))
 	}
 	if message, failed := actionDeclaredFailure(result); failed {
 		result.Error = message
 		outcome = "failed"
 		jobError = result.Error
-		return completeProcessed(p.Store.CompleteJobFailed(ctx, lease, result))
+		return completeProcessed(p.Store.CompleteJobFailed(completeCtx, lease, result))
 	}
 
 	task, ok, err := HumanTaskFromOutput(job.RunID, result.Output)
@@ -228,14 +234,14 @@ func (p *Processor) ProcessOne(ctx context.Context) (bool, error) {
 		result.Error = err.Error()
 		outcome = "failed"
 		jobError = result.Error
-		return completeProcessed(p.Store.CompleteJobFailed(ctx, lease, result))
+		return completeProcessed(p.Store.CompleteJobFailed(completeCtx, lease, result))
 	}
 	if ok {
 		outcome = "waiting_human"
-		return completeProcessed(p.Store.CompleteJobWaitingHuman(ctx, lease, result, task))
+		return completeProcessed(p.Store.CompleteJobWaitingHuman(completeCtx, lease, result, task))
 	}
 	outcome = "succeeded"
-	return completeProcessed(p.Store.CompleteJobSucceeded(ctx, lease, result))
+	return completeProcessed(p.Store.CompleteJobSucceeded(completeCtx, lease, result))
 }
 
 func logJobInput(enabled bool, jobID string, app string, action string, input []byte, secrets []string) {
@@ -334,6 +340,10 @@ func (p *Processor) RunLoop(ctx context.Context, pollInterval time.Duration) err
 	if pollInterval <= 0 {
 		pollInterval = 500 * time.Millisecond
 	}
+	drainTimeout := p.DrainTimeout
+	if drainTimeout <= 0 {
+		drainTimeout = 30 * time.Second
+	}
 	workerID := p.workerID()
 	record := state.WorkerRecord{
 		ID:     workerID,
@@ -341,20 +351,44 @@ func (p *Processor) RunLoop(ctx context.Context, pollInterval time.Duration) err
 		Tags:   append([]string(nil), p.Tags...),
 		Labels: append([]string(nil), p.Labels...),
 		Slots:  p.Slots,
+		Status: state.WorkerStatusActive,
 	}
 	if err := p.Store.RegisterWorker(ctx, record); err != nil {
 		return fmt.Errorf("register worker: %w", err)
 	}
+	log.Printf("worker lifecycle worker=%s status=%s", workerID, state.WorkerStatusActive)
+
+	// Registry heartbeats use a lifetime context that survives the caller's
+	// cancellation while an admitted Job drains.
+	heartbeatCtx, stopHeartbeat := context.WithCancel(context.Background())
+	transitionDone := make(chan struct{})
+	loopDone := make(chan struct{})
+	go func() {
+		defer close(transitionDone)
+		select {
+		case <-ctx.Done():
+			draining := record
+			draining.Status = state.WorkerStatusDraining
+			updateCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := p.Store.RegisterWorker(updateCtx, draining); err != nil {
+				log.Printf("worker lifecycle worker=%s status=%s: %v", workerID, state.WorkerStatusDraining, err)
+				return
+			}
+			log.Printf("worker lifecycle worker=%s status=%s timeout=%s", workerID, state.WorkerStatusDraining, drainTimeout)
+		case <-loopDone:
+		}
+	}()
 	defer func() {
+		close(loopDone)
+		stopHeartbeat()
+		<-transitionDone
 		if err := p.Store.DeregisterWorker(context.Background(), workerID); err != nil {
 			log.Printf("deregister worker %s: %v", workerID, err)
 		}
+		log.Printf("worker lifecycle worker=%s status=offline", workerID)
 	}()
-	// Registry heartbeats run in their own goroutine so a long job does not
-	// make a busy worker look dead (WorkerLiveTTL). A 404 means the registry
-	// lost the record (state reset) — re-register instead of beating into it.
-	heartbeatCtx, stopHeartbeat := context.WithCancel(ctx)
-	defer stopHeartbeat()
+
 	go func() {
 		ticker := time.NewTicker(heartbeatInterval)
 		defer ticker.Stop()
@@ -368,7 +402,7 @@ func (p *Processor) RunLoop(ctx context.Context, pollInterval time.Duration) err
 					continue
 				}
 				log.Printf("worker heartbeat %s: %v", workerID, err)
-				if errors.Is(err, state.ErrNotFound) {
+				if errors.Is(err, state.ErrNotFound) && heartbeatCtx.Err() == nil && ctx.Err() == nil {
 					if regErr := p.Store.RegisterWorker(heartbeatCtx, record); regErr != nil {
 						log.Printf("re-register worker %s: %v", workerID, regErr)
 					}
@@ -376,21 +410,38 @@ func (p *Processor) RunLoop(ctx context.Context, pollInterval time.Duration) err
 			}
 		}
 	}()
+
 	// Transient failures (engine restart, network blip, expired lease on
 	// complete) must not kill a long-running worker — back off and retry.
 	consecutiveFailures := 0
 	for {
-		processed, err := p.ProcessOne(ctx)
-		if err != nil {
-			if ctx.Err() != nil {
-				return ctx.Err()
+		executionCtx, cancelExecution := context.WithCancel(context.WithoutCancel(ctx))
+		stopDrainCancellation := context.AfterFunc(ctx, func() {
+			timer := time.NewTimer(drainTimeout)
+			defer timer.Stop()
+			select {
+			case <-timer.C:
+				log.Printf("worker drain timeout worker=%s timeout=%s; canceling active job", workerID, drainTimeout)
+				cancelExecution()
+			case <-executionCtx.Done():
 			}
+		})
+		processed, err := p.processOne(ctx, executionCtx)
+		cancelExecution()
+		stopDrainCancellation()
+
+		if ctx.Err() != nil {
+			<-transitionDone
+			return nil
+		}
+		if err != nil {
 			consecutiveFailures++
 			delay := retryDelay(pollInterval, consecutiveFailures)
 			log.Printf("worker %s: process: %v (retry in %s)", workerID, err, delay)
 			select {
 			case <-ctx.Done():
-				return ctx.Err()
+				<-transitionDone
+				return nil
 			case <-time.After(delay):
 			}
 			continue
@@ -401,7 +452,8 @@ func (p *Processor) RunLoop(ctx context.Context, pollInterval time.Duration) err
 		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			<-transitionDone
+			return nil
 		case <-time.After(pollInterval):
 		}
 	}
