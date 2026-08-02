@@ -15,4 +15,10 @@ describe("workspace settings", () => {
   test("keeps the display-name action on the input control row", () => {
     expect(workspaceSettingsSource).toContain('<div className="fieldWithAction">');
   });
+
+  test("combines identity, API access, connection details, and lifecycle", () => {
+    expect(workspaceSettingsSource).toContain("<WorkspaceAccessSections");
+    expect(workspaceSettingsSource).toContain('translate("workspaceSettings.identity")');
+    expect(workspaceSettingsSource).toContain('translate("workspaceSettings.lifecycle")');
+  });
 });

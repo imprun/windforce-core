@@ -6,7 +6,6 @@ import { useRouter } from "../lib/router";
 import { translate } from "../shared/i18n";
 
 export function workspaceDetailTarget(tab: string): string {
-  if (tab === "access") return "/settings/access";
   if (tab === "audit") return "/audit";
   return "/settings/workspace";
 }

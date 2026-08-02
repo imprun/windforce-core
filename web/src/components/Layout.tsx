@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { Dialog as DialogPrimitive, DropdownMenu as DropdownMenuPrimitive } from "radix-ui";
 import { type ReactNode, useEffect, useState } from "react";
+import { LocalBrowserAccessDialog } from "../features/AccessSettings";
 import { useApp } from "../lib/app-context";
 import { type HostAccount, loadHostAccount } from "../lib/host-account";
 import { Link, useRouter } from "../lib/router";
@@ -140,19 +141,19 @@ export function UserMenu({
   placement?: "topbar" | "sidebar";
   collapsed?: boolean;
 } = {}) {
-  const { settings, clearLocalCredentials, notify } = useApp();
-  const { navigate } = useRouter();
+  const { settings, clearLocalCredentials, notify, requestLocalAccess, runtimeConfig } = useApp();
   const hasApiToken = Boolean(settings.token);
   const hasBrowserIdentity = Boolean(settings.actor || settings.token);
 
   function handleClearLocalCredentials() {
     clearLocalCredentials();
-    navigate("/settings");
     notify("info", translate("shell.localAccessCleared"));
   }
 
   const itemClass =
     "flex cursor-pointer select-none items-center gap-2 rounded px-2 py-2 text-sm outline-none data-[disabled]:cursor-not-allowed data-[disabled]:opacity-45 data-[highlighted]:bg-muted";
+
+  if (runtimeConfig?.authMode !== "browser_token") return null;
 
   return (
     <DropdownMenuPrimitive.Root modal={false}>
@@ -223,7 +224,7 @@ export function UserMenu({
             </span>
           </DropdownMenuPrimitive.Label>
           <DropdownMenuPrimitive.Separator className="my-1 h-px bg-border" />
-          <DropdownMenuPrimitive.Item className={itemClass} onSelect={() => navigate("/settings")}>
+          <DropdownMenuPrimitive.Item className={itemClass} onSelect={requestLocalAccess}>
             <Settings size={16} />
             {translate("shell.connectionSettings")}
           </DropdownMenuPrimitive.Item>
@@ -473,7 +474,7 @@ export function Layout({
   titleLeading?: ReactNode;
 }) {
   const { path } = useRouter();
-  const { toasts, dismissToast, runtimeConfig } = useApp();
+  const { toasts, dismissToast, runtimeConfig, localAccessOpen, dismissLocalAccess } = useApp();
   const [collapsed, setCollapsed] = useState(loadCollapsed);
 
   useEffect(() => {
@@ -539,6 +540,9 @@ export function Layout({
           />
           <div className="mt-6 flex flex-col gap-4">{children}</div>
         </main>
+        {localAccessOpen && runtimeConfig?.authMode === "browser_token" ? (
+          <LocalBrowserAccessDialog onClose={dismissLocalAccess} />
+        ) : null}
         <ToastStack toasts={toasts} dismissToast={dismissToast} />
       </div>
     );
@@ -659,6 +663,9 @@ export function Layout({
           </div>
         </main>
       </div>
+      {localAccessOpen && runtimeConfig?.authMode === "browser_token" ? (
+        <LocalBrowserAccessDialog onClose={dismissLocalAccess} />
+      ) : null}
       <ToastStack toasts={toasts} dismissToast={dismissToast} />
     </div>
   );

@@ -18,6 +18,7 @@ import { formatTime } from "../lib/format";
 import { useRouter } from "../lib/router";
 import { notifyWorkspaceRegistryChanged } from "../lib/workspaces";
 import { translate } from "../shared/i18n";
+import { WorkspaceAccessSections } from "./WorkspaceAccessSettingsPage";
 
 export function WorkspaceSettingsPage() {
   const { api, settings } = useApp();
@@ -132,6 +133,8 @@ function WorkspaceSettings({
           </Field>
         </div>
       </Panel>
+
+      <WorkspaceAccessSections workspace={workspace} />
 
       <Panel
         title={translate("workspaceSettings.lifecycle")}

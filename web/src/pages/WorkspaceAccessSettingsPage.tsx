@@ -1,15 +1,9 @@
 import { KeyRound, RefreshCw, ShieldX } from "lucide-react";
 import { useState } from "react";
-import { Layout } from "../components/Layout";
-import { SettingsNav } from "../components/SettingsNav";
 import { ConfirmDialog, EmptyState, ErrorNotice, Loading, Panel } from "../components/ui";
-import {
-  CLIConnectionPanel,
-  HostedAccessPanels,
-  LocalBrowserAccessPanel,
-} from "../features/AccessSettings";
+import { CoreAPIConnectionPanel, HostedAccessPanel } from "../features/AccessSettings";
 import { OneTimeWorkspaceToken } from "../features/WorkspaceAdmin";
-import type { WorkspaceToken } from "../lib/api";
+import type { Workspace, WorkspaceToken } from "../lib/api";
 import { errorMessage } from "../lib/api";
 import { useApp, useAsync } from "../lib/app-context";
 import { formatRelative, formatTime } from "../lib/format";
@@ -20,37 +14,20 @@ type PendingTokenAction = {
   token: WorkspaceToken;
 };
 
-export function WorkspaceAccessSettingsPage() {
+export function WorkspaceAccessSections({ workspace }: { workspace: Workspace }) {
   const { runtimeConfig } = useApp();
-  const hosted = Boolean(runtimeConfig?.hostAccount);
+  const hosted = runtimeConfig?.authMode === "host_managed";
 
-  return (
-    <Layout
-      title={translate("workspaceAccess.pageTitle")}
-      subtitle={
-        hosted ? translate("workspaceAccess.hostedSubtitle") : translate("workspaceAccess.subtitle")
-      }
-    >
-      <SettingsNav />
-      {hosted ? (
-        <HostedAccessPanels hostConsole={runtimeConfig?.hostConsole || null} />
-      ) : (
-        <StandaloneAccessSettings />
-      )}
-    </Layout>
+  return hosted ? (
+    <HostedAccessPanel hostConsole={runtimeConfig?.hostConsole || null} />
+  ) : (
+    <StandaloneAccessSettings workspace={workspace} />
   );
 }
 
-function StandaloneAccessSettings() {
-  const { api, settings, notify } = useApp();
-  const workspaceState = useAsync(
-    () => api.workspace(settings.workspace),
-    [api, settings.workspace],
-  );
-  const tokenState = useAsync(
-    () => api.workspaceTokens(settings.workspace),
-    [api, settings.workspace],
-  );
+function StandaloneAccessSettings({ workspace }: { workspace: Workspace }) {
+  const { api, notify } = useApp();
+  const tokenState = useAsync(() => api.workspaceTokens(workspace.id), [api, workspace.id]);
   const [name, setName] = useState("");
   const [secret, setSecret] = useState("");
   const [saving, setSaving] = useState(false);
@@ -61,7 +38,7 @@ function StandaloneAccessSettings() {
     setSaving(true);
     setError("");
     try {
-      const result = await api.createWorkspaceToken(settings.workspace, name.trim());
+      const result = await api.createWorkspaceToken(workspace.id, name.trim());
       setSecret(result.api_token);
       setName("");
       tokenState.reload();
@@ -77,7 +54,7 @@ function StandaloneAccessSettings() {
     setSaving(true);
     setError("");
     try {
-      const result = await api.rotateWorkspaceToken(settings.workspace, token.id);
+      const result = await api.rotateWorkspaceToken(workspace.id, token.id);
       setSecret(result.api_token);
       tokenState.reload();
       notify("ok", translate("workspaceAccess.tokenRotated"));
@@ -92,7 +69,7 @@ function StandaloneAccessSettings() {
     setSaving(true);
     setError("");
     try {
-      await api.revokeWorkspaceToken(settings.workspace, token.id);
+      await api.revokeWorkspaceToken(workspace.id, token.id);
       tokenState.reload();
       notify("ok", translate("workspaceAccess.tokenRevoked"));
     } catch (cause) {
@@ -110,30 +87,21 @@ function StandaloneAccessSettings() {
     else void revokeToken(action.token);
   }
 
-  const loading =
-    (workspaceState.loading && !workspaceState.data) || (tokenState.loading && !tokenState.data);
-  const pageError = workspaceState.error || tokenState.error;
-  const archived = workspaceState.data?.status === "archived";
+  const loading = tokenState.loading && !tokenState.data;
+  const pageError = tokenState.error;
+  const archived = workspace.status === "archived";
 
   return (
     <>
       {loading ? <Loading label={translate("workspaceAccess.loading")} /> : null}
-      {pageError ? (
-        <ErrorNotice
-          message={pageError}
-          onRetry={() => {
-            workspaceState.reload();
-            tokenState.reload();
-          }}
-        />
-      ) : null}
+      {pageError ? <ErrorNotice message={pageError} onRetry={tokenState.reload} /> : null}
       {error ? <ErrorNotice message={error} /> : null}
-      {workspaceState.data && tokenState.data ? (
+      {tokenState.data ? (
         <>
           <Panel
             title={translate("workspaceAccess.workspaceTokens")}
             subtitle={translate("workspaceAccess.workspaceTokensHint", {
-              workspace: settings.workspace,
+              workspace: workspace.id,
             })}
           >
             <form
@@ -254,8 +222,7 @@ function StandaloneAccessSettings() {
             </section>
           </Panel>
 
-          <CLIConnectionPanel />
-          <LocalBrowserAccessPanel />
+          <CoreAPIConnectionPanel />
         </>
       ) : null}
 

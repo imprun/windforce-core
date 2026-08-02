@@ -1,7 +1,8 @@
 import { Check, Copy, ExternalLink, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
-import { DefinitionList, Field, Panel } from "../components/ui";
+import { DefinitionList, Field, Modal, Panel } from "../components/ui";
 import { useApp } from "../lib/app-context";
+import { Link } from "../lib/router";
 import type { HostConsoleConfig } from "../lib/runtime-config";
 import { translate } from "../shared/i18n";
 
@@ -35,76 +36,74 @@ export function healthLabel(health: ControlPlaneHealth): string {
   return translate("settings.health.checking");
 }
 
-export function CLIConnectionPanel() {
+export function CoreAPIConnectionPanel() {
   const { settings } = useApp();
   const apiURL = globalThis.location?.origin || "";
+  const workspaceAPIURL = `${apiURL}/api/w/${encodeURIComponent(settings.workspace)}`;
 
   return (
     <Panel
-      title={translate("settings.cliConnection")}
-      subtitle={translate("settings.cliConnectionHint")}
+      title={translate("settings.coreAPIConnection")}
+      subtitle={translate("settings.coreAPIConnectionHint")}
     >
-      <div className="inlineNotice accessFlowNotice">{translate("settings.cliTokenOrderHint")}</div>
-      <div className="cliConnectionGrid">
-        <Field
-          label={translate("settings.controlPlaneURL")}
-          hint={translate("settings.controlPlaneURLHint")}
-        >
-          <CopyableSetting label={translate("settings.controlPlaneURL")} value={apiURL} />
+      <div className="accessScopeNotice">
+        <p>{translate("settings.invocationCredentialHint")}</p>
+        <Link className="button" to="/clients">
+          {translate("settings.openClientRegistry")}
+        </Link>
+      </div>
+      <div className="apiConnectionGrid">
+        <Field label={translate("settings.coreURL")} hint={translate("settings.coreURLHint")}>
+          <CopyableSetting label={translate("settings.coreURL")} value={apiURL} />
         </Field>
         <Field
-          label={translate("settings.workspaceID")}
-          hint={translate("settings.workspaceIDHint")}
+          label={translate("settings.workspaceAPIBase")}
+          hint={translate("settings.workspaceAPIBaseHint")}
         >
-          <CopyableSetting label={translate("settings.workspaceID")} value={settings.workspace} />
+          <CopyableSetting label={translate("settings.workspaceAPIBase")} value={workspaceAPIURL} />
         </Field>
       </div>
     </Panel>
   );
 }
 
-export function HostedAccessPanels({ hostConsole }: { hostConsole: HostConsoleConfig | null }) {
+export function HostedAccessPanel({ hostConsole }: { hostConsole: HostConsoleConfig | null }) {
   const health = useControlPlaneHealth();
 
   return (
-    <>
-      <Panel
-        title={translate("settings.hostedAccess")}
-        subtitle={translate("settings.hostedAccessHint")}
-      >
-        <div className="hostedAccessSummary">
-          <ShieldCheck aria-hidden="true" />
-          <DefinitionList
-            items={[
-              [translate("settings.authentication"), translate("shell.managedByHost")],
-              [translate("settings.auditActor"), translate("settings.hostPrincipalActor")],
-              [translate("settings.controlPlane"), healthLabel(health)],
-            ]}
-          />
-        </div>
-      </Panel>
-      <Panel title={translate("settings.hostedCLI")} subtitle={translate("settings.hostedCLIHint")}>
-        <div className="hostedCLIAction">
-          <p>{translate("settings.hostedCLIBody")}</p>
-          {hostConsole ? (
-            <a className="button primary" href={hostConsole.url}>
-              <ExternalLink aria-hidden="true" />
-              {translate("settings.openHostConsole")}
-            </a>
-          ) : (
-            <span className="inlineNotice">{translate("settings.hostConsoleUnavailable")}</span>
-          )}
-        </div>
-      </Panel>
-    </>
+    <Panel
+      title={translate("settings.hostedAccess")}
+      subtitle={translate("settings.hostedAccessHint")}
+    >
+      <div className="hostedAccessSummary">
+        <ShieldCheck aria-hidden="true" />
+        <DefinitionList
+          items={[
+            [translate("settings.authentication"), translate("shell.managedByHost")],
+            [translate("settings.auditActor"), translate("settings.hostPrincipalActor")],
+            [translate("settings.controlPlane"), healthLabel(health)],
+          ]}
+        />
+      </div>
+      <div className="hostedAccessAction">
+        <p>{translate("settings.hostedAccessBody")}</p>
+        {hostConsole ? (
+          <a className="button primary" href={hostConsole.url}>
+            <ExternalLink aria-hidden="true" />
+            {translate("settings.manageAccessInHost")}
+          </a>
+        ) : (
+          <span className="inlineNotice">{translate("settings.hostConsoleUnavailable")}</span>
+        )}
+      </div>
+    </Panel>
   );
 }
 
-export function LocalBrowserAccessPanel() {
+export function LocalBrowserAccessDialog({ onClose }: { onClose: () => void }) {
   const { settings, updateSettings, notify } = useApp();
   const [token, setToken] = useState(settings.token);
   const [actor, setActor] = useState(settings.actor);
-  const health = useControlPlaneHealth();
 
   useEffect(() => {
     setToken(settings.token);
@@ -120,44 +119,50 @@ export function LocalBrowserAccessPanel() {
       actor: actor.trim(),
     });
     notify("ok", translate("settings.saved"));
+    onClose();
   }
 
   return (
-    <Panel
-      title={translate("settings.localAccess")}
+    <Modal
+      title={translate("shell.localAccess")}
       subtitle={translate("settings.localAccessHint")}
+      onClose={onClose}
+      compact
     >
-      <div className="formGrid localAccessGrid">
-        <Field label={translate("settings.apiToken")} hint={translate("settings.apiTokenHint")}>
-          <input
-            id="settingsToken"
-            type="password"
-            value={token}
-            onChange={(event) => setToken(event.target.value)}
-            autoComplete="off"
-          />
-        </Field>
-        <Field label={translate("settings.actor")} hint={translate("settings.actorHint")}>
-          <input
-            id="settingsActor"
-            value={actor}
-            onChange={(event) => setActor(event.target.value)}
-          />
-        </Field>
-      </div>
-      <div className="localAccessFooter">
-        <DefinitionList items={[[translate("settings.controlPlane"), healthLabel(health)]]} />
-        <button
-          className="button primary"
-          type="button"
-          id="saveSettings"
-          disabled={!dirty}
-          onClick={save}
-        >
-          {translate("settings.saveLocalAccess")}
-        </button>
-      </div>
-    </Panel>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (dirty) save();
+        }}
+      >
+        <div className="formGrid">
+          <Field label={translate("settings.apiToken")} hint={translate("settings.apiTokenHint")}>
+            <input
+              id="settingsToken"
+              type="password"
+              value={token}
+              onChange={(event) => setToken(event.target.value)}
+              autoComplete="off"
+            />
+          </Field>
+          <Field label={translate("settings.actor")} hint={translate("settings.actorHint")}>
+            <input
+              id="settingsActor"
+              value={actor}
+              onChange={(event) => setActor(event.target.value)}
+            />
+          </Field>
+        </div>
+        <footer className="dialogFooter dialogFooterEnd">
+          <button className="button" type="button" onClick={onClose}>
+            {translate("common.cancel")}
+          </button>
+          <button className="button primary" type="submit" id="saveSettings" disabled={!dirty}>
+            {translate("settings.saveLocalAccess")}
+          </button>
+        </footer>
+      </form>
+    </Modal>
   );
 }
 

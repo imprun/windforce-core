@@ -3024,20 +3024,40 @@ textarea {
   white-space: nowrap;
 }
 
-.cliConnectionGrid {
+.apiConnectionGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
+  gap: var(--space-4);
 }
 
-.accessFlowNotice {
-  margin-bottom: 18px;
+.accessScopeNotice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--info);
+  border-radius: var(--radius-small);
+  background: var(--surface-2);
+}
+
+.accessScopeNotice p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.accessScopeNotice .button {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .hostedAccessSummary {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
-  gap: 16px;
+  gap: var(--space-4);
   align-items: start;
 }
 
@@ -3047,27 +3067,23 @@ textarea {
   color: var(--success);
 }
 
-.hostedCLIAction,
-.localAccessFooter {
+.hostedAccessAction {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--space-4);
 }
 
-.hostedCLIAction p {
+.hostedAccessAction {
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+.hostedAccessAction p {
+  margin: 0;
   max-width: 52rem;
   color: var(--text-secondary);
-}
-
-.localAccessGrid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.localAccessFooter {
-  margin-top: 18px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
 }
 
 .workspaceTokenTable {
@@ -3132,7 +3148,7 @@ textarea {
     flex-direction: column;
   }
 
-  .cliConnectionGrid {
+  .apiConnectionGrid {
     grid-template-columns: 1fr;
   }
 
@@ -3306,19 +3322,15 @@ textarea {
     flex-direction: column;
   }
 
-  .hostedCLIAction,
-  .localAccessFooter {
+  .accessScopeNotice,
+  .hostedAccessAction {
     align-items: stretch;
     flex-direction: column;
   }
 
-  .hostedCLIAction .button,
-  .localAccessFooter .button {
+  .accessScopeNotice .button,
+  .hostedAccessAction .button {
     width: 100%;
-  }
-
-  .localAccessGrid {
-    grid-template-columns: 1fr;
   }
 
   .clientSectionHeading,

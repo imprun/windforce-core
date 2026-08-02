@@ -3,16 +3,26 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { AppProvider } from "../lib/app-context";
 import { RouterProvider } from "../lib/router";
 import { UserMenu } from "./Layout";
 
 describe("UserMenu", () => {
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
 
   beforeEach(() => {
     localStorage.clear();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ auth_mode: "browser_token" }),
+      }),
+    );
   });
 
   function renderMenu() {
@@ -32,7 +42,9 @@ describe("UserMenu", () => {
     const user = userEvent.setup();
     renderMenu();
 
-    await user.click(screen.getByRole("button", { name: "Local access menu for local-dev" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Local access menu for local-dev" }),
+    );
 
     expect(screen.getByText(/API token not configured/)).toBeTruthy();
     expect(
@@ -45,9 +57,25 @@ describe("UserMenu", () => {
     localStorage.setItem("wf.token", "workspace-secret");
     renderMenu();
 
-    await user.click(screen.getByRole("button", { name: "Local access menu for local-dev" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Local access menu for local-dev" }),
+    );
 
     expect(screen.getByText(/API token configured/)).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "Clear local access" })).toBeTruthy();
+  });
+
+  test("hides browser-local access when Core authentication is disabled", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ auth_mode: "disabled" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderMenu();
+
+    await vi.waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled();
+    });
+    expect(screen.queryByRole("button", { name: /Local access menu/ })).toBeNull();
   });
 });

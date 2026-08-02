@@ -7,9 +7,12 @@ export interface HostAccountConfig {
   endpoint: string;
 }
 
+export type AuthMode = "disabled" | "browser_token" | "host_managed";
+
 export interface RuntimeConfig {
   hostConsole: HostConsoleConfig | null;
   hostAccount: HostAccountConfig | null;
+  authMode: AuthMode;
 }
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -47,9 +50,16 @@ function parseHostAccount(value: unknown): HostAccountConfig | null {
 
 export function parseRuntimeConfig(value: unknown): RuntimeConfig {
   const config = record(value);
+  const hostAccount = parseHostAccount(config?.host_account);
   return {
     hostConsole: parseHostConsole(config?.host_console),
-    hostAccount: parseHostAccount(config?.host_account),
+    hostAccount,
+    authMode:
+      hostAccount !== null
+        ? "host_managed"
+        : config?.auth_mode === "browser_token"
+          ? "browser_token"
+          : "disabled",
   };
 }
 
@@ -62,7 +72,7 @@ export async function loadRuntimeConfig(): Promise<RuntimeConfig> {
     credentials: "same-origin",
     headers: { Accept: "application/json" },
   });
-  if (!response.ok) return { hostConsole: null, hostAccount: null };
+  if (!response.ok) return { hostConsole: null, hostAccount: null, authMode: "disabled" };
   return parseRuntimeConfig(await response.json());
 }
 

@@ -3,7 +3,12 @@ import { describe, expect, test } from "vitest";
 
 const source = await readFile(new URL("./RuntimeConfigurationPage.tsx", import.meta.url), "utf8");
 
-describe("runtime configuration", () => {
+describe("variables and resources", () => {
+  test("uses a user-facing variables and resources page boundary", () => {
+    expect(source).toContain("VariablesResourcesPage");
+    expect(source).toContain('translate("runtimeConfig.pageTitle")');
+  });
+
   test("uses shared accessible overlays and the design-system SelectControl", () => {
     expect(source).toContain("<Modal");
     expect(source).toContain("<ConfirmDialog");

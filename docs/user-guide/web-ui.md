@@ -255,18 +255,19 @@ A configured Router Provider reports the friendly URL and reconciliation state w
 3. When a Router Provider is configured, review the friendly public URL and its observed state.
 4. Add, edit, or delete the route independently from the Trigger definition.
 
-## Connect standalone access
+## Manage the active workspace
 
-Access settings connects workspace tokens to the CLI and keeps browser-local credentials isolated to standalone mode.
+Workspace settings keep identity, API access, Core connection details, and lifecycle controls in one place.
 
-![Connect standalone access](../assets/ui/settings.png)
+![Manage the active workspace](../assets/ui/settings.png)
 
-1. Open Settings from the sidebar and choose Access.
-2. Create and store a named workspace token for the CLI or integration.
-3. Copy the control-plane URL and workspace ID into the CLI or integration.
-4. Choose how the CLI stores or receives its credential outside the Web UI.
-5. Configure browser-local token and audit actor values only for a standalone console.
-6. In hosted mode, use the host console instead of Core-local token controls.
+1. Open Settings from the sidebar and choose Workspace.
+2. Update the active workspace identity without leaving its settings page.
+3. Create and store a named workspace token for an operator or trusted administrative tool.
+4. Copy the Core URL or workspace API base into a direct Core integration.
+5. Use Client Registry instead when an external app caller only needs the Invocation API.
+6. In hosted mode, manage account access and API credentials in the host console.
+7. Archive the workspace only from the lifecycle section at the end of the page.
 
 ## Inspect a Trigger on a narrow screen
 
@@ -289,15 +290,15 @@ The top-bar breadcrumb keeps runtime scope visible and provides the entry point 
 2. Select a workspace to change the active application and monitoring scope.
 3. Choose Manage workspaces to create or switch workspaces; configure the active workspace from Settings.
 
-## Connect standalone access on mobile
+## Manage the active workspace on mobile
 
-Access settings keep credential creation, issued-token review, and CLI setup usable on a narrow screen.
+Workspace identity, API access, Core connection details, and lifecycle controls remain usable on a narrow screen.
 
-![Connect standalone access on mobile](../assets/ui/settings-mobile.png)
+![Manage the active workspace on mobile](../assets/ui/settings-mobile.png)
 
-1. Open Settings and choose Access.
+1. Open Settings and choose Workspace.
 2. Issue a named workspace token without horizontal page overflow.
-3. Continue to the CLI and local-browser sections in the same responsibility-focused flow.
+3. Continue through Core connection and lifecycle sections on the same workspace page.
 
 ## Navigate on a narrow screen
 
@@ -330,26 +331,26 @@ The compact top-bar breadcrumb keeps workspace context visible and opens the sam
 1. Open the workspace control in the top-bar breadcrumb.
 2. Choose another workspace or open Manage workspaces without opening the navigation drawer.
 
-## Manage runtime configuration
+## Manage variables and resources
 
 Variables, write-only Secret Variables, typed Resources, and versioned Resource Types share one workspace-scoped console.
 
-![Manage runtime configuration](../assets/ui/runtime-configuration.png)
+![Manage variables and resources](../assets/ui/runtime-configuration.png)
 
-1. Open Settings and choose Runtime configuration.
+1. Open Settings and choose Variables & resources.
 2. Use Variables for scalar values and mark credentials as write-only Secrets.
 3. Use Resources for structured JSON that can compose exact $var:path and $res:path references.
 4. Register a versioned Resource Type when a Resource needs JSON Schema validation.
 5. Declare the required paths in each Action runtimeAccess block before publishing a release.
 
-## Review runtime configuration in dark mode
+## Review variables and resources in dark mode
 
 Dark mode preserves the distinction between ordinary values, write-only Secrets, tabs, and destructive actions.
 
-![Review runtime configuration in dark mode](../assets/ui/runtime-configuration-dark.png)
+![Review variables and resources in dark mode](../assets/ui/runtime-configuration-dark.png)
 
 1. Switch the execution workspace to dark mode.
-2. Open Settings and choose Runtime configuration.
+2. Open Settings and choose Variables & resources.
 3. Confirm Secret status and destructive actions remain identifiable without relying on color alone.
 
 ## Compose a typed Resource
@@ -358,19 +359,19 @@ The Resource editor keeps JSON, exact references, and Resource Type selection to
 
 ![Compose a typed Resource](../assets/ui/runtime-configuration-resource-dialog.png)
 
-1. Open Runtime configuration and choose Resources.
+1. Open Variables & resources and choose Resources.
 2. Create a Resource and select its versioned Resource Type.
 3. Compose the JSON value with exact $var:path or $res:path strings.
 4. Save only after the Resource passes its registered JSON Schema.
 
-## Review runtime configuration on a narrow screen
+## Review variables and resources on a narrow screen
 
 The settings navigation and security notice remain readable while dense runtime data stays horizontally scrollable.
 
-![Review runtime configuration on a narrow screen](../assets/ui/runtime-configuration-mobile.png)
+![Review variables and resources on a narrow screen](../assets/ui/runtime-configuration-mobile.png)
 
-1. Open Runtime configuration on a narrow screen.
-2. Switch between Variables, Resources, and Resource Types from the compact tab bar.
+1. Open Variables & resources on a narrow screen.
+2. Switch between Variables, Resources, and Resource schemas from the compact tab bar.
 3. Scroll a dense table horizontally to reach previews and row actions.
 
 ## Collapse the sidebar
@@ -436,8 +437,8 @@ Named credentials belong to the active workspace and keep issue, rotation, and r
 ![Manage workspace access](../assets/ui/workspace-access.png)
 
 1. Switch to the workspace that will own the credential.
-2. Open Settings and choose Access.
-3. Name each credential for its CLI, operator, or recovery purpose.
+2. Open Settings and choose Workspace.
+3. Name each credential for its operator, administrative tool, or recovery purpose.
 4. Store the raw secret when it is shown; later views expose metadata only.
 5. Rotate or revoke one credential without interrupting the workspace's other callers.
 

@@ -6,7 +6,7 @@ const accessPageSource = await readFile(
   "utf8",
 );
 
-describe("workspace access settings", () => {
+describe("workspace access sections", () => {
   test("keeps the token action aligned with its input in one control row", () => {
     expect(accessPageSource).toContain('className="workspaceTokenCreate"');
     expect(accessPageSource).toContain('className="fieldWithAction"');
@@ -15,11 +15,14 @@ describe("workspace access settings", () => {
     expect(accessPageSource).toContain('type="submit"');
   });
 
-  test("separates hosted access from Core-local credentials", () => {
-    expect(accessPageSource).toContain("<HostedAccessPanels");
+  test("separates hosted access from standalone credential administration", () => {
+    expect(accessPageSource).toContain("WorkspaceAccessSections");
+    expect(accessPageSource).toContain("<HostedAccessPanel");
     expect(accessPageSource).toContain("<StandaloneAccessSettings");
-    expect(accessPageSource).toContain("<CLIConnectionPanel");
-    expect(accessPageSource).toContain("<LocalBrowserAccessPanel");
+    expect(accessPageSource).toContain("<CoreAPIConnectionPanel");
+    expect(accessPageSource).not.toContain("<LocalBrowserAccessPanel");
+    expect(accessPageSource).not.toContain("<Layout");
+    expect(accessPageSource).not.toContain("<SettingsNav");
   });
 
   test("uses the shared confirmation dialog for token rotation and revocation", () => {
