@@ -28,6 +28,7 @@
       {
         "group": "한국어",
         "pages": [
+          "ko/concepts/workspaces",
           "ko/concepts/run-admission",
           "ko/concepts/runtime-configuration"
         ]

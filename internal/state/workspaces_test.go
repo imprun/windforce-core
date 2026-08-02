@@ -10,8 +10,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/imprun/windforce-core/internal/catalog"
 	"github.com/imprun/windforce-core/internal/contract"
 	wfcrypto "github.com/imprun/windforce-core/internal/crypto"
+	controlevent "github.com/imprun/windforce-core/internal/event"
+	"github.com/imprun/windforce-core/internal/webhook"
 )
 
 func TestLocalWorkspaceTokenMigrationPreservesLegacyCredential(t *testing.T) {
@@ -137,6 +140,76 @@ func TestLocalWorkspaceLifecycleAndNamedTokens(t *testing.T) {
 	}
 }
 
+func TestLocalDeleteWorkspacePurgesScopedData(t *testing.T) {
+	ctx := context.Background()
+	store := NewLocalStore(filepath.Join(t.TempDir(), "state.json"))
+	workspaceID := "team-delete"
+	if _, err := store.CreateWorkspace(ctx, workspaceID, "Team Delete", "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.update(ctx, func(snapshot *Snapshot, now time.Time) error {
+		snapshot.Runs["run-delete"] = Run{ID: "run-delete"}
+		snapshot.Jobs["job-delete"] = Job{ID: "job-delete", RunID: "run-delete", Payload: JobPayload{Workspace: workspaceID}}
+		snapshot.HumanTasks["task-delete"] = HumanTask{ID: "task-delete", RunID: "run-delete"}
+		snapshot.Events = append(snapshot.Events, RunEvent{ID: 1, RunID: "run-delete"})
+		snapshot.JobLogs["job-delete"] = JobLog{JobID: "job-delete", WorkspaceID: workspaceID}
+		snapshot.JobState[workspaceID] = map[string]json.RawMessage{"state": json.RawMessage(`{"ok":true}`)}
+		snapshot.Variables[workspaceID] = map[string]Variable{"secret": {Path: "secret"}}
+		snapshot.Resources[workspaceID] = map[string]Resource{"db": {Path: "db"}}
+		snapshot.ResourceTypes[workspaceID] = map[string]ResourceType{"database@1": {Name: "database", Version: "1"}}
+		snapshot.Clients[workspaceID] = map[string]Client{"client": {ID: "client", WorkspaceID: workspaceID}}
+		snapshot.LegacyClients = map[string]map[string]Client{}
+		snapshot.LegacyClientAudits = map[string][]ClientAudit{}
+		snapshot.LegacyClients[workspaceID] = map[string]Client{"legacy-client": {ID: "legacy-client", WorkspaceID: workspaceID}}
+		snapshot.LegacyClientAudits[workspaceID] = []ClientAudit{{WorkspaceID: workspaceID}}
+		snapshot.InputConfigs[workspaceID] = map[string]InputConfig{"config": {WorkspaceID: workspaceID}}
+		snapshot.SecretAccessAudits[workspaceID] = []SecretAccessAudit{{WorkspaceID: workspaceID}}
+		snapshot.WebhookSubscriptions["subscription"] = WebhookSubscriptionRecord{ID: "subscription", WorkspaceID: workspaceID}
+		snapshot.ControlPlaneEvents["evt_delete"] = controlevent.Envelope{ID: "evt_delete", Source: "/workspaces/" + workspaceID + "/control-plane"}
+		snapshot.WebhookDeliveries["delivery"] = webhook.Delivery{ID: "delivery", WorkspaceID: workspaceID}
+		snapshot.Triggers["trigger"] = TriggerRecord{TriggerDefinition: TriggerDefinition{ID: "trigger", WorkspaceID: workspaceID}}
+		snapshot.TriggerDeliveries["trigger-delivery"] = TriggerDelivery{ID: "trigger-delivery", WorkspaceID: workspaceID}
+		snapshot.HTTPRouteBindings["route"] = HTTPRouteBinding{ID: "route", WorkspaceID: workspaceID}
+		deployment := contract.Deployment{Workspace: workspaceID, App: "demo"}
+		deploymentKey := catalog.DeploymentKey(workspaceID, deployment.App)
+		snapshot.ReleaseCatalog.Deployments[deploymentKey] = deployment
+		snapshot.ReleaseCatalog.ActiveHistoryIDs[deploymentKey] = "history-delete"
+		snapshot.ReleaseCatalog.Candidates["candidate"] = catalog.ReleaseCandidate{Deployment: deployment, SyncedAt: now}
+		snapshot.ReleaseCatalog.History = append(snapshot.ReleaseCatalog.History, catalog.DeploymentHistory{ID: "history-delete", Workspace: workspaceID})
+		snapshot.ReleaseCatalog.Audit = append(snapshot.ReleaseCatalog.Audit, catalog.AuditRecord{ID: "audit-delete", Workspace: workspaceID})
+		snapshot.ReleaseCatalog.SourceMarkers["marker"] = catalog.SourceReleaseMarker{Workspace: workspaceID}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.DeleteWorkspace(ctx, workspaceID, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.GetWorkspace(ctx, workspaceID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("deleted workspace lookup error = %v", err)
+	}
+	snapshot, err := store.Load(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := snapshot.Workspaces[workspaceID]; exists || len(snapshot.Runs) != 0 || len(snapshot.Jobs) != 0 || len(snapshot.HumanTasks) != 0 || len(snapshot.Events) != 0 || len(snapshot.JobLogs) != 0 {
+		t.Fatalf("execution data remained after deletion: %#v", snapshot)
+	}
+	if _, exists := snapshot.JobState[workspaceID]; exists || len(snapshot.LegacyClients) != 0 || len(snapshot.LegacyClientAudits) != 0 || len(snapshot.Triggers) != 0 || len(snapshot.WebhookSubscriptions) != 0 || len(snapshot.ControlPlaneEvents) != 0 || len(snapshot.ReleaseCatalog.Deployments) != 0 {
+		t.Fatalf("workspace-scoped data remained after deletion: %#v", snapshot)
+	}
+	if _, err := store.GetWorkspace(ctx, contract.DefaultWorkspace); err != nil {
+		t.Fatalf("default workspace was removed: %v", err)
+	}
+	if err := store.DeleteWorkspace(ctx, contract.DefaultWorkspace, "admin"); !errors.Is(err, ErrInvalidState) {
+		t.Fatalf("delete default error = %v", err)
+	}
+	if err := store.DeleteWorkspace(ctx, "missing", "admin"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("delete missing error = %v", err)
+	}
+}
+
 func TestPostgresWorkspaceLifecycle(t *testing.T) {
 	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
 	if dsn == "" {
@@ -226,6 +299,24 @@ func TestPostgresWorkspaceLifecycle(t *testing.T) {
 	audit, err := store.ListWorkspaceAudit(ctx, workspaceID)
 	if err != nil || len(audit) != 6 {
 		t.Fatalf("workspace audit = %#v, %v", audit, err)
+	}
+	if err := store.SetVariable(ctx, workspaceID, "", "delete-me", "value", false, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DeleteWorkspace(ctx, workspaceID, "operator"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.GetWorkspace(ctx, workspaceID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("deleted workspace lookup error = %v", err)
+	}
+	for _, table := range []string{"workspace_registry", "workspace_key", "workspace_token", "workspace_audit", "variable"} {
+		var count int
+		if err := store.pool.QueryRow(ctx, fmt.Sprintf(`SELECT count(*) FROM %s WHERE %s=$1`, table, map[bool]string{true: "id", false: "workspace_id"}[table == "workspace_registry"]), workspaceID).Scan(&count); err != nil {
+			t.Fatalf("count %s: %v", table, err)
+		}
+		if count != 0 {
+			t.Fatalf("%s retained %d workspace rows", table, count)
+		}
 	}
 }
 

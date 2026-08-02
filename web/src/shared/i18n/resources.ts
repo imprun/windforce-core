@@ -476,23 +476,35 @@ export const en = {
     "Archive {{name}}? Reads remain available, but releases, settings changes, and new runs will be blocked.",
   "workspaceSettings.archiveTitle": "Archive this workspace?",
   "workspaceSettings.archivedSwitched": "Workspace archived. Switched to default.",
+  "workspaceSettings.deleteConfirm":
+    "Permanently delete {{name}} and all of its runs, apps, triggers, configuration, credentials, and audit records? This cannot be undone.",
+  "workspaceSettings.deleteConfirmationLabel":
+    'Type the workspace name exactly to continue: "{{name}}"',
+  "workspaceSettings.deleteTitle": "Delete this workspace permanently?",
+  "workspaceSettings.deletedSwitched": "Workspace deleted. Switched to default.",
   "workspaceSettings.identity": "Workspace identity",
   "workspaceSettings.identityHint": "The immutable routing ID and operator-facing display name.",
+  "workspaceSettings.hostManagedLifecycle":
+    "This workspace is managed by the hosting platform. Use the host console for lifecycle changes.",
   "workspaceSettings.created": "Created",
   "workspaceSettings.createdBy": "Created by",
   "workspaceSettings.displayNameHint": "Shown in the workspace switcher and settings.",
   "workspaceSettings.saveDisplayName": "Save display name",
   "workspaceSettings.lifecycle": "Workspace lifecycle",
   "workspaceSettings.lifecycleHint":
-    "Archive preserves records while preventing future changes and executions.",
+    "Archive a workspace for retention, or permanently delete all of its local data.",
   "workspaceSettings.defaultPermanent":
-    "The default workspace is permanent and cannot be archived.",
+    "The default workspace is permanent and cannot be archived or deleted.",
   "workspaceSettings.archivedNotice":
     "This workspace is archived. Reads and audit records remain available.",
   "workspaceSettings.archive": "Archive workspace",
   "workspaceSettings.archiveWarning":
     "Blocks releases, configuration changes, webhook changes, and new runs. This action cannot be reversed.",
   "workspaceSettings.archiving": "Archiving…",
+  "workspaceSettings.delete": "Delete workspace",
+  "workspaceSettings.deleteWarning":
+    "Permanently removes every run, app, trigger, setting, credential, and audit record in this workspace.",
+  "workspaceSettings.deleting": "Deleting…",
   "workspaceAccess.pageTitle": "Access",
   "workspaceAccess.subtitle": "Manage workspace API credentials and Core connection details.",
   "workspaceAccess.hostedSubtitle":
@@ -1788,21 +1800,36 @@ export const ko = {
   "workspaceSettings.archiveTitle": "이 워크스페이스를 보관할까요?",
   "workspaceSettings.archivedSwitched":
     "워크스페이스를 보관하고 default 워크스페이스로 전환했습니다.",
+  "workspaceSettings.deleteConfirm":
+    "{{name}} 워크스페이스와 모든 실행 기록, 앱, 트리거, 설정, 자격 증명, 감사 기록을 영구 삭제할까요? 이 작업은 되돌릴 수 없습니다.",
+  "workspaceSettings.deleteConfirmationLabel":
+    "계속하려면 워크스페이스 이름을 그대로 입력하세요: {{name}}",
+  "workspaceSettings.deleteTitle": "이 워크스페이스를 영구 삭제할까요?",
+  "workspaceSettings.deletedSwitched":
+    "워크스페이스를 삭제하고 default 워크스페이스로 전환했습니다.",
   "workspaceSettings.identity": "워크스페이스 정보",
   "workspaceSettings.identityHint": "변경할 수 없는 라우팅 ID와 운영자용 표시 이름입니다.",
+  "workspaceSettings.hostManagedLifecycle":
+    "이 워크스페이스는 호스팅 플랫폼에서 관리합니다. 수명 주기 변경은 호스트 콘솔을 사용하세요.",
   "workspaceSettings.created": "생성 시각",
   "workspaceSettings.createdBy": "생성자",
   "workspaceSettings.displayNameHint": "워크스페이스 전환기와 설정에 표시됩니다.",
   "workspaceSettings.saveDisplayName": "표시 이름 저장",
   "workspaceSettings.lifecycle": "워크스페이스 수명 주기",
-  "workspaceSettings.lifecycleHint": "보관하면 기록을 유지하면서 이후 변경과 실행을 방지합니다.",
-  "workspaceSettings.defaultPermanent": "default 워크스페이스는 영구적이며 보관할 수 없습니다.",
+  "workspaceSettings.lifecycleHint":
+    "기록을 유지하려면 보관하고, 모든 로컬 데이터를 없애려면 영구 삭제합니다.",
+  "workspaceSettings.defaultPermanent":
+    "default 워크스페이스는 영구적이며 보관하거나 삭제할 수 없습니다.",
   "workspaceSettings.archivedNotice":
     "이 워크스페이스는 보관되었습니다. 읽기와 감사 기록은 계속 사용할 수 있습니다.",
   "workspaceSettings.archive": "워크스페이스 보관",
   "workspaceSettings.archiveWarning":
     "릴리스, 설정 변경, Webhook 변경 및 새 Run을 차단합니다. 이 작업은 되돌릴 수 없습니다.",
   "workspaceSettings.archiving": "보관 중…",
+  "workspaceSettings.delete": "워크스페이스 삭제",
+  "workspaceSettings.deleteWarning":
+    "이 워크스페이스의 모든 실행 기록, 앱, 트리거, 설정, 자격 증명, 감사 기록을 영구 삭제합니다.",
+  "workspaceSettings.deleting": "삭제 중…",
   "workspaceAccess.pageTitle": "접근",
   "workspaceAccess.subtitle": "워크스페이스 API 자격 증명과 Core 접속 정보를 관리합니다.",
   "workspaceAccess.hostedSubtitle":

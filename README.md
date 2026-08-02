@@ -277,7 +277,7 @@ default of incremental job log flushing with a 20 MiB per-job cap; set
 Implemented control-plane endpoints:
 
 - `GET|POST /api/workspaces` (instance-admin workspace registry)
-- `GET|PATCH /api/workspaces/{workspaceId}`
+- `GET|PATCH|DELETE /api/workspaces/{workspaceId}` (`DELETE` permanently removes the workspace and its scoped data)
 - `POST /api/workspaces/{workspaceId}/archive`
 - `GET|POST /api/workspaces/{workspaceId}/tokens` (list metadata or issue a named token)
 - `POST /api/workspaces/{workspaceId}/tokens/{tokenId}/rotate` (returns a replacement token once)

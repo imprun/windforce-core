@@ -1,6 +1,6 @@
 import { Check, ChevronDown, X } from "lucide-react";
 import { Dialog as DialogPrimitive, Select as SelectPrimitive } from "radix-ui";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import type { ProbeResult } from "../lib/api";
 import { formatJSON } from "../lib/format";
 import { translate } from "../shared/i18n";
@@ -262,6 +262,7 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
   tone = "danger",
+  confirmation,
 }: {
   title: string;
   description: string;
@@ -269,9 +270,27 @@ export function ConfirmDialog({
   onConfirm: () => void;
   onCancel: () => void;
   tone?: "danger" | "primary";
+  confirmation?: {
+    label: string;
+    expected: string;
+  };
 }) {
+  const [confirmationValue, setConfirmationValue] = useState("");
+  const confirmationMatches = !confirmation || confirmationValue === confirmation.expected;
+
   return (
     <Modal title={title} subtitle={description} onClose={onCancel} compact>
+      {confirmation ? (
+        <Field label={confirmation.label}>
+          <input
+            autoComplete="off"
+            spellCheck={false}
+            value={confirmationValue}
+            placeholder={confirmation.expected}
+            onChange={(event) => setConfirmationValue(event.target.value)}
+          />
+        </Field>
+      ) : null}
       <footer className="dialogFooter dialogFooterEnd">
         <button className="button" type="button" onClick={onCancel}>
           {translate("common.cancel")}
@@ -279,7 +298,8 @@ export function ConfirmDialog({
         <button
           className={tone === "danger" ? "button danger filled" : "button primary"}
           type="button"
-          onClick={onConfirm}
+          disabled={!confirmationMatches}
+          onClick={() => confirmationMatches && onConfirm()}
         >
           {confirmLabel}
         </button>

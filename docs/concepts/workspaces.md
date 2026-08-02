@@ -9,7 +9,7 @@ A workspace groups apps, releases, clients, input settings, jobs, inbound trigge
 
 Workspace IDs are lowercase slugs. They contain 2 to 48 lowercase letters, digits, or hyphens, start with a letter, and end with a letter or digit. The ID is immutable because it is part of API paths and stored resource keys. The display name can be changed.
 
-`default` is always registered and cannot be archived. It is the initial workspace for local development and installations that use one workspace.
+`default` is always registered and cannot be archived or deleted. It is the initial workspace for local development and installations that use one workspace.
 
 ## Access
 
@@ -35,7 +35,7 @@ When no instance-admin token is configured, local development accepts requests w
 
 An active workspace accepts control-plane changes and new execution requests. Archiving a workspace preserves its state and audit records while blocking configuration changes, credential issuance or rotation, releases, trigger or webhook changes, and new Runs. Read operations, audit queries, provisioning export, and credential revocation remain available. Revocation stays available for workspace, client, and service-principal tokens so a compromised credential can always be disabled. Job-scoped SDK callbacks remain available so running jobs can settle.
 
-Workspace deletion and reactivation are not exposed. Use a separate workspace when a new active namespace is required.
+Permanent deletion is available to an instance administrator at `DELETE /api/workspaces/{workspace}`. It removes the workspace registry record and every workspace-scoped run, job, app release, trigger, route binding, webhook, variable, resource, input configuration, credential, encryption key, and audit record in one storage transaction. It cannot be undone. The `default` workspace is protected from deletion. Reactivation of an archived workspace is not exposed.
 
 ## Operations
 
@@ -43,10 +43,10 @@ Use the sidebar workspace switcher to change the current workspace. Open **Manag
 
 Settings applies to the active workspace:
 
-- **Workspace** changes its display name and contains the lifecycle danger zone;
+- **Workspace** changes its display name and contains archive and permanent-delete lifecycle actions;
 - **Access** issues, rotates, and revokes named workspace tokens;
 - **Audit** includes identity, access, and lifecycle records under the `workspace` category.
 
-Instance-admin authorization is still required for workspace lifecycle and credential operations. Old `/workspaces/{id}` detail links first activate that workspace, then redirect to the corresponding Settings or Audit destination.
+Instance-admin authorization is still required for workspace lifecycle and credential operations. The Web UI requires the workspace display name to match exactly before permanent deletion is enabled, then switches the browser to `default` after deletion succeeds. Old `/workspaces/{id}` detail links first activate that workspace, then redirect to the corresponding Settings or Audit destination.
 
 The global lifecycle API is rooted at `/api/workspaces`. Workspace resources remain rooted at `/api/w/{workspace}` and all operator, client, and service Run invocation is rooted at `/api/v1/workspaces/{workspace}`. Legacy public and execution admission paths remain only until the ADR 0013 v0.3 breaking removal.

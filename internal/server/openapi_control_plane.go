@@ -48,6 +48,14 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 					"200": oapiResponse("Updated workspace.", oapiSchemaRef("Workspace")),
 				}, "400", "401", "403", "404", "409"),
 			},
+			"delete": map[string]any{
+				"operationId": "deleteWorkspace",
+				"summary":     "Permanently delete a managed workspace and its data",
+				"parameters":  []any{oapiPathParam("workspace_id", "Immutable workspace id.")},
+				"responses": withErrors(map[string]any{
+					"204": map[string]any{"description": "Workspace deleted."},
+				}, "401", "403", "404", "409"),
+			},
 		},
 		"/api/workspaces/{workspace_id}/archive": map[string]any{
 			"post": map[string]any{

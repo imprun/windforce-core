@@ -68,6 +68,14 @@ func TestManagedWorkspaceAPIAndAuthorizationBoundary(t *testing.T) {
 	if cross.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("cross-workspace status = %d: %s", cross.StatusCode, readResponse(t, cross))
 	}
+	deleteB := workspaceRequest(t, server.URL, http.MethodDelete, "/api/workspaces/team-b", "instance-admin", "")
+	if deleteB.StatusCode != http.StatusNoContent {
+		t.Fatalf("delete B status = %d: %s", deleteB.StatusCode, readResponse(t, deleteB))
+	}
+	deletedB := workspaceRequest(t, server.URL, http.MethodGet, "/api/workspaces/team-b", "instance-admin", "")
+	if deletedB.StatusCode != http.StatusNotFound {
+		t.Fatalf("deleted B status = %d: %s", deletedB.StatusCode, readResponse(t, deletedB))
+	}
 
 	rotate := workspaceRequest(t, server.URL, http.MethodPost, "/api/workspaces/team-a/tokens/"+issued.Token.ID+"/rotate", "instance-admin", "")
 	if rotate.StatusCode != http.StatusOK {
@@ -198,6 +206,10 @@ func TestManagedWorkspaceRejectsInvalidIDAndDefaultArchive(t *testing.T) {
 	if archive.StatusCode != http.StatusConflict {
 		t.Fatalf("archive default status = %d: %s", archive.StatusCode, readResponse(t, archive))
 	}
+	remove := workspaceRequest(t, server.URL, http.MethodDelete, "/api/workspaces/default", "", "")
+	if remove.StatusCode != http.StatusConflict {
+		t.Fatalf("delete default status = %d: %s", remove.StatusCode, readResponse(t, remove))
+	}
 }
 
 func workspaceRequest(t *testing.T, baseURL string, method string, path string, token string, body string) *http.Response {
@@ -250,6 +262,10 @@ func TestWorkspaceManagementOpenAPI(t *testing.T) {
 		if _, ok := paths[path]; !ok {
 			t.Errorf("OpenAPI path %q is missing", path)
 		}
+	}
+	workspacePath := paths["/api/workspaces/{workspace_id}"].(map[string]any)
+	if _, ok := workspacePath["delete"]; !ok {
+		t.Error("OpenAPI workspace delete operation is missing")
 	}
 
 	schemas := controlPlaneSchemas()

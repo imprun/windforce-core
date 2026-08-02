@@ -203,6 +203,178 @@ func (s *LocalStore) ArchiveWorkspace(ctx context.Context, workspaceID string, a
 	return archived, err
 }
 
+func (s *LocalStore) DeleteWorkspace(ctx context.Context, workspaceID string, actor string) error {
+	workspaceID = contract.NormalizeWorkspace(workspaceID)
+	if workspaceID == contract.DefaultWorkspace {
+		return fmt.Errorf("%w: default workspace cannot be deleted", ErrInvalidState)
+	}
+	return s.update(ctx, func(snapshot *Snapshot, _ time.Time) error {
+		if _, exists := snapshot.Workspaces[workspaceID]; !exists {
+			return ErrNotFound
+		}
+		purgeLocalWorkspace(snapshot, workspaceID)
+		return nil
+	})
+}
+
+func purgeLocalWorkspace(snapshot *Snapshot, workspaceID string) {
+	runIDs := map[string]struct{}{}
+	jobIDs := map[string]struct{}{}
+	for id, run := range snapshot.Runs {
+		if contract.NormalizeWorkspace(run.Deployment.SourceWorkspace()) == workspaceID {
+			runIDs[id] = struct{}{}
+		}
+	}
+	for id, job := range snapshot.Jobs {
+		if normalizedJobWorkspace("", job) != workspaceID {
+			continue
+		}
+		runIDs[job.RunID] = struct{}{}
+		jobIDs[id] = struct{}{}
+		delete(snapshot.Jobs, id)
+	}
+	for id := range runIDs {
+		delete(snapshot.Runs, id)
+	}
+	for id, task := range snapshot.HumanTasks {
+		if _, remove := runIDs[task.RunID]; remove {
+			delete(snapshot.HumanTasks, id)
+		}
+	}
+	filteredEvents := snapshot.Events[:0]
+	for _, event := range snapshot.Events {
+		if _, remove := runIDs[event.RunID]; !remove {
+			filteredEvents = append(filteredEvents, event)
+		}
+	}
+	snapshot.Events = filteredEvents
+	for id, record := range snapshot.JobLogs {
+		_, removeByJob := jobIDs[id]
+		if removeByJob || contract.NormalizeWorkspace(record.WorkspaceID) == workspaceID {
+			delete(snapshot.JobLogs, id)
+		}
+	}
+
+	delete(snapshot.JobState, workspaceID)
+	delete(snapshot.Variables, workspaceID)
+	delete(snapshot.Resources, workspaceID)
+	delete(snapshot.ResourceTypes, workspaceID)
+	delete(snapshot.Clients, workspaceID)
+	delete(snapshot.ClientAudits, workspaceID)
+	delete(snapshot.LegacyClients, workspaceID)
+	delete(snapshot.LegacyClientAudits, workspaceID)
+	delete(snapshot.ServicePrincipals, workspaceID)
+	delete(snapshot.ServicePrincipalAudits, workspaceID)
+	delete(snapshot.InputConfigs, workspaceID)
+	delete(snapshot.InputConfigAudits, workspaceID)
+	delete(snapshot.SecretAccessAudits, workspaceID)
+	delete(snapshot.WebhookAudits, workspaceID)
+	delete(snapshot.WorkspaceKeys, workspaceID)
+	delete(snapshot.WorkspaceTokens, workspaceID)
+	delete(snapshot.Workspaces, workspaceID)
+
+	for key, subscription := range snapshot.WebhookSubscriptions {
+		if contract.NormalizeWorkspace(subscription.WorkspaceID) == workspaceID {
+			delete(snapshot.WebhookSubscriptions, key)
+		}
+	}
+	for key, delivery := range snapshot.WebhookDeliveries {
+		if contract.NormalizeWorkspace(delivery.WorkspaceID) == workspaceID {
+			delete(snapshot.WebhookDeliveries, key)
+		}
+	}
+	workspaceEventSource := "/workspaces/" + workspaceID + "/control-plane"
+	for key, event := range snapshot.ControlPlaneEvents {
+		if event.Source == workspaceEventSource {
+			delete(snapshot.ControlPlaneEvents, key)
+		}
+	}
+	for key, trigger := range snapshot.Triggers {
+		if contract.NormalizeWorkspace(trigger.WorkspaceID) == workspaceID {
+			delete(snapshot.Triggers, key)
+		}
+	}
+	for key, records := range snapshot.TriggerAudits {
+		filtered := records[:0]
+		for _, record := range records {
+			if contract.NormalizeWorkspace(record.WorkspaceID) != workspaceID {
+				filtered = append(filtered, record)
+			}
+		}
+		if len(filtered) == 0 {
+			delete(snapshot.TriggerAudits, key)
+		} else {
+			snapshot.TriggerAudits[key] = filtered
+		}
+	}
+	for key, delivery := range snapshot.TriggerDeliveries {
+		if contract.NormalizeWorkspace(delivery.WorkspaceID) == workspaceID {
+			delete(snapshot.TriggerDeliveries, key)
+		}
+	}
+	for key, binding := range snapshot.HTTPRouteBindings {
+		if contract.NormalizeWorkspace(binding.WorkspaceID) == workspaceID {
+			delete(snapshot.HTTPRouteBindings, key)
+		}
+	}
+	for key, records := range snapshot.HTTPRouteBindingAudits {
+		filtered := records[:0]
+		for _, record := range records {
+			if contract.NormalizeWorkspace(record.WorkspaceID) != workspaceID {
+				filtered = append(filtered, record)
+			}
+		}
+		if len(filtered) == 0 {
+			delete(snapshot.HTTPRouteBindingAudits, key)
+		} else {
+			snapshot.HTTPRouteBindingAudits[key] = filtered
+		}
+	}
+
+	for key, deployment := range snapshot.ReleaseCatalog.Deployments {
+		if contract.NormalizeWorkspace(deployment.SourceWorkspace()) == workspaceID {
+			delete(snapshot.ReleaseCatalog.Deployments, key)
+			delete(snapshot.ReleaseCatalog.ActiveHistoryIDs, key)
+		}
+	}
+	for key := range snapshot.ReleaseCatalog.ActiveHistoryIDs {
+		if strings.HasPrefix(key, workspaceID+"/") {
+			delete(snapshot.ReleaseCatalog.ActiveHistoryIDs, key)
+		}
+	}
+	for key, candidate := range snapshot.ReleaseCatalog.Candidates {
+		if contract.NormalizeWorkspace(candidate.Deployment.SourceWorkspace()) == workspaceID {
+			delete(snapshot.ReleaseCatalog.Candidates, key)
+		}
+	}
+	filteredHistory := snapshot.ReleaseCatalog.History[:0]
+	for _, record := range snapshot.ReleaseCatalog.History {
+		if contract.NormalizeWorkspace(record.Workspace) != workspaceID {
+			filteredHistory = append(filteredHistory, record)
+		}
+	}
+	snapshot.ReleaseCatalog.History = filteredHistory
+	filteredCatalogAudit := snapshot.ReleaseCatalog.Audit[:0]
+	for _, record := range snapshot.ReleaseCatalog.Audit {
+		if contract.NormalizeWorkspace(record.Workspace) != workspaceID {
+			filteredCatalogAudit = append(filteredCatalogAudit, record)
+		}
+	}
+	snapshot.ReleaseCatalog.Audit = filteredCatalogAudit
+	for key, marker := range snapshot.ReleaseCatalog.SourceMarkers {
+		if contract.NormalizeWorkspace(marker.Workspace) == workspaceID {
+			delete(snapshot.ReleaseCatalog.SourceMarkers, key)
+		}
+	}
+	filteredWorkspaceAudit := snapshot.WorkspaceAudits[:0]
+	for _, record := range snapshot.WorkspaceAudits {
+		if contract.NormalizeWorkspace(record.WorkspaceID) != workspaceID {
+			filteredWorkspaceAudit = append(filteredWorkspaceAudit, record)
+		}
+	}
+	snapshot.WorkspaceAudits = filteredWorkspaceAudit
+}
+
 func (s *LocalStore) ListWorkspaceAudit(ctx context.Context, workspaceID string) ([]WorkspaceAudit, error) {
 	snapshot, err := s.Load(ctx)
 	if err != nil {

@@ -23,6 +23,11 @@ describe("primaryNavItems", () => {
     expect(layoutSource).toContain('<WorkspaceSwitcher variant="breadcrumb"');
   });
 
+  test("keeps both instance and workspace app bars visible while content scrolls", () => {
+    expect(layoutSource.match(/sticky top-0 z-30/g)).toHaveLength(2);
+    expect(layoutSource).toContain('className="icon-control sidebarCollapseControl"');
+  });
+
   test("keeps hosted-console navigation workspace-scoped and vendor neutral", () => {
     expect(layoutSource).not.toContain('placement="sidebar" collapsed={collapsed}');
     expect(layoutSource.match(/<HostConsoleAction hostConsole=/g)).toHaveLength(1);

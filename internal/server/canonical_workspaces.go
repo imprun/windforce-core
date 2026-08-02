@@ -139,6 +139,14 @@ func (h *Handler) handleWorkspaceAPI(w http.ResponseWriter, r *http.Request, par
 		writeJSON(w, http.StatusOK, workspaceResponse(workspace))
 		return true
 	}
+	if len(parts) == 3 && r.Method == http.MethodDelete {
+		if err := h.store.DeleteWorkspace(r.Context(), workspaceID, requestActorOrSystem(r)); err != nil {
+			writeStateError(w, err)
+			return true
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return true
+	}
 	if len(parts) == 4 && parts[3] == "archive" && r.Method == http.MethodPost {
 		workspace, err := h.store.ArchiveWorkspace(r.Context(), workspaceID, requestActorOrSystem(r))
 		if err != nil {

@@ -1,4 +1,4 @@
-import { Archive } from "lucide-react";
+import { Archive, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Layout } from "../components/Layout";
 import { SettingsNav } from "../components/SettingsNav";
@@ -46,17 +46,18 @@ function WorkspaceSettings({
   workspace: Workspace;
   onChanged: () => void;
 }) {
-  const { api, settings, updateSettings, notify } = useApp();
+  const { api, settings, updateSettings, notify, runtimeConfig } = useApp();
   const { navigate } = useRouter();
   const [name, setName] = useState(workspace.name);
-  const [saving, setSaving] = useState(false);
+  const [operation, setOperation] = useState<"save" | "archive" | "delete" | null>(null);
   const [error, setError] = useState("");
   const [confirmArchive, setConfirmArchive] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => setName(workspace.name), [workspace.name]);
 
   async function save() {
-    setSaving(true);
+    setOperation("save");
     setError("");
     try {
       await api.updateWorkspace(workspace.id, name.trim());
@@ -66,13 +67,13 @@ function WorkspaceSettings({
     } catch (cause) {
       setError(errorMessage(cause));
     } finally {
-      setSaving(false);
+      setOperation(null);
     }
   }
 
   async function archive() {
     setConfirmArchive(false);
-    setSaving(true);
+    setOperation("archive");
     setError("");
     try {
       await api.archiveWorkspace(workspace.id);
@@ -83,7 +84,24 @@ function WorkspaceSettings({
     } catch (cause) {
       setError(errorMessage(cause));
     } finally {
-      setSaving(false);
+      setOperation(null);
+    }
+  }
+
+  async function remove() {
+    setConfirmDelete(false);
+    setOperation("delete");
+    setError("");
+    try {
+      await api.deleteWorkspace(workspace.id);
+      updateSettings({ ...settings, workspace: "default" });
+      notify("ok", translate("workspaceSettings.deletedSwitched"));
+      notifyWorkspaceRegistryChanged();
+      navigate("/");
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setOperation(null);
     }
   }
 
@@ -118,14 +136,14 @@ function WorkspaceSettings({
                 className="button primary"
                 type="button"
                 disabled={
-                  saving ||
+                  operation !== null ||
                   workspace.status === "archived" ||
                   !name.trim() ||
                   name.trim() === workspace.name
                 }
                 onClick={save}
               >
-                {saving
+                {operation === "save"
                   ? translate("common.saving")
                   : translate("workspaceSettings.saveDisplayName")}
               </button>
@@ -140,28 +158,51 @@ function WorkspaceSettings({
         title={translate("workspaceSettings.lifecycle")}
         subtitle={translate("workspaceSettings.lifecycleHint")}
       >
-        {workspace.id === "default" ? (
+        {runtimeConfig?.authMode === "host_managed" ? (
+          <div className="inlineNotice">{translate("workspaceSettings.hostManagedLifecycle")}</div>
+        ) : workspace.id === "default" ? (
           <div className="inlineNotice">{translate("workspaceSettings.defaultPermanent")}</div>
-        ) : workspace.status === "archived" ? (
-          <div className="inlineNotice">{translate("workspaceSettings.archivedNotice")}</div>
         ) : (
-          <div className="dangerZone">
-            <div>
-              <strong>{translate("workspaceSettings.archive")}</strong>
-              <p>{translate("workspaceSettings.archiveWarning")}</p>
+          <>
+            {workspace.status === "archived" ? (
+              <div className="inlineNotice">{translate("workspaceSettings.archivedNotice")}</div>
+            ) : (
+              <div className="dangerZone">
+                <div>
+                  <strong>{translate("workspaceSettings.archive")}</strong>
+                  <p>{translate("workspaceSettings.archiveWarning")}</p>
+                </div>
+                <button
+                  className="button secondary"
+                  type="button"
+                  disabled={operation !== null}
+                  onClick={() => setConfirmArchive(true)}
+                >
+                  <Archive size={16} aria-hidden="true" />{" "}
+                  {operation === "archive"
+                    ? translate("workspaceSettings.archiving")
+                    : translate("workspaceSettings.archive")}
+                </button>
+              </div>
+            )}
+            <div className="dangerZone">
+              <div>
+                <strong>{translate("workspaceSettings.delete")}</strong>
+                <p>{translate("workspaceSettings.deleteWarning")}</p>
+              </div>
+              <button
+                className="button danger"
+                type="button"
+                disabled={operation !== null}
+                onClick={() => setConfirmDelete(true)}
+              >
+                <Trash2 size={16} aria-hidden="true" />{" "}
+                {operation === "delete"
+                  ? translate("workspaceSettings.deleting")
+                  : translate("workspaceSettings.delete")}
+              </button>
             </div>
-            <button
-              className="button danger"
-              type="button"
-              disabled={saving}
-              onClick={() => setConfirmArchive(true)}
-            >
-              <Archive size={16} aria-hidden="true" />{" "}
-              {saving
-                ? translate("workspaceSettings.archiving")
-                : translate("workspaceSettings.archive")}
-            </button>
-          </div>
+          </>
         )}
       </Panel>
       {confirmArchive ? (
@@ -171,6 +212,22 @@ function WorkspaceSettings({
           confirmLabel={translate("workspaceSettings.archive")}
           onConfirm={() => void archive()}
           onCancel={() => setConfirmArchive(false)}
+        />
+      ) : null}
+      {confirmDelete ? (
+        <ConfirmDialog
+          title={translate("workspaceSettings.deleteTitle")}
+          description={translate("workspaceSettings.deleteConfirm", { name: workspace.name })}
+          confirmLabel={translate("workspaceSettings.delete")}
+          tone="danger"
+          confirmation={{
+            label: translate("workspaceSettings.deleteConfirmationLabel", {
+              name: workspace.name,
+            }),
+            expected: workspace.name,
+          }}
+          onConfirm={() => void remove()}
+          onCancel={() => setConfirmDelete(false)}
         />
       ) : null}
     </>

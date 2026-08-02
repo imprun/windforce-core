@@ -485,7 +485,7 @@ export function Layout({
     const isRegistry = path === "/workspaces";
     return (
       <div className="min-h-screen bg-background text-foreground">
-        <header className="flex h-[var(--shell-header-height)] items-center justify-between border-b border-border bg-background px-4 sm:px-6">
+        <header className="sticky top-0 z-30 flex h-[var(--shell-header-height)] items-center justify-between border-b border-border bg-background px-4 sm:px-6">
           <nav
             className="instanceBreadcrumb flex min-w-0 items-center gap-2 text-sm"
             aria-label={translate("navigation.breadcrumb")}
@@ -614,11 +614,11 @@ export function Layout({
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-[var(--shell-header-height)] shrink-0 items-center justify-between gap-3 border-b border-border bg-background px-4 sm:px-6">
+        <header className="sticky top-0 z-30 flex h-[var(--shell-header-height)] shrink-0 items-center justify-between gap-3 border-b border-border bg-background px-4 sm:px-6">
           <div className="flex min-w-0 items-center gap-2">
             <MobileNavigation path={path} hostAccount={runtimeConfig?.hostAccount || null} />
             <button
-              className="icon-control hidden md:inline-flex"
+              className="icon-control sidebarCollapseControl"
               id="sidebarToggle"
               type="button"
               aria-label={

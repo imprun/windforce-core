@@ -683,6 +683,7 @@ type Store interface {
 	CreateWorkspace(ctx context.Context, workspaceID string, name string, actor string) (Workspace, error)
 	UpdateWorkspace(ctx context.Context, workspaceID string, name string, actor string) (Workspace, error)
 	ArchiveWorkspace(ctx context.Context, workspaceID string, actor string) (Workspace, error)
+	DeleteWorkspace(ctx context.Context, workspaceID string, actor string) error
 	ListWorkspaceTokens(ctx context.Context, workspaceID string) ([]WorkspaceToken, error)
 	GetWorkspaceToken(ctx context.Context, workspaceID string, id string) (WorkspaceToken, error)
 	GetWorkspaceTokenByTokenHash(ctx context.Context, workspaceID string, tokenHash string) (WorkspaceToken, error)

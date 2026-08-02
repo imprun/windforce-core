@@ -1061,6 +1061,12 @@ export class WindforceApi {
     });
   }
 
+  deleteWorkspace(id: string): Promise<void> {
+    return this.globalRequest(`/api/workspaces/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+  }
+
   workspaceTokens(id: string): Promise<{ items: WorkspaceToken[] }> {
     return this.globalRequest(`/api/workspaces/${encodeURIComponent(id)}/tokens`);
   }

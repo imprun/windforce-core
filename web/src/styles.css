@@ -2745,17 +2745,17 @@ textarea {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  width: min(560px, 100%);
+  width: min(560px, calc(100vw - 2rem));
   max-height: calc(100vh - 48px);
   overflow: auto;
 }
 
 .dialog.wide {
-  width: min(760px, 100%);
+  width: min(760px, calc(100vw - 2rem));
 }
 
 .dialog.compact {
-  width: min(28rem, 100%);
+  width: min(28rem, calc(100vw - 2rem));
 }
 
 .dialogHeader {
@@ -4518,6 +4518,20 @@ textarea {
   border-color: var(--shell-border);
   background: color-mix(in srgb, var(--shell-foreground) 5%, transparent);
   color: var(--shell-foreground);
+}
+
+.sidebarCollapseControl {
+  display: none;
+}
+
+@media (min-width: 48rem) {
+  .sidebarCollapseControl {
+    display: inline-flex;
+  }
+
+  .mobileNavTrigger {
+    display: none;
+  }
 }
 
 .platformSidebar .workspaceSwitcherTrigger:hover,

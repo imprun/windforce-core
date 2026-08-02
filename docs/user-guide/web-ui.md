@@ -414,7 +414,7 @@ Identity and lifecycle settings stay with the active workspace instead of creati
 ![Configure the active workspace](../assets/ui/workspace-detail.png)
 
 1. Switch to the workspace from Manage workspaces.
-2. Open Settings and choose Workspace to change its display name or archive it.
+2. Open Settings and choose Workspace to change its display name, archive it, or permanently delete it.
 3. Choose Access to issue, rotate, or revoke named workspace credentials.
 4. Open Audit and select Workspace to review identity, credential, and lifecycle events.
 5. Return to Manage workspaces only when creating or switching workspace context.
@@ -451,6 +451,19 @@ Delivery history exposes status, response, attempts, immutable event data, and a
 1. Open a webhook and switch to Deliveries.
 2. Select an event to inspect the attempt in a sheet without leaving the history table.
 3. Review the immutable event data and use Retry only when a delivery has failed.
+
+## Delete a local workspace
+
+Permanent deletion stays in the active workspace lifecycle section and requires the exact workspace name.
+
+![Delete a local workspace](../assets/ui/workspace-delete.png)
+
+1. Switch to the non-default workspace that should be removed.
+2. Open Settings, choose Workspace, and review the lifecycle section.
+3. Choose Delete workspace only when all runs, apps, triggers, configuration, credentials, and audit records can be removed.
+4. Type the workspace display name exactly; the permanent-delete action remains disabled until it matches.
+5. After deletion succeeds, the console switches to the protected default workspace.
+6. In hosted mode, use the host console instead of the Core-local lifecycle controls.
 
 ## Review webhooks on a narrow screen
 

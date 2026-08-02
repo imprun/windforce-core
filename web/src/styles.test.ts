@@ -89,3 +89,16 @@ describe("workspace switcher layout", () => {
     );
   });
 });
+
+describe("responsive shell and dialogs", () => {
+  test("shows exactly one navigation control at the shared sidebar breakpoint", () => {
+    expect(styles).toMatch(/\.sidebarCollapseControl\s*\{[^}]*display:\s*none;/s);
+    expect(styles).toMatch(
+      /@media \(min-width:\s*48rem\)\s*\{[\s\S]*?\.sidebarCollapseControl\s*\{[^}]*display:\s*inline-flex;[\s\S]*?\.mobileNavTrigger\s*\{[^}]*display:\s*none;/s,
+    );
+  });
+
+  test("keeps confirmation dialogs away from mobile viewport edges", () => {
+    expect(styles).toMatch(/\.dialog\.compact\s*\{[^}]*calc\(100vw - 2rem\)/s);
+  });
+});

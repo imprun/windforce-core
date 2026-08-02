@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 import { ConfirmDialog, SelectControl } from "./ui";
 
@@ -44,5 +44,34 @@ describe("SelectControl", () => {
     expect(screen.getByRole("button", { name: "Revoke token" }).className).toContain(
       "danger filled",
     );
+  });
+
+  test("requires an exact typed value when destructive confirmation requests it", () => {
+    const onConfirm = vi.fn();
+
+    render(
+      <ConfirmDialog
+        title="Delete workspace"
+        description="This cannot be undone."
+        confirmLabel="Delete workspace"
+        confirmation={{ label: 'Type "Operations" to confirm.', expected: "Operations" }}
+        onCancel={vi.fn()}
+        onConfirm={onConfirm}
+      />,
+    );
+
+    const confirmButton = screen.getByRole("button", { name: "Delete workspace" });
+    const confirmationInput = screen.getByRole("textbox", {
+      name: 'Type "Operations" to confirm.',
+    });
+    expect((confirmButton as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.change(confirmationInput, { target: { value: "operations" } });
+    expect((confirmButton as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.change(confirmationInput, { target: { value: "Operations" } });
+    expect((confirmButton as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(confirmButton);
+    expect(onConfirm).toHaveBeenCalledOnce();
   });
 });
