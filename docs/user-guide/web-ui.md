@@ -156,7 +156,7 @@ The client identity, token lifecycle, and danger zone preserve their hierarchy w
 
 ![Edit a client in Korean](../assets/ui/client-edit-korean.png)
 
-1. Switch the console to Korean and open Client Registry.
+1. Switch the console to Korean and open API clients.
 2. Choose Edit for a client.
 3. Confirm the token status, actions, and deletion guidance remain readable without crowding.
 
