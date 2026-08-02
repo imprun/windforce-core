@@ -71,7 +71,16 @@ func (h *Handler) handleWebUI(w http.ResponseWriter, r *http.Request) bool {
 	assetPath := strings.TrimPrefix(r.URL.Path, "/ui/")
 	if assetPath == "config.json" {
 		w.Header().Set("Cache-Control", "no-store")
-		config := map[string]interface{}{}
+		authMode := "disabled"
+		if h.adminToken != "" {
+			authMode = "browser_token"
+		}
+		if h.uiHostAccountEndpoint != "" {
+			authMode = "host_managed"
+		}
+		config := map[string]interface{}{
+			"auth_mode": authMode,
+		}
 		if h.uiHostURL != "" {
 			config["host_console"] = map[string]string{
 				"url":   h.uiHostURL,

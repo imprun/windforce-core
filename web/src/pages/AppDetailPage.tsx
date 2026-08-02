@@ -687,7 +687,7 @@ function RuntimeAccessSummary({ action }: { action: ActionView }) {
           <h3>{translate("appDetail.runtimeAccess")}</h3>
           <p>{translate("appDetail.runtimeAccessDescription")}</p>
         </div>
-        <Link className="button small" to="/settings/runtime-configuration">
+        <Link className="button small" to="/settings/variables">
           {translate("appDetail.manageRuntimeConfiguration")}
         </Link>
       </div>

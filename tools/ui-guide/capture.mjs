@@ -561,7 +561,8 @@ async function main() {
     await rm(verifyScreenshotsDir, { recursive: true, force: true });
     console.log("UI guide verified.");
   } else {
-    await writeGuide(config, scenarios);
+    // A scenario filter narrows browser execution, not the generated guide contract.
+    await writeGuide(config, loadedScenarios);
     console.log("UI guide generated.");
   }
 }

@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { matchRoute, useRouter } from "./lib/router";
 import { AppDetailPage } from "./pages/AppDetailPage";
 import { AppsPage } from "./pages/AppsPage";
@@ -6,12 +7,11 @@ import { ClientDetailPage } from "./pages/ClientDetailPage";
 import { ClientRegistryPage } from "./pages/ClientRegistryPage";
 import { MonitoringPage } from "./pages/MonitoringPage";
 import { ProvisioningPage } from "./pages/ProvisioningPage";
-import { RuntimeConfigurationPage } from "./pages/RuntimeConfigurationPage";
+import { VariablesResourcesPage } from "./pages/RuntimeConfigurationPage";
 import { SettingsInfoPage } from "./pages/SettingsInfoPage";
 import { WebhookCreatePage } from "./pages/WebhookCreatePage";
 import { WebhookDetailPage } from "./pages/WebhookDetailPage";
 import { WebhookSettingsPage } from "./pages/WebhookSettingsPage";
-import { WorkspaceAccessSettingsPage } from "./pages/WorkspaceAccessSettingsPage";
 import { WorkspaceDetailPage } from "./pages/WorkspaceDetailPage";
 import { WorkspaceSettingsPage } from "./pages/WorkspaceSettingsPage";
 import { WorkspacesPage } from "./pages/WorkspacesPage";
@@ -73,12 +73,25 @@ export function App() {
   if (matchRoute("/settings/webhooks", path)) return <WebhookSettingsPage />;
   if (matchRoute("/settings/workspaces", path)) return <WorkspacesPage />;
   if (matchRoute("/settings/workspace", path)) return <WorkspaceSettingsPage />;
-  if (matchRoute("/settings/access", path)) return <WorkspaceAccessSettingsPage />;
+  if (matchRoute("/settings/access", path)) return <RouteRedirect to="/settings/workspace" />;
   if (matchRoute("/settings/system", path)) return <SettingsInfoPage />;
   if (matchRoute("/settings/info", path)) return <SettingsInfoPage />;
-  if (matchRoute("/settings/runtime-configuration", path)) return <RuntimeConfigurationPage />;
+  if (matchRoute("/settings/runtime-configuration", path)) {
+    return <RouteRedirect to="/settings/variables" />;
+  }
+  if (matchRoute("/settings/variables", path)) return <VariablesResourcesPage />;
   if (matchRoute("/settings/provisioning", path)) return <ProvisioningPage />;
   if (matchRoute("/provisioning", path)) return <ProvisioningPage />;
   if (matchRoute("/settings", path)) return <WorkspaceSettingsPage />;
   return <AppsPage />;
+}
+
+function RouteRedirect({ to }: { to: string }) {
+  const { navigate } = useRouter();
+
+  useEffect(() => {
+    navigate(to, { replace: true });
+  }, [navigate, to]);
+
+  return null;
 }

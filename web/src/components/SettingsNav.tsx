@@ -8,19 +8,14 @@ export const settingsNavItems = [
     match: (path: string) => path === "/settings" || path === "/settings/workspace",
   },
   {
-    to: "/settings/access",
-    labelKey: "settingsNav.access" as TranslationKey,
-    match: (path: string) => path === "/settings/access",
-  },
-  {
     to: "/settings/webhooks",
     labelKey: "settingsNav.webhooks" as TranslationKey,
     match: (path: string) => path.startsWith("/settings/webhooks"),
   },
   {
-    to: "/settings/runtime-configuration",
-    labelKey: "settingsNav.runtimeConfiguration" as TranslationKey,
-    match: (path: string) => path === "/settings/runtime-configuration",
+    to: "/settings/variables",
+    labelKey: "settingsNav.variablesResources" as TranslationKey,
+    match: (path: string) => path === "/settings/variables",
   },
   {
     to: "/settings/provisioning",

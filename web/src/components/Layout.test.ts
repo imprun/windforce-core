@@ -32,6 +32,8 @@ describe("primaryNavItems", () => {
   test("distinguishes hosted accounts from standalone local access", () => {
     expect(layoutSource).toContain("HostedAccountMenu");
     expect(layoutSource).toContain('translate("shell.localAccess")');
+    expect(layoutSource).toContain('runtimeConfig?.authMode !== "browser_token"');
+    expect(layoutSource).toContain("LocalBrowserAccessDialog");
     expect(layoutSource).not.toContain(">Browser access<");
   });
 

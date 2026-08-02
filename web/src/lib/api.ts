@@ -686,7 +686,10 @@ type RequestOptions = {
 };
 
 export class WindforceApi {
-  constructor(private readonly settings: Settings) {}
+  constructor(
+    private readonly settings: Settings,
+    private readonly onUnauthorized?: () => void,
+  ) {}
 
   clients(): Promise<Client[]> {
     return this.request("/clients");
@@ -1116,6 +1119,7 @@ export class WindforceApi {
     });
     const text = await response.text();
     if (!response.ok) {
+      if (response.status === 401) this.onUnauthorized?.();
       throw apiError(response, text);
     }
     if (!text) return undefined as T;
@@ -1141,7 +1145,10 @@ export class WindforceApi {
       body: options.body,
     });
     const text = await response.text();
-    if (!response.ok) throw apiError(response, text);
+    if (!response.ok) {
+      if (response.status === 401) this.onUnauthorized?.();
+      throw apiError(response, text);
+    }
     if (!text) return undefined as T;
     return JSON.parse(text) as T;
   }
@@ -1153,7 +1160,10 @@ export class WindforceApi {
     setActorHeaders(headers, this.settings.actor);
     const response = await fetch(this.workspaceURL(path), { headers });
     const text = await response.text();
-    if (!response.ok) throw apiError(response, text);
+    if (!response.ok) {
+      if (response.status === 401) this.onUnauthorized?.();
+      throw apiError(response, text);
+    }
     return text;
   }
 

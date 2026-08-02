@@ -37,7 +37,7 @@ type DeleteTarget =
   | { kind: "type"; item: ResourceType }
   | null;
 
-export function RuntimeConfigurationPage() {
+export function VariablesResourcesPage() {
   const { api, notify } = useApp();
   const [tab, setTab] = useState<RuntimeTab>("variables");
   const [query, setQuery] = useState("");

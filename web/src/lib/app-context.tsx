@@ -22,6 +22,9 @@ type AppContextValue = {
   settings: Settings;
   updateSettings: (next: Settings) => void;
   clearLocalCredentials: () => void;
+  localAccessOpen: boolean;
+  requestLocalAccess: () => void;
+  dismissLocalAccess: () => void;
   api: WindforceApi;
   runtimeConfig: RuntimeConfig | null;
   toasts: Toast[];
@@ -35,6 +38,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const [settings, setSettings] = useState<Settings>(loadSettings);
   const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig | null>(null);
+  const [localAccessOpen, setLocalAccessOpen] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const nextToastID = useRef(1);
 
@@ -49,7 +53,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (active) setRuntimeConfig(config);
       })
       .catch(() => {
-        if (active) setRuntimeConfig({ hostConsole: null, hostAccount: null });
+        if (active) {
+          setRuntimeConfig({ hostConsole: null, hostAccount: null, authMode: "disabled" });
+        }
       });
     return () => {
       active = false;
@@ -78,25 +84,51 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setSettings((current) => ({ ...current, actor: "", token: "" }));
   }, [queryClient]);
 
-  const api = useMemo(
-    () =>
-      new WindforceApi(
-        runtimeConfig?.hostAccount ? { ...settings, token: "", actor: "" } : settings,
-      ),
-    [settings, runtimeConfig],
-  );
+  const requestLocalAccess = useCallback(() => setLocalAccessOpen(true), []);
+  const dismissLocalAccess = useCallback(() => setLocalAccessOpen(false), []);
+
+  useEffect(() => {
+    if (runtimeConfig?.authMode === "browser_token" && !settings.token) {
+      setLocalAccessOpen(true);
+    } else if (runtimeConfig && runtimeConfig.authMode !== "browser_token") {
+      setLocalAccessOpen(false);
+    }
+  }, [runtimeConfig, settings.token]);
+
+  const api = useMemo(() => {
+    const usesBrowserCredentials =
+      runtimeConfig === null || runtimeConfig.authMode === "browser_token";
+    return new WindforceApi(
+      usesBrowserCredentials ? settings : { ...settings, token: "", actor: "" },
+      runtimeConfig?.authMode === "browser_token" ? requestLocalAccess : undefined,
+    );
+  }, [settings, runtimeConfig, requestLocalAccess]);
   const value = useMemo(
     () => ({
       settings,
       updateSettings: setSettings,
       clearLocalCredentials,
+      localAccessOpen,
+      requestLocalAccess,
+      dismissLocalAccess,
       api,
       runtimeConfig,
       toasts,
       notify,
       dismissToast,
     }),
-    [settings, clearLocalCredentials, api, runtimeConfig, toasts, notify, dismissToast],
+    [
+      settings,
+      clearLocalCredentials,
+      localAccessOpen,
+      requestLocalAccess,
+      dismissLocalAccess,
+      api,
+      runtimeConfig,
+      toasts,
+      notify,
+      dismissToast,
+    ],
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

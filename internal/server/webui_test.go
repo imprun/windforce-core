@@ -87,6 +87,7 @@ func TestWebUIExposesValidatedHostConsoleConfig(t *testing.T) {
 		t.Fatalf("cache control = %q, want no-store", got)
 	}
 	var config struct {
+		AuthMode    string `json:"auth_mode"`
 		HostConsole *struct {
 			URL   string `json:"url"`
 			Label string `json:"label"`
@@ -106,6 +107,9 @@ func TestWebUIExposesValidatedHostConsoleConfig(t *testing.T) {
 	if config.HostAccount == nil || config.HostAccount.Endpoint != "/_host/account" {
 		t.Fatalf("host account config = %#v", config.HostAccount)
 	}
+	if config.AuthMode != "host_managed" {
+		t.Fatalf("auth mode = %q, want %q", config.AuthMode, "host_managed")
+	}
 
 	invalid := New(Config{
 		UIHostURL:             "javascript:alert(1)",
@@ -117,6 +121,7 @@ func TestWebUIExposesValidatedHostConsoleConfig(t *testing.T) {
 		httptest.NewRequest(http.MethodGet, "/ui/config.json", nil),
 	)
 	config = struct {
+		AuthMode    string `json:"auth_mode"`
 		HostConsole *struct {
 			URL   string `json:"url"`
 			Label string `json:"label"`
@@ -133,5 +138,27 @@ func TestWebUIExposesValidatedHostConsoleConfig(t *testing.T) {
 	}
 	if config.HostAccount != nil {
 		t.Fatalf("invalid host account was exposed: %#v", config.HostAccount)
+	}
+	if config.AuthMode != "disabled" {
+		t.Fatalf("invalid host auth mode = %q, want %q", config.AuthMode, "disabled")
+	}
+}
+
+func TestWebUIExposesBrowserTokenAuthMode(t *testing.T) {
+	handler := New(Config{AdminToken: "secret"})
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(
+		response,
+		httptest.NewRequest(http.MethodGet, "/ui/config.json", nil),
+	)
+
+	var config struct {
+		AuthMode string `json:"auth_mode"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&config); err != nil {
+		t.Fatal(err)
+	}
+	if config.AuthMode != "browser_token" {
+		t.Fatalf("auth mode = %q, want %q", config.AuthMode, "browser_token")
 	}
 }

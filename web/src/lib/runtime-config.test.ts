@@ -43,10 +43,26 @@ describe("parseRuntimeConfig", () => {
   test("rejects cross-origin and protocol-relative hosted account endpoints", () => {
     expect(
       parseRuntimeConfig({ host_account: { endpoint: "https://portal.example.test/me" } }),
-    ).toEqual({ hostConsole: null, hostAccount: null });
+    ).toEqual({ hostConsole: null, hostAccount: null, authMode: "disabled" });
     expect(parseRuntimeConfig({ host_account: { endpoint: "//portal.example.test/me" } })).toEqual({
       hostConsole: null,
       hostAccount: null,
+      authMode: "disabled",
     });
+  });
+
+  test("uses browser-local credentials only when Core explicitly requires them", () => {
+    expect(parseRuntimeConfig({ auth_mode: "browser_token" }).authMode).toBe("browser_token");
+    expect(parseRuntimeConfig({}).authMode).toBe("disabled");
+    expect(parseRuntimeConfig({ auth_mode: "host_managed" }).authMode).toBe("disabled");
+  });
+
+  test("lets a validated host account own authentication", () => {
+    expect(
+      parseRuntimeConfig({
+        auth_mode: "browser_token",
+        host_account: { endpoint: "/_host/account" },
+      }).authMode,
+    ).toBe("host_managed");
   });
 });
