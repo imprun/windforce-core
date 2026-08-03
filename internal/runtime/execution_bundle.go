@@ -74,7 +74,7 @@ func (r *Runner) openExecutionBundle(ctx context.Context, deployment contract.De
 	key := bundleDir
 
 	result := executionBundleFetchGroup.DoChan(key, func() (any, error) {
-		bundleCtx, cancel := context.WithTimeout(context.Background(), r.prepareTimeout())
+		bundleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), r.prepareTimeout())
 		defer cancel()
 		if current, err := os.ReadFile(readyPath); err == nil && string(current) == deployment.BundleDigest {
 			if err := r.validateBundleRuntime(bundleCtx, bundleDir, deployment); err != nil {
