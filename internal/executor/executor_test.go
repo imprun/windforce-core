@@ -328,6 +328,19 @@ function cdp(url) {
   }
 }
 
+async function waitForFixture(session) {
+  const deadline = Date.now() + 15000
+  while (Date.now() < deadline) {
+    const result = await session.send("Runtime.evaluate", {
+      expression: 'document.readyState === "complete" && document.title === "HumanTask hold fixture" && document.querySelector("#app")?.textContent === "ready"',
+      returnByValue: true,
+    })
+    if (result.result.value === true) return
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  }
+  throw new Error("Chromium fixture did not finish loading")
+}
+
 export async function main(ctx) {
   const profile = (process.env.TEMP || ".") + "/wf-human-" + crypto.randomUUID()
   const browser = Bun.spawn([
@@ -346,7 +359,7 @@ export async function main(ctx) {
     const target = await fetch(debugOrigin + "/json/new?" + encodeURIComponent(process.env.WF_TEST_PAGE), { method: "PUT" }).then((response) => response.json())
     session = cdp(target.webSocketDebuggerUrl)
     await session.send("Runtime.enable")
-    await new Promise((resolve) => setTimeout(resolve, 300))
+    await waitForFixture(session)
     const before = await session.send("Runtime.evaluate", {
       expression: 'window.__wfSession = { marker: "browser-session" }; window.__wfAlias = window.__wfSession; localStorage.setItem("wf-cookie", "preserved"); ({ title: document.title, marker: window.__wfSession.marker })',
       returnByValue: true,
