@@ -6,6 +6,7 @@ import { errorMessage, webhookAppKeys } from "../lib/api";
 import { useApp } from "../lib/app-context";
 import { formatTime } from "../lib/format";
 import { translate } from "../shared/i18n";
+import { WebhookEventPicker } from "./WebhookEventPicker";
 import { WebhookSecretDialog } from "./WebhookSecretDialog";
 import { WebhookSubscriptionStatus, webhookEventLabel } from "./WebhookStatus";
 
@@ -21,6 +22,7 @@ export function WebhookOverview({ subscription, apps, onUpdated, onDeleted }: Pr
   const [name, setName] = useState(subscription.name);
   const [endpoint, setEndpoint] = useState("");
   const [enabled, setEnabled] = useState(subscription.enabled);
+  const [eventTypes, setEventTypes] = useState(subscription.event_types || []);
   const [scope, setScope] = useState<"all" | "selected">(
     webhookAppKeys(subscription).length ? "selected" : "all",
   );
@@ -37,6 +39,7 @@ export function WebhookOverview({ subscription, apps, onUpdated, onDeleted }: Pr
     setName(subscription.name);
     setEndpoint("");
     setEnabled(subscription.enabled);
+    setEventTypes(subscription.event_types || []);
     setScope(webhookAppKeys(subscription).length ? "selected" : "all");
     setSelectedApps(webhookAppKeys(subscription));
   }, [subscription]);
@@ -88,10 +91,16 @@ export function WebhookOverview({ subscription, apps, onUpdated, onDeleted }: Pr
       setError(translate("webhook.validation.appScope"));
       return;
     }
+    if (eventTypes.length === 0) {
+      setError(translate("webhook.validation.eventTypes"));
+      return;
+    }
     const payload: Parameters<typeof api.updateWebhookSubscription>[1] = {};
     if (normalizedName !== subscription.name) payload.name = normalizedName;
     if (endpoint.trim()) payload.endpoint = endpoint.trim();
     if (enabled !== subscription.enabled) payload.enabled = enabled;
+    if (JSON.stringify(eventTypes) !== JSON.stringify(subscription.event_types || []))
+      payload.event_types = eventTypes;
     if (JSON.stringify(nextApps) !== JSON.stringify(webhookAppKeys(subscription)))
       payload.app_keys = nextApps;
     if (Object.keys(payload).length === 0) {
@@ -213,6 +222,8 @@ export function WebhookOverview({ subscription, apps, onUpdated, onDeleted }: Pr
                 <small>{translate("webhook.enableDeliveriesHint")}</small>
               </span>
             </label>
+
+            <WebhookEventPicker selected={eventTypes} onChange={setEventTypes} disabled={busy} />
 
             <fieldset className="webhookScopeFieldset">
               <legend>{translate("webhook.appScope")}</legend>

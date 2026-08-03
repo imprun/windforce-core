@@ -24,10 +24,15 @@ type LocalStore struct {
 	SecretKey         string
 	SecretKeyPrevious string
 	leaseNow          nowFunc
+	humanTaskSignals  humanTaskSignalHub
 }
 
 func NewLocalStore(path string) *LocalStore {
 	return &LocalStore{Path: path}
+}
+
+func (s *LocalStore) SubscribeHumanTaskChanges(taskID string) (<-chan struct{}, func()) {
+	return s.humanTaskSignals.subscribe(taskID)
 }
 
 func (s *LocalStore) ConfigureInputCrypto(secretKey string, previous string) {
@@ -989,17 +994,52 @@ func (s *LocalStore) updateWithClock(ctx context.Context, nowFunc nowFunc, fn fu
 	if s.Path == "" {
 		return errors.New("state path is required")
 	}
-	return s.withLock(ctx, func() error {
+	var changedHumanTasks []string
+	err := s.withLock(ctx, func() error {
 		snapshot, err := s.Load(ctx)
 		if err != nil {
 			return err
+		}
+		beforeHumanTasks := make(map[string]HumanTaskState, len(snapshot.HumanTasks))
+		for id, task := range snapshot.HumanTasks {
+			beforeHumanTasks[id] = task.State
 		}
 		now := currentUTC(nowFunc)
 		if err := fn(&snapshot, now); err != nil {
 			return err
 		}
+		for id, task := range snapshot.HumanTasks {
+			before, existed := beforeHumanTasks[id]
+			if !existed || before != task.State {
+				changedHumanTasks = append(changedHumanTasks, id)
+				if task.Mode != HumanTaskModeHold {
+					continue
+				}
+				eventType := humanTaskLifecycleEventType(!existed, task.State)
+				if eventType == "" {
+					continue
+				}
+				run, ok := snapshot.Runs[task.RunID]
+				if !ok {
+					return fmt.Errorf("%w: run %q for HumanTask %q", ErrNotFound, task.RunID, task.ID)
+				}
+				lifecycleEvent, err := prepareHumanTaskLifecycleEvent(task, run, eventType, now)
+				if err != nil {
+					return err
+				}
+				snapshot.ControlPlaneEvents[lifecycleEvent.ID] = lifecycleEvent
+				for _, subscription := range matchingSubscriptions(snapshot.WebhookSubscriptions, task.WorkspaceID, lifecycleEvent.Type, run.App) {
+					delivery := newWebhookDelivery(lifecycleEvent, task.WorkspaceID, subscription.ID, now)
+					snapshot.WebhookDeliveries[delivery.ID] = delivery
+				}
+			}
+		}
 		return s.write(snapshot)
 	})
+	if err == nil {
+		s.humanTaskSignals.notify(changedHumanTasks...)
+	}
+	return err
 }
 
 func (s *LocalStore) withLock(ctx context.Context, fn func() error) error {

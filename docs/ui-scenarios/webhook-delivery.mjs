@@ -12,8 +12,11 @@ export default {
   ],
   async run({ page, capture }) {
     await page.goto();
-    await page.clickText("Settings");
-    await page.clickText("Webhooks");
+    await page.evaluate(() => {
+      localStorage.setItem("wf.locale", "en");
+      localStorage.setItem("wf.workspace", "default");
+    });
+    await page.goto("/ui/settings/webhooks");
     await page.waitForSelector("#webhookList tbody tr");
     await page.clickText("Release notifications");
     await page.clickText("Deliveries");

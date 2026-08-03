@@ -250,12 +250,13 @@ try { input = JSON.parse(readFileSync("input.json", "utf8")) } catch { input = {
 let headers = undefined
 try { const h = env("WF_TRIGGER_HEADERS"); if (h) headers = JSON.parse(h) } catch { headers = undefined }
 
-async function api(method, path, body) {
+async function api(method, path, body, signal) {
   const reqHeaders = { Authorization: "Bearer " + TOKEN, "Content-Type": "application/json" }
   return fetch(BASE + "/api/w/" + WS + path, {
     method,
     headers: reqHeaders,
     body: body === undefined ? undefined : JSON.stringify(body),
+    signal,
   })
 }
 
@@ -265,6 +266,7 @@ async function waitForHuman(request) {
   const timeoutMs = Number(request && request.timeoutMs) || 120000
   const taskKey = String((request && request.key) || crypto.randomUUID())
   const deadline = Date.now() + timeoutMs
+  const transportTimeoutMs = 30000
   let retryMs = 200
   const body = {
     key: taskKey,
@@ -277,8 +279,16 @@ async function waitForHuman(request) {
     timeout_ms: timeoutMs,
   }
   for (;;) {
+    const remainingMs = deadline + 10000 - Date.now()
+    if (remainingMs <= 0) {
+      const error = new Error("HumanTask transport retries exceeded the hold deadline")
+      error.code = "human_task_transport_timeout"
+      throw error
+    }
+    const controller = new AbortController()
+    const transportTimer = setTimeout(() => controller.abort(), Math.max(1000, Math.min(transportTimeoutMs, remainingMs)))
     try {
-      const response = await api("POST", "/human-tasks/wait", body)
+      const response = await api("POST", "/human-tasks/wait", body, controller.signal)
       let payload = {}
       try { payload = await response.json() } catch { payload = {} }
       if (response.ok) {
@@ -293,6 +303,8 @@ async function waitForHuman(request) {
     } catch (error) {
       if (error && (error.code || error.taskId)) throw error
       if (Date.now() >= deadline + 10000) throw error
+    } finally {
+      clearTimeout(transportTimer)
     }
     await sleep(retryMs)
     retryMs = Math.min(retryMs * 2, 2000)

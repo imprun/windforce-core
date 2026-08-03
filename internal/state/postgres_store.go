@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -43,6 +44,13 @@ type PostgresStore struct {
 	SecretKey         string
 	SecretKeyPrevious string
 	leaseNow          nowFunc
+	databaseURL       string
+	humanTaskSignals  humanTaskSignalHub
+	humanTaskListen   sync.Once
+	listenerContext   context.Context
+	listenerCancel    context.CancelFunc
+	listenerReady     chan struct{}
+	listenerReadyOnce sync.Once
 }
 
 func OpenPostgresStore(ctx context.Context, databaseURL string) (*PostgresStore, error) {
@@ -57,11 +65,25 @@ func OpenPostgresStore(ctx context.Context, databaseURL string) (*PostgresStore,
 		pool.Close()
 		return nil, err
 	}
-	return &PostgresStore{pool: pool}, nil
+	listenerContext, listenerCancel := context.WithCancel(context.Background())
+	store := &PostgresStore{
+		pool:            pool,
+		databaseURL:     databaseURL,
+		listenerContext: listenerContext,
+		listenerCancel:  listenerCancel,
+		listenerReady:   make(chan struct{}),
+	}
+	return store, nil
 }
 
 func (s *PostgresStore) Close() {
-	if s != nil && s.pool != nil {
+	if s == nil {
+		return
+	}
+	if s.listenerCancel != nil {
+		s.listenerCancel()
+	}
+	if s.pool != nil {
 		s.pool.Close()
 	}
 }

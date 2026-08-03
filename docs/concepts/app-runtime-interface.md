@@ -48,7 +48,7 @@ Application code and its dependencies consume the context capabilities. They mus
 
 The current TypeScript low-level HTTP capability is `coreCtx.http.fetch`. An Application SDK may deliberately expose a different authoring API, for example `scrapingCtx.httpService.get()` and `post()`. Core does not understand or inspect those methods, because they are implemented inside the App process using the host capability.
 
-The TypeScript `coreCtx.human.wait()` capability is similarly generic. It persists a form task and keeps the same Action process and call stack alive until a decision arrives. An Application SDK may wrap it with company-specific Interaction vocabulary, but that vocabulary and external delivery channel do not become Core types. See [HumanTask hold](human-task-hold.md).
+The TypeScript `coreCtx.human.wait()` capability is similarly generic. It persists a form task and keeps the same Action process and call stack alive until a decision arrives. An Application SDK may wrap it with app-, domain-, or vendor-specific Interaction vocabulary, but that vocabulary and external delivery channel do not become Core types. See [HumanTask hold](human-task-hold.md).
 
 ## Application SDK adaptation
 

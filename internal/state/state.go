@@ -775,6 +775,7 @@ type Store interface {
 	GetHeldHumanTaskDecision(ctx context.Context, workspaceID string, taskID string) (HumanTaskDecisionResult, error)
 	DecideHeldHumanTask(ctx context.Context, workspaceID string, taskID string, decision HumanTaskDecision) (HumanTaskDecisionResult, error)
 	ExpireHeldHumanTask(ctx context.Context, workspaceID string, taskID string, cause string) (HumanTask, error)
+	ExpireDueHeldHumanTasks(ctx context.Context, now time.Time, limit int) (int64, error)
 	CancelHeldHumanTasksForJob(ctx context.Context, workspaceID string, jobID string, cause string) error
 	AppendLogs(ctx context.Context, jobID string, workspaceID string, chunk string) error
 	GetLogs(ctx context.Context, workspaceID string, jobID string) (string, bool, error)

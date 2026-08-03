@@ -60,6 +60,49 @@ Core persists the pending task before the Action waits. Metadata and JSON Schema
 
 LocalStore offers equivalent behavior for development and smoke tests. PostgreSQL is the production backend and uses row locking plus a unique hold key to serialize decisions and terminal races.
 
+## Wake-up, deadline, and timeout ownership
+
+The persisted HumanTask is always the source of truth. A LocalStore waiter uses
+an in-process task signal. A PostgreSQL-backed Core process uses one shared
+`LISTEN windforce_human_task` connection and broadcasts committed task IDs to
+its local waiters; it does not reserve one database connection per held task.
+Waiters subscribe before reading the row and periodically reconcile at a low
+frequency, so a dropped or missed notification changes latency rather than
+correctness.
+
+An independent server sweeper expires due pending tasks even when the runtime
+HTTP request disconnected. These timeout layers must not be conflated:
+
+| Layer | Meaning | Effect |
+| --- | --- | --- |
+| HTTP transport session | One runtime-to-Core connection | Reconnect with the same key; do not cancel or extend the task |
+| HumanTask deadline | Author-requested bounded hold | Persist `expired` with `human_task_deadline` |
+| Action timeout | Maximum live Action duration | Cancel the process and task with `action_timeout` |
+| Run/operator cancellation | Explicit execution cancellation | Cancel the task with `run_canceled` |
+| Lease loss or worker shutdown | Live state can no longer continue | Cancel the task with the corresponding stable worker cause |
+
+## External integration without polling
+
+Webhooks are an optional wake-up channel for external adapters, not the primary
+Interaction path. `ctx.human.wait()` plus the HumanTask Control API remains the
+complete request/decision wiring and works without any Webhook subscription.
+
+The existing signed Webhook outbox publishes generic lifecycle CloudEvents in
+the same state transaction as the HumanTask transition:
+
+- `windforce.human_task.created`
+- `windforce.human_task.decided`
+- `windforce.human_task.expired`
+- `windforce.human_task.canceled`
+
+An external Interaction, notification, or RMQ adapter subscribes to the needed
+event types and App scope, verifies the Webhook signature, deduplicates the
+event ID, and uses a service principal with `human_tasks:read` and/or
+`human_tasks:decide`. The event contains routing identifiers, state, outcome,
+actor, and terminal cause only. It never contains form values, private context,
+or a decision value. See the versioned
+[`contracts/webhooks/v1`](../../contracts/webhooks/v1/README.md) contract.
+
 ## What remains alive
 
 ```mermaid
@@ -76,4 +119,4 @@ Hold retains capacity. Use a finite timeout and do not use it for days-long work
 
 ## SDK boundary
 
-Core does not inspect the App SDK. A scraping SDK or company Interaction library may wrap `ctx.human.wait`, own form vocabulary, and connect external notification channels. It must not receive Worker Plane credentials or make Core depend on that vocabulary. See [App runtime interface and SDK boundaries](app-runtime-interface.md) and [ADR 0026](../adr/0026-human-task-hold.md).
+Core does not inspect the App SDK. An application or vendor SDK may expose an Interaction API that wraps `ctx.human.wait`, owns its form vocabulary, and connects external notification channels. It must not receive Worker Plane credentials or make Core depend on that vocabulary. See [App runtime interface and SDK boundaries](app-runtime-interface.md), [ADR 0026](../adr/0026-human-task-hold.md), and [ADR 0027](../adr/0027-operationalize-human-task-hold.md).

@@ -638,6 +638,9 @@ func TestRunRejectsWhitespaceScriptLangCanonically(t *testing.T) {
 
 func TestGeneratedWrappersUseJobTokenForVariableReads(t *testing.T) {
 	ts := wrapper("main.ts")
+	if !strings.Contains(ts, `const transportTimeoutMs = 30000`) || !strings.Contains(ts, `controller.signal`) {
+		t.Fatalf("typescript wrapper does not separate the HumanTask transport session timeout:\n%s", ts)
+	}
 	if strings.Contains(ts, `?app=`) {
 		t.Fatalf("typescript wrapper still passes app scope to variables.get:\n%s", ts)
 	}

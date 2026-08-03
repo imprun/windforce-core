@@ -431,11 +431,11 @@ The workspace registry is limited to creating and switching workspace context.
 5. Create a workspace, then switch to it before configuring its settings.
 6. Use an instance-admin token for registry operations; workspace tokens remain scoped to one workspace.
 
-## Manage release webhooks
+## Manage lifecycle webhooks
 
-The Webhooks settings view shows each signed release receiver, its app scope, and the latest delivery outcome without exposing endpoint paths or secrets.
+The Webhooks settings view shows each signed lifecycle receiver, its app scope, and the latest delivery outcome without exposing endpoint paths or secrets.
 
-![Manage release webhooks](../assets/ui/webhooks.png)
+![Manage lifecycle webhooks](../assets/ui/webhooks.png)
 
 1. Open Settings and choose Webhooks.
 2. Review each receiver's status, masked endpoint, app scope, latest delivery, and last operator update.
@@ -453,15 +453,15 @@ Identity and lifecycle settings stay with the active workspace instead of creati
 4. Open Audit and select Workspace to review identity, credential, and lifecycle events.
 5. Return to Manage workspaces only when creating or switching workspace context.
 
-## Configure a release webhook
+## Configure a lifecycle webhook
 
-Webhook detail keeps receiver configuration, app scope, enablement, secret rotation, and deletion controls on a full page.
+Webhook detail keeps event selection, receiver configuration, app scope, enablement, secret rotation, and deletion controls on a full page.
 
-![Configure a release webhook](../assets/ui/webhook-settings.png)
+![Configure a lifecycle webhook](../assets/ui/webhook-settings.png)
 
 1. Open a webhook from Settings.
-2. Review its masked receiver, event type, status, and last operator update.
-3. Change its name, replace the endpoint, enable or disable delivery, or narrow the app scope.
+2. Review its masked receiver, selected lifecycle events, status, and last operator update.
+3. Change its event selection, name, endpoint, enablement, or app scope.
 4. Rotate the signing secret only when the receiver can be updated immediately.
 
 ## Manage workspace access

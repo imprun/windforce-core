@@ -1,9 +1,9 @@
 export default {
   order: 11,
   id: "webhooks",
-  title: "Manage release webhooks",
+  title: "Manage lifecycle webhooks",
   description:
-    "The Webhooks settings view shows each signed release receiver, its app scope, and the latest delivery outcome without exposing endpoint paths or secrets.",
+    "The Webhooks settings view shows each signed lifecycle receiver, its app scope, and the latest delivery outcome without exposing endpoint paths or secrets.",
   screenshot: "docs/assets/ui/webhooks.png",
   guide: [
     "Open Settings and choose Webhooks.",
@@ -12,8 +12,11 @@ export default {
   ],
   async run({ page, capture }) {
     await page.goto();
-    await page.clickText("Settings");
-    await page.clickText("Webhooks");
+    await page.evaluate(() => {
+      localStorage.setItem("wf.locale", "en");
+      localStorage.setItem("wf.workspace", "default");
+    });
+    await page.goto("/ui/settings/webhooks");
     await page.waitForSelector("#webhookList tbody tr");
     await page.waitForText("#webhookList", "Release notifications");
     await capture(this.id);

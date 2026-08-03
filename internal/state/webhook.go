@@ -181,6 +181,47 @@ func prepareReleaseRollbackEvent(result catalog.ReleaseRollbackResult) (controle
 	})
 }
 
+func humanTaskLifecycleEventType(created bool, state HumanTaskState) string {
+	if created && state == HumanTaskPending {
+		return controlevent.HumanTaskCreatedType
+	}
+	switch state {
+	case HumanTaskDecided:
+		return controlevent.HumanTaskDecidedType
+	case HumanTaskExpired:
+		return controlevent.HumanTaskExpiredType
+	case HumanTaskCanceled:
+		return controlevent.HumanTaskCanceledType
+	default:
+		return ""
+	}
+}
+
+func prepareHumanTaskLifecycleEvent(task HumanTask, run Run, eventType string, occurredAt time.Time) (controlevent.Envelope, error) {
+	actor := "system"
+	if eventType == controlevent.HumanTaskCreatedType {
+		actor = "app:" + run.App
+	} else if eventType == controlevent.HumanTaskDecidedType && strings.TrimSpace(task.DecidedBy) != "" {
+		actor = strings.TrimSpace(task.DecidedBy)
+	}
+	return controlevent.NewHumanTaskLifecycle(NewID("evt"), eventType, occurredAt, controlevent.HumanTaskLifecycleData{
+		Workspace:     task.WorkspaceID,
+		TaskID:        task.ID,
+		RunID:         task.RunID,
+		JobID:         task.JobID,
+		Attempt:       task.Attempt,
+		AppKey:        run.App,
+		ActionKey:     run.Action,
+		CorrelationID: run.CorrelationID,
+		Mode:          string(task.Mode),
+		Kind:          task.Kind,
+		State:         string(task.State),
+		Outcome:       string(task.DecisionOutcome),
+		Actor:         actor,
+		TerminalCause: task.TerminalCause,
+	})
+}
+
 func latestReleaseHistory(snapshot catalog.Snapshot, workspaceID string, appKey string) *catalog.DeploymentHistory {
 	for index := len(snapshot.History) - 1; index >= 0; index-- {
 		history := snapshot.History[index]

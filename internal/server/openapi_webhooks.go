@@ -1,5 +1,7 @@
 package server
 
+import controlevent "github.com/imprun/windforce-core/internal/event"
+
 func addWebhookControlPlanePaths(paths map[string]any, workspaceID string) {
 	webhookParams := []any{oapiWorkspaceParam(workspaceID), oapiPathParam("webhookId", "Webhook subscription id.")}
 	deliveryParams := []any{oapiWorkspaceParam(workspaceID), oapiPathParam("deliveryId", "Webhook delivery id.")}
@@ -100,6 +102,17 @@ func addWebhookControlPlanePaths(paths map[string]any, workspaceID string) {
 
 func addWebhookControlPlaneSchemas(schemas map[string]any) {
 	stringArray := map[string]any{"type": "array", "items": oapiStringSchema()}
+	eventTypeArray := map[string]any{
+		"type": "array",
+		"items": map[string]any{"type": "string", "enum": []any{
+			controlevent.ReleasePublishedType,
+			controlevent.ReleaseRolledBackType,
+			controlevent.HumanTaskCreatedType,
+			controlevent.HumanTaskDecidedType,
+			controlevent.HumanTaskExpiredType,
+			controlevent.HumanTaskCanceledType,
+		}},
+	}
 	nullableString := map[string]any{"type": []any{"string", "null"}}
 	nullableInteger := map[string]any{"type": []any{"integer", "null"}}
 	nullableDateTime := map[string]any{"type": []any{"string", "null"}, "format": "date-time"}
@@ -108,7 +121,7 @@ func addWebhookControlPlaneSchemas(schemas map[string]any) {
 		"properties": map[string]any{
 			"id": oapiStringSchema(), "workspace_id": oapiStringSchema(), "name": oapiStringSchema(),
 			"endpoint_summary":   map[string]any{"type": "string", "description": "Endpoint scheme and host only; paths and query values are never returned."},
-			"has_signing_secret": oapiBooleanSchema(), "event_types": stringArray, "app_keys": stringArray,
+			"has_signing_secret": oapiBooleanSchema(), "event_types": eventTypeArray, "app_keys": stringArray,
 			"enabled": oapiBooleanSchema(), "created_by": oapiStringSchema(), "updated_by": oapiStringSchema(),
 			"created_at": oapiDateTimeSchema(), "updated_at": oapiDateTimeSchema(), "deleted_at": nullableDateTime,
 		},
@@ -119,7 +132,7 @@ func addWebhookControlPlaneSchemas(schemas map[string]any) {
 		"properties": map[string]any{
 			"name": oapiStringSchema(), "endpoint": map[string]any{"type": "string", "format": "uri"},
 			"signing_secret": map[string]any{"type": "string", "minLength": 16, "writeOnly": true},
-			"event_types":    stringArray, "app_keys": stringArray, "enabled": oapiBooleanSchema(),
+			"event_types":    eventTypeArray, "app_keys": stringArray, "enabled": oapiBooleanSchema(),
 		},
 		"required": []any{"name", "endpoint"},
 	}
@@ -128,7 +141,7 @@ func addWebhookControlPlaneSchemas(schemas map[string]any) {
 		"properties": map[string]any{
 			"name": oapiStringSchema(), "endpoint": map[string]any{"type": "string", "format": "uri"},
 			"signing_secret":        map[string]any{"type": "string", "minLength": 16, "writeOnly": true},
-			"rotate_signing_secret": oapiBooleanSchema(), "event_types": stringArray, "app_keys": stringArray, "enabled": oapiBooleanSchema(),
+			"rotate_signing_secret": oapiBooleanSchema(), "event_types": eventTypeArray, "app_keys": stringArray, "enabled": oapiBooleanSchema(),
 		},
 		"minProperties": 1,
 	}

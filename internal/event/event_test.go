@@ -128,3 +128,29 @@ func TestWebhookTestEvent(t *testing.T) {
 		t.Fatalf("data = %#v", data)
 	}
 }
+
+func TestHumanTaskLifecycleEvent(t *testing.T) {
+	now := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
+	event, err := NewHumanTaskLifecycle("evt_human_created", HumanTaskCreatedType, now, HumanTaskLifecycleData{
+		Workspace: "ws-a", TaskID: "human_1", RunID: "run_1", JobID: "job_1", Attempt: 1,
+		AppKey: "scraper", ActionKey: "login", CorrelationID: "corr-1", Mode: "hold", Kind: "form",
+		State: "pending", Actor: "app:scraper",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if event.Source != "/workspaces/ws-a/execution" || event.Subject != "human-tasks/human_1" {
+		t.Fatalf("event routing = %#v", event)
+	}
+	data, err := HumanTaskLifecycle(event)
+	if err != nil || data.AppKey != "scraper" || data.CorrelationID != "corr-1" {
+		t.Fatalf("HumanTaskLifecycle = %#v, err=%v", data, err)
+	}
+
+	if _, err := NewHumanTaskLifecycle("evt_human_invalid", HumanTaskDecidedType, now, HumanTaskLifecycleData{
+		Workspace: "ws-a", TaskID: "human_1", RunID: "run_1", JobID: "job_1", Attempt: 1,
+		AppKey: "scraper", ActionKey: "login", Mode: "hold", Kind: "form", State: "decided", Actor: "operator:test",
+	}); !errors.Is(err, ErrInvalidEvent) {
+		t.Fatalf("missing decision outcome error = %v", err)
+	}
+}

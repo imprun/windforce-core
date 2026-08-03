@@ -223,6 +223,47 @@ func (s *LocalStore) ExpireHeldHumanTask(ctx context.Context, workspaceID string
 	return result, err
 }
 
+func (s *LocalStore) ExpireDueHeldHumanTasks(ctx context.Context, now time.Time, limit int) (int64, error) {
+	if now.IsZero() {
+		now = time.Now().UTC()
+	} else {
+		now = now.UTC()
+	}
+	if limit <= 0 || limit > 1000 {
+		limit = 100
+	}
+	type dueTask struct {
+		id        string
+		expiresAt time.Time
+	}
+	var expired int64
+	err := s.updateWithClock(ctx, func() time.Time { return now }, func(snapshot *Snapshot, txNow time.Time) error {
+		due := make([]dueTask, 0)
+		for id, task := range snapshot.HumanTasks {
+			if task.Mode != HumanTaskModeHold || task.State != HumanTaskPending || task.ExpiresAt == nil || task.ExpiresAt.After(txNow) {
+				continue
+			}
+			due = append(due, dueTask{id: id, expiresAt: task.ExpiresAt.UTC()})
+		}
+		sort.Slice(due, func(i, j int) bool {
+			if due[i].expiresAt.Equal(due[j].expiresAt) {
+				return due[i].id < due[j].id
+			}
+			return due[i].expiresAt.Before(due[j].expiresAt)
+		})
+		if len(due) > limit {
+			due = due[:limit]
+		}
+		for _, candidate := range due {
+			task := snapshot.HumanTasks[candidate.id]
+			expireHeldTask(snapshot, &task, HumanTaskCauseDeadline, txNow)
+			expired++
+		}
+		return nil
+	})
+	return expired, err
+}
+
 func (s *LocalStore) CancelHeldHumanTasksForJob(ctx context.Context, workspaceID string, jobID string, cause string) error {
 	workspaceID = contract.NormalizeWorkspace(workspaceID)
 	return s.update(ctx, func(snapshot *Snapshot, now time.Time) error {

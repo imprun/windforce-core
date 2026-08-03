@@ -1,8 +1,9 @@
-import { ArrowLeft, Check, Search } from "lucide-react";
+import { ArrowLeft, Search } from "lucide-react";
 import { type FormEvent, useMemo, useState } from "react";
 import { Layout } from "../components/Layout";
 import { SettingsNav } from "../components/SettingsNav";
 import { ErrorNotice, Field, Loading, Panel } from "../components/ui";
+import { DEFAULT_WEBHOOK_EVENT_TYPES, WebhookEventPicker } from "../features/WebhookEventPicker";
 import { WebhookSecretDialog } from "../features/WebhookSecretDialog";
 import { errorMessage, type WebhookSubscriptionMutation } from "../lib/api";
 import { useApp, useAsync } from "../lib/app-context";
@@ -15,6 +16,7 @@ export function WebhookCreatePage() {
   const apps = useAsync(() => api.apps(), [api]);
   const [name, setName] = useState("");
   const [endpoint, setEndpoint] = useState("");
+  const [eventTypes, setEventTypes] = useState<string[]>(DEFAULT_WEBHOOK_EVENT_TYPES);
   const [scope, setScope] = useState<"all" | "selected">("all");
   const [selectedApps, setSelectedApps] = useState<string[]>([]);
   const [search, setSearch] = useState("");
@@ -48,13 +50,17 @@ export function WebhookCreatePage() {
       setError(translate("webhook.validation.appScope"));
       return;
     }
+    if (eventTypes.length === 0) {
+      setError(translate("webhook.validation.eventTypes"));
+      return;
+    }
     setBusy(true);
     setError("");
     try {
       const result = await api.createWebhookSubscription({
         name: normalizedName,
         endpoint: normalizedEndpoint,
-        event_types: ["windforce.release.published", "windforce.release.rolled_back"],
+        event_types: eventTypes,
         app_keys: scope === "all" ? [] : selectedApps,
         enabled: true,
       });
@@ -109,15 +115,13 @@ export function WebhookCreatePage() {
               />
             </Field>
           </div>
-          <div className="webhookEventSummary">
-            <span className="webhookEventIcon" aria-hidden="true">
-              <Check size={15} />
-            </span>
-            <div>
-              <strong>{translate("webhook.releaseActivity")}</strong>
-              <p>{translate("webhook.releaseActivityHint")}</p>
-            </div>
-          </div>
+        </Panel>
+
+        <Panel
+          title={translate("webhook.eventSelection")}
+          subtitle={translate("webhook.eventSelectionHint")}
+        >
+          <WebhookEventPicker selected={eventTypes} onChange={setEventTypes} disabled={busy} />
         </Panel>
 
         <Panel title={translate("webhook.appScope")} subtitle={translate("webhook.appScopeHint")}>

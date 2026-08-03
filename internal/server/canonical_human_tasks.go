@@ -15,9 +15,9 @@ import (
 )
 
 const (
-	defaultHumanTaskTimeout = 2 * time.Minute
-	maxHumanTaskTimeout     = 24 * time.Hour
-	humanTaskPollInterval   = 300 * time.Millisecond
+	defaultHumanTaskTimeout    = 2 * time.Minute
+	maxHumanTaskTimeout        = 24 * time.Hour
+	humanTaskReconcileInterval = 15 * time.Second
 )
 
 type humanTaskWaitRequest struct {
@@ -229,11 +229,16 @@ func (h *Handler) handleHumanTaskWait(w http.ResponseWriter, r *http.Request, wo
 }
 
 func (h *Handler) waitForHumanTask(w http.ResponseWriter, r *http.Request, task state.HumanTask) {
-	ticker := time.NewTicker(humanTaskPollInterval)
-	defer ticker.Stop()
+	subscriber, _ := h.store.(state.HumanTaskChangeSubscriber)
 	for {
+		var changed <-chan struct{}
+		cancelSubscription := func() {}
+		if subscriber != nil {
+			changed, cancelSubscription = subscriber.SubscribeHumanTaskChanges(task.ID)
+		}
 		result, err := h.store.GetHeldHumanTaskDecision(r.Context(), task.WorkspaceID, task.ID)
 		if err != nil {
+			cancelSubscription()
 			if r.Context().Err() == nil {
 				writeStateError(w, err)
 			}
@@ -241,6 +246,7 @@ func (h *Handler) waitForHumanTask(w http.ResponseWriter, r *http.Request, task 
 		}
 		switch result.Task.State {
 		case state.HumanTaskDecided:
+			cancelSubscription()
 			writeJSON(w, http.StatusOK, map[string]any{
 				"task_id": result.Task.ID,
 				"outcome": result.Decision.Outcome,
@@ -248,19 +254,23 @@ func (h *Handler) waitForHumanTask(w http.ResponseWriter, r *http.Request, task 
 			})
 			return
 		case state.HumanTaskExpired:
+			cancelSubscription()
 			writeHumanTaskTerminalError(w, http.StatusRequestTimeout, result.Task)
 			return
 		case state.HumanTaskCanceled:
+			cancelSubscription()
 			writeHumanTaskTerminalError(w, http.StatusConflict, result.Task)
 			return
 		}
 		now := time.Now().UTC()
 		if result.Task.ExpiresAt != nil && !result.Task.ExpiresAt.After(now) {
+			cancelSubscription()
 			_, _ = h.store.ExpireHeldHumanTask(r.Context(), task.WorkspaceID, task.ID, state.HumanTaskCauseDeadline)
 			continue
 		}
 		job, _, found, jobErr := h.store.GetJob(r.Context(), task.WorkspaceID, task.JobID)
 		if jobErr != nil || !found || job.State != state.JobRunning || job.Attempt != task.Attempt || job.LeaseExpiresAt == nil || !job.LeaseExpiresAt.After(now) {
+			cancelSubscription()
 			cause := state.HumanTaskCauseWorkerLost
 			if found && job.State != state.JobRunning {
 				cause = state.HumanTaskCauseJobCompleted
@@ -271,11 +281,38 @@ func (h *Handler) waitForHumanTask(w http.ResponseWriter, r *http.Request, task 
 			_ = h.store.CancelHeldHumanTasksForJob(r.Context(), task.WorkspaceID, task.JobID, cause)
 			continue
 		}
+		waitFor := humanTaskReconcileInterval
+		if result.Task.ExpiresAt != nil {
+			untilDeadline := time.Until(result.Task.ExpiresAt.UTC())
+			if untilDeadline < waitFor {
+				waitFor = untilDeadline
+			}
+		}
+		if waitFor <= 0 {
+			cancelSubscription()
+			continue
+		}
+		timer := time.NewTimer(waitFor)
 		select {
 		case <-r.Context().Done():
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			cancelSubscription()
 			return
-		case <-ticker.C:
+		case <-changed:
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+		case <-timer.C:
 		}
+		cancelSubscription()
 	}
 }
 

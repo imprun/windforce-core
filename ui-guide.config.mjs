@@ -122,7 +122,10 @@ export default {
         body: {
           name: "Release notifications",
           endpoint: receiverUrl,
-          event_types: ["windforce.release.published"],
+          event_types: [
+            "windforce.release.published",
+            "windforce.human_task.created",
+          ],
           app_keys: ["echo"],
           enabled: true,
         },

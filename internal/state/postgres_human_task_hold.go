@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/imprun/windforce-core/internal/contract"
+	controlevent "github.com/imprun/windforce-core/internal/event"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -92,6 +93,12 @@ FOR UPDATE
 		if err := insertEvent(ctx, tx, task.RunID, "human_task.created", eventPayload(run.CorrelationID, map[string]any{
 			"jobId": task.JobID, "taskId": task.ID, "mode": string(task.Mode), "kind": task.Kind,
 		})); err != nil {
+			return err
+		}
+		if err := insertHumanTaskLifecycleWebhookEvent(ctx, tx, task, controlevent.HumanTaskCreatedType, task.CreatedAt); err != nil {
+			return err
+		}
+		if err := notifyHumanTaskChangePostgresTx(ctx, tx, task.ID); err != nil {
 			return err
 		}
 		stored = task
@@ -218,6 +225,12 @@ SELECT `+humanTaskColumns+` FROM human_tasks WHERE workspace_id=$1 AND id=$2 FOR
 			if err := insertHumanTaskTerminalEvent(ctx, tx, task, "human_task.expired"); err != nil {
 				return err
 			}
+			if err := insertHumanTaskLifecycleWebhookEvent(ctx, tx, task, controlevent.HumanTaskExpiredType, now); err != nil {
+				return err
+			}
+			if err := notifyHumanTaskChangePostgresTx(ctx, tx, task.ID); err != nil {
+				return err
+			}
 			stored = task
 			return nil
 		}
@@ -246,6 +259,12 @@ WHERE id=$8
 		if err := insertEvent(ctx, tx, task.RunID, "human_task.decided", eventPayload(run.CorrelationID, map[string]any{
 			"jobId": task.JobID, "taskId": task.ID, "outcome": string(task.DecisionOutcome), "actor": task.DecidedBy,
 		})); err != nil {
+			return err
+		}
+		if err := insertHumanTaskLifecycleWebhookEvent(ctx, tx, task, controlevent.HumanTaskDecidedType, now); err != nil {
+			return err
+		}
+		if err := notifyHumanTaskChangePostgresTx(ctx, tx, task.ID); err != nil {
 			return err
 		}
 		stored = task
@@ -299,10 +318,75 @@ SELECT `+humanTaskColumns+` FROM human_tasks WHERE workspace_id=$1 AND id=$2 FOR
 		if err := insertHumanTaskTerminalEvent(ctx, tx, task, "human_task.expired"); err != nil {
 			return err
 		}
+		if err := insertHumanTaskLifecycleWebhookEvent(ctx, tx, task, controlevent.HumanTaskExpiredType, now); err != nil {
+			return err
+		}
+		if err := notifyHumanTaskChangePostgresTx(ctx, tx, task.ID); err != nil {
+			return err
+		}
 		stored = task
 		return nil
 	})
 	return humanTaskMetadata(stored), err
+}
+
+func (s *PostgresStore) ExpireDueHeldHumanTasks(ctx context.Context, now time.Time, limit int) (int64, error) {
+	if now.IsZero() {
+		now = time.Now().UTC()
+	} else {
+		now = now.UTC()
+	}
+	if limit <= 0 || limit > 1000 {
+		limit = 100
+	}
+	var expired int64
+	err := s.withTx(ctx, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `
+SELECT `+humanTaskColumns+`
+FROM human_tasks
+WHERE mode='hold' AND state='pending' AND expires_at IS NOT NULL AND expires_at <= $1
+ORDER BY expires_at, id
+FOR UPDATE SKIP LOCKED
+LIMIT $2
+`, now, limit)
+		if err != nil {
+			return err
+		}
+		tasks := make([]HumanTask, 0, limit)
+		for rows.Next() {
+			task, scanErr := scanHumanTask(rows)
+			if scanErr != nil {
+				rows.Close()
+				return scanErr
+			}
+			tasks = append(tasks, task)
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return err
+		}
+		for _, task := range tasks {
+			task.State = HumanTaskExpired
+			task.TerminalCause = HumanTaskCauseDeadline
+			task.UpdatedAt = now
+			if _, err := tx.Exec(ctx, `UPDATE human_tasks SET state=$1, terminal_cause=$2, updated_at=$3 WHERE id=$4`, string(task.State), task.TerminalCause, now, task.ID); err != nil {
+				return err
+			}
+			if err := insertHumanTaskTerminalEvent(ctx, tx, task, "human_task.expired"); err != nil {
+				return err
+			}
+			if err := insertHumanTaskLifecycleWebhookEvent(ctx, tx, task, controlevent.HumanTaskExpiredType, now); err != nil {
+				return err
+			}
+			if err := notifyHumanTaskChangePostgresTx(ctx, tx, task.ID); err != nil {
+				return err
+			}
+			expired++
+		}
+		return nil
+	})
+	return expired, err
 }
 
 func (s *PostgresStore) CancelHeldHumanTasksForJob(ctx context.Context, workspaceID string, jobID string, cause string) error {
@@ -346,6 +430,12 @@ FOR UPDATE
 		if err := insertHumanTaskTerminalEvent(ctx, tx, task, "human_task.canceled"); err != nil {
 			return err
 		}
+		if err := insertHumanTaskLifecycleWebhookEvent(ctx, tx, task, controlevent.HumanTaskCanceledType, now); err != nil {
+			return err
+		}
+		if err := notifyHumanTaskChangePostgresTx(ctx, tx, task.ID); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -386,6 +476,12 @@ func cancelHeldHumanTasksByQueryPostgresTx(ctx context.Context, tx pgx.Tx, predi
 			return err
 		}
 		if err := insertHumanTaskTerminalEvent(ctx, tx, task, "human_task.canceled"); err != nil {
+			return err
+		}
+		if err := insertHumanTaskLifecycleWebhookEvent(ctx, tx, task, controlevent.HumanTaskCanceledType, now); err != nil {
+			return err
+		}
+		if err := notifyHumanTaskChangePostgresTx(ctx, tx, task.ID); err != nil {
 			return err
 		}
 	}

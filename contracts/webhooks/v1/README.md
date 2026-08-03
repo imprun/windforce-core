@@ -1,6 +1,6 @@
 # Windforce Core webhook contract v1
 
-Windforce Core sends structured CloudEvents to a registered webhook endpoint after a release transaction commits. Receivers must verify the signature against the raw request body before decoding JSON.
+Windforce Core sends structured CloudEvents to a registered webhook endpoint after a subscribed release or HumanTask lifecycle transaction commits. Receivers must verify the signature against the raw request body before decoding JSON.
 
 ## Request
 
@@ -29,12 +29,12 @@ Use a constant-time signature comparison and reject timestamps outside a short r
 - The same event can be delivered more than once. Persist the event `id` as the side-effect idempotency key.
 - Do not use the delivery ID for business idempotency; it identifies Windforce delivery records and retries.
 
-`control-plane-event.schema.json` is the v1 schema. Publish, rollback, and test fixtures contain non-sensitive example values.
+`control-plane-event.schema.json` is the backward-compatible v1 schema filename for both control-plane and execution lifecycle Webhook events. Publish, rollback, HumanTask, and test fixtures contain non-sensitive example values. HumanTask events never include the form schema, private context, or decision value; a scoped integration reads task metadata and submits a decision through the HumanTask API.
 Receivers may reject unknown fields. A breaking payload change therefore requires a new contract directory and event type instead of changing v1 in place.
 
 ## Connector boundary
 
-A messenger connector verifies this contract, deduplicates event IDs durably, maps release publish and rollback events into its message format, and owns messenger credentials, rate limits, templates, and delivery state. Windforce Core does not store Slack or Telegram credentials and does not render provider-specific payloads.
+A connector verifies this contract, deduplicates event IDs durably, maps generic release or HumanTask lifecycle events into its message format, and owns messenger, RMQ, or vendor credentials, rate limits, templates, and delivery state. Windforce Core does not store provider credentials and does not render provider-specific payloads.
 
 For local contract checks, run the generic receiver from the repository root:
 

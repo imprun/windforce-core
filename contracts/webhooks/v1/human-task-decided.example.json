@@ -1,0 +1,24 @@
+{
+  "specversion": "1.0",
+  "id": "evt_humantaskdecided1",
+  "type": "windforce.human_task.decided",
+  "source": "/workspaces/acme/execution",
+  "subject": "human-tasks/human_loginotp1",
+  "time": "2026-08-04T12:00:30Z",
+  "datacontenttype": "application/json",
+  "data": {
+    "workspace": "acme",
+    "task_id": "human_loginotp1",
+    "run_id": "run_scrape1",
+    "job_id": "job_scrape1",
+    "attempt": 1,
+    "app_key": "portal-scraper",
+    "action_key": "login",
+    "correlation_id": "corr_20260804_1",
+    "mode": "hold",
+    "kind": "form",
+    "state": "decided",
+    "outcome": "submit",
+    "actor": "service:interaction-adapter"
+  }
+}

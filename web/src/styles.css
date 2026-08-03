@@ -3728,7 +3728,8 @@ textarea {
 
 .historyToggle input,
 .toggleField input,
-.appScopeOption input {
+.appScopeOption input,
+.webhookEventOption input {
   width: auto;
 }
 
@@ -3832,6 +3833,74 @@ textarea {
   color: var(--text-secondary);
   font-size: 12px;
   font-weight: 620;
+}
+
+.webhookEventPicker {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.webhookEventPicker > legend {
+  margin-bottom: 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 620;
+}
+
+.webhookEventList {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.webhookEventGroup {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+}
+
+.webhookEventGroup h3 {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-soft);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.webhookEventOption {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  min-width: 0;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.webhookEventOption:last-child {
+  border-bottom: none;
+}
+
+.webhookEventOption span,
+.webhookEventOption small {
+  display: block;
+  min-width: 0;
+}
+
+.webhookEventOption small {
+  overflow: hidden;
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.webhookEventOption:has(input:focus-visible) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
 }
 
 .appScopePicker {
@@ -4249,6 +4318,7 @@ textarea {
 
   .formGrid,
   .appScopeList,
+  .webhookEventList,
   .webhookConfigSummary,
   .sheetFacts,
   .jobLogToolbar {

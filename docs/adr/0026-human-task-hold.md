@@ -6,7 +6,7 @@ Accepted (2026-08-03). Supersedes the canonical HITL direction in ADR 0002; its 
 
 ## Context
 
-An Action may need a person to provide a value while a browser, mobile session, in-memory object graph, and the current call stack are still valuable. Restarting the Action from an application-defined checkpoint can scale to very long waits, but it forces every application SDK to invent checkpoint and replay semantics. Windforce Core also needs one generic control surface that does not embed a company's Interaction form, action code, RabbitMQ topology, or scraping SDK vocabulary.
+An Action may need a person to provide a value while a browser, mobile session, in-memory object graph, and the current call stack are still valuable. Restarting the Action from an application-defined checkpoint can scale to very long waits, but it forces every application SDK to invent checkpoint and replay semantics. Windforce Core also needs one generic control surface that does not embed an app-, domain-, or vendor-specific Interaction form, action code, RabbitMQ topology, or SDK vocabulary.
 
 ## Decision
 
@@ -43,7 +43,7 @@ Hold consumes one worker slot and keeps the application process alive. It is app
 
 ## Boundary
 
-Core defines only a generic form task and decision. An application SDK may translate company-specific Interaction forms or channels into this contract inside the App process or an external integration. Core does not understand Interaction, `ACTION`, `U0001`, RabbitMQ RPC, Playwright, Puppeteer, or scraping context versions.
+Core defines only a generic form task and decision. An application SDK may translate app-, domain-, or vendor-specific Interaction forms or channels into this contract inside the App process or an external integration. Core does not understand Interaction, action codes, RabbitMQ RPC, Playwright, Puppeteer, or SDK context versions.
 
 ## Consequences
 
@@ -51,4 +51,4 @@ Core defines only a generic form task and decision. An application SDK may trans
 - Local JSON and PostgreSQL backends provide the same task, encryption, idempotency, and audit semantics.
 - Server restart does not lose the durable task, while worker/process loss terminates hold because live state cannot be reconstructed.
 - Hold is intentionally not horizontally free: every pending task retains a worker slot.
-- Suspend/re-entry, Python and Go author helpers, attachments, and company-specific Interaction rendering remain follow-up work.
+- Suspend/re-entry, Python and Go author helpers, attachments, and application-specific Interaction rendering remain follow-up work.

@@ -12,11 +12,20 @@ import (
 
 	"github.com/imprun/windforce-core/internal/contract"
 	wfcrypto "github.com/imprun/windforce-core/internal/crypto"
+	controlevent "github.com/imprun/windforce-core/internal/event"
+	"github.com/imprun/windforce-core/internal/webhook"
 )
 
 func TestLocalStoreHeldHumanTaskLifecycleEncryptsSensitiveValues(t *testing.T) {
 	store := NewLocalStore(t.TempDir() + "/state.json")
 	store.ConfigureInputCrypto("human-task-test-secret", "")
+	if _, err := store.CreateSubscription(context.Background(), webhook.Subscription{
+		WorkspaceID: "default", Name: "HumanTask adapter", Endpoint: "https://adapter.example.test/events",
+		SigningSecret: "webhook-signing-secret", EventTypes: []string{controlevent.HumanTaskCreatedType, controlevent.HumanTaskDecidedType},
+		Enabled: true, CreatedBy: "operator:test",
+	}); err != nil {
+		t.Fatalf("CreateSubscription returned error: %v", err)
+	}
 	exerciseHeldHumanTaskLifecycle(t, store)
 
 	snapshot, err := store.Load(context.Background())
@@ -25,6 +34,19 @@ func TestLocalStoreHeldHumanTaskLifecycleEncryptsSensitiveValues(t *testing.T) {
 	}
 	if len(snapshot.HumanTasks) != 1 {
 		t.Fatalf("HumanTasks = %#v", snapshot.HumanTasks)
+	}
+	eventTypes := map[string]bool{}
+	for _, lifecycleEvent := range snapshot.ControlPlaneEvents {
+		eventTypes[lifecycleEvent.Type] = true
+		if bytes.Contains(lifecycleEvent.Data, []byte("callback-secret")) || bytes.Contains(lifecycleEvent.Data, []byte("otp-secret")) {
+			t.Fatalf("HumanTask lifecycle event contains a sensitive value: %s", lifecycleEvent.Data)
+		}
+	}
+	if !eventTypes[controlevent.HumanTaskCreatedType] || !eventTypes[controlevent.HumanTaskDecidedType] {
+		t.Fatalf("HumanTask lifecycle event types = %#v", eventTypes)
+	}
+	if len(snapshot.WebhookDeliveries) != 2 {
+		t.Fatalf("HumanTask lifecycle webhook deliveries = %#v", snapshot.WebhookDeliveries)
 	}
 	for _, task := range snapshot.HumanTasks {
 		if !wfcrypto.IsEnc(task.PrivateContextEncrypted) || !wfcrypto.IsEnc(task.DecisionEncrypted) {
@@ -45,6 +67,25 @@ func TestLocalStoreHeldHumanTaskDecisionAndExpiryRace(t *testing.T) {
 	exerciseHeldHumanTaskTerminalRace(t, store)
 }
 
+func TestLocalStoreHeldHumanTaskChangeSignal(t *testing.T) {
+	store := NewLocalStore(t.TempDir() + "/state.json")
+	store.ConfigureInputCrypto("human-task-signal-secret", "")
+	task := seedHeldHumanTask(t, store, "local-signal")
+	changed, cancel := store.SubscribeHumanTaskChanges(task.ID)
+	defer cancel()
+	if _, err := store.DecideHeldHumanTask(context.Background(), "default", task.ID, HumanTaskDecision{
+		Outcome: HumanTaskOutcomeSubmit, Value: json.RawMessage(`{}`), IdempotencyKey: "signal-decision",
+		Fingerprint: "signal-fingerprint", Actor: "operator:test",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-changed:
+	case <-time.After(time.Second):
+		t.Fatal("LocalStore HumanTask change did not wake the keyed subscriber")
+	}
+}
+
 func TestPostgresStoreHeldHumanTaskDecisionAndExpiryRace(t *testing.T) {
 	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
 	if dsn == "" {
@@ -59,7 +100,7 @@ func TestPostgresStoreHeldHumanTaskDecisionAndExpiryRace(t *testing.T) {
 	if err := store.Migrate(context.Background()); err != nil {
 		t.Fatalf("Migrate returned error: %v", err)
 	}
-	if _, err := store.pool.Exec(context.Background(), `TRUNCATE job_logs, run_events, human_tasks, jobs, runs RESTART IDENTITY CASCADE`); err != nil {
+	if _, err := store.pool.Exec(context.Background(), `TRUNCATE webhook_delivery, control_plane_event, job_logs, run_events, human_tasks, jobs, runs RESTART IDENTITY CASCADE`); err != nil {
 		t.Fatalf("TRUNCATE returned error: %v", err)
 	}
 	exerciseHeldHumanTaskTerminalRace(t, store)
@@ -79,10 +120,14 @@ func TestPostgresStoreHeldHumanTaskLifecycleEncryptsSensitiveValues(t *testing.T
 	if err := store.Migrate(context.Background()); err != nil {
 		t.Fatalf("Migrate returned error: %v", err)
 	}
-	if _, err := store.pool.Exec(context.Background(), `TRUNCATE job_logs, run_events, human_tasks, jobs, runs RESTART IDENTITY CASCADE`); err != nil {
+	if _, err := store.pool.Exec(context.Background(), `TRUNCATE webhook_delivery, control_plane_event, job_logs, run_events, human_tasks, jobs, runs RESTART IDENTITY CASCADE`); err != nil {
 		t.Fatalf("TRUNCATE returned error: %v", err)
 	}
 	exerciseHeldHumanTaskLifecycle(t, store)
+	var lifecycleEvents int
+	if err := store.pool.QueryRow(context.Background(), `SELECT count(*) FROM control_plane_event WHERE event_type LIKE 'windforce.human_task.%'`).Scan(&lifecycleEvents); err != nil || lifecycleEvents != 2 {
+		t.Fatalf("PostgreSQL HumanTask lifecycle events = %d, err=%v", lifecycleEvents, err)
+	}
 	var privateEncrypted []byte
 	var decisionEncrypted []byte
 	if err := store.pool.QueryRow(context.Background(), `SELECT private_context_encrypted, decision_encrypted FROM human_tasks LIMIT 1`).Scan(&privateEncrypted, &decisionEncrypted); err != nil {
@@ -93,6 +138,78 @@ func TestPostgresStoreHeldHumanTaskLifecycleEncryptsSensitiveValues(t *testing.T
 			t.Fatalf("PostgreSQL HumanTask value is not protected: %s", stored)
 		}
 	}
+}
+
+func TestPostgresStoreHeldHumanTaskNotificationAcrossInstances(t *testing.T) {
+	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("WINDFORCE_LITE_POSTGRES_TEST_DSN is not set")
+	}
+	writer, err := OpenPostgresStore(context.Background(), dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer writer.Close()
+	reader, err := OpenPostgresStore(context.Background(), dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	writer.ConfigureInputCrypto("human-task-notify-secret", "")
+	reader.ConfigureInputCrypto("human-task-notify-secret", "")
+	if err := writer.Migrate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writer.pool.Exec(context.Background(), `TRUNCATE webhook_delivery, control_plane_event, job_logs, run_events, human_tasks, jobs, runs RESTART IDENTITY CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+	task := seedHeldHumanTask(t, writer, "postgres-signal")
+	changed, cancel := reader.SubscribeHumanTaskChanges(task.ID)
+	defer cancel()
+	select {
+	case <-reader.listenerReady:
+	case <-time.After(5 * time.Second):
+		t.Fatal("PostgreSQL HumanTask listener did not become ready")
+	}
+	if _, err := writer.DecideHeldHumanTask(context.Background(), "default", task.ID, HumanTaskDecision{
+		Outcome: HumanTaskOutcomeSubmit, Value: json.RawMessage(`{}`), IdempotencyKey: "postgres-signal-decision",
+		Fingerprint: "postgres-signal-fingerprint", Actor: "operator:test",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-changed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("committed PostgreSQL HumanTask change did not wake another Core instance")
+	}
+}
+
+func seedHeldHumanTask(t *testing.T, store Store, key string) HumanTask {
+	t.Helper()
+	ctx := context.Background()
+	deployment := contract.Deployment{
+		Workspace: "default", App: "signal-app", Commit: "signal-commit",
+		Actions: map[string]contract.Action{"wait": {Action: "wait", Command: []string{"helper"}}},
+	}
+	run := NewRun("api", NewID("run"), deployment.App, "wait", deployment, json.RawMessage(`{}`))
+	job := NewActionJob(run, json.RawMessage(`{}`))
+	if err := store.CreateRunAndEnqueue(ctx, run, job); err != nil {
+		t.Fatal(err)
+	}
+	claimed, _, err := store.ClaimJob(ctx, "worker-"+key, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expiresAt := time.Now().UTC().Add(time.Minute)
+	task, _, err := store.CreateHeldHumanTask(ctx, HumanTask{
+		WorkspaceID: "default", RunID: run.ID, JobID: claimed.ID, Attempt: claimed.Attempt,
+		Key: key, RequestFingerprint: key + "-fingerprint", Mode: HumanTaskModeHold,
+		Kind: "form", Title: "Signal", Schema: json.RawMessage(`{"type":"object"}`), ExpiresAt: &expiresAt,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return task
 }
 
 func exerciseHeldHumanTaskLifecycle(t *testing.T, store Store) {

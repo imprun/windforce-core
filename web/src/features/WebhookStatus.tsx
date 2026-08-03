@@ -41,5 +41,17 @@ export function webhookEventLabel(type: string): string {
     return translate("webhook.event.releaseRolledBack");
   }
   if (type === "windforce.webhook.test") return translate("webhook.event.testDelivery");
+  if (type === "windforce.human_task.created") {
+    return translate("webhook.event.human_task_created");
+  }
+  if (type === "windforce.human_task.decided") {
+    return translate("webhook.event.human_task_decided");
+  }
+  if (type === "windforce.human_task.expired") {
+    return translate("webhook.event.human_task_expired");
+  }
+  if (type === "windforce.human_task.canceled") {
+    return translate("webhook.event.human_task_canceled");
+  }
   return type;
 }

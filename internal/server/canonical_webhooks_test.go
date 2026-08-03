@@ -194,6 +194,7 @@ func TestControlPlaneOpenAPIIncludesWebhookManagement(t *testing.T) {
 		`/api/w/{workspace}/webhook-deliveries/{deliveryId}/retry`,
 		`WebhookSubscriptionMutation`,
 		`WebhookDeliveryPage`,
+		`windforce.human_task.created`,
 		`Generated or rotated secret returned only in this response.`,
 	} {
 		if !strings.Contains(payload.String(), required) {

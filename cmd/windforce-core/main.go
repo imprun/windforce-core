@@ -132,6 +132,8 @@ func runServer(args []string, mode string) int {
 	jobFailureRetention := flags.Duration("job-failure-retention", envDays("WINDFORCE_LITE_JOB_FAILURE_RETENTION_DAYS", defaultJobFailureRetention), "how long failed/canceled/expired job records are kept; 0 keeps them forever")
 	jobStuckAfter := flags.Duration("job-stuck-after", envHours("WINDFORCE_LITE_JOB_STUCK_AFTER_HOURS", defaultJobStuckAfter), "expire queued/running jobs with no progress for this long; 0 disables")
 	jobRetentionInterval := flags.Duration("job-retention-interval", defaultJobRetentionInterval, "how often the retention pruner runs")
+	humanTaskDeadlineInterval := flags.Duration("human-task-deadline-interval", envParsedDuration("WINDFORCE_HUMAN_TASK_DEADLINE_INTERVAL", defaultHumanTaskDeadlineInterval), "how often due HumanTask holds are expired")
+	humanTaskDeadlineBatch := flags.Int("human-task-deadline-batch", envInt("WINDFORCE_HUMAN_TASK_DEADLINE_BATCH", defaultHumanTaskDeadlineBatch), "maximum HumanTask holds expired per deadline sweep batch")
 	publicAPIRPS := flags.Float64("public-api-rps", 100, "maximum public API requests per second per instance")
 	publicAPIBurst := flags.Int("public-api-burst", 100, "maximum public API request burst per instance")
 	webhookDispatcherFlags := bindWebhookDispatcherFlags(flags, "webhook-")
@@ -144,6 +146,10 @@ func runServer(args []string, mode string) int {
 	}
 	if *publicAPIRPS <= 0 || *publicAPIBurst <= 0 {
 		fmt.Fprintln(os.Stderr, "public API rate and burst must be greater than zero")
+		return 2
+	}
+	if *humanTaskDeadlineInterval <= 0 || *humanTaskDeadlineBatch <= 0 || *humanTaskDeadlineBatch > 1000 {
+		fmt.Fprintln(os.Stderr, "HumanTask deadline interval must be positive and batch must be between 1 and 1000")
 		return 2
 	}
 	runCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -284,6 +290,7 @@ func runServer(args []string, mode string) int {
 	if retention.Enabled() {
 		go runJobRetentionLoop(runCtx, stateStore, retention)
 	}
+	go runHumanTaskDeadlineLoop(runCtx, stateStore, *humanTaskDeadlineInterval, *humanTaskDeadlineBatch)
 
 	if standaloneMode {
 		runtimeBindings, err := worker.NewRuntimeBindings(*authSessionURL, *authSessionTokenEnv, *authSessionTokenFile, *authSessionTimeout)

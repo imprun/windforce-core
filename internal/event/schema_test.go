@@ -20,7 +20,7 @@ func TestPublicControlPlaneEventSchemaMetadata(t *testing.T) {
 		t.Fatalf("schema metadata = %#v", schema)
 	}
 	definitions, ok := schema["$defs"].(map[string]any)
-	if !ok || definitions["releasePublishedData"] == nil || definitions["webhookTestData"] == nil {
+	if !ok || definitions["releasePublishedData"] == nil || definitions["humanTaskLifecycleData"] == nil || definitions["webhookTestData"] == nil {
 		t.Fatalf("schema definitions = %#v", definitions)
 	}
 }
