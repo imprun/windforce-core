@@ -2,7 +2,13 @@
 
 ## Status
 
-Accepted
+Accepted for the runtime and storage model; external HITL control-plane contract deferred.
+
+## Current implementation note
+
+As of 2026-08-02, Core persists the `WAITING_HUMAN` and `RESUMING` states and has store-level resume operations, but it does not expose a canonical human-task discovery or resume HTTP API. The legacy `/v1` routes proposed by this ADR were deliberately removed during the canonical `/api/v1` cutover and are not supported compatibility routes. HITL must not be advertised as an external Core capability until [issue #191](https://github.com/imprun/windforce-core/issues/191) defines and implements workspace scoping, authorization, idempotency, resume-input protection, OpenAPI and backend parity.
+
+The remaining sections preserve the original accepted state/storage design and historical HITL target. They do not override the current implementation note.
 
 ## Context
 
@@ -337,7 +343,7 @@ runtime은 이 값을 최종 업무 output으로 취급하지 않는다. 대신:
 3. worker lease를 완료 처리한다.
 4. trigger wait 중이면 pending 상태를 반환한다.
 
-resume API:
+Historical resume API proposal, not implemented and no longer a valid route contract:
 
 ```text
 POST /v1/human-tasks/{humanTaskID}/resume
