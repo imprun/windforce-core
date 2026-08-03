@@ -649,6 +649,7 @@ func (s *LocalStore) CompleteJobSucceeded(ctx context.Context, lease Lease, resu
 		}
 		if job.CanceledBy != nil {
 			applyCanceledJob(snapshot, job, run, *job.CanceledBy, canceledReasonValue(job), cancelDuringExecutionMessage, now)
+			cancelHeldHumanTasksInSnapshot(snapshot, normalizedJobWorkspace("", job), job.ID, HumanTaskCauseRunCanceled, now)
 			return s.encryptStoredRunResult(ctx, normalizedJobWorkspace("", job), snapshot, run.ID)
 		}
 		storedResult, err := s.encryptJobResult(ctx, normalizedJobWorkspace("", job), result)
@@ -666,6 +667,7 @@ func (s *LocalStore) CompleteJobSucceeded(ctx context.Context, lease Lease, resu
 		run.UpdatedAt = now
 		snapshot.Jobs[job.ID] = job
 		snapshot.Runs[run.ID] = run
+		cancelHeldHumanTasksInSnapshot(snapshot, normalizedJobWorkspace("", job), job.ID, HumanTaskCauseJobCompleted, now)
 		appendEvent(snapshot, run.ID, "run_succeeded", eventPayload(run.CorrelationID, map[string]any{"jobId": job.ID}), now)
 		return nil
 	})
@@ -679,6 +681,7 @@ func (s *LocalStore) CompleteJobFailed(ctx context.Context, lease Lease, result 
 		}
 		if job.CanceledBy != nil {
 			applyCanceledJob(snapshot, job, run, *job.CanceledBy, canceledReasonValue(job), cancelDuringExecutionMessage, now)
+			cancelHeldHumanTasksInSnapshot(snapshot, normalizedJobWorkspace("", job), job.ID, HumanTaskCauseRunCanceled, now)
 			return s.encryptStoredRunResult(ctx, normalizedJobWorkspace("", job), snapshot, run.ID)
 		}
 		if result.Error == "" && result.ExitCode != 0 {
@@ -697,6 +700,7 @@ func (s *LocalStore) CompleteJobFailed(ctx context.Context, lease Lease, result 
 		run.UpdatedAt = now
 		snapshot.Jobs[job.ID] = job
 		snapshot.Runs[run.ID] = run
+		cancelHeldHumanTasksInSnapshot(snapshot, normalizedJobWorkspace("", job), job.ID, humanTaskTerminalCause(result), now)
 		appendEvent(snapshot, run.ID, "run_failed", eventPayload(run.CorrelationID, map[string]any{"jobId": job.ID, "error": result.Error, "exitCode": result.ExitCode}), now)
 		return nil
 	})
@@ -873,7 +877,12 @@ func (s *LocalStore) CancelRun(ctx context.Context, runID string, reason string)
 			if task.RunID != runID || task.State != HumanTaskPending {
 				continue
 			}
-			task.State = HumanTaskExpired
+			if task.Mode == HumanTaskModeHold {
+				cancelHeldTask(snapshot, &task, HumanTaskCauseRunCanceled, now)
+			} else {
+				task.State = HumanTaskExpired
+				task.UpdatedAt = now
+			}
 			snapshot.HumanTasks[id] = task
 		}
 		snapshot.Runs[runID] = run
@@ -1279,7 +1288,7 @@ func applyCanceledJob(snapshot *Snapshot, job Job, run Run, by string, reason st
 	job.CanceledReason = &reason
 	job.UpdatedAt = now
 	run.State = RunCanceled
-	run.Result = canceledJobResult(job, run, message)
+	run.Result = canceledJobResult(job, run, message, now)
 	run.Error = mustRaw(map[string]string{
 		"message":        message,
 		"canceledBy":     by,
@@ -1291,7 +1300,7 @@ func applyCanceledJob(snapshot *Snapshot, job Job, run Run, by string, reason st
 	appendEvent(snapshot, run.ID, "run_canceled", eventPayload(run.CorrelationID, map[string]any{"jobId": job.ID, "by": by, "reason": reason}), now)
 }
 
-func canceledJobResult(job Job, run Run, message string) *contract.JobResult {
+func canceledJobResult(job Job, run Run, message string, now time.Time) *contract.JobResult {
 	return &contract.JobResult{
 		JobID:    job.ID,
 		App:      run.App,
@@ -1299,6 +1308,9 @@ func canceledJobResult(job Job, run Run, message string) *contract.JobResult {
 		Output:   mustRaw(map[string]string{"name": "Canceled", "message": message}),
 		ExitCode: -1,
 		Error:    message,
+		Interruption: &contract.ExecutionInterruption{
+			Cause: contract.InterruptionRunCanceled, Source: "control_plane", Message: message, Observed: now,
+		},
 	}
 }
 
@@ -1382,6 +1394,7 @@ func (s *LocalStore) ExpireStuckJobs(ctx context.Context, stuckBefore time.Time)
 				job.CanceledReason = &reason
 				job.UpdatedAt = now
 				snapshot.Jobs[jobID] = job
+				cancelHeldHumanTasksInSnapshot(snapshot, normalizedJobWorkspace("", job), job.ID, HumanTaskCauseWorkerLost, now)
 			}
 			expired++
 		}

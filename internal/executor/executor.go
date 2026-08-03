@@ -259,6 +259,46 @@ async function api(method, path, body) {
   })
 }
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+async function waitForHuman(request) {
+  const timeoutMs = Number(request && request.timeoutMs) || 120000
+  const taskKey = String((request && request.key) || crypto.randomUUID())
+  const deadline = Date.now() + timeoutMs
+  let retryMs = 200
+  const body = {
+    key: taskKey,
+    kind: (request && request.kind) || "form",
+    title: String((request && request.title) || ""),
+    description: request && request.description,
+    input_schema: (request && request.inputSchema) || { type: "object" },
+    presentation: request && request.presentation,
+    private_context: request && request.privateContext,
+    timeout_ms: timeoutMs,
+  }
+  for (;;) {
+    try {
+      const response = await api("POST", "/human-tasks/wait", body)
+      let payload = {}
+      try { payload = await response.json() } catch { payload = {} }
+      if (response.ok) {
+        return { taskId: payload.task_id, outcome: payload.outcome, value: payload.value }
+      }
+      if (response.status !== 502 && response.status !== 503 && response.status !== 504) {
+        const error = new Error(String(payload.error || "HumanTask wait failed") + " (" + response.status + ")")
+        error.code = payload.code || "human_task_wait_failed"
+        error.taskId = payload.task_id
+        throw error
+      }
+    } catch (error) {
+      if (error && (error.code || error.taskId)) throw error
+      if (Date.now() >= deadline + 10000) throw error
+    }
+    await sleep(retryMs)
+    retryMs = Math.min(retryMs * 2, 2000)
+  }
+}
+
 const ctx = {
   input,
   trigger: {
@@ -310,6 +350,9 @@ const ctx = {
       if (typeof url === "string" && url.startsWith(BASE)) headers["Authorization"] = "Bearer " + TOKEN
       return fetch(url, { ...init, headers })
     },
+  },
+  human: {
+    wait: waitForHuman,
   },
   approval: {
     async getResumeUrls(approver) {

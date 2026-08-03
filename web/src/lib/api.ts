@@ -632,6 +632,49 @@ export type AuditEventQuery = {
   limit?: number;
 };
 
+export type HumanTaskState = "pending" | "decided" | "expired" | "canceled";
+
+export type HumanTask = {
+  id: string;
+  workspace_id: string;
+  run_id: string;
+  job_id: string;
+  attempt: number;
+  app?: string;
+  action?: string;
+  key: string;
+  mode: "hold";
+  kind: "form";
+  state: HumanTaskState;
+  title: string;
+  description?: string;
+  input_schema?: JSONSchema;
+  presentation?: Record<string, unknown>;
+  has_private_context: boolean;
+  decision_outcome?: "submit" | "cancel";
+  decided_by?: string;
+  terminal_cause?: string;
+  created_at: string;
+  updated_at: string;
+  decided_at?: string;
+  expires_at?: string;
+};
+
+export type JSONSchema = {
+  type?: string;
+  title?: string;
+  description?: string;
+  default?: unknown;
+  enum?: unknown[];
+  properties?: Record<string, JSONSchema>;
+  required?: string[];
+};
+
+export type HumanTaskDecisionPayload = {
+  outcome: "submit" | "cancel";
+  value?: Record<string, unknown>;
+};
+
 export type RegisterSourcePayload = {
   name: string;
   repo_url: string;
@@ -718,6 +761,7 @@ export function setActorHeaders(headers: Headers, actor: string) {
 type RequestOptions = {
   method?: string;
   body?: unknown;
+  headers?: Record<string, string>;
 };
 
 export class WindforceApi {
@@ -909,6 +953,28 @@ export class WindforceApi {
 
   job(jobID: string): Promise<JobStatus> {
     return this.request(`/jobs/${encodeURIComponent(jobID)}`);
+  }
+
+  humanTasks(state = "", limit = 100): Promise<{ items: HumanTask[] }> {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (state) params.set("state", state);
+    return this.request(`/human-tasks?${params.toString()}`);
+  }
+
+  humanTask(id: string): Promise<HumanTask> {
+    return this.request(`/human-tasks/${encodeURIComponent(id)}`);
+  }
+
+  decideHumanTask(
+    id: string,
+    payload: HumanTaskDecisionPayload,
+    idempotencyKey: string = crypto.randomUUID(),
+  ): Promise<{ task: HumanTask; replayed: boolean }> {
+    return this.request(`/human-tasks/${encodeURIComponent(id)}/decision`, {
+      method: "POST",
+      body: payload,
+      headers: { "idempotency-key": idempotencyKey },
+    });
   }
 
   async streamJobLogs(
@@ -1215,6 +1281,9 @@ export class WindforceApi {
     headers.set("accept", "application/json");
     if (this.settings.token) headers.set("authorization", `Bearer ${this.settings.token}`);
     setActorHeaders(headers, this.settings.actor);
+    for (const [name, value] of Object.entries(options.headers || {})) {
+      headers.set(name, value);
+    }
     let body: BodyInit | undefined;
     if (options.body !== undefined) {
       headers.set("content-type", "application/json");

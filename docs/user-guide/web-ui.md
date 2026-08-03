@@ -223,6 +223,28 @@ Dark mode preserves clear separation between Trigger kinds, enablement, delivery
 2. Open an App and choose Triggers.
 3. Confirm status text and icons remain distinguishable without relying on color alone.
 
+## Resolve a HumanTask hold
+
+The workspace queue shows generic requests that keep their original Action process and browser session alive while waiting for a decision.
+
+![Resolve a HumanTask hold](../assets/ui/human-tasks.png)
+
+1. Open Human tasks from the workspace sidebar.
+2. Review the request, target Action, state, and deadline without exposing private context.
+3. Open Resolve, fill the JSON Schema form, and submit one idempotent decision.
+4. Use Cancel task only when the waiting Action should receive a canceled HumanTask outcome.
+
+## Submit a HumanTask decision
+
+The generic decision dialog renders supported JSON Schema fields while keeping private context hidden.
+
+![Submit a HumanTask decision](../assets/ui/human-task-decision.png)
+
+1. Choose Resolve on a pending HumanTask.
+2. Confirm the target Action and deadline before entering values.
+3. Fill the schema-driven form; private context remains a presence indicator only.
+4. Submit the decision or use the separately confirmed Cancel task action.
+
 ## Follow one Job's logs
 
 The focused inspector follows masked stdout and stderr for a known Job ID while Monitoring remains aggregate-first.

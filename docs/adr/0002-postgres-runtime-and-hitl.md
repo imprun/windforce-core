@@ -2,11 +2,11 @@
 
 ## Status
 
-Accepted for the runtime and storage model; external HITL control-plane contract deferred.
+Accepted for the runtime and storage model. The historical suspend/re-entry HITL direction is superseded by ADR 0026 for the canonical Phase 1 HumanTask hold contract.
 
 ## Current implementation note
 
-As of 2026-08-02, Core persists the `WAITING_HUMAN` and `RESUMING` states and has store-level resume operations, but it does not expose a canonical human-task discovery or resume HTTP API. The legacy `/v1` routes proposed by this ADR were deliberately removed during the canonical `/api/v1` cutover and are not supported compatibility routes. HITL must not be advertised as an external Core capability until [issue #191](https://github.com/imprun/windforce-core/issues/191) defines and implements workspace scoping, authorization, idempotency, resume-input protection, OpenAPI and backend parity.
+As of 2026-08-03, Core exposes the workspace-scoped, authenticated, idempotent HumanTask **hold** API defined by [ADR 0026](0026-human-task-hold.md). The original Bun process and lease stay running and the decision returns to the same `await`. The `WAITING_HUMAN` and `RESUMING` state described below remains historical suspend/re-entry scaffolding and is not the Phase 1 Author API. The legacy `/v1` routes proposed by this ADR were deliberately removed during the canonical API cutover and remain unsupported.
 
 The remaining sections preserve the original accepted state/storage design and historical HITL target. They do not override the current implementation note.
 

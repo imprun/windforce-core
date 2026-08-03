@@ -101,6 +101,8 @@ func addServicePrincipalControlPlaneSchemas(schemas map[string]any) {
 				"runs:cancel:own",
 				"runs:cancel:any",
 				"apps:read",
+				"human_tasks:read",
+				"human_tasks:decide",
 			),
 		}
 	}

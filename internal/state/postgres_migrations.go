@@ -66,14 +66,31 @@ CREATE TABLE IF NOT EXISTS jobs (
 
 CREATE TABLE IF NOT EXISTS human_tasks (
     id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL DEFAULT 'default',
     run_id TEXT NOT NULL REFERENCES runs(id),
+    job_id TEXT NOT NULL DEFAULT '',
+    attempt INTEGER NOT NULL DEFAULT 0,
+    task_key TEXT NOT NULL DEFAULT '',
+    request_fingerprint TEXT NOT NULL DEFAULT '',
+    mode TEXT NOT NULL DEFAULT 'suspend',
+    kind TEXT NOT NULL DEFAULT 'form',
     state TEXT NOT NULL,
     title TEXT NOT NULL,
     description TEXT,
     schema JSONB,
+    presentation JSONB,
+    private_context_encrypted JSONB,
+    decision_outcome TEXT NOT NULL DEFAULT '',
+    decision_encrypted JSONB,
+    decision_idempotency_key TEXT NOT NULL DEFAULT '',
+    decision_fingerprint TEXT NOT NULL DEFAULT '',
+    decided_by TEXT NOT NULL DEFAULT '',
+    terminal_cause TEXT NOT NULL DEFAULT '',
     resume_input JSONB,
     token_hash TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    decided_at TIMESTAMPTZ,
     completed_at TIMESTAMPTZ,
     expires_at TIMESTAMPTZ
 );
@@ -560,6 +577,23 @@ ALTER TABLE jobs ADD COLUMN IF NOT EXISTS canceled_by TEXT;
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS canceled_reason TEXT;
 ALTER TABLE job_logs ADD COLUMN IF NOT EXISTS workspace_id TEXT NOT NULL DEFAULT 'default';
 ALTER TABLE workspace_key ADD COLUMN IF NOT EXISTS kek_version INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE human_tasks ADD COLUMN IF NOT EXISTS workspace_id TEXT NOT NULL DEFAULT 'default';
+ALTER TABLE human_tasks ADD COLUMN IF NOT EXISTS job_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE human_tasks ADD COLUMN IF NOT EXISTS attempt INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE human_tasks ADD COLUMN IF NOT EXISTS task_key TEXT NOT NULL DEFAULT '';
+ALTER TABLE human_tasks ADD COLUMN IF NOT EXISTS request_fingerprint TEXT NOT NULL DEFAULT '';
+ALTER TABLE human_tasks ADD COLUMN IF NOT EXISTS mode TEXT NOT NULL DEFAULT 'suspend';
+ALTER TABLE human_tasks ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'form';
+ALTER TABLE human_tasks ADD COLUMN IF NOT EXISTS presentation JSONB;
+ALTER TABLE human_tasks ADD COLUMN IF NOT EXISTS private_context_encrypted JSONB;
+ALTER TABLE human_tasks ADD COLUMN IF NOT EXISTS decision_outcome TEXT NOT NULL DEFAULT '';
+ALTER TABLE human_tasks ADD COLUMN IF NOT EXISTS decision_encrypted JSONB;
+ALTER TABLE human_tasks ADD COLUMN IF NOT EXISTS decision_idempotency_key TEXT NOT NULL DEFAULT '';
+ALTER TABLE human_tasks ADD COLUMN IF NOT EXISTS decision_fingerprint TEXT NOT NULL DEFAULT '';
+ALTER TABLE human_tasks ADD COLUMN IF NOT EXISTS decided_by TEXT NOT NULL DEFAULT '';
+ALTER TABLE human_tasks ADD COLUMN IF NOT EXISTS terminal_cause TEXT NOT NULL DEFAULT '';
+ALTER TABLE human_tasks ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+ALTER TABLE human_tasks ADD COLUMN IF NOT EXISTS decided_at TIMESTAMPTZ;
 
 CREATE TABLE IF NOT EXISTS queue_snapshot_state (
     singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton),
@@ -608,6 +642,13 @@ CREATE INDEX IF NOT EXISTS jobs_lease_idx
 CREATE INDEX IF NOT EXISTS human_tasks_pending_idx
     ON human_tasks (created_at)
     WHERE state = 'pending';
+
+CREATE UNIQUE INDEX IF NOT EXISTS human_tasks_hold_key_idx
+    ON human_tasks (workspace_id, job_id, attempt, task_key)
+    WHERE mode = 'hold';
+
+CREATE INDEX IF NOT EXISTS human_tasks_workspace_idx
+    ON human_tasks (workspace_id, created_at DESC, id DESC);
 
 CREATE INDEX IF NOT EXISTS runs_correlation_id_idx
     ON runs (correlation_id)

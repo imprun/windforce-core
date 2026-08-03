@@ -309,6 +309,14 @@ func (r *Runner) runEntrypoint(ctx context.Context, req RunRequest, sourceDir st
 		Stdout:     result.Logs,
 		DurationMs: result.DurationMs,
 	}
+	if result.TimedOut {
+		jobResult.Interruption = &contract.ExecutionInterruption{
+			Cause:    contract.InterruptionActionTimeout,
+			Source:   "runtime",
+			Message:  "action execution deadline exceeded",
+			Observed: time.Now().UTC(),
+		}
+	}
 	if err != nil {
 		jobResult.Error = err.Error()
 		return jobResult, err

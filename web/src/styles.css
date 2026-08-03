@@ -3280,6 +3280,54 @@ textarea {
   }
 }
 
+/* ---------- HumanTask hold ---------- */
+
+.humanTaskTable {
+  min-width: 52rem;
+  table-layout: fixed;
+}
+
+.humanTaskTable th:nth-child(1) {
+  width: 29%;
+}
+
+.humanTaskTable th:nth-child(2) {
+  width: 22%;
+}
+
+.humanTaskTable th:nth-child(3) {
+  width: 20%;
+}
+
+.humanTaskTable th:nth-child(4) {
+  width: 17%;
+}
+
+.humanTaskTable .badge + .cellSub {
+  margin-top: var(--space-2);
+}
+
+.humanTaskMeta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--surface-2);
+}
+
+.humanTaskMeta .mono {
+  margin-right: auto;
+}
+
+.humanTaskForm,
+.humanTaskFields {
+  display: grid;
+  gap: var(--space-4);
+}
+
 @media (max-width: 640px) {
   .instanceAdminBar {
     align-items: stretch;

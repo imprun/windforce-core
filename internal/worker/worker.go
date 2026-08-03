@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/imprun/windforce-core/internal/contract"
@@ -89,8 +90,8 @@ func (p *Processor) processOne(claimCtx context.Context, executionCtx context.Co
 		runCtx = provider.WithExecutionContext(runCtx, job, lease)
 	}
 	completeCtx := context.WithoutCancel(executionCtx)
-	stopHeartbeat := p.startHeartbeat(lease, cancel)
-	defer stopHeartbeat()
+	heartbeat := p.startHeartbeat(lease, cancel)
+	defer heartbeat.stop()
 	input, err := p.Store.DecryptInput(runCtx, workspaceID, job.Payload.Input)
 	if err != nil {
 		outcome = "failed"
@@ -197,6 +198,17 @@ func (p *Processor) processOne(claimCtx context.Context, executionCtx context.Co
 		LogFlushInterval: p.LogFlushInterval,
 		LogCapBytes:      p.LogCapBytes,
 	})
+	if result.Interruption == nil {
+		result.Interruption = heartbeat.interruptionCause()
+	}
+	if result.Interruption == nil && executionCtx.Err() != nil {
+		result.Interruption = &contract.ExecutionInterruption{
+			Cause:    contract.InterruptionWorkerShutdown,
+			Source:   "worker",
+			Message:  "worker execution context was canceled",
+			Observed: time.Now().UTC(),
+		}
+	}
 	maskedLogs.Flush()
 	result = maskJobResult(result, secretValues)
 	logJobExecution(p.LogJobPayloads, job.ID, job.Payload.App, job.Payload.Action, result, secretValues)
@@ -271,15 +283,50 @@ func maskJobResult(result contract.JobResult, secrets []string) contract.JobResu
 	return result
 }
 
-func (p *Processor) startHeartbeat(lease state.Lease, cancel context.CancelFunc) func() {
+type heartbeatMonitor struct {
+	done chan struct{}
+	once sync.Once
+	mu   sync.RWMutex
+	why  *contract.ExecutionInterruption
+}
+
+func (m *heartbeatMonitor) stop() {
+	m.once.Do(func() { close(m.done) })
+}
+
+func (m *heartbeatMonitor) interrupt(cause string, message string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.why != nil {
+		return
+	}
+	m.why = &contract.ExecutionInterruption{
+		Cause:    cause,
+		Source:   "worker_heartbeat",
+		Message:  message,
+		Observed: time.Now().UTC(),
+	}
+}
+
+func (m *heartbeatMonitor) interruptionCause() *contract.ExecutionInterruption {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.why == nil {
+		return nil
+	}
+	cloned := *m.why
+	return &cloned
+}
+
+func (p *Processor) startHeartbeat(lease state.Lease, cancel context.CancelFunc) *heartbeatMonitor {
 	interval := p.effectiveHeartbeatInterval()
-	done := make(chan struct{})
+	monitor := &heartbeatMonitor{done: make(chan struct{})}
 	go func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
 			select {
-			case <-done:
+			case <-monitor.done:
 				return
 			case <-ticker.C:
 				heartbeat, err := p.Store.HeartbeatJob(context.Background(), lease, p.LeaseTTL)
@@ -287,20 +334,24 @@ func (p *Processor) startHeartbeat(lease state.Lease, cancel context.CancelFunc)
 					log.Printf("worker heartbeat job %s: %v", lease.JobID, err)
 					continue
 				}
-				if !heartbeat.StillOwned {
+				if heartbeat.CanceledBy != nil {
+					message := "run canceled by " + *heartbeat.CanceledBy
+					if heartbeat.CanceledReason != nil && *heartbeat.CanceledReason != "" {
+						message = *heartbeat.CanceledReason
+					}
+					monitor.interrupt(contract.InterruptionRunCanceled, message)
 					cancel()
 					return
 				}
-				if heartbeat.CanceledBy != nil {
+				if !heartbeat.StillOwned {
+					monitor.interrupt(contract.InterruptionLeaseLost, "job lease is no longer owned by this worker")
 					cancel()
 					return
 				}
 			}
 		}
 	}()
-	return func() {
-		close(done)
-	}
+	return monitor
 }
 
 func (p *Processor) effectiveHeartbeatInterval() time.Duration {

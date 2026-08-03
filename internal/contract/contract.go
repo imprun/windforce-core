@@ -279,6 +279,25 @@ type JobResult struct {
 	Stderr     string          `json:"stderr,omitempty"`
 	DurationMs int64           `json:"durationMs"`
 	Error      string          `json:"error,omitempty"`
+	// Interruption identifies infrastructure or operator control that stopped
+	// execution. Action failures remain represented by Error and ExitCode.
+	Interruption *ExecutionInterruption `json:"interruption,omitempty"`
+}
+
+const (
+	InterruptionActionTimeout  = "action_timeout"
+	InterruptionRunCanceled    = "run_canceled"
+	InterruptionLeaseLost      = "lease_lost"
+	InterruptionWorkerShutdown = "worker_shutdown"
+)
+
+// ExecutionInterruption is a stable, non-secret explanation for why Core
+// stopped an Action. It is safe to persist with the public Run result.
+type ExecutionInterruption struct {
+	Cause    string    `json:"cause"`
+	Source   string    `json:"source"`
+	Message  string    `json:"message,omitempty"`
+	Observed time.Time `json:"observedAt"`
 }
 
 func (a Action) AdapterType() string {

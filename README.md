@@ -360,7 +360,7 @@ routes. Identity is derived from the bearer token; request bodies cannot assert
 `X-WF-Run-Id`, never Job ID. See [Invocation API](docs/concepts/public-api.md)
 for credential, ownership, input-merging, and response semantics.
 
-The core script context exposes the implemented basic helpers: `ctx.variables`, `ctx.resources`, `ctx.state`, `ctx.http`, `ctx.logger`, and the run identity fields. Full Windforce flow approval URL minting (`ctx.approval.getResumeUrls` / `POST /flow/resume-urls`) depends on the full flow-run/step model and is intentionally not part of the core basic control plane. Core can persist the internal `WAITING_HUMAN` state, but it does not currently expose a canonical human-task discovery or resume API. HITL is not a supported external capability and is deferred in [issue #191](https://github.com/imprun/windforce-core/issues/191).
+The core script context exposes `ctx.variables`, `ctx.resources`, `ctx.state`, `ctx.http`, `ctx.logger`, `ctx.human`, and the run identity fields. TypeScript Actions can use `await ctx.human.wait(...)` to keep the original process and browser session alive while a workspace operator supplies a generic decision. Full flow approval URL minting (`ctx.approval.getResumeUrls` / `POST /flow/resume-urls`) remains a separate workflow model. See [HumanTask hold](docs/concepts/human-task-hold.md) and [ADR 0026](docs/adr/0026-human-task-hold.md).
 
 `git_sources` responses follow the canonical control-plane shape: `id` is the
 numeric source identifier used by `{gitSourceId}` routes, and `name` is the
@@ -556,7 +556,7 @@ Windforce Core separates four public or runtime boundaries from one internal exe
 - Worker Plane owns registration, claim, lease, logs and completion through `/worker/v1`.
 - The internal Execution layer owns AdmissionService, Runs, Jobs, the PostgreSQL queue and runtime execution state.
 
-Run admission resolves and pins the active release before a Job is enqueued. Workers poll the queue, fetch the pinned execution bundle, validate its preparation fingerprint, and execute it. The state layer can pause a Run in `WAITING_HUMAN`, but the external discovery and resume contract is deferred; this internal state support alone does not constitute a supported HITL feature.
+Run admission resolves and pins the active release before a Job is enqueued. Workers poll the queue, fetch the pinned execution bundle, validate its preparation fingerprint, and execute it. A TypeScript Action may create a durable `HumanTask` hold while the Job and lease remain running; the workspace control API can list and decide that task, and the decision returns to the same Action process. Legacy `WAITING_HUMAN`/resume state remains suspend scaffolding rather than the canonical Phase 1 API.
 
 Release publication prepares source by workspace/git-source/commit, installs
 dependencies, injects the matching SDK, and compiles when required. A `.ready`
@@ -616,7 +616,7 @@ and `--job-stuck-after` (or `WINDFORCE_LITE_JOB_SUCCESS_RETENTION_DAYS`,
 and the audit trail live in the catalog and are not affected. See
 [ADR 0007](docs/adr/0007-job-storage-retention.md).
 
-The local backend stores run, job, event, and human-task state in a JSON file for development and smoke checks. The PostgreSQL backend stores production run, job, event, and human-task state. Redis is optional for notification/cache only. The presence of this state model does not expose a supported HITL API. See [ADR 0002](docs/adr/0002-postgres-runtime-and-hitl.md) and [issue #191](https://github.com/imprun/windforce-core/issues/191).
+The local backend stores run, job, event, and HumanTask state in a JSON file for development and smoke checks. The PostgreSQL backend stores the production equivalents with row-locked terminal decisions. Private task context and decision values are encrypted at rest. Redis is optional for notification/cache only. See [ADR 0002](docs/adr/0002-postgres-runtime-and-hitl.md) for the storage history and [ADR 0026](docs/adr/0026-human-task-hold.md) for the current hold contract.
 
 ## License
 

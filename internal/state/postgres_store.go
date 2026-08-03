@@ -29,8 +29,11 @@ const jobColumns = `
 `
 
 const humanTaskColumns = `
-	id, run_id, state, title, description, schema, resume_input,
-	created_at, completed_at, expires_at
+	id, workspace_id, run_id, job_id, attempt, task_key, request_fingerprint,
+	mode, kind, state, title, description, schema, presentation,
+	private_context_encrypted, decision_outcome, decision_encrypted,
+	decision_idempotency_key, decision_fingerprint, decided_by, terminal_cause,
+	resume_input, created_at, updated_at, decided_at, completed_at, expires_at
 `
 
 const postgresClaimCandidateBatchSize = 64
@@ -667,6 +670,9 @@ func (s *PostgresStore) CompleteJobSucceeded(ctx context.Context, lease Lease, r
 		if err := updateJobComplete(ctx, tx, job.ID, JobSucceeded, now); err != nil {
 			return err
 		}
+		if err := cancelHeldHumanTasksPostgresTx(ctx, tx, normalizedJobWorkspace("", job), job.ID, HumanTaskCauseJobCompleted, now); err != nil {
+			return err
+		}
 		if _, err := tx.Exec(ctx, `
 UPDATE runs
 SET state=$1, output=$2, result=$3, error=NULL, task_id=NULL, updated_at=$4
@@ -696,6 +702,9 @@ func (s *PostgresStore) CompleteJobFailed(ctx context.Context, lease Lease, resu
 			return err
 		}
 		if err := updateJobComplete(ctx, tx, job.ID, JobFailed, now); err != nil {
+			return err
+		}
+		if err := cancelHeldHumanTasksPostgresTx(ctx, tx, normalizedJobWorkspace("", job), job.ID, humanTaskTerminalCause(result), now); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `
@@ -927,9 +936,12 @@ WHERE run_id=$3 AND state IN ($4, $5)
 		}
 		if _, err := tx.Exec(ctx, `
 UPDATE human_tasks
-SET state=$1
-WHERE run_id=$2 AND state=$3
-`, string(HumanTaskExpired), run.ID, string(HumanTaskPending)); err != nil {
+SET state=$1, updated_at=$4
+WHERE run_id=$2 AND state=$3 AND mode <> 'hold'
+`, string(HumanTaskExpired), run.ID, string(HumanTaskPending), now); err != nil {
+			return err
+		}
+		if err := cancelHeldHumanTasksForRunPostgresTx(ctx, tx, run.ID, HumanTaskCauseRunCanceled, now); err != nil {
 			return err
 		}
 		if err := insertEvent(ctx, tx, run.ID, "run_canceled", eventPayload(run.CorrelationID, map[string]any{"reason": reason})); err != nil {
@@ -1083,6 +1095,9 @@ UPDATE jobs SET state = 'failed',
 WHERE run_id IN (SELECT id FROM stuck_runs)
   AND state NOT IN ('succeeded', 'failed')
 `, stuckBefore); err != nil {
+			return err
+		}
+		if err := cancelHeldHumanTasksForStuckRunsPostgresTx(ctx, tx, HumanTaskCauseWorkerLost, time.Now().UTC()); err != nil {
 			return err
 		}
 		runs, err := tx.Exec(ctx, `

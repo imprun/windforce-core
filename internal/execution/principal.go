@@ -19,12 +19,14 @@ const (
 type Scope string
 
 const (
-	ScopeRunsCreate    Scope = "runs:create"
-	ScopeRunsReadOwn   Scope = "runs:read:own"
-	ScopeRunsReadAny   Scope = "runs:read:any"
-	ScopeRunsCancelOwn Scope = "runs:cancel:own"
-	ScopeRunsCancelAny Scope = "runs:cancel:any"
-	ScopeAppsRead      Scope = "apps:read"
+	ScopeRunsCreate       Scope = "runs:create"
+	ScopeRunsReadOwn      Scope = "runs:read:own"
+	ScopeRunsReadAny      Scope = "runs:read:any"
+	ScopeRunsCancelOwn    Scope = "runs:cancel:own"
+	ScopeRunsCancelAny    Scope = "runs:cancel:any"
+	ScopeAppsRead         Scope = "apps:read"
+	ScopeHumanTasksRead   Scope = "human_tasks:read"
+	ScopeHumanTasksDecide Scope = "human_tasks:decide"
 )
 
 var ValidScopes = []Scope{
@@ -34,6 +36,8 @@ var ValidScopes = []Scope{
 	ScopeRunsCancelOwn,
 	ScopeRunsCancelAny,
 	ScopeAppsRead,
+	ScopeHumanTasksRead,
+	ScopeHumanTasksDecide,
 }
 
 type Principal struct {

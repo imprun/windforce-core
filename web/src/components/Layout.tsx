@@ -2,6 +2,7 @@ import {
   Activity,
   AppWindow,
   ChevronDown,
+  CircleHelp,
   CircleUserRound,
   ContactRound,
   Eraser,
@@ -51,6 +52,12 @@ export const primaryNavItems = [
     labelKey: "navigation.monitoring" as TranslationKey,
     icon: Activity,
     match: (path: string) => path.startsWith("/monitoring") || path.startsWith("/jobs"),
+  },
+  {
+    to: "/human-tasks",
+    labelKey: "navigation.humanTasks" as TranslationKey,
+    icon: CircleHelp,
+    match: (path: string) => path.startsWith("/human-tasks"),
   },
   {
     to: "/audit",

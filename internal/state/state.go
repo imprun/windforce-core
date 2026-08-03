@@ -64,8 +64,24 @@ type HumanTaskState string
 
 const (
 	HumanTaskPending   HumanTaskState = "pending"
+	HumanTaskDecided   HumanTaskState = "decided"
 	HumanTaskCompleted HumanTaskState = "completed"
 	HumanTaskExpired   HumanTaskState = "expired"
+	HumanTaskCanceled  HumanTaskState = "canceled"
+)
+
+type HumanTaskMode string
+
+const (
+	HumanTaskModeHold    HumanTaskMode = "hold"
+	HumanTaskModeSuspend HumanTaskMode = "suspend"
+)
+
+type HumanTaskOutcome string
+
+const (
+	HumanTaskOutcomeSubmit HumanTaskOutcome = "submit"
+	HumanTaskOutcomeCancel HumanTaskOutcome = "cancel"
 )
 
 var (
@@ -184,16 +200,58 @@ type HeartbeatResult struct {
 }
 
 type HumanTask struct {
-	ID          string          `json:"id"`
-	RunID       string          `json:"runId"`
-	State       HumanTaskState  `json:"state"`
-	Title       string          `json:"title"`
-	Description string          `json:"description,omitempty"`
-	Schema      json.RawMessage `json:"schema,omitempty"`
-	ResumeInput json.RawMessage `json:"resumeInput,omitempty"`
-	CreatedAt   time.Time       `json:"createdAt"`
-	CompletedAt *time.Time      `json:"completedAt,omitempty"`
-	ExpiresAt   *time.Time      `json:"expiresAt,omitempty"`
+	ID                      string           `json:"id"`
+	WorkspaceID             string           `json:"workspaceId,omitempty"`
+	RunID                   string           `json:"runId"`
+	JobID                   string           `json:"jobId,omitempty"`
+	Attempt                 int              `json:"attempt,omitempty"`
+	Key                     string           `json:"key,omitempty"`
+	RequestFingerprint      string           `json:"requestFingerprint,omitempty"`
+	Mode                    HumanTaskMode    `json:"mode,omitempty"`
+	Kind                    string           `json:"kind,omitempty"`
+	State                   HumanTaskState   `json:"state"`
+	Title                   string           `json:"title"`
+	Description             string           `json:"description,omitempty"`
+	Schema                  json.RawMessage  `json:"schema,omitempty"`
+	Presentation            json.RawMessage  `json:"presentation,omitempty"`
+	PrivateContext          json.RawMessage  `json:"-"`
+	PrivateContextEncrypted json.RawMessage  `json:"privateContextEncrypted,omitempty"`
+	HasPrivateContext       bool             `json:"hasPrivateContext,omitempty"`
+	DecisionOutcome         HumanTaskOutcome `json:"decisionOutcome,omitempty"`
+	Decision                json.RawMessage  `json:"-"`
+	DecisionEncrypted       json.RawMessage  `json:"decisionEncrypted,omitempty"`
+	HasDecision             bool             `json:"hasDecision,omitempty"`
+	DecisionIdempotencyKey  string           `json:"decisionIdempotencyKey,omitempty"`
+	DecisionFingerprint     string           `json:"decisionFingerprint,omitempty"`
+	DecidedBy               string           `json:"decidedBy,omitempty"`
+	TerminalCause           string           `json:"terminalCause,omitempty"`
+	ResumeInput             json.RawMessage  `json:"resumeInput,omitempty"`
+	CreatedAt               time.Time        `json:"createdAt"`
+	UpdatedAt               time.Time        `json:"updatedAt,omitempty"`
+	DecidedAt               *time.Time       `json:"decidedAt,omitempty"`
+	CompletedAt             *time.Time       `json:"completedAt,omitempty"`
+	ExpiresAt               *time.Time       `json:"expiresAt,omitempty"`
+}
+
+type HumanTaskListQuery struct {
+	WorkspaceID string
+	State       HumanTaskState
+	Limit       int
+}
+
+type HumanTaskDecision struct {
+	Outcome        HumanTaskOutcome `json:"outcome"`
+	Value          json.RawMessage  `json:"value,omitempty"`
+	IdempotencyKey string           `json:"-"`
+	Fingerprint    string           `json:"-"`
+	Actor          string           `json:"-"`
+	DecidedAt      time.Time        `json:"decidedAt,omitempty"`
+}
+
+type HumanTaskDecisionResult struct {
+	Task     HumanTask         `json:"task"`
+	Decision HumanTaskDecision `json:"decision"`
+	Replayed bool              `json:"replayed,omitempty"`
 }
 
 type CancelResult struct {
@@ -711,6 +769,13 @@ type Store interface {
 	QueueDemandSnapshot(ctx context.Context, selectors []QueueDemandSelector) (QueueDemandSnapshot, error)
 	RequeueQueuedJobsForApp(ctx context.Context, spec RequeueAppSpec) (int64, error)
 	GetHumanTask(ctx context.Context, taskID string) (HumanTask, error)
+	CreateHeldHumanTask(ctx context.Context, task HumanTask) (HumanTask, bool, error)
+	ListHumanTasks(ctx context.Context, query HumanTaskListQuery) ([]HumanTask, error)
+	GetHumanTaskForWorkspace(ctx context.Context, workspaceID string, taskID string) (HumanTask, error)
+	GetHeldHumanTaskDecision(ctx context.Context, workspaceID string, taskID string) (HumanTaskDecisionResult, error)
+	DecideHeldHumanTask(ctx context.Context, workspaceID string, taskID string, decision HumanTaskDecision) (HumanTaskDecisionResult, error)
+	ExpireHeldHumanTask(ctx context.Context, workspaceID string, taskID string, cause string) (HumanTask, error)
+	CancelHeldHumanTasksForJob(ctx context.Context, workspaceID string, jobID string, cause string) error
 	AppendLogs(ctx context.Context, jobID string, workspaceID string, chunk string) error
 	GetLogs(ctx context.Context, workspaceID string, jobID string) (string, bool, error)
 	GetLogUpdate(ctx context.Context, workspaceID string, jobID string, afterOffset int64, limitBytes int) (JobLogUpdate, bool, error)

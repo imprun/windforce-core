@@ -21,6 +21,7 @@
           "concepts/release-lifecycle",
           "concepts/worker-execution",
           "concepts/app-runtime-interface",
+          "concepts/human-task-hold",
           "concepts/run-admission",
           "concepts/runtime-configuration",
           "guides/runtime-secrets-typescript",
@@ -34,6 +35,7 @@
           "ko/concepts/workspaces",
           "ko/concepts/worker-execution",
           "ko/concepts/app-runtime-interface",
+          "ko/concepts/human-task-hold",
           "ko/concepts/run-admission",
           "ko/concepts/runtime-configuration",
           "ko/guides/runtime-secrets-typescript"
