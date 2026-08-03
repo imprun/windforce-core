@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -891,7 +892,7 @@ func authorized(r *http.Request, adminToken string) bool {
 	if adminToken == "" {
 		return true
 	}
-	if r.Header.Get("Authorization") == "Bearer "+adminToken {
+	if subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+adminToken)) == 1 {
 		return true
 	}
 	return false

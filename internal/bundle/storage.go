@@ -198,5 +198,9 @@ func safeSegment(value string) string {
 	if builder.Len() == 0 {
 		return "_"
 	}
-	return builder.String()
+	out := builder.String()
+	if strings.Trim(out, ".") == "" {
+		return "_"
+	}
+	return out
 }
