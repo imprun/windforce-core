@@ -435,6 +435,7 @@ func TestPostgresClaimCandidatesFilterBeforeLockingAndBoundEachBatch(t *testing.
 	candidates, err := postgresClaimCandidates(
 		context.Background(), filterTx,
 		map[string]struct{}{"missing": {}}, map[string]struct{}{"linux": {}},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("postgresClaimCandidates returned error: %v", err)
@@ -467,6 +468,7 @@ func TestPostgresClaimCandidatesFilterBeforeLockingAndBoundEachBatch(t *testing.
 	first, err := postgresClaimCandidates(
 		context.Background(), firstTx,
 		map[string]struct{}{"gpu": {}}, map[string]struct{}{"linux": {}},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("first postgresClaimCandidates returned error: %v", err)
@@ -482,6 +484,7 @@ func TestPostgresClaimCandidatesFilterBeforeLockingAndBoundEachBatch(t *testing.
 	second, err := postgresClaimCandidates(
 		context.Background(), secondTx,
 		map[string]struct{}{"gpu": {}}, map[string]struct{}{"linux": {}},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("second postgresClaimCandidates returned error: %v", err)

@@ -395,6 +395,10 @@ func (s *PostgresStore) ClaimJob(ctx context.Context, workerID string, leaseTTL 
 }
 
 func (s *PostgresStore) ClaimJobForWorker(ctx context.Context, workerID string, tags []string, labels []string, leaseTTL time.Duration) (Job, Lease, error) {
+	return s.ClaimJobForWorkerScope(ctx, workerID, tags, labels, nil, leaseTTL)
+}
+
+func (s *PostgresStore) ClaimJobForWorkerScope(ctx context.Context, workerID string, tags []string, labels []string, workspaceIDs []string, leaseTTL time.Duration) (Job, Lease, error) {
 	if workerID == "" {
 		workerID = NewID("worker")
 	}
@@ -441,7 +445,7 @@ WHERE state='running' AND lease_expires_at < $1 AND canceled_by IS NULL
 			return err
 		}
 		expiresAt := now.Add(leaseTTL)
-		candidates, err := postgresClaimCandidates(ctx, tx, allowedTags, offeredLabels)
+		candidates, err := postgresClaimCandidates(ctx, tx, allowedTags, offeredLabels, NormalizeWorkerScope(workspaceIDs))
 		if err != nil {
 			return err
 		}
@@ -498,9 +502,11 @@ func postgresClaimCandidates(
 	tx pgx.Tx,
 	allowedTags map[string]struct{},
 	offeredLabels map[string]struct{},
+	workspaceIDs []string,
 ) ([]Job, error) {
 	tags := claimFilterValues(allowedTags)
 	labels := claimFilterValues(offeredLabels)
+	workspaceIDs = NormalizeWorkerScope(workspaceIDs)
 	rows, err := tx.Query(ctx, `
 SELECT `+jobColumns+`
 FROM jobs AS candidate
@@ -511,6 +517,7 @@ CROSS JOIN LATERAL (
     COALESCE(NULLIF(candidate.payload->>'maxConcurrent', '')::integer, NULLIF(candidate.payload->'deployment'->>'maxConcurrent', '')::integer, 0) AS max_concurrent
 ) AS claim
 WHERE candidate.state=$1
+	AND (cardinality($4::text[]) = 0 OR claim.workspace_id = ANY($4::text[]))
   AND (
     cardinality($2::text[]) = 0
     OR NULLIF(btrim(candidate.payload->>'tag'), '') = ANY($2::text[])
@@ -533,9 +540,9 @@ WHERE candidate.state=$1
     ) < claim.max_concurrent
   )
 ORDER BY candidate.priority ASC, candidate.created_at ASC, candidate.id ASC
-LIMIT $4
+LIMIT $5
 FOR UPDATE OF candidate SKIP LOCKED
-`, string(JobQueued), tags, labels, postgresClaimCandidateBatchSize)
+`, string(JobQueued), tags, labels, workspaceIDs, postgresClaimCandidateBatchSize)
 	if err != nil {
 		return nil, err
 	}
@@ -1110,18 +1117,28 @@ func (s *PostgresStore) RegisterWorker(ctx context.Context, record WorkerRecord)
 	if err != nil {
 		return err
 	}
-	_, err = s.pool.Exec(ctx, `
-INSERT INTO worker_registry (id, worker_group, tags, labels, slots, status, started_at, last_heartbeat_at)
-VALUES ($1, $2, $3, $4, $5, $6, now(), now())
+	commandTag, err := s.pool.Exec(ctx, `
+INSERT INTO worker_registry (id, worker_group, tags, labels, slots, status, credential_id, credential_generation, started_at, last_heartbeat_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), now())
 ON CONFLICT (id) DO UPDATE SET
     worker_group = EXCLUDED.worker_group,
     tags = EXCLUDED.tags,
     labels = EXCLUDED.labels,
     slots = EXCLUDED.slots,
     status = EXCLUDED.status,
-    last_heartbeat_at = now()`,
-		record.ID, record.Group, tags, labels, record.Slots, status)
-	return err
+    credential_id = EXCLUDED.credential_id,
+    credential_generation = EXCLUDED.credential_generation,
+    last_heartbeat_at = now()
+WHERE worker_registry.credential_id = EXCLUDED.credential_id
+  AND worker_registry.credential_generation = EXCLUDED.credential_generation`,
+		record.ID, record.Group, tags, labels, record.Slots, status, record.CredentialID, record.CredentialGeneration)
+	if err != nil {
+		return err
+	}
+	if commandTag.RowsAffected() == 0 {
+		return ErrForbidden
+	}
+	return nil
 }
 
 func (s *PostgresStore) HeartbeatWorker(ctx context.Context, workerID string) error {
@@ -1148,7 +1165,7 @@ DELETE FROM worker_registry WHERE last_heartbeat_at < now() - $1::interval`,
 		return nil, err
 	}
 	rows, err := s.pool.Query(ctx, `
-SELECT id, worker_group, tags, labels, slots, status, started_at, last_heartbeat_at
+SELECT id, worker_group, tags, labels, slots, status, credential_id, credential_generation, started_at, last_heartbeat_at
 FROM worker_registry ORDER BY id`)
 	if err != nil {
 		return nil, err
@@ -1158,7 +1175,7 @@ FROM worker_registry ORDER BY id`)
 	for rows.Next() {
 		var record WorkerRecord
 		var tags, labels []byte
-		if err := rows.Scan(&record.ID, &record.Group, &tags, &labels, &record.Slots, &record.Status, &record.StartedAt, &record.LastHeartbeatAt); err != nil {
+		if err := rows.Scan(&record.ID, &record.Group, &tags, &labels, &record.Slots, &record.Status, &record.CredentialID, &record.CredentialGeneration, &record.StartedAt, &record.LastHeartbeatAt); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal(tags, &record.Tags); err != nil {

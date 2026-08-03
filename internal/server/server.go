@@ -273,6 +273,9 @@ func (h *Handler) handleRuntimeAPI(w http.ResponseWriter, r *http.Request) bool 
 
 func (h *Handler) handleAPI(w http.ResponseWriter, r *http.Request) bool {
 	parts := splitPath(r.URL.Path)
+	if h.handleWorkerManagementAPI(w, r, parts) {
+		return true
+	}
 	if len(parts) == 2 && parts[0] == "api" && parts[1] == "queue-demand-snapshots" && r.Method == http.MethodPost {
 		h.handleQueueDemandSnapshot(w, r)
 		return true

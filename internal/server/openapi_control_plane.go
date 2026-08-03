@@ -13,6 +13,59 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 				}, "400", "401", "403", "413", "500", "503"),
 			},
 		},
+		"/api/worker-groups/{group}/credentials": map[string]any{
+			"get": map[string]any{
+				"operationId": "listWorkerCredentials",
+				"summary":     "List sanitized worker credential generations",
+				"parameters":  []any{oapiPathParam("group", "Managed worker group id.")},
+				"responses": withErrors(map[string]any{
+					"200": oapiResponse("Worker credential generations.", map[string]any{"type": "array", "items": oapiSchemaRef("WorkerCredential")}),
+				}, "400", "401", "403", "500", "501"),
+			},
+			"post": map[string]any{
+				"operationId": "createWorkerCredential",
+				"summary":     "Create the next managed worker credential generation",
+				"parameters":  []any{oapiPathParam("group", "Managed worker group id.")},
+				"requestBody": oapiJSONBody(oapiSchemaRef("CreateWorkerCredentialRequest"), true),
+				"responses": withErrors(map[string]any{
+					"200": oapiResponse("Idempotent replay without the raw bearer.", oapiSchemaRef("WorkerCredentialIssueResponse")),
+					"201": oapiResponse("Created credential with its one-time bearer.", oapiSchemaRef("WorkerCredentialIssueResponse")),
+				}, "400", "401", "403", "409", "500", "501"),
+			},
+		},
+		"/api/worker-groups/{group}/credentials/{credential_id}/revoke": map[string]any{
+			"post": map[string]any{
+				"operationId": "revokeWorkerCredential",
+				"summary":     "Revoke one credential generation with a lease drain deadline",
+				"parameters": []any{
+					oapiPathParam("group", "Managed worker group id."),
+					oapiPathParam("credential_id", "Worker credential id."),
+				},
+				"requestBody": oapiJSONBody(oapiSchemaRef("RevokeWorkerCredentialRequest"), true),
+				"responses": withErrors(map[string]any{
+					"200": oapiResponse("Revoked credential generation.", oapiSchemaRef("WorkerCredentialOperationResponse")),
+				}, "400", "401", "403", "404", "409", "500", "501"),
+			},
+		},
+		"/api/worker-groups/{group}/run-state": map[string]any{
+			"get": map[string]any{
+				"operationId": "getWorkerGroupRunState",
+				"summary":     "Read the managed worker group claim fence",
+				"parameters":  []any{oapiPathParam("group", "Managed worker group id.")},
+				"responses": withErrors(map[string]any{
+					"200": oapiResponse("Current group run state.", oapiSchemaRef("WorkerGroupRunState")),
+				}, "400", "401", "403", "500", "501"),
+			},
+			"put": map[string]any{
+				"operationId": "putWorkerGroupRunState",
+				"summary":     "Drain or resume new managed claims",
+				"parameters":  []any{oapiPathParam("group", "Managed worker group id.")},
+				"requestBody": oapiJSONBody(oapiSchemaRef("PutWorkerGroupRunStateRequest"), true),
+				"responses": withErrors(map[string]any{
+					"200": oapiResponse("Updated or replayed group run state.", oapiSchemaRef("WorkerGroupRunStateOperationResponse")),
+				}, "400", "401", "403", "409", "500", "501"),
+			},
+		},
 		"/api/workspaces": map[string]any{
 			"get": map[string]any{
 				"operationId": "listWorkspaces",
@@ -893,6 +946,91 @@ func controlPlaneSchemas() map[string]any {
 				"resources": stringArray,
 			},
 			"required": []any{"variables", "resources"},
+		},
+		"WorkerCredential": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"id":                oapiStringSchema(),
+				"group":             oapiStringSchema(),
+				"generation":        oapiIntegerSchema(),
+				"workspace_ids":     stringArray,
+				"labels":            stringArray,
+				"status":            oapiStringEnumSchema("active", "revoked"),
+				"expires_at":        nullableDateTime,
+				"revoked_at":        nullableDateTime,
+				"drain_deadline_at": nullableDateTime,
+				"created_by":        oapiStringSchema(),
+				"created_at":        oapiDateTimeSchema(),
+				"updated_at":        oapiDateTimeSchema(),
+			},
+			"required": []any{"id", "group", "generation", "workspace_ids", "labels", "status", "created_by", "created_at", "updated_at"},
+		},
+		"CreateWorkerCredentialRequest": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"operation_id":        oapiStringSchema(),
+				"expected_generation": oapiIntegerSchema(),
+				"workspace_ids":       map[string]any{"type": "array", "minItems": 1, "items": oapiStringSchema()},
+				"labels":              stringArray,
+				"expires_at":          nullableDateTime,
+			},
+			"required": []any{"operation_id", "expected_generation", "workspace_ids", "labels"},
+		},
+		"WorkerCredentialIssueResponse": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"credential":   oapiSchemaRef("WorkerCredential"),
+				"worker_token": map[string]any{"type": "string", "writeOnly": true, "description": "One-time bearer, omitted from idempotent replays."},
+				"replayed":     oapiBooleanSchema(),
+			},
+			"required": []any{"credential", "replayed"},
+		},
+		"RevokeWorkerCredentialRequest": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"operation_id":      oapiStringSchema(),
+				"drain_deadline_at": oapiDateTimeSchema(),
+			},
+			"required": []any{"operation_id", "drain_deadline_at"},
+		},
+		"WorkerCredentialOperationResponse": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"credential": oapiSchemaRef("WorkerCredential"),
+				"replayed":   oapiBooleanSchema(),
+			},
+			"required": []any{"credential", "replayed"},
+		},
+		"WorkerGroupRunState": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"group":        oapiStringSchema(),
+				"state":        oapiStringEnumSchema("running", "draining"),
+				"operation_id": oapiStringSchema(),
+				"revision":     oapiIntegerSchema(),
+				"deadline_at":  nullableDateTime,
+				"updated_by":   oapiStringSchema(),
+				"updated_at":   oapiDateTimeSchema(),
+			},
+			"required": []any{"group", "state", "revision"},
+		},
+		"PutWorkerGroupRunStateRequest": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"operation_id":      oapiStringSchema(),
+				"expected_revision": oapiIntegerSchema(),
+				"state":             oapiStringEnumSchema("running", "draining"),
+				"deadline_at":       nullableDateTime,
+			},
+			"required": []any{"operation_id", "expected_revision", "state"},
+		},
+		"WorkerGroupRunStateOperationResponse": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"run_state": oapiSchemaRef("WorkerGroupRunState"),
+				"replayed":  oapiBooleanSchema(),
+			},
+			"required": []any{"run_state", "replayed"},
 		},
 		"Workspace": map[string]any{
 			"type": "object",

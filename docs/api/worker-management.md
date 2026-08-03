@@ -1,0 +1,118 @@
+---
+title: Worker management API
+description: Instance-admin credential, rotation, revocation, and group drain contracts for remote workers.
+---
+
+# Worker management API
+
+These endpoints manage Core-owned remote-worker authority. They require the
+instance-admin bearer. A workspace, client, service-principal, Job, or remote
+worker bearer is not instance-admin authority.
+
+## Create or rotate a credential
+
+```http
+POST /api/worker-groups/{group}/credentials
+Authorization: Bearer <instance-admin-token>
+Content-Type: application/json
+
+{
+  "operation_id": "op_create_01",
+  "expected_generation": 0,
+  "workspace_ids": ["workspace-a"],
+  "labels": ["sys/arch/arm64", "browser"],
+  "expires_at": "2026-08-10T00:00:00Z"
+}
+```
+
+The first credential uses expected generation `0`; rotation uses the current
+generation. A new response is `201` and contains `worker_token` exactly once.
+An exact operation replay is `200`, sets `replayed: true`, and omits
+`worker_token`. Reusing an operation ID with different input or sending a stale
+generation returns `409`.
+
+```json
+{
+  "credential": {
+    "id": "worker_credential_...",
+    "group": "group-a",
+    "generation": 1,
+    "workspace_ids": ["workspace-a"],
+    "labels": ["browser", "sys/arch/arm64"],
+    "status": "active",
+    "created_by": "operator:admin",
+    "created_at": "2026-08-03T00:00:00Z",
+    "updated_at": "2026-08-03T00:00:00Z"
+  },
+  "worker_token": "wfr_...",
+  "replayed": false
+}
+```
+
+`GET /api/worker-groups/{group}/credentials` lists sanitized generations and
+never returns a bearer, token hash, or request fingerprint.
+
+## Revoke a generation
+
+```http
+POST /api/worker-groups/{group}/credentials/{credential_id}/revoke
+
+{
+  "operation_id": "op_revoke_01",
+  "drain_deadline_at": "2026-08-03T00:10:00Z"
+}
+```
+
+Revocation immediately blocks registration of new active workers and new
+claims. Until the drain deadline, already registered workers may keep their
+registry and Job lease heartbeats, append logs, complete their fenced leases,
+and fetch the pinned execution artifact for that owned lease. The remote client
+adds `job_id`, `workspace`, and `worker_id` to artifact fetches; Core rejects a
+missing, cross-workspace, wrong-worker, or wrong-digest lease context. Exact
+revocation retries are idempotent.
+
+## Drain or resume a group
+
+```http
+PUT /api/worker-groups/{group}/run-state
+
+{
+  "operation_id": "op_drain_01",
+  "expected_revision": 0,
+  "state": "draining",
+  "deadline_at": "2026-08-03T00:10:00Z"
+}
+```
+
+The implicit initial state is `running` revision `0`. A successful change
+increments the revision. Exact retries return the same revision with
+`replayed: true`; stale revisions and conflicting reuse of an operation ID
+return `409`. `GET /api/worker-groups/{group}/run-state` returns the current
+state.
+
+Draining only fences new managed claims. It does not cancel, revoke, kill, or
+automatically resume anything at the deadline. Resume explicitly:
+
+```json
+{
+  "operation_id": "op_resume_01",
+  "expected_revision": 1,
+  "state": "running"
+}
+```
+
+## Worker command
+
+```sh
+export WINDFORCE_WORKER_TOKEN='wfr_...'
+windforce-core worker \
+  --api-url https://core.example.test \
+  --worker-token-env WINDFORCE_WORKER_TOKEN \
+  --worker-group group-a \
+  --labels sys/arch/arm64,browser
+```
+
+The process reads the token from the named environment variable. Do not put the
+bearer directly in arguments, manifests, logs, or registry metadata.
+Re-registering a worker ID is allowed only for the same credential ID and
+generation; another generation or the legacy static token cannot take it over.

@@ -85,6 +85,9 @@ func (p *Processor) processOne(claimCtx context.Context, executionCtx context.Co
 	workspaceID = contract.NormalizeWorkspace(workspaceID)
 	runCtx, cancel := context.WithCancel(executionCtx)
 	defer cancel()
+	if provider, ok := p.Store.(ExecutionContextProvider); ok {
+		runCtx = provider.WithExecutionContext(runCtx, job, lease)
+	}
 	completeCtx := context.WithoutCancel(executionCtx)
 	stopHeartbeat := p.startHeartbeat(lease, cancel)
 	defer stopHeartbeat()

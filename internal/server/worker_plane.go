@@ -50,14 +50,6 @@ func leaseFromWire(wire workerLeaseWire) state.Lease {
 	}
 }
 
-func (h *Handler) workerPlaneAuthorized(r *http.Request) bool {
-	token := h.workerToken
-	if token == "" {
-		token = h.adminToken
-	}
-	return authorized(r, token)
-}
-
 // workerPlaneMaxBody caps worker plane request bodies (job results and log
 // chunks are the largest payloads; the public API is capped similarly).
 const workerPlaneMaxBody = 10 << 20
@@ -94,10 +86,12 @@ func clampLeaseTTL(ms int64) time.Duration {
 }
 
 func (h *Handler) handleWorkerPlane(w http.ResponseWriter, r *http.Request) {
-	if !h.workerPlaneAuthorized(r) {
-		writeError(w, http.StatusUnauthorized, "unauthorized")
+	authorizedRequest, status, message := h.authenticateWorkerPlane(r)
+	if status != 0 {
+		writeError(w, status, message)
 		return
 	}
+	r = authorizedRequest
 	if r.Body != nil {
 		r.Body = http.MaxBytesReader(w, r.Body, workerPlaneMaxBody)
 	}
@@ -151,14 +145,47 @@ func (h *Handler) workerPlaneRegister(w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSpace(req.ID) == "" {
 		req.ID = state.NewID("worker")
 	}
-	if err := h.store.RegisterWorker(r.Context(), state.WorkerRecord{
+	record := state.WorkerRecord{
 		ID:     req.ID,
 		Group:  req.Group,
 		Tags:   req.Tags,
 		Labels: labels,
 		Slots:  req.Slots,
 		Status: status,
-	}); err != nil {
+	}
+	if credential := managedWorkerCredential(r); credential != nil {
+		store, ok := h.workerControlStore()
+		if !ok {
+			writeError(w, http.StatusServiceUnavailable, "worker credential store unavailable")
+			return
+		}
+		if existing, existingErr := store.GetWorker(r.Context(), req.ID); existingErr == nil {
+			if existing.CredentialID != credential.ID || existing.CredentialGeneration != credential.Generation {
+				writeError(w, http.StatusForbidden, "worker id belongs to another credential")
+				return
+			}
+		} else if !errors.Is(existingErr, state.ErrNotFound) {
+			writeError(w, http.StatusServiceUnavailable, "worker registry unavailable")
+			return
+		}
+		if !credential.AllowsNewWork(time.Now().UTC()) {
+			existing, existingErr := managedWorkerRecord(r.Context(), store, *credential, req.ID)
+			if existingErr != nil || status != state.WorkerStatusDraining || !credentialAllowsContinuation(*credential) ||
+				!state.SameWorkerScope(existing.Labels, labels) {
+				writeError(w, http.StatusForbidden, "worker credential is not active")
+				return
+			}
+		}
+		if strings.TrimSpace(req.Group) != credential.Group || !state.SameWorkerScope(labels, credential.Labels) {
+			writeError(w, http.StatusForbidden, "worker registration exceeds credential scope")
+			return
+		}
+		record.Group = credential.Group
+		record.Labels = append([]string(nil), credential.Labels...)
+		record.CredentialID = credential.ID
+		record.CredentialGeneration = credential.Generation
+	}
+	if err := h.store.RegisterWorker(r.Context(), record); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -166,6 +193,17 @@ func (h *Handler) workerPlaneRegister(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) workerPlaneWorkerHeartbeat(w http.ResponseWriter, r *http.Request, workerID string) {
+	if credential := managedWorkerCredential(r); credential != nil {
+		store, ok := h.workerControlStore()
+		if !ok || !credentialAllowsContinuation(*credential) {
+			writeError(w, http.StatusForbidden, "worker credential cannot continue leases")
+			return
+		}
+		if _, err := managedWorkerRecord(r.Context(), store, *credential, workerID); err != nil {
+			writeError(w, http.StatusForbidden, "worker does not belong to credential")
+			return
+		}
+	}
 	if err := h.store.HeartbeatWorker(r.Context(), workerID); err != nil {
 		writeStoreError(w, err)
 		return
@@ -174,6 +212,17 @@ func (h *Handler) workerPlaneWorkerHeartbeat(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *Handler) workerPlaneDeregister(w http.ResponseWriter, r *http.Request, workerID string) {
+	if credential := managedWorkerCredential(r); credential != nil {
+		store, ok := h.workerControlStore()
+		if !ok || !credentialAllowsContinuation(*credential) {
+			writeError(w, http.StatusForbidden, "worker credential cannot continue leases")
+			return
+		}
+		if _, err := managedWorkerRecord(r.Context(), store, *credential, workerID); err != nil {
+			writeError(w, http.StatusForbidden, "worker does not belong to credential")
+			return
+		}
+	}
 	if err := h.store.DeregisterWorker(r.Context(), workerID); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -200,7 +249,40 @@ func (h *Handler) workerPlaneClaim(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	leaseTTL := clampLeaseTTL(req.LeaseTTLMs)
-	job, lease, err := h.store.ClaimJobForWorker(r.Context(), req.WorkerID, req.Tags, req.Labels, leaseTTL)
+	var job state.Job
+	var lease state.Lease
+	var err error
+	if credential := managedWorkerCredential(r); credential != nil {
+		store, ok := h.workerControlStore()
+		if !ok {
+			writeError(w, http.StatusServiceUnavailable, "worker credential store unavailable")
+			return
+		}
+		if !credential.AllowsNewWork(time.Now().UTC()) {
+			writeError(w, http.StatusForbidden, "worker credential is not active")
+			return
+		}
+		record, recordErr := managedWorkerRecord(r.Context(), store, *credential, req.WorkerID)
+		if recordErr != nil || !state.SameWorkerScope(req.Labels, credential.Labels) ||
+			!state.SameWorkerScope(req.Labels, record.Labels) || !state.SameWorkerScope(req.Tags, record.Tags) {
+			writeError(w, http.StatusForbidden, "worker claim exceeds registered credential scope")
+			return
+		}
+		runState, stateErr := store.GetWorkerGroupRunState(r.Context(), credential.Group)
+		if stateErr != nil {
+			writeError(w, http.StatusServiceUnavailable, "worker group run state unavailable")
+			return
+		}
+		if runState.Draining() {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		job, lease, err = store.ClaimJobForWorkerScope(
+			r.Context(), req.WorkerID, req.Tags, credential.Labels, credential.WorkspaceIDs, leaseTTL,
+		)
+	} else {
+		job, lease, err = h.store.ClaimJobForWorker(r.Context(), req.WorkerID, req.Tags, req.Labels, leaseTTL)
+	}
 	if errors.Is(err, state.ErrNoQueuedJob) {
 		w.WriteHeader(http.StatusNoContent)
 		return
@@ -284,6 +366,17 @@ func (h *Handler) workerPlaneJobHeartbeat(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "lease does not match job")
 		return
 	}
+	if credential := managedWorkerCredential(r); credential != nil {
+		store, ok := h.workerControlStore()
+		if !ok || !credentialAllowsContinuation(*credential) {
+			writeError(w, http.StatusForbidden, "worker credential cannot continue leases")
+			return
+		}
+		if _, err := managedWorkerRecord(r.Context(), store, *credential, req.Lease.WorkerID); err != nil {
+			writeError(w, http.StatusForbidden, "lease does not belong to credential")
+			return
+		}
+	}
 	heartbeat, err := h.store.HeartbeatJob(r.Context(), leaseFromWire(req.Lease), clampLeaseTTL(req.LeaseTTLMs))
 	if err != nil {
 		writeStoreError(w, err)
@@ -310,6 +403,17 @@ func (h *Handler) workerPlaneComplete(w http.ResponseWriter, r *http.Request, jo
 	if req.Lease.JobID != jobID {
 		writeError(w, http.StatusBadRequest, "lease does not match job")
 		return
+	}
+	if credential := managedWorkerCredential(r); credential != nil {
+		store, ok := h.workerControlStore()
+		if !ok || !credentialAllowsContinuation(*credential) {
+			writeError(w, http.StatusForbidden, "worker credential cannot continue leases")
+			return
+		}
+		if _, err := managedWorkerRecord(r.Context(), store, *credential, req.Lease.WorkerID); err != nil {
+			writeError(w, http.StatusForbidden, "lease does not belong to credential")
+			return
+		}
 	}
 	lease := leaseFromWire(req.Lease)
 	var err error
@@ -344,6 +448,24 @@ func (h *Handler) workerPlaneLogs(w http.ResponseWriter, r *http.Request, jobID 
 		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
+	if credential := managedWorkerCredential(r); credential != nil {
+		store, ok := h.workerControlStore()
+		if !ok || !credentialAllowsContinuation(*credential) {
+			writeError(w, http.StatusForbidden, "worker credential cannot continue leases")
+			return
+		}
+		workspaceID := contract.NormalizeWorkspace(req.Workspace)
+		job, _, _, err := h.store.GetJob(r.Context(), workspaceID, jobID)
+		if err != nil {
+			writeStoreError(w, err)
+			return
+		}
+		if _, err := managedWorkerRecord(r.Context(), store, *credential, job.LeaseOwner); err != nil ||
+			!state.WorkspaceAllowed(workspaceID, credential.WorkspaceIDs) {
+			writeError(w, http.StatusForbidden, "job logs do not belong to credential")
+			return
+		}
+	}
 	if err := h.store.AppendLogs(r.Context(), jobID, contract.NormalizeWorkspace(req.Workspace), req.Chunk); err != nil {
 		writeStoreError(w, err)
 		return
@@ -354,6 +476,34 @@ func (h *Handler) workerPlaneLogs(w http.ResponseWriter, r *http.Request, jobID 
 // workerPlaneArtifact streams an execution bundle as a tar archive. Only
 // digest-addressed execution bundles are served (ADR 0010 §3).
 func (h *Handler) workerPlaneArtifact(w http.ResponseWriter, r *http.Request, digest string) {
+	if credential := managedWorkerCredential(r); credential != nil {
+		store, ok := h.workerControlStore()
+		if !ok || !credentialAllowsContinuation(*credential) {
+			writeError(w, http.StatusForbidden, "worker credential cannot fetch artifacts")
+			return
+		}
+		jobID := strings.TrimSpace(r.URL.Query().Get("job_id"))
+		workspaceID := contract.NormalizeWorkspace(r.URL.Query().Get("workspace"))
+		workerID := strings.TrimSpace(r.URL.Query().Get("worker_id"))
+		if jobID == "" || workerID == "" || !state.WorkspaceAllowed(workspaceID, credential.WorkspaceIDs) {
+			writeError(w, http.StatusForbidden, "artifact request is not lease scoped")
+			return
+		}
+		job, _, found, err := h.store.GetJob(r.Context(), workspaceID, jobID)
+		if err != nil {
+			writeStoreError(w, err)
+			return
+		}
+		if !found || job.State != state.JobRunning || job.LeaseOwner != workerID ||
+			job.Payload.PinnedDeployment().BundleDigest != digest {
+			writeError(w, http.StatusForbidden, "artifact request does not match the owned lease")
+			return
+		}
+		if _, err := managedWorkerRecord(r.Context(), store, *credential, workerID); err != nil {
+			writeError(w, http.StatusForbidden, "artifact lease does not belong to credential")
+			return
+		}
+	}
 	if h.artifactStore == nil {
 		writeError(w, http.StatusServiceUnavailable, "artifact store is not configured")
 		return
