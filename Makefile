@@ -1,4 +1,4 @@
-.PHONY: help fmt test test-python-sdk test-postgres test-rabbitmq build build-smoke web-deps web-install web-dev web-build web-embed web-embed-verify web-test web-typecheck clean dev \
+.PHONY: help fmt test security test-python-sdk test-postgres test-rabbitmq build build-smoke web-deps web-install web-dev web-build web-embed web-embed-verify web-test web-typecheck clean dev \
 	compose-up compose-db compose-rabbitmq compose-server compose-worker compose-dev compose-dev-worker compose-dev-build compose-dev-logs compose-build compose-down compose-reset compose-logs compose-ps postgres-dsn \
 	dev-standalone dev-standalone-postgres dev-server dev-worker worker-once \
 	webhook-receiver \
@@ -25,6 +25,7 @@ endif
 COMPOSE ?= docker compose
 COMPOSE_DEV := $(COMPOSE) -f docker-compose.yml -f docker-compose.dev.yml
 BUN ?= bun
+GOVULNCHECK_VERSION ?= v1.6.0
 
 ifneq (,$(wildcard .env))
 include .env
@@ -108,6 +109,7 @@ help:
 	@echo "  web-test               run Web UI unit tests"
 	@echo "  web-typecheck          type-check the Web UI"
 	@echo "  test                   run go test ./..."
+	@echo "  security               run pinned govulncheck against reachable symbols"
 	@echo "  test-python-sdk        run canonical Python Invocation SDK tests"
 	@echo "  test-postgres          run PostgreSQL integration test against docker compose"
 	@echo "  test-rabbitmq          run RabbitMQ trigger integration test against docker compose"
@@ -177,6 +179,9 @@ test:
 	$(GO) test ./...
 	python -m unittest discover -s sdk/python/tests -v
 	python -m unittest discover -s tools -p "*_test.py" -v
+
+security:
+	$(GO) run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
 
 test-python-sdk:
 	python -m unittest discover -s sdk/python/tests -v

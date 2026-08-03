@@ -6,7 +6,9 @@ RUN bun install --frozen-lockfile
 COPY web ./
 RUN bun run build
 
-FROM golang:1.26.5-bookworm AS build
+FROM golang:1.26.5-bookworm AS go-toolchain
+
+FROM go-toolchain AS build
 
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -53,5 +55,5 @@ USER windforce
 # --target runtime-go.
 FROM runtime AS runtime-go
 
-COPY --from=golang:1.26.5-bookworm /usr/local/go /usr/local/go
+COPY --from=go-toolchain /usr/local/go /usr/local/go
 ENV PATH=/usr/local/go/bin:$PATH

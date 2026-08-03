@@ -18,7 +18,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@v7
         with:
-          go-version: 1.26.5
+          go-version-file: go.mod
           cache: true
       - uses: oven-sh/setup-bun@v2
         with:
@@ -32,6 +32,8 @@ jobs:
         uses: sigstore/cosign-installer@v4.1.2
       - name: Test
         run: go test ./...
+      - name: Check reachable vulnerabilities
+        run: make security
       - uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
