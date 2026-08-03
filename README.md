@@ -107,6 +107,8 @@ idempotently at startup.
 
 The Docker Compose server maps every HTTP plane to `127.0.0.1:18091`. The local Web UI is a Vite development server (run with Bun) on `127.0.0.1:18090/ui/` and proxies API calls to the server. This repository ships only the neutral `windforce-core` runtime. Users who want a separately installed client can use the public [`imprun` CLI](https://github.com/imprun/cli), which consumes the same HTTP APIs without adding hosted Identity or tenant policy to Core.
 
+The published `ghcr.io/imprun/windforce-core` image is the standard self-hosted runtime and contains Python, Bun, and the Go toolchain so one image can prepare and run every built-in App language. `ghcr.io/imprun/windforce-core-ocr` extends that standard image with Tesseract and Korean OCR data for OCR-capable Worker pools. Core does not publish a separate Go-only image.
+
 The Web UI is live during local development. Run `make web-dev` for a host dev
 server, or `make compose-up` for the Compose-managed dev server. The production
 UI is a static Vite build embedded into the Go binary: `make web-embed`

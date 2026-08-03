@@ -31,6 +31,9 @@ RUN useradd --system --uid 10001 --create-home windforce \
 
 COPY --from=build /out/windforce-core /usr/local/bin/windforce-core
 COPY --from=web-build /usr/local/bin/bun /usr/local/bin/bun
+COPY --from=go-toolchain /usr/local/go /usr/local/go
+
+ENV PATH=/usr/local/go/bin:$PATH
 
 USER windforce
 WORKDIR /data
@@ -40,8 +43,8 @@ ENTRYPOINT ["windforce-core"]
 CMD ["api", "--addr", ":8080", "--store", "/data/store", "--catalog", "/data/catalog.json", "--git-sources", "/data/git-sources.json"]
 
 # OCR variant: tesseract (kor+eng) for apps that OCR documents. Published as
-# a separate image (ghcr.io/imprun/windforce-core-ocr); the default image
-# stays lean. Build with --target runtime-ocr.
+# a separate image (ghcr.io/imprun/windforce-core-ocr). Build with
+# --target runtime-ocr.
 FROM runtime AS runtime-ocr
 
 USER root
@@ -49,11 +52,3 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-kor \
     && rm -rf /var/lib/apt/lists/*
 USER windforce
-
-# Go toolchain variant for go-runtime apps (the engine builds them at
-# prepare). Published as ghcr.io/imprun/windforce-core-go. Build with
-# --target runtime-go.
-FROM runtime AS runtime-go
-
-COPY --from=go-toolchain /usr/local/go /usr/local/go
-ENV PATH=/usr/local/go/bin:$PATH
