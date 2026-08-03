@@ -554,6 +554,10 @@ func (h *Handler) handleAPI(w http.ResponseWriter, r *http.Request) bool {
 		h.handleJobLogs(w, r, parts[2], parts[4])
 		return true
 	}
+	if len(parts) == 7 && parts[0] == "api" && parts[1] == "w" && parts[3] == "jobs" && parts[5] == "logs" && parts[6] == "stream" && r.Method == http.MethodGet {
+		h.handleJobLogStream(w, r, parts[2], parts[4])
+		return true
+	}
 	return false
 }
 

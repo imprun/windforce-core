@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -139,6 +140,178 @@ func TestJobLogsAPI(t *testing.T) {
 		}
 		if resp.StatusCode != http.StatusBadRequest || body.Error != tc.want {
 			t.Fatalf("logs %s response = %d %#v, want 400 %q", tc.query, resp.StatusCode, body, tc.want)
+		}
+	}
+}
+
+func TestJobLogStreamReplaysFromOffsetAndClosesOnTerminalJob(t *testing.T) {
+	store := state.NewLocalStore(filepath.Join(t.TempDir(), "state.json"))
+	deployment := contract.Deployment{
+		Workspace:   "ws-a",
+		GitSourceID: "source-a",
+		App:         "echo",
+		Commit:      "commit-a",
+		Actions: map[string]contract.Action{
+			"echo": {Action: "echo", Command: []string{"helper"}},
+		},
+	}
+	run := state.NewRun("windforce", "run-stream", "echo", "echo", deployment, json.RawMessage(`{"message":"hello"}`))
+	job := state.NewActionJob(run, nil)
+	if err := store.CreateRunAndEnqueue(context.Background(), run, job); err != nil {
+		t.Fatal(err)
+	}
+	claimed, lease, err := store.ClaimJob(context.Background(), "worker-a", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AppendLogs(context.Background(), job.ID, "ws-a", "hello world"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CompleteJobSucceeded(context.Background(), lease, contract.JobResult{
+		JobID: claimed.ID, App: "echo", Action: "echo", ExitCode: 0, Output: json.RawMessage(`{"ok":true}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	server := httptest.NewServer(New(Config{Store: store}))
+	defer server.Close()
+	resp, err := http.Get(server.URL + "/api/w/ws-a/jobs/" + job.ID + "/logs/stream?offset=6&timeout_seconds=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("stream status = %d, want %d: %s", resp.StatusCode, http.StatusOK, body)
+	}
+	if got := resp.Header.Get("Content-Type"); got != "text/event-stream; charset=utf-8" {
+		t.Fatalf("content type = %q", got)
+	}
+	line := strings.TrimSpace(string(body))
+	if !strings.HasPrefix(line, "data: ") {
+		t.Fatalf("stream body = %q", body)
+	}
+	var event jobLogStreamEvent
+	if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &event); err != nil {
+		t.Fatalf("decode stream event %q: %v", body, err)
+	}
+	if event.Type != "update" || event.NewLogs != "world" || event.LogOffset != 11 || event.Completed == nil || !*event.Completed || event.Status != "success" {
+		t.Fatalf("stream event = %#v", event)
+	}
+}
+
+func TestJobLogStreamFollowsRunningJobUntilCompletion(t *testing.T) {
+	store := state.NewLocalStore(filepath.Join(t.TempDir(), "state.json"))
+	deployment := contract.Deployment{
+		Workspace:   "ws-a",
+		GitSourceID: "source-a",
+		App:         "echo",
+		Commit:      "commit-a",
+		Actions: map[string]contract.Action{
+			"echo": {Action: "echo", Command: []string{"helper"}},
+		},
+	}
+	run := state.NewRun("windforce", "run-live-stream", "echo", "echo", deployment, json.RawMessage(`{}`))
+	job := state.NewActionJob(run, nil)
+	if err := store.CreateRunAndEnqueue(context.Background(), run, job); err != nil {
+		t.Fatal(err)
+	}
+
+	server := httptest.NewServer(New(Config{Store: store}))
+	defer server.Close()
+	resp, err := http.Get(server.URL + "/api/w/ws-a/jobs/" + job.ID + "/logs/stream?timeout_seconds=5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	reader := bufio.NewScanner(resp.Body)
+	readEvent := func() jobLogStreamEvent {
+		t.Helper()
+		for reader.Scan() {
+			line := reader.Text()
+			if !strings.HasPrefix(line, "data: ") {
+				continue
+			}
+			var event jobLogStreamEvent
+			if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &event); err != nil {
+				t.Fatalf("decode stream event %q: %v", line, err)
+			}
+			return event
+		}
+		if err := reader.Err(); err != nil {
+			t.Fatalf("read stream: %v", err)
+		}
+		t.Fatal("job log stream closed before the expected event")
+		return jobLogStreamEvent{}
+	}
+
+	initial := readEvent()
+	if initial.Type != "update" || initial.Status != "queued" || initial.Completed == nil || *initial.Completed {
+		t.Fatalf("initial stream event = %#v", initial)
+	}
+	claimed, lease, err := store.ClaimJob(context.Background(), "worker-live", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AppendLogs(context.Background(), job.ID, "ws-a", "page 1\n"); err != nil {
+		t.Fatal(err)
+	}
+
+	var running jobLogStreamEvent
+	for running.NewLogs == "" {
+		running = readEvent()
+	}
+	if running.NewLogs != "page 1\n" || running.LogOffset != 7 || running.Status != "running" || running.Running == nil || !*running.Running {
+		t.Fatalf("running stream event = %#v", running)
+	}
+	if err := store.AppendLogs(context.Background(), job.ID, "ws-a", "done\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CompleteJobSucceeded(context.Background(), lease, contract.JobResult{
+		JobID: claimed.ID, App: "echo", Action: "echo", ExitCode: 0, Output: json.RawMessage(`{"ok":true}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var terminal jobLogStreamEvent
+	for terminal.Completed == nil || !*terminal.Completed {
+		terminal = readEvent()
+	}
+	if terminal.NewLogs != "done\n" || terminal.LogOffset != 12 || terminal.Status != "success" {
+		t.Fatalf("terminal stream event = %#v", terminal)
+	}
+}
+
+func TestJobLogStreamValidationAndMissingJob(t *testing.T) {
+	server := httptest.NewServer(New(Config{Store: state.NewLocalStore(filepath.Join(t.TempDir(), "state.json"))}))
+	defer server.Close()
+	for _, tc := range []struct {
+		path string
+		code int
+		want string
+	}{
+		{"/api/w/ws-a/jobs/missing/logs/stream", http.StatusNotFound, "job not found"},
+		{"/api/w/ws-a/jobs/missing/logs/stream?offset=-1", http.StatusBadRequest, "offset must be a non-negative integer"},
+		{"/api/w/ws-a/jobs/missing/logs/stream?timeout_seconds=0", http.StatusBadRequest, "timeout_seconds must be a positive integer"},
+		{"/api/w/ws-a/jobs/missing/logs/stream?timeout_seconds=301", http.StatusBadRequest, "timeout_seconds exceeds server limit"},
+	} {
+		resp, err := http.Get(server.URL + tc.path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var body struct {
+			Error string `json:"error"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			_ = resp.Body.Close()
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != tc.code || body.Error != tc.want {
+			t.Fatalf("GET %s = %d %#v, want %d %q", tc.path, resp.StatusCode, body, tc.code, tc.want)
 		}
 	}
 }
@@ -1594,6 +1767,7 @@ func TestCanonicalControlPlaneOpenAPIExposesSchemaDiscovery(t *testing.T) {
 		"/api/w/{workspace}/jobs/{jobId}",
 		"/api/w/{workspace}/jobs/{jobId}/result",
 		"/api/w/{workspace}/jobs/{jobId}/logs",
+		"/api/w/{workspace}/jobs/{jobId}/logs/stream",
 		"/api/w/{workspace}/jobs/{jobId}/cancel",
 	} {
 		if paths[path] == nil {

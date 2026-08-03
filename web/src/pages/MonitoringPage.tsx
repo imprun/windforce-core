@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Layout } from "../components/Layout";
 import { StatTile, WindowSelector, windowLabel } from "../components/stats";
 import { EmptyState, ErrorNotice, Loading, Panel } from "../components/ui";
+import { JobLogInspector } from "../features/JobLogInspector";
 import type { JobStatusCounts } from "../lib/api";
 import { useApp, useAsync } from "../lib/app-context";
 import { formatRelative } from "../lib/format";
@@ -11,6 +12,7 @@ import { translate } from "../shared/i18n";
 export function MonitoringPage({ legacyJobID }: { legacyJobID?: string } = {}) {
   const { api } = useApp();
   const [windowSeconds, setWindowSeconds] = useState<number>(86400);
+  const [logInspectorOpen, setLogInspectorOpen] = useState(Boolean(legacyJobID));
 
   const state = useAsync(async () => {
     const [summary, apps] = await Promise.all([api.jobsSummary(windowSeconds), api.apps()]);
@@ -28,6 +30,14 @@ export function MonitoringPage({ legacyJobID }: { legacyJobID?: string } = {}) {
       subtitle={translate("monitoring.subtitle")}
       actions={
         <>
+          <button
+            className="button"
+            id="openJobLogInspector"
+            type="button"
+            onClick={() => setLogInspectorOpen(true)}
+          >
+            {translate("monitoring.inspectLogs")}
+          </button>
           <WindowSelector value={windowSeconds} onChange={setWindowSeconds} />
           <button className="button" type="button" onClick={() => state.reload()}>
             {translate("common.refresh")}
@@ -35,11 +45,8 @@ export function MonitoringPage({ legacyJobID }: { legacyJobID?: string } = {}) {
         </>
       }
     >
-      {legacyJobID ? (
-        <div className="inlineNotice">
-          {translate("monitoring.legacyRunPrefix")} <span className="mono">{legacyJobID}</span>{" "}
-          {translate("monitoring.legacyRunSuffix")}
-        </div>
+      {logInspectorOpen ? (
+        <JobLogInspector initialJobID={legacyJobID} onClose={() => setLogInspectorOpen(false)} />
       ) : null}
       {state.error ? <ErrorNotice message={state.error} onRetry={state.reload} /> : null}
       {state.loading && !summary ? <Loading /> : null}

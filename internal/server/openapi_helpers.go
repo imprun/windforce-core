@@ -36,6 +36,15 @@ func oapiTextResponse(description string) map[string]any {
 	}
 }
 
+func oapiEventStreamResponse(description string) map[string]any {
+	return map[string]any{
+		"description": description,
+		"content": map[string]any{
+			"text/event-stream": map[string]any{"schema": map[string]any{"type": "string"}},
+		},
+	}
+}
+
 func oapiStringSchema() map[string]any {
 	return map[string]any{"type": "string"}
 }

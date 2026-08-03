@@ -1048,6 +1048,34 @@ func exerciseStoreLifecycle(t *testing.T, store Store) {
 	if !exists || logs != "first\nsecond\n" {
 		t.Fatalf("logs = %q, exists = %v", logs, exists)
 	}
+	firstUpdate, exists, err := store.GetLogUpdate(context.Background(), "default", job.ID, 0, 6)
+	if err != nil {
+		t.Fatalf("GetLogUpdate(first) returned error: %v", err)
+	}
+	if !exists || firstUpdate.NewLogs != "first\n" || firstUpdate.Offset != 6 {
+		t.Fatalf("first log update = %#v, exists = %v", firstUpdate, exists)
+	}
+	secondUpdate, exists, err := store.GetLogUpdate(context.Background(), "default", job.ID, firstUpdate.Offset, 256)
+	if err != nil {
+		t.Fatalf("GetLogUpdate(second) returned error: %v", err)
+	}
+	if !exists || secondUpdate.NewLogs != "second\n" || secondUpdate.Offset != 13 {
+		t.Fatalf("second log update = %#v, exists = %v", secondUpdate, exists)
+	}
+	pastEndUpdate, exists, err := store.GetLogUpdate(context.Background(), "default", job.ID, 99, 256)
+	if err != nil {
+		t.Fatalf("GetLogUpdate(past end) returned error: %v", err)
+	}
+	if !exists || pastEndUpdate.NewLogs != "" || pastEndUpdate.Offset != 13 {
+		t.Fatalf("past-end log update = %#v, exists = %v", pastEndUpdate, exists)
+	}
+	missingUpdate, exists, err := store.GetLogUpdate(context.Background(), "default", "missing", 0, 256)
+	if err != nil {
+		t.Fatalf("GetLogUpdate(missing) returned error: %v", err)
+	}
+	if exists || missingUpdate != (JobLogUpdate{}) {
+		t.Fatalf("missing log update = %#v, exists = %v", missingUpdate, exists)
+	}
 	if err := store.CompleteJobWaitingHuman(context.Background(), lease, contract.JobResult{
 		JobID:    job.ID,
 		App:      "echo",

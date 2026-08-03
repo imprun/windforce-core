@@ -4090,6 +4090,95 @@ textarea {
   margin-bottom: 12px;
 }
 
+.jobLogInspector {
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.jobLogToolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--space-3);
+}
+
+.jobLogToolbar .button,
+.jobLogFooterActions,
+.jobLogFooterActions .button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.jobLogFacts {
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--surface-2);
+}
+
+.jobLogSection {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.jobLogSectionHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.jobLogSectionHeading h3 {
+  font-size: 0.875rem;
+}
+
+.jobLogSectionHeading p {
+  margin-top: var(--space-1);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.jobLogLive {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--success);
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.jobLogLive span {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--success);
+}
+
+.jobLogOutput {
+  min-height: 20rem;
+  max-height: calc(100vh - 28rem);
+  flex: 1;
+  margin: 0;
+  padding: var(--space-4);
+  overflow: auto;
+  border: 1px solid var(--shell-border);
+  border-radius: var(--radius-small);
+  background: var(--shell-background);
+  color: var(--shell-foreground);
+  font-family: var(--font-family-mono);
+  font-size: 0.75rem;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+  tab-size: 2;
+  white-space: pre-wrap;
+}
+
 @media (max-width: 900px) {
   .webhookConfigSummary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -4113,8 +4202,18 @@ textarea {
   .formGrid,
   .appScopeList,
   .webhookConfigSummary,
-  .sheetFacts {
+  .sheetFacts,
+  .jobLogToolbar {
     grid-template-columns: 1fr;
+  }
+
+  .jobLogToolbar .button {
+    justify-content: center;
+  }
+
+  .jobLogOutput {
+    min-height: 16rem;
+    max-height: none;
   }
 
   .appScopeOption:nth-child(odd) {

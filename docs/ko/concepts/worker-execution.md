@@ -119,6 +119,11 @@ Launcher는 Action의 최종 값을 `result.json`에 기록합니다. Worker는 
 
 Job이 대기 또는 실행 중일 때 새 Release를 발행해도 해당 Job은 바뀌지 않습니다. 상위 Workflow가 명시적으로 새 Run을 admit하지 않는 한 재시도도 기존 Run과 Job에 고정된 Deployment snapshot을 사용합니다.
 
+App stdout과 stderr는 하나의 마스킹된 Job 로그 stream이며 Action의 최종 반환값은
+별도 결과입니다. Offset 기반 실시간 추적, Service 로그, Browser Artifact, 공유
+Worker에서 Bun Inspector를 노출하지 않는 원칙은
+[실행 관측성과 디버깅](execution-observability.md)에 정의합니다.
+
 ## Maintainer와 AI Coding 에이전트 점검표
 
 Worker 또는 Runtime 변경을 수용하기 전에 다음을 모두 확인해야 합니다.
@@ -132,6 +137,8 @@ Worker 또는 Runtime 변경을 수용하기 전에 다음을 모두 확인해�
 - 로컬 및 원격 Worker 경로가 동일한 Bundle과 완료 의미를 보존합니다.
 - 종료 시 새 claim을 중단하고 `active -> draining`을 노출하며 drain deadline까지 실행 중 Job을 보존한 뒤 완료 후에만 registry record를 제거합니다.
 - 로그와 결과가 Secret 마스킹 및 lease fencing을 유지합니다.
+- 로그 추가가 byte offset 기준으로 순서를 보존하고 재연결 가능하며 App 로그,
+  최종 결과, Service 로그, Binary Artifact를 서로 섞지 않습니다.
 - 테스트가 Bundle 발행/fetch, 캐시 동작, 원격 압축 해제, Runtime 실행, TypeScript `main` 정적 검증, 정상 drain과 timeout drain, Bundle 오류 시 Job 실패를 검증합니다.
 
 주요 구현 위치는 `internal/worker`, `internal/runtime`, `internal/executor`, `internal/executionbundle`, `internal/remoteworker`, `internal/server/worker_plane.go`입니다. 실행 의미를 바꾸는 변경은 이 현재 상태 문서와 함께 ADR도 추가해야 합니다.

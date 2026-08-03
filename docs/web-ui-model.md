@@ -14,8 +14,11 @@ Web UI는 운영자가 다음 질문에 브라우저에서 답할 수 있게 한
    돌고, 실패하고 있는가?
 
 수백만 건 규모에서 개별 job 레코드를 열람하는 것은 운영 질문에 답하지
-못한다. UI는 집계만 보여주고, 개별 run의 payload/로그/취소는 control-plane
-API와 CLI의 몫이다 ([ADR 0005](adr/0005-aggregate-job-observability.md)).
+못한다. UI는 집계를 기본으로 하며 개별 run payload와 취소는 control-plane
+API client의 몫이다. 단, 운영자가 Job ID를 이미 알고 있을 때는 목록 없이
+마스킹된 로그를 실시간 추적하는 집중형 검사기를 제공한다
+([ADR 0005](adr/0005-aggregate-job-observability.md),
+[ADR 0024](adr/0024-offset-job-log-streaming.md)).
 
 전체 Windforce 콘솔 재구현이 아니다. SaaS 테넌트 관리, billing, quota,
 scheduler UI, workflow designer는 범위 밖이다 ([ADR 0003](adr/0003-lightweight-admin-ui.md)).
@@ -97,13 +100,13 @@ credential을 받고, 등록 전에 `probe`로 도달성과 branch 존재를 확
   수정, source 삭제, route tag override가 actor와 함께 기록된다. release
   게시는 Releases 탭이 담당하고 audit에는 중복 기록하지 않는다.
 - **Actions**: action별 input/output JSON Schema (`actions/{action}/schema`).
-  action 호출은 API/CLI의 몫이고 UI는 계약(스키마)만 보여준다.
+  action 호출은 Invocation API client의 몫이고 UI는 계약(스키마)만 보여준다.
 
 위험 작업(App 삭제)은 Repository 탭 하단의 danger zone에 둔다.
 
 ### Monitoring
 
-workload 집계 대시보드. 개별 job 레코드는 다루지 않는다.
+workload 집계 대시보드. 개별 job 목록은 다루지 않는다.
 
 - 상단: `jobs/summary` 기반 요약 타일 — queued, running(현재), 선택한
   시간 창의 completed/failed/canceled.
@@ -111,9 +114,13 @@ workload 집계 대시보드. 개별 job 레코드는 다루지 않는다.
 - App별 집계 테이블: queued, running, 시간 창 내 completed/failed/canceled,
   실패율. App 이름은 App 상세로 연결된다.
 - Route tag별 집계 테이블: 같은 지표를 tag 단위로.
+- Job 로그 검사기: 운영자가 Job ID를 입력하거나 구 `/ui/jobs/{id}` 링크로
+  들어왔을 때만 열고, SSE byte offset으로 마스킹된 로그와 상태를 추적한다.
+  Job 목록, 입력값, 취소 동작은 제공하지 않는다.
 
-개별 run의 payload, 로그, cancel은 control-plane API와 CLI
-(`tools/windforce_control.py`)로 처리한다.
+개별 run의 payload와 cancel, 로그 파일 자동화는 control-plane API로 처리한다.
+`tools/windforce_control.py`는 이 API를 호출하는 저장소 로컬 개발·운영 보조
+도구이며 별도로 배포되는 Core 사용자용 CLI가 아니다.
 
 ### Settings
 

@@ -155,6 +155,172 @@ func (h *Handler) handleJobLogs(w http.ResponseWriter, r *http.Request, workspac
 	_, _ = w.Write(data)
 }
 
+const (
+	jobLogStreamPollInterval = 250 * time.Millisecond
+	jobLogStreamPingInterval = 15 * time.Second
+	defaultJobLogStreamTTL   = 60 * time.Second
+	maxJobLogStreamTTL       = 5 * time.Minute
+	maxJobLogUpdateBytes     = 256 << 10
+)
+
+type jobLogStreamEvent struct {
+	Type      string `json:"type"`
+	Running   *bool  `json:"running,omitempty"`
+	Completed *bool  `json:"completed,omitempty"`
+	NewLogs   string `json:"new_logs,omitempty"`
+	LogOffset int64  `json:"log_offset,omitempty"`
+	Status    string `json:"status,omitempty"`
+	Attempt   int    `json:"attempt,omitempty"`
+	WorkerID  string `json:"worker_id,omitempty"`
+	Error     string `json:"error,omitempty"`
+}
+
+func (h *Handler) handleJobLogStream(w http.ResponseWriter, r *http.Request, workspaceID string, jobID string) {
+	if h.store == nil {
+		writeError(w, http.StatusServiceUnavailable, "state store is not configured")
+		return
+	}
+	offset, err := parseLogOffset(r.URL.Query().Get("offset"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	streamTTL, err := parseLogStreamTTL(r.URL.Query().Get("timeout_seconds"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	job, run, exists, err := h.store.GetJob(r.Context(), workspaceID, jobID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !exists {
+		writeError(w, http.StatusNotFound, "job not found")
+		return
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "streaming is not supported")
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache, no-transform")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
+
+	writeEvent := func(event jobLogStreamEvent) bool {
+		data, marshalErr := json.Marshal(event)
+		if marshalErr != nil {
+			return false
+		}
+		if _, writeErr := fmt.Fprintf(w, "data: %s\n\n", data); writeErr != nil {
+			return false
+		}
+		flusher.Flush()
+		return true
+	}
+
+	poll := time.NewTicker(jobLogStreamPollInterval)
+	defer poll.Stop()
+	ping := time.NewTicker(jobLogStreamPingInterval)
+	defer ping.Stop()
+	timeout := time.NewTimer(streamTTL)
+	defer timeout.Stop()
+	lastStatus := ""
+	first := true
+	for {
+		update, found, updateErr := h.store.GetLogUpdate(r.Context(), workspaceID, jobID, offset, maxJobLogUpdateBytes)
+		if updateErr != nil {
+			writeEvent(jobLogStreamEvent{Type: "error", Error: updateErr.Error()})
+			return
+		}
+		if !found {
+			writeEvent(jobLogStreamEvent{Type: "notfound"})
+			return
+		}
+		if !first {
+			job, run, found, updateErr = h.store.GetJob(r.Context(), workspaceID, jobID)
+			if updateErr != nil {
+				writeEvent(jobLogStreamEvent{Type: "error", Error: updateErr.Error()})
+				return
+			}
+			if !found {
+				writeEvent(jobLogStreamEvent{Type: "notfound"})
+				return
+			}
+		}
+		first = false
+		completed := job.State == state.JobSucceeded || job.State == state.JobFailed
+		running := job.State == state.JobRunning
+		status := string(job.State)
+		if completed {
+			status = terminalJobStatus(job, run)
+		}
+		if update.NewLogs != "" || status != lastStatus {
+			if !writeEvent(jobLogStreamEvent{
+				Type:      "update",
+				Running:   &running,
+				Completed: &completed,
+				NewLogs:   update.NewLogs,
+				LogOffset: update.Offset,
+				Status:    status,
+				Attempt:   job.Attempt,
+				WorkerID:  job.LeaseOwner,
+			}) {
+				return
+			}
+			lastStatus = status
+		}
+		offset = update.Offset
+		if completed {
+			return
+		}
+
+		select {
+		case <-r.Context().Done():
+			return
+		case <-poll.C:
+		case <-ping.C:
+			if !writeEvent(jobLogStreamEvent{Type: "ping"}) {
+				return
+			}
+		case <-timeout.C:
+			writeEvent(jobLogStreamEvent{Type: "timeout"})
+			return
+		}
+	}
+}
+
+func parseLogOffset(value string) (int64, error) {
+	if value == "" {
+		return 0, nil
+	}
+	offset, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || offset < 0 {
+		return 0, errors.New("offset must be a non-negative integer")
+	}
+	return offset, nil
+}
+
+func parseLogStreamTTL(value string) (time.Duration, error) {
+	if value == "" {
+		return defaultJobLogStreamTTL, nil
+	}
+	seconds, err := strconv.Atoi(value)
+	if err != nil || seconds <= 0 {
+		return 0, errors.New("timeout_seconds must be a positive integer")
+	}
+	ttl := time.Duration(seconds) * time.Second
+	if ttl > maxJobLogStreamTTL {
+		return 0, errors.New("timeout_seconds exceeds server limit")
+	}
+	return ttl, nil
+}
+
 type jobStatusResponse struct {
 	ID             string          `json:"id"`
 	WorkspaceID    string          `json:"workspace_id"`

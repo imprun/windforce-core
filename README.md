@@ -163,6 +163,10 @@ A run request is admitted and executed as follows:
 
 The canonical ordering, cache safety rules, local and remote worker transport, and coding-agent checklist are documented in [Worker execution lifecycle](docs/concepts/worker-execution.md).
 
+Application Job logs, terminal results, Worker service logs, browser artifacts,
+and interactive debugger boundaries are documented in
+[Execution observability and debugging](docs/concepts/execution-observability.md).
+
 The SDK-neutral Core `main(ctx)` host interface and the rule that every App SDK remains an opaque bundle dependency are defined in [App runtime interface and SDK boundaries](docs/concepts/app-runtime-interface.md).
 
 ## Manifest
@@ -358,14 +362,14 @@ The core script context exposes the implemented basic helpers: `ctx.variables`, 
 
 `git_sources` responses follow the canonical control-plane shape: `id` is the
 numeric source identifier used by `{gitSourceId}` routes, and `name` is the
-human-readable source name. Control-plane integrations, including the core CLI,
-must store and call the returned numeric `id`.
+human-readable source name. Control-plane integrations must store and call the
+returned numeric `id`.
 
 `creds_ref` is a workspace-shared variable path for the git access token, not an
 environment variable name. Register the token through the control-plane
 variables API with an empty `app_key`, then pass that path as `creds_ref`. The
-core CLI reads secret values from an environment variable so the token is not
-placed in shell history:
+repository-local control helper reads secret values from an environment variable
+so the token is not placed in shell history:
 
 ```powershell
 $env:WINDFORCE_LITE_GIT_TOKEN = "<token>"
@@ -449,8 +453,8 @@ core basic control plane.
 The full Windforce control plane derives job actor provenance from the
 authenticated principal. Lite keeps the same response fields without
 implementing the full user/session principal model: local control-plane clients
-may provide `X-Windforce-Actor` directly or use the core CLI's global `--actor`
-option / `WINDFORCE_LITE_ACTOR` environment variable. `created_by`,
+may provide `X-Windforce-Actor` directly or use the repository-local control
+helper's global `--actor` option / `WINDFORCE_LITE_ACTOR` environment variable. `created_by`,
 `permissioned_as`, and `canceled_by` fall back to `system` only when no actor is
 present.
 

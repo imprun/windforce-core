@@ -164,7 +164,7 @@ async function createPlaywrightBrowser(config) {
   }
   return {
     async newPage(viewport = config.viewport) {
-      const context = await browser.newContext({ viewport });
+      const context = await browser.newContext({ viewport, locale: "en-US" });
       const page = await context.newPage();
       const errors = [];
       page.on("pageerror", (error) => errors.push(error.message));
@@ -326,6 +326,7 @@ class CdpPage {
       deviceScaleFactor: 1,
       mobile: false,
     }, this.sessionId);
+    await this.send("Emulation.setLocaleOverride", { locale: "en-US" }, this.sessionId);
   }
 
   handleEvent(message) {

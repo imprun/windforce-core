@@ -322,7 +322,7 @@ windforce-job-result:
 	python tools/windforce_control.py --api-url "$(WF_API_URL)" --workspace "$(WF_WORKSPACE)" --pretty job-result --job-id "$(WF_JOB_ID)"
 
 windforce-job-logs:
-	python tools/windforce_control.py --api-url "$(WF_API_URL)" --workspace "$(WF_WORKSPACE)" --pretty job-logs --job-id "$(WF_JOB_ID)" $(if $(WF_TAIL_BYTES),--tail-bytes "$(WF_TAIL_BYTES)",)
+	python tools/windforce_control.py --api-url "$(WF_API_URL)" --workspace "$(WF_WORKSPACE)" --pretty job-logs --job-id "$(WF_JOB_ID)" $(if $(WF_TAIL_BYTES),--tail-bytes "$(WF_TAIL_BYTES)",) $(if $(WF_FOLLOW),--follow,)
 
 windforce-job-cancel:
 	python tools/windforce_control.py --api-url "$(WF_API_URL)" --workspace "$(WF_WORKSPACE)" --pretty job-cancel --job-id "$(WF_JOB_ID)"

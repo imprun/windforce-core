@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Small CLI for the windforce-core Control Plane and Invocation APIs.
+"""Repository-local helper for the windforce-core Control Plane and Invocation APIs.
 
+This is a development and operator aid, not a separately released Core CLI.
 The server owns the system-to-system specification. Management commands call
 `/api/w/{workspace}/...`; Run admission and lifecycle call the canonical
 `/api/v1/workspaces/{workspace}/...` Invocation API.
@@ -25,7 +26,9 @@ DEFAULT_WORKSPACE = "default"
 
 def main(argv: list[str] | None = None) -> int:
     configure_stdio()
-    parser = argparse.ArgumentParser(description="windforce-core control-plane API client")
+    parser = argparse.ArgumentParser(
+        description="repository-local windforce-core development and operator helper"
+    )
     parser.add_argument(
         "--api-url",
         default=os.environ.get("WINDFORCE_LITE_API_URL", DEFAULT_API_URL),
@@ -239,9 +242,17 @@ def main(argv: list[str] | None = None) -> int:
     job_result.add_argument("--job-id", required=True)
     job_result.set_defaults(func=cmd_job_result)
 
-    job_logs = sub.add_parser("job-logs", help="get one job log stream")
+    job_logs = sub.add_parser("job-logs", help="read or follow one job's masked stdout/stderr")
     job_logs.add_argument("--job-id", required=True)
     job_logs.add_argument("--tail-bytes", type=int, default=None)
+    job_logs.add_argument("--follow", action="store_true", help="follow log updates until the job completes")
+    job_logs.add_argument("--offset", type=int, default=0, help="UTF-8 byte offset used with --follow")
+    job_logs.add_argument(
+        "--stream-timeout",
+        type=int,
+        default=60,
+        help="seconds per SSE connection before reconnecting (default: 60)",
+    )
     job_logs.set_defaults(func=cmd_job_logs)
 
     job_cancel = sub.add_parser("job-cancel", help="cancel one queued or running job")
@@ -718,8 +729,63 @@ def cmd_job_result(args: argparse.Namespace) -> Any:
 
 
 def cmd_job_logs(args: argparse.Namespace) -> Any:
+    if args.follow:
+        if args.tail_bytes is not None:
+            raise APIError({"error": "--tail-bytes cannot be combined with --follow"})
+        follow_job_logs(args)
+        return RawOutput("")
     query = query_string({"tail_bytes": args.tail_bytes})
     return request_raw(args, "GET", f"/api/w/{quote_path(args.workspace)}/jobs/{quote_path(args.job_id)}/logs{query}")
+
+
+def follow_job_logs(args: argparse.Namespace) -> None:
+    if args.offset < 0:
+        raise APIError({"error": "--offset must be a non-negative integer"})
+    if args.stream_timeout <= 0 or args.stream_timeout > 300:
+        raise APIError({"error": "--stream-timeout must be between 1 and 300 seconds"})
+
+    offset = args.offset
+    while True:
+        query = query_string({"offset": offset, "timeout_seconds": args.stream_timeout})
+        path = f"/api/w/{quote_path(args.workspace)}/jobs/{quote_path(args.job_id)}/logs/stream{query}"
+        url = args.api_url.rstrip("/") + path
+        headers = request_headers(args, False)
+        headers["Accept"] = "text/event-stream"
+        req = urllib.request.Request(url, headers=headers, method="GET")
+        try:
+            with urllib.request.urlopen(req, timeout=args.stream_timeout + 15) as response:
+                for raw_line in response:
+                    line = raw_line.decode("utf-8", errors="replace").rstrip("\r\n")
+                    if not line.startswith("data: "):
+                        continue
+                    event = json.loads(line[6:])
+                    event_type = event.get("type")
+                    if event_type == "update":
+                        new_logs = str(event.get("new_logs") or "")
+                        if new_logs:
+                            sys.stdout.write(new_logs)
+                            sys.stdout.flush()
+                        offset = int(event.get("log_offset", offset))
+                        if event.get("completed"):
+                            return
+                    elif event_type == "timeout":
+                        break
+                    elif event_type == "ping":
+                        continue
+                    elif event_type == "notfound":
+                        raise APIError({"status": 404, "url": url, "error": "job not found"})
+                    elif event_type == "error":
+                        raise APIError({"url": url, "error": event.get("error") or "job log stream failed"})
+        except urllib.error.HTTPError as exc:
+            payload = decode_response(exc.read())
+            if isinstance(payload, dict):
+                payload.setdefault("status", exc.code)
+                payload.setdefault("url", url)
+            else:
+                payload = {"status": exc.code, "url": url, "error": payload}
+            raise APIError(payload) from exc
+        except urllib.error.URLError as exc:
+            raise APIError({"error": str(exc.reason), "url": url}) from exc
 
 
 def cmd_job_cancel(args: argparse.Namespace) -> Any:

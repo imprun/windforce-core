@@ -203,7 +203,7 @@ The Audit tab records who changed the app's configuration: repository settings e
 
 ## Monitor job activity
 
-The Monitoring view aggregates job activity for the whole workspace: totals, per-app and per-route-tag breakdowns, and failure rates. Individual runs are an API/CLI concern.
+The Monitoring view aggregates job activity for the whole workspace: totals, per-app and per-route-tag breakdowns, and failure rates. Targeted live logs remain available when you know a Job ID.
 
 ![Monitor job activity](../assets/ui/monitoring.png)
 
@@ -211,6 +211,7 @@ The Monitoring view aggregates job activity for the whole workspace: totals, per
 2. Read the tiles: queued and running now, plus completed, failed, and canceled runs in the selected window.
 3. Switch the window between 1h, 24h, and 7d.
 4. Use the by-app and by-route-tag tables to find where the failure rate is moving; app names link to the app detail.
+5. Open Inspect job logs only for a known Job ID; the page does not become a browsable Job ledger.
 
 ## Review App Triggers in dark mode
 
@@ -221,6 +222,17 @@ Dark mode preserves clear separation between Trigger kinds, enablement, delivery
 1. Switch the execution workspace to dark mode.
 2. Open an App and choose Triggers.
 3. Confirm status text and icons remain distinguishable without relying on color alone.
+
+## Follow one Job's logs
+
+The focused inspector follows masked stdout and stderr for a known Job ID while Monitoring remains aggregate-first.
+
+![Follow one Job's logs](../assets/ui/job-log-inspector.png)
+
+1. Open Monitoring and choose Inspect job logs.
+2. Paste the Job ID obtained from an invocation response, alert, or CLI query.
+3. Connect to replay retained bytes and continue following from the latest byte offset.
+4. Use status, App/Action, Worker, attempt, release commit, and start time to anchor the diagnosis.
 
 ## Add an inbound Trigger
 

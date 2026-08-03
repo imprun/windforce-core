@@ -93,6 +93,26 @@ CREATE TABLE IF NOT EXISTS job_logs (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS job_log_state (
+    job_id TEXT PRIMARY KEY REFERENCES jobs(id) ON DELETE CASCADE,
+    workspace_id TEXT NOT NULL DEFAULT 'default',
+    next_offset BIGINT NOT NULL DEFAULT 0 CHECK (next_offset >= 0),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS job_log_chunks (
+    id BIGSERIAL PRIMARY KEY,
+    job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    workspace_id TEXT NOT NULL DEFAULT 'default',
+    start_offset BIGINT NOT NULL CHECK (start_offset >= 0),
+    chunk TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (job_id, start_offset)
+);
+
+CREATE INDEX IF NOT EXISTS job_log_chunks_job_cursor_idx
+ON job_log_chunks (workspace_id, job_id, start_offset);
+
 CREATE TABLE IF NOT EXISTS job_state (
     workspace_id TEXT NOT NULL,
     state_path TEXT NOT NULL,

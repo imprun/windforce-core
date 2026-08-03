@@ -263,6 +263,41 @@ export type JobsSummary = JobStatusCounts & {
   by_app?: Array<JobStatusCounts & { app_key: string }>;
 };
 
+export type JobStatus = {
+  id: string;
+  workspace_id: string;
+  state: "queued" | "running" | "succeeded" | "failed" | string;
+  status?: string;
+  worker?: string;
+  app_key?: string;
+  action_key?: string;
+  trigger_kind?: string;
+  commit_sha?: string;
+  tag?: string;
+  created_at?: string;
+  started_at?: string;
+  completed_at?: string;
+  duration_ms?: number;
+};
+
+export type JobLogStreamEvent = {
+  type: "update" | "ping" | "timeout" | "error" | "notfound";
+  running?: boolean;
+  completed?: boolean;
+  new_logs?: string;
+  log_offset?: number;
+  status?: string;
+  attempt?: number;
+  worker_id?: string;
+  error?: string;
+};
+
+export type JobLogStreamResult = {
+  offset: number;
+  completed: boolean;
+  timedOut: boolean;
+};
+
 export type AuditRecord = {
   id: string;
   git_source_id: number;
@@ -872,6 +907,73 @@ export class WindforceApi {
     return this.request(`/jobs/summary?recent_seconds=${recentSeconds}`);
   }
 
+  job(jobID: string): Promise<JobStatus> {
+    return this.request(`/jobs/${encodeURIComponent(jobID)}`);
+  }
+
+  async streamJobLogs(
+    jobID: string,
+    options: {
+      offset: number;
+      timeoutSeconds?: number;
+      signal?: AbortSignal;
+      onEvent: (event: JobLogStreamEvent) => void;
+    },
+  ): Promise<JobLogStreamResult> {
+    const params = new URLSearchParams({
+      offset: String(options.offset),
+      timeout_seconds: String(options.timeoutSeconds || 60),
+    });
+    const headers = new Headers({ accept: "text/event-stream" });
+    if (this.settings.token) headers.set("authorization", `Bearer ${this.settings.token}`);
+    setActorHeaders(headers, this.settings.actor);
+    const url = this.workspaceURL(`/jobs/${encodeURIComponent(jobID)}/logs/stream?${params}`);
+    const response = await fetch(url, { headers, signal: options.signal });
+    if (!response.ok) {
+      const text = await response.text();
+      if (response.status === 401) this.onUnauthorized?.();
+      throw apiError(response, text);
+    }
+    if (!response.body) {
+      throw new ApiError("http.server_error", 500, "job log stream has no response body");
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let offset = options.offset;
+    let completed = false;
+    let timedOut = false;
+    const consume = (blocks: string[]) => {
+      for (const block of blocks) {
+        const event = decodeJobLogSSEBlock(block);
+        if (!event) continue;
+        options.onEvent(event);
+        if (event.type === "update") {
+          offset = event.log_offset ?? offset;
+          completed = event.completed === true;
+        } else if (event.type === "timeout") {
+          timedOut = true;
+        } else if (event.type === "notfound") {
+          throw new ApiError("http.not_found", 404, "job not found");
+        } else if (event.type === "error") {
+          throw new ApiError("http.server_error", 500, event.error || "job log stream failed");
+        }
+      }
+    };
+
+    while (true) {
+      const { done, value } = await reader.read();
+      buffer += decoder.decode(value, { stream: !done });
+      const split = splitSSEBlocks(buffer);
+      buffer = split.remainder;
+      consume(split.blocks);
+      if (done) break;
+    }
+    if (buffer.trim()) consume([buffer]);
+    return { offset, completed, timedOut };
+  }
+
   auditTrail(sourceID: number): Promise<AuditRecord[]> {
     return this.request(`/git_sources/${sourceID}/audit`);
   }
@@ -1177,6 +1279,21 @@ export class WindforceApi {
     const workspace = encodeURIComponent(this.settings.workspace || "default");
     return `/api/w/${workspace}${path}`;
   }
+}
+
+export function splitSSEBlocks(buffer: string): { blocks: string[]; remainder: string } {
+  const parts = buffer.split(/\r?\n\r?\n/);
+  return { blocks: parts.slice(0, -1), remainder: parts.at(-1) || "" };
+}
+
+export function decodeJobLogSSEBlock(block: string): JobLogStreamEvent | null {
+  const data = block
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => line.slice(5).trimStart())
+    .join("\n");
+  if (!data) return null;
+  return JSON.parse(data) as JobLogStreamEvent;
 }
 
 function apiError(response: Response, text: string): ApiError {

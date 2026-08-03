@@ -324,6 +324,7 @@ func (s *LocalStore) AppendLogs(ctx context.Context, jobID string, workspaceID s
 	if chunk == "" {
 		return nil
 	}
+	chunk = strings.ToValidUTF8(chunk, "\uFFFD")
 	return s.update(ctx, func(snapshot *Snapshot, now time.Time) error {
 		job, ok := snapshot.Jobs[jobID]
 		if !ok {
@@ -359,6 +360,14 @@ func (s *LocalStore) GetLogs(ctx context.Context, workspaceID string, jobID stri
 		return "", false, nil
 	}
 	return "", true, nil
+}
+
+func (s *LocalStore) GetLogUpdate(ctx context.Context, workspaceID string, jobID string, afterOffset int64, limitBytes int) (JobLogUpdate, bool, error) {
+	logs, exists, err := s.GetLogs(ctx, workspaceID, jobID)
+	if err != nil || !exists {
+		return JobLogUpdate{}, exists, err
+	}
+	return logWindow(logs, afterOffset, limitBytes), true, nil
 }
 
 func (s *LocalStore) GetState(ctx context.Context, workspaceID string, statePath string) (json.RawMessage, bool, error) {

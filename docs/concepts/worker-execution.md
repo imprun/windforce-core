@@ -119,6 +119,11 @@ The launcher writes the terminal action value to `result.json`. The worker strea
 
 Publishing a newer release while a Job is queued or running does not change that Job. Retry attempts continue from the Deployment snapshot already pinned into the Run and Job unless a higher-level workflow explicitly admits a new Run.
 
+Application stdout and stderr are one masked Job-log stream, while the terminal
+action value remains a separate result. Offset-based live following, service
+logs, browser artifacts, and the rule against exposing Bun Inspector on shared
+workers are defined in [Execution observability and debugging](execution-observability.md).
+
 ## Change checklist for maintainers and coding agents
 
 Before accepting a worker or runtime change, verify all of the following:
@@ -132,6 +137,8 @@ Before accepting a worker or runtime change, verify all of the following:
 - Local and remote worker paths preserve equivalent bundle and completion semantics.
 - Shutdown stops new claims, exposes `active -> draining`, preserves the active Job until the drain deadline, and removes the registry record only after completion.
 - Logs and results remain secret-masked and lease-fenced.
+- Log appends remain ordered and reconnectable by byte offset without mixing
+  application logs, terminal results, service logs, or binary artifacts.
 - Tests cover bundle publication/fetch, cache behavior, remote extraction, runtime execution, static TypeScript `main` validation, graceful and timed-out drain, and Job failure on bundle errors.
 
 The primary implementation areas are `internal/worker`, `internal/runtime`, `internal/executor`, `internal/executionbundle`, `internal/remoteworker`, and `internal/server/worker_plane.go`. Execution-semantic changes require an ADR in addition to updating this current-state document.

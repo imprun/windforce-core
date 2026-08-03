@@ -637,6 +637,14 @@ type JobLog struct {
 	CreatedAt   time.Time `json:"createdAt"`
 }
 
+// JobLogUpdate is an incremental byte range from a job's combined stdout and
+// stderr stream. Offset is the exclusive byte position after NewLogs and can
+// be passed back to GetLogUpdate to resume without replaying earlier output.
+type JobLogUpdate struct {
+	NewLogs string `json:"newLogs"`
+	Offset  int64  `json:"offset"`
+}
+
 type Snapshot struct {
 	StoreEpoch             string                                 `json:"storeEpoch,omitempty"`
 	SnapshotRevision       int64                                  `json:"snapshotRevision,omitempty"`
@@ -703,6 +711,7 @@ type Store interface {
 	GetHumanTask(ctx context.Context, taskID string) (HumanTask, error)
 	AppendLogs(ctx context.Context, jobID string, workspaceID string, chunk string) error
 	GetLogs(ctx context.Context, workspaceID string, jobID string) (string, bool, error)
+	GetLogUpdate(ctx context.Context, workspaceID string, jobID string, afterOffset int64, limitBytes int) (JobLogUpdate, bool, error)
 	GetState(ctx context.Context, workspaceID string, statePath string) (json.RawMessage, bool, error)
 	SetState(ctx context.Context, workspaceID string, statePath string, value json.RawMessage) error
 	ListVariables(ctx context.Context, workspaceID string) ([]Variable, error)

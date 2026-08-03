@@ -2,8 +2,10 @@ import { describe, expect, test } from "vitest";
 import { setLocale } from "../shared/i18n";
 import {
   ApiError,
+  decodeJobLogSSEBlock,
   errorMessage,
   setActorHeaders,
+  splitSSEBlocks,
   type WebhookSubscription,
   WindforceApi,
   webhookAppKeys,
@@ -64,6 +66,53 @@ describe("localized API errors", () => {
       expect(errorMessage(cause)).not.toContain("workspace archived");
     } finally {
       await setLocale("en");
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
+describe("WindforceApi job log streaming", () => {
+  test("keeps incomplete SSE blocks and decodes multiline data", () => {
+    const split = splitSSEBlocks(
+      'data: {"type":"ping"}\r\n\r\ndata: {"type":"update",\ndata: "log_offset":4}',
+    );
+    expect(split.blocks).toEqual(['data: {"type":"ping"}']);
+    expect(split.remainder).toContain('"log_offset":4');
+    expect(decodeJobLogSSEBlock(`${split.remainder}\n\n`)).toEqual({
+      type: "update",
+      log_offset: 4,
+    });
+  });
+
+  test("authenticates, replays from a byte offset, and returns the terminal cursor", async () => {
+    const originalFetch = globalThis.fetch;
+    const calls: Array<{ url: string; headers: Headers }> = [];
+    globalThis.fetch = (async (input, init) => {
+      calls.push({ url: String(input), headers: new Headers(init?.headers) });
+      return new Response(
+        [
+          'data: {"type":"update","new_logs":"hello ","log_offset":6,"completed":false}',
+          "",
+          'data: {"type":"update","new_logs":"world","log_offset":11,"completed":true}',
+          "",
+        ].join("\n"),
+        { status: 200, headers: { "content-type": "text/event-stream" } },
+      );
+    }) as typeof fetch;
+    try {
+      const api = new WindforceApi({ workspace: "ops", token: "secret", actor: "operator" });
+      const events: string[] = [];
+      const result = await api.streamJobLogs("job/1", {
+        offset: 0,
+        timeoutSeconds: 30,
+        onEvent: (event) => events.push(event.new_logs || ""),
+      });
+      expect(result).toEqual({ offset: 11, completed: true, timedOut: false });
+      expect(events.join("")).toBe("hello world");
+      expect(calls[0]?.url).toBe("/api/w/ops/jobs/job%2F1/logs/stream?offset=0&timeout_seconds=30");
+      expect(calls[0]?.headers.get("accept")).toBe("text/event-stream");
+      expect(calls[0]?.headers.get("authorization")).toBe("Bearer secret");
+    } finally {
       globalThis.fetch = originalFetch;
     }
   });

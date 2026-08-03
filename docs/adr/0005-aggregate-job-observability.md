@@ -3,7 +3,9 @@
 ## Status
 
 Accepted. Amends the job-inspection scope of [ADR 0003](0003-lightweight-admin-ui.md)
-and the Jobs screens introduced by [ADR 0004](0004-web-ui-rewrite.md).
+and the Jobs screens introduced by [ADR 0004](0004-web-ui-rewrite.md). The
+targeted Job-ID log inspector exception is defined by
+[ADR 0024](0024-offset-job-log-streaming.md).
 
 ## Context
 
@@ -24,9 +26,10 @@ failure rate is moving, per app and per route tag.
   (queued, running, completed/failed/canceled in a selectable recent window,
   and the derived failure rate).
 - The Web UI does **not** offer per-job browsing: no job list, no job detail,
-  no input/result/log viewers, and no cancel button. Automation and debugging
-  keep using the control-plane API (`/jobs`, `/jobs/{id}`, logs, cancel) and
-  the CLI, which remain unchanged.
+  no input viewer, and no cancel button. Automation and debugging keep using
+  the control-plane API (`/jobs`, `/jobs/{id}`, logs, cancel) and the CLI. A
+  focused inspector may follow masked logs only when the operator supplies a
+  Job ID; it must not turn into a paginated Job browser.
 - The per-action **test-run form is removed**. The Actions tab shows the
   materialized schemas; invoking actions is an API/CLI concern, not an admin
   UI concern.

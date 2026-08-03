@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 
@@ -17,36 +18,184 @@ func (s *PostgresStore) AppendLogs(ctx context.Context, jobID string, workspaceI
 		return nil
 	}
 	workspaceID = contract.NormalizeWorkspace(workspaceID)
-	// Guard on job existence: a flush for a pruned/unknown job must not
-	// create an orphan row no pruner would ever delete (local-store parity:
-	// ErrNotFound).
-	tag, err := s.pool.Exec(ctx, `
-INSERT INTO job_logs (job_id, workspace_id, logs)
-SELECT $1, $2, $3 WHERE EXISTS (SELECT 1 FROM jobs WHERE id = $1)
-ON CONFLICT (job_id) DO UPDATE SET logs = job_logs.logs || EXCLUDED.logs
-`, jobID, workspaceID, chunk)
+	chunk = strings.ToValidUTF8(chunk, "\uFFFD")
+	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	if tag.RowsAffected() == 0 {
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var legacyBytes int64
+	err = tx.QueryRow(ctx, `
+SELECT octet_length(logs)
+FROM job_logs
+WHERE job_id=$1 AND workspace_id=$2
+`, jobID, workspaceID).Scan(&legacyBytes)
+	if errors.Is(err, pgx.ErrNoRows) {
+		legacyBytes = 0
+	} else if err != nil {
+		return err
+	}
+
+	chunkBytes := int64(len([]byte(chunk)))
+	var startOffset int64
+	err = tx.QueryRow(ctx, `
+INSERT INTO job_log_state (job_id, workspace_id, next_offset, updated_at)
+SELECT $1, $2, $3, now()
+WHERE EXISTS (
+    SELECT 1
+    FROM jobs
+    WHERE id=$1
+      AND COALESCE(NULLIF(payload->>'workspace', ''), NULLIF(payload->'deployment'->>'workspace', ''), 'default')=$2
+)
+ON CONFLICT (job_id) DO UPDATE
+SET next_offset = job_log_state.next_offset + $4,
+    updated_at = now()
+RETURNING next_offset - $4
+`, jobID, workspaceID, legacyBytes+chunkBytes, chunkBytes).Scan(&startOffset)
+	if errors.Is(err, pgx.ErrNoRows) {
 		return fmt.Errorf("%w: job %q", ErrNotFound, jobID)
 	}
-	return nil
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `
+INSERT INTO job_log_chunks (job_id, workspace_id, start_offset, chunk)
+VALUES ($1, $2, $3, $4)
+`, jobID, workspaceID, startOffset, chunk); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (s *PostgresStore) GetLogs(ctx context.Context, workspaceID string, jobID string) (string, bool, error) {
 	workspaceID = contract.NormalizeWorkspace(workspaceID)
-	var logs string
-	err := s.pool.QueryRow(ctx, `
-SELECT logs FROM job_logs
-WHERE job_id=$1 AND workspace_id=$2
-`, jobID, workspaceID).Scan(&logs)
-	if err == nil {
-		return logs, true, nil
+	exists, err := s.postgresJobExists(ctx, workspaceID, jobID)
+	if err != nil || !exists {
+		return "", exists, err
 	}
-	if !errors.Is(err, pgx.ErrNoRows) {
+	var legacy string
+	err = s.pool.QueryRow(ctx, `
+SELECT logs FROM job_logs WHERE job_id=$1 AND workspace_id=$2
+`, jobID, workspaceID).Scan(&legacy)
+	if errors.Is(err, pgx.ErrNoRows) {
+		legacy = ""
+	} else if err != nil {
 		return "", false, err
 	}
+	rows, err := s.pool.Query(ctx, `
+SELECT chunk
+FROM job_log_chunks
+WHERE job_id=$1 AND workspace_id=$2
+ORDER BY start_offset
+`, jobID, workspaceID)
+	if err != nil {
+		return "", false, err
+	}
+	defer rows.Close()
+	var logs strings.Builder
+	logs.WriteString(legacy)
+	for rows.Next() {
+		var chunk string
+		if err := rows.Scan(&chunk); err != nil {
+			return "", false, err
+		}
+		logs.WriteString(chunk)
+	}
+	if err := rows.Err(); err != nil {
+		return "", false, err
+	}
+	return logs.String(), true, nil
+}
+
+func (s *PostgresStore) GetLogUpdate(ctx context.Context, workspaceID string, jobID string, afterOffset int64, limitBytes int) (JobLogUpdate, bool, error) {
+	workspaceID = contract.NormalizeWorkspace(workspaceID)
+	exists, err := s.postgresJobExists(ctx, workspaceID, jobID)
+	if err != nil || !exists {
+		return JobLogUpdate{}, exists, err
+	}
+	if afterOffset < 0 {
+		afterOffset = 0
+	}
+	if limitBytes <= 0 {
+		limitBytes = 256 << 10
+	}
+
+	var legacy string
+	err = s.pool.QueryRow(ctx, `
+SELECT logs FROM job_logs WHERE job_id=$1 AND workspace_id=$2
+`, jobID, workspaceID).Scan(&legacy)
+	if errors.Is(err, pgx.ErrNoRows) {
+		legacy = ""
+	} else if err != nil {
+		return JobLogUpdate{}, false, err
+	}
+	legacyBytes := int64(len([]byte(legacy)))
+	totalBytes := legacyBytes
+	err = s.pool.QueryRow(ctx, `
+SELECT next_offset
+FROM job_log_state
+WHERE job_id=$1 AND workspace_id=$2
+`, jobID, workspaceID).Scan(&totalBytes)
+	if errors.Is(err, pgx.ErrNoRows) {
+		totalBytes = legacyBytes
+	} else if err != nil {
+		return JobLogUpdate{}, false, err
+	}
+	if afterOffset > totalBytes {
+		afterOffset = totalBytes
+	}
+
+	currentOffset := afterOffset
+	var logs strings.Builder
+	if afterOffset < legacyBytes {
+		window := logWindow(legacy, afterOffset, limitBytes)
+		logs.WriteString(window.NewLogs)
+		currentOffset = window.Offset
+		if logs.Len() >= limitBytes {
+			return JobLogUpdate{NewLogs: logs.String(), Offset: currentOffset}, true, nil
+		}
+	}
+
+	rows, err := s.pool.Query(ctx, `
+SELECT start_offset, chunk
+FROM job_log_chunks
+WHERE job_id=$1
+  AND workspace_id=$2
+  AND start_offset + octet_length(chunk) > $3
+ORDER BY start_offset
+`, jobID, workspaceID, currentOffset)
+	if err != nil {
+		return JobLogUpdate{}, false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var startOffset int64
+		var chunk string
+		if err := rows.Scan(&startOffset, &chunk); err != nil {
+			return JobLogUpdate{}, false, err
+		}
+		if currentOffset < startOffset {
+			currentOffset = startOffset
+		}
+		remaining := limitBytes - logs.Len()
+		if remaining <= 0 {
+			break
+		}
+		window := logWindow(chunk, currentOffset-startOffset, remaining)
+		logs.WriteString(window.NewLogs)
+		currentOffset = startOffset + window.Offset
+		if logs.Len() >= limitBytes {
+			break
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return JobLogUpdate{}, false, err
+	}
+	return JobLogUpdate{NewLogs: logs.String(), Offset: currentOffset}, true, nil
+}
+
+func (s *PostgresStore) postgresJobExists(ctx context.Context, workspaceID string, jobID string) (bool, error) {
 	var exists bool
 	if err := s.pool.QueryRow(ctx, `
 SELECT EXISTS (
@@ -56,9 +205,9 @@ SELECT EXISTS (
       AND COALESCE(NULLIF(payload->>'workspace', ''), NULLIF(payload->'deployment'->>'workspace', ''), 'default')=$2
 )
 `, jobID, workspaceID).Scan(&exists); err != nil {
-		return "", false, err
+		return false, err
 	}
-	return "", exists, nil
+	return exists, nil
 }
 
 func (s *PostgresStore) GetState(ctx context.Context, workspaceID string, statePath string) (json.RawMessage, bool, error) {

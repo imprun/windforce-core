@@ -786,6 +786,21 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 				}, "400", "401", "403", "404"),
 			},
 		},
+		"/api/w/{workspace}/jobs/{jobId}/logs/stream": map[string]any{
+			"get": map[string]any{
+				"operationId": "streamJobLogs",
+				"summary":     "Stream job status and new logs",
+				"parameters": []any{
+					oapiWorkspaceParam(workspaceID),
+					oapiPathParam("jobId", "Job id."),
+					oapiQueryParam("offset", "Exclusive byte offset returned by the previous update.", oapiIntegerSchema(), false),
+					oapiQueryParam("timeout_seconds", "Connection lifetime before a timeout event asks the client to reconnect; maximum 300.", oapiIntegerSchema(), false),
+				},
+				"responses": withErrors(map[string]any{
+					"200": oapiEventStreamResponse("SSE updates containing status, new_logs, and log_offset."),
+				}, "400", "401", "403", "404"),
+			},
+		},
 		"/api/w/{workspace}/jobs/{jobId}/cancel": map[string]any{
 			"post": map[string]any{
 				"operationId": "cancelJob",
