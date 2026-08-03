@@ -33,6 +33,26 @@ type Client struct {
 	secretValues map[string][]string
 }
 
+type executionContext struct {
+	JobID       string
+	WorkspaceID string
+	WorkerID    string
+}
+
+type executionContextKey struct{}
+
+// WithExecutionContext binds artifact fetches to the Job lease that caused
+// them. The generic worker discovers this method structurally.
+func (c *Client) WithExecutionContext(ctx context.Context, job state.Job, lease state.Lease) context.Context {
+	workspaceID := job.Payload.Workspace
+	if strings.TrimSpace(workspaceID) == "" {
+		workspaceID = job.Payload.PinnedDeployment().SourceWorkspace()
+	}
+	return context.WithValue(ctx, executionContextKey{}, executionContext{
+		JobID: job.ID, WorkspaceID: contract.NormalizeWorkspace(workspaceID), WorkerID: lease.WorkerID,
+	})
+}
+
 func New(baseURL, token string) *Client {
 	return &Client{
 		baseURL:      strings.TrimRight(baseURL, "/"),
@@ -268,6 +288,13 @@ func (a ArtifactStore) FetchTo(ctx context.Context, destinationDir string, diges
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.Client.baseURL+"/worker/v1/artifacts/"+digest, nil)
 	if err != nil {
 		return executionbundle.Descriptor{}, err
+	}
+	if execution, ok := ctx.Value(executionContextKey{}).(executionContext); ok {
+		query := req.URL.Query()
+		query.Set("job_id", execution.JobID)
+		query.Set("workspace", execution.WorkspaceID)
+		query.Set("worker_id", execution.WorkerID)
+		req.URL.RawQuery = query.Encode()
 	}
 	if a.Client.token != "" {
 		req.Header.Set("Authorization", "Bearer "+a.Client.token)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -21,8 +22,9 @@ import (
 
 // The client must satisfy the worker backend and token provider contracts.
 var (
-	_ worker.Backend          = (*Client)(nil)
-	_ worker.JobTokenProvider = (*Client)(nil)
+	_ worker.Backend                  = (*Client)(nil)
+	_ worker.JobTokenProvider         = (*Client)(nil)
+	_ worker.ExecutionContextProvider = (*Client)(nil)
 )
 
 func TestClientLifecycleAgainstRealServer(t *testing.T) {
@@ -121,19 +123,33 @@ func TestArtifactStoreFetchesAndExtracts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := httptest.NewServer(server.New(server.Config{
+	baseHandler := server.New(server.Config{
 		Store:   state.NewLocalStore(filepath.Join(tempDir, "state.json")),
 		Catalog: catalog.NewFileCatalog(filepath.Join(tempDir, "catalog.json")),
 
 		AdminToken:    "admin-secret",
 		ArtifactStore: artifacts,
+	})
+	var artifactQuery map[string]string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		artifactQuery = map[string]string{
+			"job_id": r.URL.Query().Get("job_id"), "workspace": r.URL.Query().Get("workspace"),
+			"worker_id": r.URL.Query().Get("worker_id"),
+		}
+		baseHandler.ServeHTTP(w, r)
 	}))
 	defer srv.Close()
 
 	client := New(srv.URL, "admin-secret")
 	dest := filepath.Join(tempDir, "fetched")
-	if _, err := (ArtifactStore{Client: client}).FetchTo(context.Background(), dest, descriptor.Digest); err != nil {
+	ctx := client.WithExecutionContext(context.Background(), state.Job{
+		ID: "job-artifact", Payload: state.JobPayload{Workspace: "ws-a"},
+	}, state.Lease{WorkerID: "worker-artifact"})
+	if _, err := (ArtifactStore{Client: client}).FetchTo(ctx, dest, descriptor.Digest); err != nil {
 		t.Fatal(err)
+	}
+	if artifactQuery["job_id"] != "job-artifact" || artifactQuery["workspace"] != "ws-a" || artifactQuery["worker_id"] != "worker-artifact" {
+		t.Fatalf("artifact query = %#v", artifactQuery)
 	}
 	payload, err := os.ReadFile(filepath.Join(dest, "sub", "main.py"))
 	if err != nil {

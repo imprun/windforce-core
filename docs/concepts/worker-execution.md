@@ -96,10 +96,27 @@ On a cache miss, concurrent requests for the same digest are coalesced. The bund
 Local and remote workers preserve the same ordering and pinned-bundle semantics.
 
 - A local worker obtains the digest from the configured Execution Artifact Store and copies it into its worker-local cache.
-- A remote worker requests `GET /worker/v1/artifacts/{digest}`. Core reads the configured Artifact Store and streams a tar archive; the worker extracts it into a temporary directory, verifies the digest on the POSIX deployment target, and atomically promotes it into its local cache.
+- A remote worker requests `GET /worker/v1/artifacts/{digest}`. For a managed credential, the client attaches the current Job, workspace, and worker lease context and Core verifies that the requested digest is pinned by that owned Job. Core reads the configured Artifact Store and streams a tar archive; the worker extracts it into a temporary directory, verifies the digest on the POSIX deployment target, and atomically promotes it into its local cache.
 - A remote worker does not mount Core's database, Source Store, or Artifact Store filesystem. Repository credentials and the server encryption root remain in Core.
 
 The current server-side Artifact Store implementation is filesystem-backed. This is independent of remote worker transport: Core owns that filesystem and exposes digest-addressed artifacts to remote workers through the Worker Plane.
+
+### Managed remote-worker authority
+
+The static worker token remains a trusted self-hosted compatibility path. A
+managed remote worker instead uses a generation-specific `wfr_` credential
+whose group, exact offered labels, and workspace allowlist are persisted by
+Core. Registration binds the live worker record to that credential ID and
+generation. Claim selection then applies the existing tag and AND-label rules
+inside the credential's workspace scope.
+
+Credential rotation activates a new generation before the old generation is
+revoked. Revocation blocks new registration and claims, but a revoked
+generation may finish its already owned lease until its explicit drain
+deadline. Separately, a persisted group run state of `draining` returns no new
+managed claim while leaving existing lease heartbeat, log, cancellation, and
+completion behavior unchanged. See [ADR 0025](../adr/0025-managed-worker-credentials-and-group-drain.md)
+and the [Worker management API](../api/worker-management.md).
 
 ## Worker shutdown lifecycle
 
@@ -135,6 +152,7 @@ Before accepting a worker or runtime change, verify all of the following:
 - Cache hits validate both the digest marker and preparation fingerprint.
 - Entrypoint containment prevents paths from escaping the fetched bundle root.
 - Local and remote worker paths preserve equivalent bundle and completion semantics.
+- Managed credentials never broaden their exact labels or workspace scope, and draining groups acquire no new managed leases.
 - Shutdown stops new claims, exposes `active -> draining`, preserves the active Job until the drain deadline, and removes the registry record only after completion.
 - Logs and results remain secret-masked and lease-fenced.
 - Log appends remain ordered and reconnectable by byte offset without mixing

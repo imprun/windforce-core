@@ -658,12 +658,55 @@ CREATE TABLE IF NOT EXISTS worker_registry (
     labels            jsonb NOT NULL DEFAULT '[]'::jsonb,
     slots             integer NOT NULL DEFAULT 1,
     status            text NOT NULL DEFAULT 'active',
+    credential_id     text NOT NULL DEFAULT '',
+    credential_generation bigint NOT NULL DEFAULT 0,
     started_at        timestamptz NOT NULL,
     last_heartbeat_at timestamptz NOT NULL
 );
 
 ALTER TABLE worker_registry
     ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'active';
+ALTER TABLE worker_registry
+    ADD COLUMN IF NOT EXISTS credential_id text NOT NULL DEFAULT '';
+ALTER TABLE worker_registry
+    ADD COLUMN IF NOT EXISTS credential_generation bigint NOT NULL DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS worker_credential (
+    id                  text PRIMARY KEY,
+    worker_group        text NOT NULL,
+    generation          bigint NOT NULL,
+    workspace_ids       text[] NOT NULL DEFAULT '{}',
+    labels              text[] NOT NULL DEFAULT '{}',
+    status              text NOT NULL DEFAULT 'active',
+    expires_at          timestamptz,
+    revoked_at          timestamptz,
+    drain_deadline_at   timestamptz,
+    token_hash          text NOT NULL,
+    operation_id        text NOT NULL,
+    request_fingerprint text NOT NULL,
+    revoke_operation_id text NOT NULL DEFAULT '',
+    revoke_fingerprint  text NOT NULL DEFAULT '',
+    created_by          text NOT NULL,
+    created_at          timestamptz NOT NULL DEFAULT now(),
+    updated_at          timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (worker_group, generation),
+    UNIQUE (worker_group, operation_id),
+    UNIQUE (token_hash)
+);
+
+CREATE TABLE IF NOT EXISTS worker_group_run_state (
+    worker_group        text PRIMARY KEY,
+    state               text NOT NULL DEFAULT 'running',
+    operation_id        text NOT NULL,
+    revision            bigint NOT NULL,
+    deadline_at         timestamptz,
+    request_fingerprint text NOT NULL,
+    updated_by          text NOT NULL,
+    updated_at          timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS worker_credential_group_idx
+    ON worker_credential (worker_group, generation DESC);
 
 CREATE INDEX IF NOT EXISTS webhook_audit_workspace_idx
     ON webhook_audit (workspace_id, created_at DESC, id DESC);

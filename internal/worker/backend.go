@@ -27,6 +27,12 @@ type Backend interface {
 	CompleteJobWaitingHuman(ctx context.Context, lease state.Lease, result contract.JobResult, task state.HumanTask) error
 }
 
+// ExecutionContextProvider lets a remote backend attach lease-scoped metadata
+// to artifact requests without coupling the generic runtime to its transport.
+type ExecutionContextProvider interface {
+	WithExecutionContext(context.Context, state.Job, state.Lease) context.Context
+}
+
 // JobTokenProvider is implemented by backends that receive pre-minted SDK
 // callback tokens with their claims (remote workers); the signing secret
 // never leaves the engine.

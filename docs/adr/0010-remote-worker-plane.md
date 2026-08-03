@@ -12,7 +12,7 @@ Processor가 실제로 사용하는 store 표면은 좁다: 워커 등록 3종, 
 
 ## Decision
 
-1. **경로와 인증.** 원격 워커 플레인은 `/worker/v1/*`로 버저닝한다. 인증은 전용 Core worker credential(`wfr_`, `--worker-token-env`, 미설정 시 admin 토큰)의 `Authorization: Bearer`다. 게이트웨이/프록시는 이 Core-owned credential을 교환하지 않고 전달하며, Cloud API token이나 workspace credential을 worker-plane admin 권한으로 승격하지 않는다.
+1. **경로와 인증.** 원격 워커 플레인은 `/worker/v1/*`로 버저닝한다. 인증은 전용 Core worker credential(`wfr_`, `--worker-token-env`, 미설정 시 trusted self-hosted 환경의 static worker/admin token fallback)의 `Authorization: Bearer`다. 관리형 credential의 group·labels·workspace scope, generation rotation, revoke drain과 group run-state fence는 ADR 0025가 확장한다. 게이트웨이/프록시는 이 Core-owned credential을 교환하지 않고 전달하며, platform token이나 workspace credential을 worker-plane admin 권한으로 승격하지 않는다.
 2. **입력 준비는 서버가 한다(prepared claim).** `POST /worker/v1/claims`는 claim 후 서버 안에서 DecryptInput·ResolveInput까지 마친 잡을 돌려준다. `SECRET_KEY`와 복호화는 엔진 프로세스를 떠나지 않고, 준비 실패는 서버가 그 자리에서 잡을 실패 처리한 뒤 204를 돌려준다(워커는 다음 폴에서 재시도).
 3. **표면.**
    - `POST /worker/v1/workers` — 등록 {id?, group, tags, labels, slots} → {id}
@@ -21,7 +21,7 @@ Processor가 실제로 사용하는 store 표면은 좁다: 워커 등록 3종, 
    - `POST /worker/v1/jobs/{id}/heartbeat` {lease} → {still_owned, canceled_by?, canceled_reason?}
    - `POST /worker/v1/jobs/{id}/complete` {lease, outcome: succeeded|failed|waiting_human, result, human_task?}
    - `POST /worker/v1/jobs/{id}/logs` {workspace, chunk}
-   - `GET /worker/v1/artifacts/{digest}` — 실행 번들을 tar 스트림으로. 소스 번들은 서빙하지 않는다: admission이 실행 번들 없는 릴리스를 거부하므로 원격 워커는 digest 기반 실행 번들만으로 완결된다.
+   - `GET /worker/v1/artifacts/{digest}` — 실행 번들을 tar 스트림으로. 관리형 credential은 client가 자동으로 붙이는 `job_id`, `workspace`, `worker_id` lease 문맥이 digest와 현재 소유 Job에 일치해야 한다. 소스 번들은 서빙하지 않는다: admission이 실행 번들 없는 릴리스를 거부하므로 원격 워커는 digest 기반 실행 번들만으로 완결된다.
 4. **매칭 의미론은 로컬과 동일하다.** claim 요청의 tags/labels는 ADR 0009의 이중 차원(태그 멤버십 + 라벨 subset containment)을 그대로 따른다. 원격이라고 다른 규칙은 없다.
 5. **와이어 형식.** 요청·응답 필드는 snake_case JSON이며 lease는 {job_id, worker_id, attempt, acquired_at, expires_at}로 직렬화한다. 이 표면은 공개 계약으로, 변경은 새 버전 경로로 한다.
 

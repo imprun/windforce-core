@@ -679,6 +679,8 @@ type Snapshot struct {
 	HTTPRouteBindings      map[string]HTTPRouteBinding            `json:"httpRouteBindings"`
 	HTTPRouteBindingAudits map[string][]HTTPRouteBindingAudit     `json:"httpRouteBindingAudits"`
 	Workers                map[string]WorkerRecord                `json:"workers,omitempty"`
+	WorkerCredentials      map[string]WorkerCredential            `json:"workerCredentials,omitempty"`
+	WorkerGroupRunStates   map[string]WorkerGroupRunState         `json:"workerGroupRunStates,omitempty"`
 	Workspaces             map[string]Workspace                   `json:"workspaces"`
 	WorkspaceKeys          map[string]WorkspaceKey                `json:"workspaceKeys,omitempty"`
 	WorkspaceTokens        map[string]map[string]WorkspaceToken   `json:"workspaceTokens"`

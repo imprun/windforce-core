@@ -534,6 +534,10 @@ func (s *LocalStore) ClaimJob(ctx context.Context, workerID string, leaseTTL tim
 }
 
 func (s *LocalStore) ClaimJobForWorker(ctx context.Context, workerID string, tags []string, labels []string, leaseTTL time.Duration) (Job, Lease, error) {
+	return s.ClaimJobForWorkerScope(ctx, workerID, tags, labels, nil, leaseTTL)
+}
+
+func (s *LocalStore) ClaimJobForWorkerScope(ctx context.Context, workerID string, tags []string, labels []string, workspaceIDs []string, leaseTTL time.Duration) (Job, Lease, error) {
 	if workerID == "" {
 		workerID = NewID("worker")
 	}
@@ -542,6 +546,7 @@ func (s *LocalStore) ClaimJobForWorker(ctx context.Context, workerID string, tag
 	}
 	allowedTags := normalizeClaimTags(tags)
 	offeredLabels := normalizeClaimTags(labels)
+	allowedWorkspaces := normalizeClaimTags(workspaceIDs)
 	var claimed Job
 	var lease Lease
 	err := s.updateLease(ctx, func(snapshot *Snapshot, now time.Time) error {
@@ -551,7 +556,11 @@ func (s *LocalStore) ClaimJobForWorker(ctx context.Context, workerID string, tag
 
 		ids := make([]string, 0, len(snapshot.Jobs))
 		for id, job := range snapshot.Jobs {
-			if job.State == JobQueued && claimAllowed(job, allowedTags, offeredLabels) {
+			workspaceAllowed := len(allowedWorkspaces) == 0
+			if !workspaceAllowed {
+				_, workspaceAllowed = allowedWorkspaces[workerJobWorkspace(job)]
+			}
+			if job.State == JobQueued && workspaceAllowed && claimAllowed(job, allowedTags, offeredLabels) {
 				ids = append(ids, id)
 			}
 		}
@@ -1132,6 +1141,15 @@ func ensureSnapshot(snapshot *Snapshot) {
 	if snapshot.HTTPRouteBindingAudits == nil {
 		snapshot.HTTPRouteBindingAudits = map[string][]HTTPRouteBindingAudit{}
 	}
+	if snapshot.Workers == nil {
+		snapshot.Workers = map[string]WorkerRecord{}
+	}
+	if snapshot.WorkerCredentials == nil {
+		snapshot.WorkerCredentials = map[string]WorkerCredential{}
+	}
+	if snapshot.WorkerGroupRunStates == nil {
+		snapshot.WorkerGroupRunStates = map[string]WorkerGroupRunState{}
+	}
 	if snapshot.Workspaces == nil {
 		snapshot.Workspaces = map[string]Workspace{}
 	}
@@ -1379,6 +1397,10 @@ func (s *LocalStore) RegisterWorker(ctx context.Context, record WorkerRecord) er
 	return s.update(ctx, func(snapshot *Snapshot, now time.Time) error {
 		if snapshot.Workers == nil {
 			snapshot.Workers = map[string]WorkerRecord{}
+		}
+		if existing, ok := snapshot.Workers[record.ID]; ok &&
+			(existing.CredentialID != record.CredentialID || existing.CredentialGeneration != record.CredentialGeneration) {
+			return ErrForbidden
 		}
 		if record.Slots <= 0 {
 			record.Slots = 1

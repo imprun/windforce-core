@@ -397,7 +397,8 @@ func runWorker(args []string) int {
 	goPath := flags.String("go-path", "", "go executable path")
 	prepareTimeout := flags.Duration("prepare-timeout", 0, "source prepare timeout; defaults to 5m")
 	baseURL := flags.String("base-url", "", "public API base URL injected into job ctx helpers")
-	apiTokenEnv := flags.String("api-token-env", "", "deprecated fallback for --job-token-secret-env")
+	workerTokenEnv := flags.String("worker-token-env", "", "environment variable that contains the remote worker plane bearer token")
+	apiTokenEnv := flags.String("api-token-env", "", "deprecated fallback for --worker-token-env (remote) or --job-token-secret-env (local)")
 	jobTokenSecretEnv := flags.String("job-token-secret-env", "", "environment variable that contains the WF_TOKEN signing secret")
 	apiURL := flags.String("api-url", "", "remote worker plane base URL; when set the worker uses /worker/v1 instead of a direct state store")
 	secretKeyEnv := flags.String("secret-key-env", "SECRET_KEY", "environment variable that contains the instance secret used for input encryption")
@@ -442,19 +443,19 @@ func runWorker(args []string) int {
 	}
 	defer closeState()
 	if remoteURL := strings.TrimSpace(*apiURL); remoteURL != "" {
-		apiToken := tokenFromEnv(*apiTokenEnv)
-		if apiToken == "" && !*devMode {
-			fmt.Fprintln(os.Stderr, "worker: --api-token-env and its environment variable are required with --api-url, or pass --dev")
+		workerToken := firstNonEmpty(tokenFromEnv(*workerTokenEnv), tokenFromEnv(*apiTokenEnv))
+		if workerToken == "" && !*devMode {
+			fmt.Fprintln(os.Stderr, "worker: --worker-token-env and its environment variable are required with --api-url, or pass --dev")
 			return 1
 		}
-		backend := remoteworker.New(remoteURL, apiToken)
+		backend := remoteworker.New(remoteURL, workerToken)
 		processor := worker.Processor{
 			Store: backend,
 			Runner: &runtime.Runner{
 				ArtifactStore:  remoteworker.ArtifactStore{Client: backend},
 				CacheRoot:      *cacheRoot,
 				BaseURL:        firstNonEmpty(strings.TrimSpace(*baseURL), remoteURL),
-				APIToken:       apiToken,
+				APIToken:       workerToken,
 				BunPath:        *bunPath,
 				PythonPath:     *pythonPath,
 				GoPath:         *goPath,
@@ -871,7 +872,7 @@ func printUsage(file io.Writer) {
 	fmt.Fprintln(file, "usage:")
 	fmt.Fprintln(file, "  windforce-core version")
 	fmt.Fprintln(file, "  windforce-core server [--addr :8080] [--state-backend local|postgres] [--git-sources <path>] [--provision-dir <path>]")
-	fmt.Fprintln(file, "  windforce-core worker [--state-backend local|postgres] [--worker-group default] [--egress-proxy host:port] [--auth-session-url <url>] [--bun-path <path>] [--python-path <path>] [--go-path <path>] [--prepare-timeout 5m] [--once]")
+	fmt.Fprintln(file, "  windforce-core worker [--api-url <url> --worker-token-env <name>] [--state-backend local|postgres] [--worker-group default] [--labels <csv>] [--egress-proxy host:port] [--auth-session-url <url>] [--bun-path <path>] [--python-path <path>] [--go-path <path>] [--prepare-timeout 5m] [--once]")
 	fmt.Fprintln(file, "  windforce-core standalone [--addr :8080] [--state-backend local|postgres] [--worker-group default] [--egress-proxy host:port] [--auth-session-url <url>] [--git-sources <path>] [--provision-dir <path>] [--bun-path <path>] [--python-path <path>] [--go-path <path>] [--prepare-timeout 5m]")
 	fmt.Fprintln(file, "  windforce-core run-json [flags] -- <command> [args...]")
 }
