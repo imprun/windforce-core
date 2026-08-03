@@ -10,6 +10,7 @@ describe("primaryNavItems", () => {
       "navigation.apps",
       "navigation.clientRegistry",
       "navigation.monitoring",
+      "navigation.humanTasks",
       "navigation.audit",
       "navigation.settings",
     ]);

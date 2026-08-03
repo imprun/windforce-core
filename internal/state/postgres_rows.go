@@ -121,18 +121,33 @@ func scanJob(row rowScanner) (Job, error) {
 func scanHumanTask(row rowScanner) (HumanTask, error) {
 	var task HumanTask
 	var stateValue string
+	var modeValue string
+	var outcomeValue string
 	var description sql.NullString
+	var updatedAt sql.NullTime
+	var decidedAt sql.NullTime
 	var completedAt sql.NullTime
 	var expiresAt sql.NullTime
 	if err := row.Scan(
-		&task.ID, &task.RunID, &stateValue, &task.Title, &description, &task.Schema,
-		&task.ResumeInput, &task.CreatedAt, &completedAt, &expiresAt,
+		&task.ID, &task.WorkspaceID, &task.RunID, &task.JobID, &task.Attempt, &task.Key, &task.RequestFingerprint,
+		&modeValue, &task.Kind, &stateValue, &task.Title, &description, &task.Schema, &task.Presentation,
+		&task.PrivateContextEncrypted, &outcomeValue, &task.DecisionEncrypted,
+		&task.DecisionIdempotencyKey, &task.DecisionFingerprint, &task.DecidedBy, &task.TerminalCause,
+		&task.ResumeInput, &task.CreatedAt, &updatedAt, &decidedAt, &completedAt, &expiresAt,
 	); err != nil {
 		return HumanTask{}, err
 	}
+	task.Mode = HumanTaskMode(modeValue)
 	task.State = HumanTaskState(stateValue)
+	task.DecisionOutcome = HumanTaskOutcome(outcomeValue)
 	if description.Valid {
 		task.Description = description.String
+	}
+	if updatedAt.Valid {
+		task.UpdatedAt = updatedAt.Time
+	}
+	if decidedAt.Valid {
+		task.DecidedAt = &decidedAt.Time
 	}
 	if completedAt.Valid {
 		task.CompletedAt = &completedAt.Time
@@ -171,7 +186,7 @@ func (s *PostgresStore) completeCanceledJob(ctx context.Context, tx pgx.Tx, job 
 		message = "job canceled"
 	}
 	run.State = RunCanceled
-	run.Result = canceledJobResult(job, run, message)
+	run.Result = canceledJobResult(job, run, message, now)
 	storedResult, err := s.encryptJobResult(ctx, normalizedJobWorkspace("", job), *run.Result)
 	if err != nil {
 		return err
@@ -195,6 +210,9 @@ UPDATE runs
 SET state=$1, result=$2, error=$3, updated_at=$4
 WHERE id=$5
 `, string(run.State), mustRaw(run.Result), run.Error, run.UpdatedAt, run.ID); err != nil {
+		return err
+	}
+	if err := cancelHeldHumanTasksPostgresTx(ctx, tx, normalizedJobWorkspace("", job), job.ID, HumanTaskCauseRunCanceled, now); err != nil {
 		return err
 	}
 	return insertEvent(ctx, tx, run.ID, "run_canceled", eventPayload(run.CorrelationID, map[string]any{"jobId": job.ID, "by": by, "reason": reason}))

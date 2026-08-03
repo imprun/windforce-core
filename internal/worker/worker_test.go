@@ -557,6 +557,9 @@ func TestProcessorHeartbeatCancelsRunningAction(t *testing.T) {
 	if completed.Result == nil || completed.Result.Error != "job canceled" {
 		t.Fatalf("completed result = %#v", completed.Result)
 	}
+	if completed.Result.Interruption == nil || completed.Result.Interruption.Cause != contract.InterruptionRunCanceled {
+		t.Fatalf("canceled interruption = %#v", completed.Result.Interruption)
+	}
 }
 
 type drainTestRunner struct {

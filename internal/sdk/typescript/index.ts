@@ -19,6 +19,23 @@ export interface ResumeUrls {
   expires_at: number
 }
 
+export interface HumanTaskRequest {
+  key?: string
+  kind?: "form"
+  title: string
+  description?: string
+  inputSchema: Record<string, unknown>
+  presentation?: Record<string, unknown>
+  privateContext?: unknown
+  timeoutMs?: number
+}
+
+export interface HumanTaskDecision<T = unknown> {
+  taskId: string
+  outcome: "submit" | "cancel"
+  value?: T
+}
+
 export interface WindforceContext {
   input: unknown
   trigger: {
@@ -41,6 +58,8 @@ export interface WindforceContext {
   resources: { get(path: string): Promise<unknown> }
   state: { get(): Promise<unknown>; set(value: unknown): Promise<void> }
   http: { fetch: typeof fetch }
+  /** Wait for a generic workspace HumanTask while preserving this process and call stack. */
+  human: { wait<T = unknown>(request: HumanTaskRequest): Promise<HumanTaskDecision<T>> }
   // Flow HITL (ADR-0053): mint the approve/reject URLs for the approval step that
   // immediately follows this one (call from the action right before an approval).
   approval: { getResumeUrls(approver?: string): Promise<ResumeUrls> }

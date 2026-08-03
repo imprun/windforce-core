@@ -118,6 +118,41 @@ describe("WindforceApi job log streaming", () => {
   });
 });
 
+describe("WindforceApi HumanTask decisions", () => {
+  test("uses the workspace control API and requires an idempotency key", async () => {
+    const originalFetch = globalThis.fetch;
+    const requests: Array<{ url: string; method: string; headers: Headers; body: string }> = [];
+    globalThis.fetch = (async (input, init) => {
+      requests.push({
+        url: String(input),
+        method: init?.method || "GET",
+        headers: new Headers(init?.headers),
+        body: String(init?.body || ""),
+      });
+      return new Response(JSON.stringify({ id: "human-a", state: "decided" }), { status: 200 });
+    }) as typeof fetch;
+    try {
+      const api = new WindforceApi({ workspace: "ops", token: "secret", actor: "operator" });
+      await api.decideHumanTask(
+        "human/a",
+        { outcome: "submit", value: { otp: "123456" } },
+        "decision-a",
+      );
+      expect(requests).toHaveLength(1);
+      expect(requests[0]?.url).toBe("/api/w/ops/human-tasks/human%2Fa/decision");
+      expect(requests[0]?.method).toBe("POST");
+      expect(requests[0]?.headers.get("idempotency-key")).toBe("decision-a");
+      expect(requests[0]?.headers.get("authorization")).toBe("Bearer secret");
+      expect(JSON.parse(requests[0]!.body)).toEqual({
+        outcome: "submit",
+        value: { otp: "123456" },
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
 describe("WindforceApi release flow", () => {
   test("syncs without publishing and deploys the latest synchronized source", async () => {
     const requests: Array<{ url: string; method: string; body: string }> = [];

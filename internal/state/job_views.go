@@ -519,6 +519,10 @@ func cloneRaw(value json.RawMessage) json.RawMessage {
 func cloneResult(result contract.JobResult) *contract.JobResult {
 	cloned := result
 	cloned.Output = cloneRaw(result.Output)
+	if result.Interruption != nil {
+		interruption := *result.Interruption
+		cloned.Interruption = &interruption
+	}
 	return &cloned
 }
 

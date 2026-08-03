@@ -377,6 +377,42 @@ export const main = createApp({
 	}
 }
 
+func TestRunnerRunEntrypointClassifiesActionTimeout(t *testing.T) {
+	requireBunRuntime(t)
+	bun, err := exec.LookPath("bun")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(sourceDir, "main.ts"), []byte(`
+export async function main() {
+  await new Promise((resolve) => setTimeout(resolve, 30_000))
+  return { ok: true }
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	timeoutMs := int64(100)
+	action := contract.Action{Action: "wait", TimeoutMs: timeoutMs}
+	result, err := (&Runner{BunPath: bun}).runEntrypoint(context.Background(), RunRequest{
+		JobID: "job-timeout", Attempt: 1, WorkspaceID: "default", Action: "wait",
+		Deployment: contract.Deployment{
+			Workspace: "default", App: "timeout-app", Commit: "timeout-commit", Entrypoint: "main.ts", ScriptLang: "typescript",
+			Actions: map[string]contract.Action{"wait": action},
+		},
+		Input: json.RawMessage(`{}`),
+	}, sourceDir, action)
+	if err != nil {
+		t.Fatalf("runEntrypoint returned harness error: %v", err)
+	}
+	if result.Interruption == nil || result.Interruption.Cause != contract.InterruptionActionTimeout || result.Interruption.Source != "runtime" {
+		t.Fatalf("timeout interruption = %#v", result.Interruption)
+	}
+	if !strings.Contains(result.Error, "timed out") {
+		t.Fatalf("timeout error = %q", result.Error)
+	}
+}
+
 func TestTypeScriptTier1RunsOpaqueApplicationSDK(t *testing.T) {
 	requireBunRuntime(t)
 	tempDir := t.TempDir()

@@ -132,7 +132,9 @@ This input preparation does not change the bundle identity. The same pinned bund
 
 ## Completion and failure semantics
 
-The launcher writes the terminal action value to `result.json`. The worker streams masked logs while the process runs, reads the result, masks secret values again, and completes the leased Job as succeeded, failed, or waiting for human input. Process failure is represented as a Job result; harness failures such as bundle fetch or launcher startup are converted into structured runtime errors.
+The launcher writes the terminal action value to `result.json`. The worker streams masked logs while the process runs, reads the result, masks secret values again, and completes the leased Job as succeeded or failed. During a Phase 1 `HumanTask` hold, the launcher has not produced a terminal result: the same process and lease remain running until the decision returns or a terminal cause interrupts it. Legacy `waiting_human` completion is suspend scaffolding and is not the `ctx.human.wait` path. Process failure is represented as a Job result; harness failures such as bundle fetch or launcher startup are converted into structured runtime errors.
+
+Action timeout, operator cancellation, lease loss, and worker shutdown are recorded as distinct execution interruption causes. Any pending held HumanTask is terminated with the corresponding stable cause. See [HumanTask hold](human-task-hold.md).
 
 Publishing a newer release while a Job is queued or running does not change that Job. Retry attempts continue from the Deployment snapshot already pinned into the Run and Job unless a higher-level workflow explicitly admits a new Run.
 
@@ -157,6 +159,7 @@ Before accepting a worker or runtime change, verify all of the following:
 - Logs and results remain secret-masked and lease-fenced.
 - Log appends remain ordered and reconnectable by byte offset without mixing
   application logs, terminal results, service logs, or binary artifacts.
+- HumanTask hold keeps the original process, lease, and worker slot alive; terminal interruption causes cancel the pending task without creating another Job.
 - Tests cover bundle publication/fetch, cache behavior, remote extraction, runtime execution, static TypeScript `main` validation, graceful and timed-out drain, and Job failure on bundle errors.
 
 The primary implementation areas are `internal/worker`, `internal/runtime`, `internal/executor`, `internal/executionbundle`, `internal/remoteworker`, and `internal/server/worker_plane.go`. Execution-semantic changes require an ADR in addition to updating this current-state document.

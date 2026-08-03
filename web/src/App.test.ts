@@ -12,3 +12,10 @@ describe("settings routes", () => {
     expect(source).not.toContain("WorkspaceAccessSettingsPage />");
   });
 });
+
+describe("HumanTask routes", () => {
+  test("keeps the generic HumanTask queue in the workspace shell", () => {
+    expect(source).toContain('matchRoute("/human-tasks", path)');
+    expect(source).toContain("<HumanTasksPage");
+  });
+});

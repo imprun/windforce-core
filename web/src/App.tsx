@@ -5,6 +5,7 @@ import { AppsPage } from "./pages/AppsPage";
 import { AuditPage } from "./pages/AuditPage";
 import { ClientDetailPage } from "./pages/ClientDetailPage";
 import { ClientRegistryPage } from "./pages/ClientRegistryPage";
+import { HumanTasksPage } from "./pages/HumanTasksPage";
 import { MonitoringPage } from "./pages/MonitoringPage";
 import { ProvisioningPage } from "./pages/ProvisioningPage";
 import { VariablesResourcesPage } from "./pages/RuntimeConfigurationPage";
@@ -37,6 +38,7 @@ export function App() {
   }
 
   if (matchRoute("/monitoring", path)) return <MonitoringPage />;
+  if (matchRoute("/human-tasks", path)) return <HumanTasksPage />;
   if (matchRoute("/audit", path)) return <AuditPage />;
   const clientDetail = matchRoute("/clients/:id/:tab?/:appKey?", path);
   if (clientDetail?.id) {

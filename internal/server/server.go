@@ -111,6 +111,7 @@ type workspacePrincipal struct {
 	Workspace string
 	Subject   string
 	Admin     bool
+	Service   *executionpkg.Principal
 }
 
 type workspacePrincipalContextKey struct{}
@@ -252,6 +253,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleRuntimeAPI(w http.ResponseWriter, r *http.Request) bool {
 	parts := splitPath(r.URL.Path)
+	if len(parts) == 5 && parts[0] == "api" && parts[1] == "w" && parts[3] == "human-tasks" && parts[4] == "wait" && r.Method == http.MethodPost {
+		h.handleHumanTaskWait(w, r, parts[2])
+		return true
+	}
 	if len(parts) == 4 && parts[0] == "api" && parts[1] == "w" && parts[3] == "state" && r.Method == http.MethodGet {
 		h.handleGetState(w, r, parts[2])
 		return true
@@ -273,6 +278,9 @@ func (h *Handler) handleRuntimeAPI(w http.ResponseWriter, r *http.Request) bool 
 
 func (h *Handler) handleAPI(w http.ResponseWriter, r *http.Request) bool {
 	parts := splitPath(r.URL.Path)
+	if h.handleCanonicalHumanTaskAPI(w, r, parts) {
+		return true
+	}
 	if h.handleWorkerManagementAPI(w, r, parts) {
 		return true
 	}
@@ -747,7 +755,7 @@ func writeStateError(w http.ResponseWriter, err error) {
 	status := http.StatusInternalServerError
 	if errors.Is(err, state.ErrNotFound) {
 		status = http.StatusNotFound
-	} else if errors.Is(err, state.ErrInvalidState) || errors.Is(err, state.ErrConflict) {
+	} else if errors.Is(err, state.ErrInvalidState) || errors.Is(err, state.ErrConflict) || errors.Is(err, state.ErrInvalidLease) {
 		status = http.StatusConflict
 	} else if errors.Is(err, state.ErrForbidden) {
 		status = http.StatusForbidden
@@ -803,14 +811,33 @@ func (h *Handler) authorizeAPIRequest(r *http.Request) (*http.Request, int, stri
 	if err != nil {
 		return r, http.StatusUnauthorized, "unauthorized"
 	}
-	token, err := h.store.GetWorkspaceTokenByTokenHash(r.Context(), workspaceID, state.HashWorkspaceToken(bearerToken))
+	workspaceToken, err := h.store.GetWorkspaceTokenByTokenHash(r.Context(), workspaceID, state.HashWorkspaceToken(bearerToken))
+	if err == nil {
+		if workspace.Status == state.WorkspaceArchived && workspaceRequestChangesState(r) {
+			return r, http.StatusConflict, "workspace is archived"
+		}
+		principal := &workspacePrincipal{Workspace: workspaceID, Subject: "workspace-token:" + workspaceToken.ID}
+		return r.WithContext(context.WithValue(r.Context(), workspacePrincipalContextKey{}, principal)), 0, ""
+	}
+	if !isHumanTaskControlRequest(r) {
+		return r, http.StatusUnauthorized, "unauthorized"
+	}
+	service, err := h.store.GetServicePrincipalByTokenHash(r.Context(), workspaceID, state.HashBearerToken(bearerToken))
 	if err != nil {
 		return r, http.StatusUnauthorized, "unauthorized"
+	}
+	executionPrincipal := executionpkg.ServicePrincipal(workspaceID, service)
+	required := executionpkg.ScopeHumanTasksRead
+	if r.Method == http.MethodPost {
+		required = executionpkg.ScopeHumanTasksDecide
+	}
+	if !executionPrincipal.HasScope(required) {
+		return r, http.StatusForbidden, "service principal scope does not allow this HumanTask operation"
 	}
 	if workspace.Status == state.WorkspaceArchived && workspaceRequestChangesState(r) {
 		return r, http.StatusConflict, "workspace is archived"
 	}
-	principal := &workspacePrincipal{Workspace: workspaceID, Subject: "workspace-token:" + token.ID}
+	principal := &workspacePrincipal{Workspace: workspaceID, Subject: executionPrincipal.Subject, Service: &executionPrincipal}
 	return r.WithContext(context.WithValue(r.Context(), workspacePrincipalContextKey{}, principal)), 0, ""
 }
 
@@ -869,7 +896,15 @@ func isJobSDKCallback(r *http.Request) bool {
 	if r.Method == http.MethodPost && strings.HasSuffix(path, "/flow/resume-urls") {
 		return true
 	}
+	if r.Method == http.MethodPost && strings.HasSuffix(path, "/human-tasks/wait") {
+		return true
+	}
 	return (r.Method == http.MethodGet || r.Method == http.MethodPost) && strings.HasSuffix(path, "/state")
+}
+
+func isHumanTaskControlRequest(r *http.Request) bool {
+	parts := splitPath(r.URL.Path)
+	return len(parts) >= 4 && parts[0] == "api" && parts[1] == "w" && parts[3] == "human-tasks"
 }
 
 func workspaceFromAPIPath(path string) string {
