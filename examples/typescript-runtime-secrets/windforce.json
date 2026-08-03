@@ -1,0 +1,15 @@
+{
+  "app": "runtime_secrets",
+  "entrypoint": "main.ts",
+  "scriptLang": "typescript",
+  "actions": {
+    "deliver": {
+      "inputSchema": "deliver.input.schema.json",
+      "outputSchema": "deliver.output.schema.json",
+      "operatorSettingsSchema": "deliver.settings.schema.json",
+      "runtimeAccess": {
+        "variables": ["secrets/partner-token"]
+      }
+    }
+  }
+}

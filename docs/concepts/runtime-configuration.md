@@ -9,6 +9,8 @@ configuration as of 2026-08-01. The control-plane OpenAPI at
 the machine-readable system-to-system contracts. ADRs record why decisions
 changed; they are not the primary operating guide.
 
+For a runnable App-author walkthrough, see [Use runtime secrets from a TypeScript App](../guides/runtime-secrets-typescript.md).
+
 ## The five objects are different
 
 | Object | Purpose | Scope | Stored value |

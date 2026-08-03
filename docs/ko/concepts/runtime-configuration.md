@@ -11,6 +11,8 @@ OpenAPI와 Release에 포함된 `windforce.json` 스키마가 시스템 간 통�
 
 [English](../../concepts/runtime-configuration.md)
 
+실행 가능한 App 개발 절차는 [TypeScript App에서 런타임 비밀값 사용하기](../guides/runtime-secrets-typescript.md)를 참고하십시오.
+
 ## 다섯 객체의 역할은 서로 다르다
 
 | 객체 | 용도 | 범위 | 저장 값 |
