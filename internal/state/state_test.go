@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -253,9 +252,9 @@ func TestLocalStoreEncryptsResultAtRest(t *testing.T) {
 }
 
 func TestPostgresStoreClaimCompleteAndResumeLifecycle(t *testing.T) {
-	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
+	dsn := postgresTestDSN()
 	if dsn == "" {
-		t.Skip("WINDFORCE_LITE_POSTGRES_TEST_DSN is not set")
+		t.Skip("WINDFORCE_CORE_POSTGRES_TEST_DSN is not set")
 	}
 	store, err := OpenPostgresStore(context.Background(), dsn)
 	if err != nil {
@@ -272,9 +271,9 @@ func TestPostgresStoreClaimCompleteAndResumeLifecycle(t *testing.T) {
 }
 
 func TestPostgresStoreCreateRunAndEnqueueReturnsConflict(t *testing.T) {
-	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
+	dsn := postgresTestDSN()
 	if dsn == "" {
-		t.Skip("WINDFORCE_LITE_POSTGRES_TEST_DSN is not set")
+		t.Skip("WINDFORCE_CORE_POSTGRES_TEST_DSN is not set")
 	}
 	store, err := OpenPostgresStore(context.Background(), dsn)
 	if err != nil {
@@ -318,9 +317,9 @@ func TestLocalStoreJobState(t *testing.T) {
 }
 
 func TestPostgresStoreJobState(t *testing.T) {
-	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
+	dsn := postgresTestDSN()
 	if dsn == "" {
-		t.Skip("WINDFORCE_LITE_POSTGRES_TEST_DSN is not set")
+		t.Skip("WINDFORCE_CORE_POSTGRES_TEST_DSN is not set")
 	}
 	store, err := OpenPostgresStore(context.Background(), dsn)
 	if err != nil {
@@ -342,9 +341,9 @@ func TestLocalStoreVariablesAndResources(t *testing.T) {
 }
 
 func TestPostgresStoreVariablesAndResources(t *testing.T) {
-	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
+	dsn := postgresTestDSN()
 	if dsn == "" {
-		t.Skip("WINDFORCE_LITE_POSTGRES_TEST_DSN is not set")
+		t.Skip("WINDFORCE_CORE_POSTGRES_TEST_DSN is not set")
 	}
 	store, err := OpenPostgresStore(context.Background(), dsn)
 	if err != nil {
@@ -366,9 +365,9 @@ func TestLocalStoreClaimJobEnforcesMaxConcurrent(t *testing.T) {
 }
 
 func TestPostgresStoreClaimJobEnforcesMaxConcurrent(t *testing.T) {
-	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
+	dsn := postgresTestDSN()
 	if dsn == "" {
-		t.Skip("WINDFORCE_LITE_POSTGRES_TEST_DSN is not set")
+		t.Skip("WINDFORCE_CORE_POSTGRES_TEST_DSN is not set")
 	}
 	store, err := OpenPostgresStore(context.Background(), dsn)
 	if err != nil {
@@ -385,9 +384,9 @@ func TestPostgresStoreClaimJobEnforcesMaxConcurrent(t *testing.T) {
 }
 
 func TestPostgresClaimCandidatesFilterBeforeLockingAndBoundEachBatch(t *testing.T) {
-	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
+	dsn := postgresTestDSN()
 	if dsn == "" {
-		t.Skip("WINDFORCE_LITE_POSTGRES_TEST_DSN is not set")
+		t.Skip("WINDFORCE_CORE_POSTGRES_TEST_DSN is not set")
 	}
 	store, err := OpenPostgresStore(context.Background(), dsn)
 	if err != nil {
@@ -556,9 +555,9 @@ func TestLocalStoreHeartbeatExtendsLease(t *testing.T) {
 }
 
 func TestPostgresStoreHeartbeatExtendsLease(t *testing.T) {
-	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
+	dsn := postgresTestDSN()
 	if dsn == "" {
-		t.Skip("WINDFORCE_LITE_POSTGRES_TEST_DSN is not set")
+		t.Skip("WINDFORCE_CORE_POSTGRES_TEST_DSN is not set")
 	}
 	store, err := OpenPostgresStore(context.Background(), dsn)
 	if err != nil {
@@ -1281,9 +1280,9 @@ func TestLocalStorePruneSettledJobs(t *testing.T) {
 }
 
 func TestPostgresStorePruneSettledJobs(t *testing.T) {
-	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
+	dsn := postgresTestDSN()
 	if dsn == "" {
-		t.Skip("WINDFORCE_LITE_POSTGRES_TEST_DSN is not set")
+		t.Skip("WINDFORCE_CORE_POSTGRES_TEST_DSN is not set")
 	}
 	store, err := OpenPostgresStore(context.Background(), dsn)
 	if err != nil {

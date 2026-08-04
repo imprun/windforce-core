@@ -3,7 +3,6 @@ package state
 import (
 	"context"
 	"errors"
-	"os"
 	"sync"
 	"testing"
 	"time"
@@ -17,9 +16,9 @@ func TestLocalStoreServicePrincipals(t *testing.T) {
 }
 
 func TestPostgresStoreServicePrincipalsAndConcurrentRunIdempotency(t *testing.T) {
-	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
+	dsn := postgresTestDSN()
 	if dsn == "" {
-		t.Skip("WINDFORCE_LITE_POSTGRES_TEST_DSN is not set")
+		t.Skip("WINDFORCE_CORE_POSTGRES_TEST_DSN is not set")
 	}
 	ctx := context.Background()
 	store, err := OpenPostgresStore(ctx, dsn)

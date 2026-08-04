@@ -4,8 +4,20 @@ import { mkdir, rm } from "node:fs/promises";
 import { createServer as createHttpServer } from "node:http";
 import path from "node:path";
 
-const port = Number(process.env.WINDFORCE_LITE_UI_GUIDE_PORT || 18099);
-const external = process.env.WINDFORCE_LITE_UI_GUIDE_EXTERNAL === "true";
+function envValue(name, fallback = "") {
+  const value = process.env[name]?.trim();
+  if (value) return value;
+  const corePrefix = "WINDFORCE_CORE_";
+  if (name.startsWith(corePrefix)) {
+    const legacyName = `WINDFORCE_LITE_${name.slice(corePrefix.length)}`;
+    const legacyValue = process.env[legacyName]?.trim();
+    if (legacyValue) return legacyValue;
+  }
+  return fallback;
+}
+
+const port = Number(envValue("WINDFORCE_CORE_UI_GUIDE_PORT", "18099"));
+const external = envValue("WINDFORCE_CORE_UI_GUIDE_EXTERNAL") === "true";
 const baseDir = path.resolve(".tmp/ui-guide");
 const binary = path.resolve(
   baseDir,
@@ -26,8 +38,8 @@ function stopServer() {
 
 export default {
   name: "windforce-core",
-  baseUrl: process.env.WINDFORCE_LITE_UI_URL || `http://127.0.0.1:${port}/ui/`,
-  apiBaseUrl: process.env.WINDFORCE_LITE_API_URL || `http://127.0.0.1:${port}/api/w/default`,
+  baseUrl: envValue("WINDFORCE_CORE_UI_URL", `http://127.0.0.1:${port}/ui/`),
+  apiBaseUrl: envValue("WINDFORCE_CORE_API_URL", `http://127.0.0.1:${port}/api/w/default`),
   guidePath: "docs/user-guide/web-ui.md",
   scenariosDir: "docs/ui-scenarios",
   screenshotsDir: "docs/assets/ui",

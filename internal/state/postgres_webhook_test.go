@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -17,9 +16,9 @@ import (
 )
 
 func TestPostgresWebhookStoreContract(t *testing.T) {
-	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
+	dsn := postgresTestDSN()
 	if dsn == "" {
-		t.Skip("WINDFORCE_LITE_POSTGRES_TEST_DSN is not set")
+		t.Skip("WINDFORCE_CORE_POSTGRES_TEST_DSN is not set")
 	}
 	ctx := context.Background()
 	store := openIsolatedPostgresCatalogStore(t, dsn)
@@ -207,9 +206,9 @@ WHERE id = $1
 }
 
 func TestPostgresWebhookTransactionsUseSingleConnection(t *testing.T) {
-	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
+	dsn := postgresTestDSN()
 	if dsn == "" {
-		t.Skip("WINDFORCE_LITE_POSTGRES_TEST_DSN is not set")
+		t.Skip("WINDFORCE_CORE_POSTGRES_TEST_DSN is not set")
 	}
 	separator := "?"
 	if strings.Contains(dsn, "?") {
@@ -251,9 +250,9 @@ func TestPostgresWebhookTransactionsUseSingleConnection(t *testing.T) {
 }
 
 func TestPostgresWebhookRetentionPrunesOnlyTerminalDeliveries(t *testing.T) {
-	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
+	dsn := postgresTestDSN()
 	if dsn == "" {
-		t.Skip("WINDFORCE_LITE_POSTGRES_TEST_DSN is not set")
+		t.Skip("WINDFORCE_CORE_POSTGRES_TEST_DSN is not set")
 	}
 	ctx := context.Background()
 	store := openIsolatedPostgresCatalogStore(t, dsn)
@@ -371,9 +370,9 @@ WHERE id = $1
 }
 
 func TestPostgresWebhookDeliveryUniqueConstraint(t *testing.T) {
-	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
+	dsn := postgresTestDSN()
 	if dsn == "" {
-		t.Skip("WINDFORCE_LITE_POSTGRES_TEST_DSN is not set")
+		t.Skip("WINDFORCE_CORE_POSTGRES_TEST_DSN is not set")
 	}
 	ctx := context.Background()
 	store := openIsolatedPostgresCatalogStore(t, dsn)
@@ -408,9 +407,9 @@ INSERT INTO webhook_delivery (
 }
 
 func TestPostgresReleaseOutboxMatchesHundredSubscriptions(t *testing.T) {
-	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
+	dsn := postgresTestDSN()
 	if dsn == "" {
-		t.Skip("WINDFORCE_LITE_POSTGRES_TEST_DSN is not set")
+		t.Skip("WINDFORCE_CORE_POSTGRES_TEST_DSN is not set")
 	}
 	ctx := context.Background()
 	store := openIsolatedPostgresCatalogStore(t, dsn)
@@ -441,9 +440,9 @@ func TestPostgresReleaseOutboxMatchesHundredSubscriptions(t *testing.T) {
 }
 
 func TestPostgresWebhookConcurrentClaimHasSingleOwner(t *testing.T) {
-	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
+	dsn := postgresTestDSN()
 	if dsn == "" {
-		t.Skip("WINDFORCE_LITE_POSTGRES_TEST_DSN is not set")
+		t.Skip("WINDFORCE_CORE_POSTGRES_TEST_DSN is not set")
 	}
 	ctx := context.Background()
 	store := openIsolatedPostgresCatalogStore(t, dsn)
@@ -505,9 +504,9 @@ func TestPostgresWebhookConcurrentClaimHasSingleOwner(t *testing.T) {
 }
 
 func TestPostgresWebhookConcurrentClaimsDoNotRequireGlobalDeliveryOrder(t *testing.T) {
-	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
+	dsn := postgresTestDSN()
 	if dsn == "" {
-		t.Skip("WINDFORCE_LITE_POSTGRES_TEST_DSN is not set")
+		t.Skip("WINDFORCE_CORE_POSTGRES_TEST_DSN is not set")
 	}
 	ctx := context.Background()
 	store := openIsolatedPostgresCatalogStore(t, dsn)

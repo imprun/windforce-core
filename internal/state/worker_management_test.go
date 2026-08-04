@@ -41,9 +41,9 @@ func TestLocalWorkerControlStoreContract(t *testing.T) {
 }
 
 func TestPostgresWorkerControlStoreContract(t *testing.T) {
-	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
+	dsn := postgresTestDSN()
 	if dsn == "" {
-		t.Skip("WINDFORCE_LITE_POSTGRES_TEST_DSN is not set")
+		t.Skip("WINDFORCE_CORE_POSTGRES_TEST_DSN is not set")
 	}
 	store := openIsolatedPostgresCatalogStore(t, dsn)
 	exerciseWorkerControlStore(t, store)

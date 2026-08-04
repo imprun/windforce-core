@@ -211,9 +211,9 @@ func TestLocalDeleteWorkspacePurgesScopedData(t *testing.T) {
 }
 
 func TestPostgresWorkspaceLifecycle(t *testing.T) {
-	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
+	dsn := postgresTestDSN()
 	if dsn == "" {
-		t.Skip("WINDFORCE_LITE_POSTGRES_TEST_DSN is not set")
+		t.Skip("WINDFORCE_CORE_POSTGRES_TEST_DSN is not set")
 	}
 	ctx := context.Background()
 	store, err := OpenPostgresStore(ctx, dsn)
@@ -321,9 +321,9 @@ func TestPostgresWorkspaceLifecycle(t *testing.T) {
 }
 
 func TestPostgresWorkspaceTokenMigrationPreservesLegacyCredential(t *testing.T) {
-	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
+	dsn := postgresTestDSN()
 	if dsn == "" {
-		t.Skip("WINDFORCE_LITE_POSTGRES_TEST_DSN is not set")
+		t.Skip("WINDFORCE_CORE_POSTGRES_TEST_DSN is not set")
 	}
 	ctx := context.Background()
 	store, err := OpenPostgresStore(ctx, dsn)

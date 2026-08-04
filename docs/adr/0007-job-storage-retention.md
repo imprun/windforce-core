@@ -40,11 +40,11 @@ Raw job records get per-outcome TTLs, enforced by a retention loop in the
   infrastructure. Settled counts near the edge of a window can undercount by
   up to one pruner interval; the dashboard reads trends, not ledgers.
 - Configuration (flags with environment defaults):
-  - `--job-success-retention` / `WINDFORCE_LITE_JOB_SUCCESS_RETENTION_DAYS`
+  - `--job-success-retention` / `WINDFORCE_CORE_JOB_SUCCESS_RETENTION_DAYS`
     (default 7 days; `0` keeps forever)
-  - `--job-failure-retention` / `WINDFORCE_LITE_JOB_FAILURE_RETENTION_DAYS`
+  - `--job-failure-retention` / `WINDFORCE_CORE_JOB_FAILURE_RETENTION_DAYS`
     (default 30 days; `0` keeps forever)
-  - `--job-stuck-after` / `WINDFORCE_LITE_JOB_STUCK_AFTER_HOURS`
+  - `--job-stuck-after` / `WINDFORCE_CORE_JOB_STUCK_AFTER_HOURS`
     (default 24 hours; `0` disables)
   - `--job-retention-interval` (default 10 minutes)
 
@@ -52,8 +52,8 @@ Raw job records get per-outcome TTLs, enforced by a retention loop in the
 
 Rollup tables for long-range trends — per app/action/status/error-code and
 latency, hourly for ~180 days and daily for 365+ days
-(`WINDFORCE_LITE_JOB_ROLLUP_HOURLY_RETENTION_DAYS`,
-`WINDFORCE_LITE_JOB_ROLLUP_DAILY_RETENTION_DAYS` are reserved for it).
+(`WINDFORCE_CORE_JOB_ROLLUP_HOURLY_RETENTION_DAYS`,
+`WINDFORCE_CORE_JOB_ROLLUP_DAILY_RETENTION_DAYS` are reserved for it).
 Today's Monitoring UI aggregates at most 7 days, which raw retention covers;
 rollups become necessary only when the dashboard grows windows beyond the
 success TTL. At that point the summary endpoint should read rollups first

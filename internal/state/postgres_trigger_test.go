@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"os"
 	"testing"
 	"time"
 
@@ -13,9 +12,9 @@ import (
 )
 
 func TestPostgresTriggerStoreContract(t *testing.T) {
-	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
+	dsn := postgresTestDSN()
 	if dsn == "" {
-		t.Skip("WINDFORCE_LITE_POSTGRES_TEST_DSN is not set")
+		t.Skip("WINDFORCE_CORE_POSTGRES_TEST_DSN is not set")
 	}
 	ctx := context.Background()
 	store := openIsolatedPostgresCatalogStore(t, dsn)
@@ -111,9 +110,9 @@ func TestPostgresTriggerStoreContract(t *testing.T) {
 }
 
 func TestPostgresTriggerCompletionContract(t *testing.T) {
-	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
+	dsn := postgresTestDSN()
 	if dsn == "" {
-		t.Skip("WINDFORCE_LITE_POSTGRES_TEST_DSN is not set")
+		t.Skip("WINDFORCE_CORE_POSTGRES_TEST_DSN is not set")
 	}
 	ctx := context.Background()
 	store := openIsolatedPostgresCatalogStore(t, dsn)

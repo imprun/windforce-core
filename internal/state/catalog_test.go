@@ -3,7 +3,6 @@ package state
 import (
 	"context"
 	"errors"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -104,9 +103,9 @@ func TestLocalReleaseCatalogImportIsIdempotent(t *testing.T) {
 }
 
 func TestPostgresReleaseCatalogContract(t *testing.T) {
-	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
+	dsn := postgresTestDSN()
 	if dsn == "" {
-		t.Skip("WINDFORCE_LITE_POSTGRES_TEST_DSN is not set")
+		t.Skip("WINDFORCE_CORE_POSTGRES_TEST_DSN is not set")
 	}
 	ctx := context.Background()
 	store := openIsolatedPostgresCatalogStore(t, dsn)
@@ -158,9 +157,9 @@ func TestPostgresReleaseCatalogContract(t *testing.T) {
 }
 
 func TestPostgresReleaseRollbackMovesActiveHistoryPointer(t *testing.T) {
-	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
+	dsn := postgresTestDSN()
 	if dsn == "" {
-		t.Skip("WINDFORCE_LITE_POSTGRES_TEST_DSN is not set")
+		t.Skip("WINDFORCE_CORE_POSTGRES_TEST_DSN is not set")
 	}
 	ctx := context.Background()
 	store := openIsolatedPostgresCatalogStore(t, dsn)
@@ -210,9 +209,9 @@ func TestPostgresReleaseRollbackMovesActiveHistoryPointer(t *testing.T) {
 }
 
 func TestPostgresReleaseCandidateAndSourceOperationLeaseContract(t *testing.T) {
-	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
+	dsn := postgresTestDSN()
 	if dsn == "" {
-		t.Skip("WINDFORCE_LITE_POSTGRES_TEST_DSN is not set")
+		t.Skip("WINDFORCE_CORE_POSTGRES_TEST_DSN is not set")
 	}
 	ctx := context.Background()
 	store := openIsolatedPostgresCatalogStore(t, dsn)
@@ -262,9 +261,9 @@ func TestPostgresReleaseCandidateAndSourceOperationLeaseContract(t *testing.T) {
 }
 
 func TestPostgresMigrateSerializesConcurrentProcesses(t *testing.T) {
-	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
+	dsn := postgresTestDSN()
 	if dsn == "" {
-		t.Skip("WINDFORCE_LITE_POSTGRES_TEST_DSN is not set")
+		t.Skip("WINDFORCE_CORE_POSTGRES_TEST_DSN is not set")
 	}
 	ctx := context.Background()
 	admin, err := OpenPostgresStore(ctx, dsn)
@@ -321,9 +320,9 @@ func TestPostgresMigrateSerializesConcurrentProcesses(t *testing.T) {
 }
 
 func TestPostgresReleasePublicationRollsBackAllWrites(t *testing.T) {
-	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
+	dsn := postgresTestDSN()
 	if dsn == "" {
-		t.Skip("WINDFORCE_LITE_POSTGRES_TEST_DSN is not set")
+		t.Skip("WINDFORCE_CORE_POSTGRES_TEST_DSN is not set")
 	}
 	ctx := context.Background()
 

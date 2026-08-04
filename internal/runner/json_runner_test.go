@@ -17,7 +17,7 @@ func TestRunJSONSubprocessSuccess(t *testing.T) {
 		OutputPath: "output.json",
 		App:        "test-app",
 		Action:     "test-action",
-		Env:        []string{"WINDFORCE_LITE_HELPER=success"},
+		Env:        []string{"WINDFORCE_CORE_HELPER=success"},
 	})
 	if err != nil {
 		t.Fatalf("RunJSONSubprocess returned error: %v", err)
@@ -33,7 +33,7 @@ func TestRunJSONSubprocessSuccess(t *testing.T) {
 func TestRunJSONSubprocessNonZeroExitIsResult(t *testing.T) {
 	res, err := RunJSONSubprocess(context.Background(), JSONSubprocessRequest{
 		Command: []string{os.Args[0], "-test.run=TestHelperProcess", "--"},
-		Env:     []string{"WINDFORCE_LITE_HELPER=fail"},
+		Env:     []string{"WINDFORCE_CORE_HELPER=fail"},
 	})
 	if err != nil {
 		t.Fatalf("RunJSONSubprocess returned harness error: %v", err)
@@ -61,7 +61,7 @@ func TestRunActionAdapterSubprocessSuccess(t *testing.T) {
 		},
 		App:    "test-app",
 		Action: "test-action",
-		Env:    []string{"WINDFORCE_LITE_HELPER=adapter"},
+		Env:    []string{"WINDFORCE_CORE_HELPER=adapter"},
 		LogSink: func(chunk []byte) {
 			_, _ = logs.Write(chunk)
 		},
@@ -85,7 +85,7 @@ func TestRunActionAdapterSubprocessSuccess(t *testing.T) {
 }
 
 func TestHelperProcess(t *testing.T) {
-	switch os.Getenv("WINDFORCE_LITE_HELPER") {
+	switch os.Getenv("WINDFORCE_CORE_HELPER") {
 	case "":
 		return
 	case "success":

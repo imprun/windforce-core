@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"os"
 	"sync"
 	"testing"
 	"time"
@@ -87,9 +86,9 @@ func TestLocalStoreHeldHumanTaskChangeSignal(t *testing.T) {
 }
 
 func TestPostgresStoreHeldHumanTaskDecisionAndExpiryRace(t *testing.T) {
-	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
+	dsn := postgresTestDSN()
 	if dsn == "" {
-		t.Skip("WINDFORCE_LITE_POSTGRES_TEST_DSN is not set")
+		t.Skip("WINDFORCE_CORE_POSTGRES_TEST_DSN is not set")
 	}
 	store, err := OpenPostgresStore(context.Background(), dsn)
 	if err != nil {
@@ -107,9 +106,9 @@ func TestPostgresStoreHeldHumanTaskDecisionAndExpiryRace(t *testing.T) {
 }
 
 func TestPostgresStoreHeldHumanTaskLifecycleEncryptsSensitiveValues(t *testing.T) {
-	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
+	dsn := postgresTestDSN()
 	if dsn == "" {
-		t.Skip("WINDFORCE_LITE_POSTGRES_TEST_DSN is not set")
+		t.Skip("WINDFORCE_CORE_POSTGRES_TEST_DSN is not set")
 	}
 	store, err := OpenPostgresStore(context.Background(), dsn)
 	if err != nil {
@@ -141,9 +140,9 @@ func TestPostgresStoreHeldHumanTaskLifecycleEncryptsSensitiveValues(t *testing.T
 }
 
 func TestPostgresStoreHeldHumanTaskNotificationAcrossInstances(t *testing.T) {
-	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
+	dsn := postgresTestDSN()
 	if dsn == "" {
-		t.Skip("WINDFORCE_LITE_POSTGRES_TEST_DSN is not set")
+		t.Skip("WINDFORCE_CORE_POSTGRES_TEST_DSN is not set")
 	}
 	writer, err := OpenPostgresStore(context.Background(), dsn)
 	if err != nil {
