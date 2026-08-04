@@ -98,7 +98,7 @@ Apply a directory at process startup by mounting it into the server or
 standalone role and setting:
 
 ```bash
-WINDFORCE_LITE_PROVISION_DIR=/etc/windforce-lite/provisioning
+WINDFORCE_CORE_PROVISION_DIR=/etc/windforce-lite/provisioning
 ```
 
 The server reads `.json`, `.yaml`, and `.yml` files in lexical order.

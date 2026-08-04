@@ -47,12 +47,24 @@ STATE ?= $(DEV_DIR)/state.json
 CACHE ?= $(DEV_DIR)/cache
 INPUT ?= $(DEV_DIR)/input.json
 OUTPUT ?= $(DEV_DIR)/output.json
-WINDFORCE_LITE_API_PORT ?= 18091
-WINDFORCE_LITE_WEB_PORT ?= 18090
-ADDR ?= 127.0.0.1:$(WINDFORCE_LITE_API_PORT)
+ifeq ($(strip $(WINDFORCE_CORE_API_PORT)),)
+ifneq ($(strip $(WINDFORCE_LITE_API_PORT)),)
+WINDFORCE_CORE_API_PORT := $(WINDFORCE_LITE_API_PORT)
+else
+WINDFORCE_CORE_API_PORT := 18091
+endif
+endif
+ifeq ($(strip $(WINDFORCE_CORE_WEB_PORT)),)
+ifneq ($(strip $(WINDFORCE_LITE_WEB_PORT)),)
+WINDFORCE_CORE_WEB_PORT := $(WINDFORCE_LITE_WEB_PORT)
+else
+WINDFORCE_CORE_WEB_PORT := 18090
+endif
+endif
+ADDR ?= 127.0.0.1:$(WINDFORCE_CORE_API_PORT)
 WINDFORCE_WEBHOOK_RECEIVER_ADDR ?= 127.0.0.1:19090
 
-WF_API_URL ?= http://127.0.0.1:$(WINDFORCE_LITE_API_PORT)
+WF_API_URL ?= http://127.0.0.1:$(WINDFORCE_CORE_API_PORT)
 WF_WORKSPACE ?= default
 WF_APP ?= echo
 WF_ACTION ?= echo
@@ -73,7 +85,13 @@ WF_GIT_CREDS_REF ?=
 WF_GIT_AUTH_METHOD ?=
 WF_GIT_USERNAME ?=
 WF_GIT_PASSWORD_ENV ?=
+ifneq ($(strip $(WINDFORCE_CORE_GIT_TOKEN)),)
+WF_GIT_TOKEN_ENV ?= WINDFORCE_CORE_GIT_TOKEN
+else ifneq ($(strip $(WINDFORCE_LITE_GIT_TOKEN)),)
 WF_GIT_TOKEN_ENV ?= WINDFORCE_LITE_GIT_TOKEN
+else
+WF_GIT_TOKEN_ENV ?= WINDFORCE_CORE_GIT_TOKEN
+endif
 WF_VARIABLE_PATH ?= git/$(WF_GIT_SOURCE_NAME)/credential
 WF_VARIABLE_VALUE_ENV ?= $(WF_GIT_TOKEN_ENV)
 WF_VARIABLE_APP ?=
@@ -82,7 +100,9 @@ WF_VARIABLE_DESCRIPTION ?=
 WINDFORCE_POSTGRES_DB ?= windforce_core
 WINDFORCE_POSTGRES_USER ?= postgres
 WINDFORCE_POSTGRES_PORT ?= 5432
-ifneq ($(strip $(WINDFORCE_LITE_DATABASE_URL)),)
+ifneq ($(strip $(WINDFORCE_CORE_DATABASE_URL)),)
+POSTGRES_DSN ?= $(WINDFORCE_CORE_DATABASE_URL)
+else ifneq ($(strip $(WINDFORCE_LITE_DATABASE_URL)),)
 POSTGRES_DSN ?= $(WINDFORCE_LITE_DATABASE_URL)
 else
 POSTGRES_DSN ?= postgres://$(WINDFORCE_POSTGRES_USER)@127.0.0.1:$(WINDFORCE_POSTGRES_PORT)/$(WINDFORCE_POSTGRES_DB)?sslmode=disable
@@ -91,9 +111,9 @@ RABBITMQ_URL ?= amqp://guest:guest@127.0.0.1:5672/
 export WINDFORCE_POSTGRES_DB
 export WINDFORCE_POSTGRES_USER
 export WINDFORCE_POSTGRES_PORT
-export WINDFORCE_LITE_API_PORT
-export WINDFORCE_LITE_WEB_PORT
-export WINDFORCE_LITE_DATABASE_URL
+export WINDFORCE_CORE_API_PORT
+export WINDFORCE_CORE_WEB_PORT
+export WINDFORCE_CORE_DATABASE_URL
 export POSTGRES_DSN
 
 help:
@@ -102,7 +122,7 @@ help:
 	@echo "  web-deps               install Web UI dependencies for this worktree"
 	@echo "  web-install            install Web UI dependencies"
 	@echo "  dev                    start PostgreSQL and Docker air server/worker, then run local Web UI dev server"
-	@echo "  web-dev                run the local Vite Web UI dev server with live reload on WINDFORCE_LITE_WEB_PORT"
+	@echo "  web-dev                run the local Vite Web UI dev server with live reload on WINDFORCE_CORE_WEB_PORT"
 	@echo "  web-build              build the Web UI to web/dist without touching Go embed assets"
 	@echo "  web-embed              build the Web UI and refresh the Go embed assets"
 	@echo "  web-embed-verify       fail when Web UI source and committed Go embed assets differ"
@@ -155,7 +175,7 @@ web-deps web-install:
 	cd web && $(BUN) install
 
 web-dev:
-	cd web && WINDFORCE_LITE_API_PROXY_TARGET="$(WF_API_URL)" $(BUN) run dev -- --port "$(WINDFORCE_LITE_WEB_PORT)"
+	cd web && WINDFORCE_CORE_API_PROXY_TARGET="$(WF_API_URL)" $(BUN) run dev -- --port "$(WINDFORCE_CORE_WEB_PORT)"
 
 dev: compose-dev compose-dev-worker web-dev
 
@@ -187,7 +207,7 @@ test-python-sdk:
 	python -m unittest discover -s sdk/python/tests -v
 
 test-postgres: compose-db
-	WINDFORCE_LITE_POSTGRES_TEST_DSN="$(POSTGRES_DSN)" $(GO) test ./internal/state -run Postgres -count=1 -v
+	WINDFORCE_CORE_POSTGRES_TEST_DSN="$(POSTGRES_DSN)" $(GO) test ./internal/state -run Postgres -count=1 -v
 
 test-rabbitmq: compose-rabbitmq
 	WINDFORCE_RABBITMQ_TEST_URL="$(RABBITMQ_URL)" $(GO) test ./internal/trigger ./internal/completion -run RabbitMQ -count=1 -v

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"os"
 	"path/filepath"
 	"testing"
 )
@@ -16,9 +15,9 @@ func TestLocalHTTPRouteBindingStoreContract(t *testing.T) {
 }
 
 func TestPostgresHTTPRouteBindingStoreContract(t *testing.T) {
-	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
+	dsn := postgresTestDSN()
 	if dsn == "" {
-		t.Skip("WINDFORCE_LITE_POSTGRES_TEST_DSN is not set")
+		t.Skip("WINDFORCE_CORE_POSTGRES_TEST_DSN is not set")
 	}
 	store := openIsolatedPostgresCatalogStore(t, dsn)
 	store.ConfigureInputCrypto("postgres-http-route-binding-key", "")

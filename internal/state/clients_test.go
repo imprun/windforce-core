@@ -48,9 +48,9 @@ func TestLocalStoreMigratesLegacyClientSnapshot(t *testing.T) {
 }
 
 func TestPostgresStoreClients(t *testing.T) {
-	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
+	dsn := postgresTestDSN()
 	if dsn == "" {
-		t.Skip("WINDFORCE_LITE_POSTGRES_TEST_DSN is not set")
+		t.Skip("WINDFORCE_CORE_POSTGRES_TEST_DSN is not set")
 	}
 	store, err := OpenPostgresStore(context.Background(), dsn)
 	if err != nil {
@@ -69,9 +69,9 @@ func TestPostgresStoreClients(t *testing.T) {
 }
 
 func TestPostgresMigrationPreservesLegacyClients(t *testing.T) {
-	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
+	dsn := postgresTestDSN()
 	if dsn == "" {
-		t.Skip("WINDFORCE_LITE_POSTGRES_TEST_DSN is not set")
+		t.Skip("WINDFORCE_CORE_POSTGRES_TEST_DSN is not set")
 	}
 	admin, err := OpenPostgresStore(context.Background(), dsn)
 	if err != nil {

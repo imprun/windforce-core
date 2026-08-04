@@ -106,7 +106,7 @@ func runServer(args []string, mode string) int {
 	storeDir := flags.String("store", defaultStoreDir(), "source snapshot and execution bundle store directory")
 	catalogPath := flags.String("catalog", defaultCatalogPath(), "catalog JSON import path")
 	gitSourcesPath := flags.String("git-sources", defaultGitSourcesPath(), "registered git sources JSON path")
-	provisionDir := flags.String("provision-dir", strings.TrimSpace(os.Getenv("WINDFORCE_LITE_PROVISION_DIR")), "directory containing provisioning JSON/YAML resources to apply before serving")
+	provisionDir := flags.String("provision-dir", envString("WINDFORCE_CORE_PROVISION_DIR"), "directory containing provisioning JSON/YAML resources to apply before serving")
 	cacheRoot := flags.String("cache", defaultCacheDir(), "runtime cache directory")
 	bunPath := flags.String("bun-path", "", "bun executable path")
 	pythonPath := flags.String("python-path", "", "python executable path")
@@ -128,9 +128,9 @@ func runServer(args []string, mode string) int {
 	authSessionTimeout := flags.Duration("auth-session-timeout", envDuration("WINDFORCE_AUTH_SESSION_TIMEOUT_MS", time.Millisecond, 15*time.Second), "auth-session request timeout injected into action runtime context")
 	workerTags := flags.String("tags", "", "comma-separated route tags this worker claims")
 	workerLabels := flags.String("labels", "", "comma-separated capability labels this worker offers; sys/ labels are operator-granted")
-	jobSuccessRetention := flags.Duration("job-success-retention", envDays("WINDFORCE_LITE_JOB_SUCCESS_RETENTION_DAYS", defaultJobSuccessRetention), "how long succeeded job records are kept; 0 keeps them forever")
-	jobFailureRetention := flags.Duration("job-failure-retention", envDays("WINDFORCE_LITE_JOB_FAILURE_RETENTION_DAYS", defaultJobFailureRetention), "how long failed/canceled/expired job records are kept; 0 keeps them forever")
-	jobStuckAfter := flags.Duration("job-stuck-after", envHours("WINDFORCE_LITE_JOB_STUCK_AFTER_HOURS", defaultJobStuckAfter), "expire queued/running jobs with no progress for this long; 0 disables")
+	jobSuccessRetention := flags.Duration("job-success-retention", envDays("WINDFORCE_CORE_JOB_SUCCESS_RETENTION_DAYS", defaultJobSuccessRetention), "how long succeeded job records are kept; 0 keeps them forever")
+	jobFailureRetention := flags.Duration("job-failure-retention", envDays("WINDFORCE_CORE_JOB_FAILURE_RETENTION_DAYS", defaultJobFailureRetention), "how long failed/canceled/expired job records are kept; 0 keeps them forever")
+	jobStuckAfter := flags.Duration("job-stuck-after", envHours("WINDFORCE_CORE_JOB_STUCK_AFTER_HOURS", defaultJobStuckAfter), "expire queued/running jobs with no progress for this long; 0 disables")
 	jobRetentionInterval := flags.Duration("job-retention-interval", defaultJobRetentionInterval, "how often the retention pruner runs")
 	sourceBundleGracePeriod := flags.Duration("source-bundle-grace-period", defaultSourceBundleGracePeriod, "minimum age before an unreferenced source snapshot can be removed; 0 disables")
 	sourceBundleRetentionInterval := flags.Duration("source-bundle-retention-interval", defaultSourceBundleRetentionInterval, "how often unreferenced source snapshots are checked")
@@ -638,13 +638,13 @@ func envHours(name string, fallback time.Duration) time.Duration {
 }
 
 func envDuration(name string, unit time.Duration, fallback time.Duration) time.Duration {
-	raw := strings.TrimSpace(os.Getenv(name))
+	raw, source := envValue(name)
 	if raw == "" {
 		return fallback
 	}
 	value, err := strconv.Atoi(raw)
 	if err != nil || value < 0 {
-		fmt.Fprintf(os.Stderr, "ignoring %s=%q: expected a non-negative integer\n", name, raw)
+		fmt.Fprintf(os.Stderr, "ignoring %s=%q: expected a non-negative integer\n", source, raw)
 		return fallback
 	}
 	return time.Duration(value) * unit

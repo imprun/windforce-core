@@ -22,6 +22,20 @@ from typing import Any
 
 DEFAULT_API_URL = "http://127.0.0.1:8080"
 DEFAULT_WORKSPACE = "default"
+DEFAULT_AUTH_TOKEN_ENV = "WINDFORCE_CORE_API_TOKEN"
+
+
+def env_value(name: str, default: str = "") -> str:
+    value = os.environ.get(name, "").strip()
+    if value:
+        return value
+    prefix = "WINDFORCE_CORE_"
+    if name.startswith(prefix):
+        legacy_name = "WINDFORCE_LITE_" + name.removeprefix(prefix)
+        legacy_value = os.environ.get(legacy_name, "").strip()
+        if legacy_value:
+            return legacy_value
+    return default
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -31,22 +45,22 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--api-url",
-        default=os.environ.get("WINDFORCE_LITE_API_URL", DEFAULT_API_URL),
+        default=env_value("WINDFORCE_CORE_API_URL", DEFAULT_API_URL),
         help=f"control-plane API base URL (default: {DEFAULT_API_URL})",
     )
     parser.add_argument(
         "--workspace",
-        default=os.environ.get("WINDFORCE_LITE_WORKSPACE", DEFAULT_WORKSPACE),
+        default=env_value("WINDFORCE_CORE_WORKSPACE", DEFAULT_WORKSPACE),
         help=f"workspace id (default: {DEFAULT_WORKSPACE})",
     )
     parser.add_argument(
         "--auth-token-env",
-        default="WINDFORCE_LITE_API_TOKEN",
+        default=DEFAULT_AUTH_TOKEN_ENV,
         help="optional env var containing the API bearer token",
     )
     parser.add_argument(
         "--actor",
-        default=os.environ.get("WINDFORCE_LITE_ACTOR", ""),
+        default=env_value("WINDFORCE_CORE_ACTOR"),
         help="optional actor subject sent as X-Windforce-Actor",
     )
     parser.add_argument("--pretty", action="store_true", help="pretty-print JSON output")
@@ -950,7 +964,7 @@ def request_headers(args: argparse.Namespace, has_json_body: bool) -> dict[str, 
     headers = {"Accept": "application/json"}
     if has_json_body:
         headers["Content-Type"] = "application/json"
-    token = os.environ.get(args.auth_token_env, "").strip()
+    token = env_value(args.auth_token_env)
     if token:
         headers["Authorization"] = f"Bearer {token}"
     actor = str(getattr(args, "actor", "") or "").strip()

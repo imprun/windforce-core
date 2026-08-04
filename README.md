@@ -374,15 +374,15 @@ repository-local control helper reads secret values from an environment variable
 so the token is not placed in shell history:
 
 ```powershell
-$env:WINDFORCE_LITE_GIT_TOKEN = "<token>"
+$env:WINDFORCE_CORE_GIT_TOKEN = "<token>"
 python tools/windforce_control.py --api-url http://127.0.0.1:18091 --pretty variable-set `
-  --path secrets/git/token --value-env WINDFORCE_LITE_GIT_TOKEN --secret
+  --path secrets/git/token --value-env WINDFORCE_CORE_GIT_TOKEN --secret
 ```
 
 The Makefile wrapper uses the same API:
 
 ```powershell
-$env:WINDFORCE_LITE_GIT_TOKEN = "<token>"
+$env:WINDFORCE_CORE_GIT_TOKEN = "<token>"
 make windforce-git-token
 ```
 
@@ -456,7 +456,7 @@ The full Windforce control plane derives job actor provenance from the
 authenticated principal. Lite keeps the same response fields without
 implementing the full user/session principal model: local control-plane clients
 may provide `X-Windforce-Actor` directly or use the repository-local control
-helper's global `--actor` option / `WINDFORCE_LITE_ACTOR` environment variable. `created_by`,
+helper's global `--actor` option / `WINDFORCE_CORE_ACTOR` environment variable. `created_by`,
 `permissioned_as`, and `canceled_by` fall back to `system` only when no actor is
 present.
 
@@ -526,7 +526,7 @@ templates, rate limits, and durable event-ID deduplication.
 Webhook endpoints use HTTPS by default. DNS results are checked again for each
 attempt, private addresses require an explicit host or CIDR allowlist, and
 redirects are not followed. A host-run local receiver may use HTTP loopback only
-when `WINDFORCE_LITE_WEBHOOK_ALLOW_INSECURE_LOOPBACK=true`. Endpoint paths,
+when `WINDFORCE_CORE_WEBHOOK_ALLOW_INSECURE_LOOPBACK=true`. Endpoint paths,
 queries, signing secrets, and response bodies are not written to delivery logs.
 
 The server and standalone roles expose webhook Prometheus metrics at `/metrics` on their HTTP listener. Metric labels are limited to event type, delivery state, and attempt outcome. Useful alert rules
@@ -540,11 +540,24 @@ Succeeded and canceled deliveries default to 30 days, failed deliveries to 90
 days, and pending/retrying/delivering records are never pruned. Events are
 removed only after their deliveries are gone; soft-deleted subscriptions are
 removed only after their deliveries are gone. Configure the terminal TTLs with
-`WINDFORCE_LITE_WEBHOOK_SUCCESS_RETENTION_DAYS` and
-`WINDFORCE_LITE_WEBHOOK_FAILURE_RETENTION_DAYS`; `0` keeps that outcome
-forever. `WINDFORCE_LITE_WEBHOOK_RETENTION_INTERVAL`,
-`WINDFORCE_LITE_WEBHOOK_RETENTION_BATCH_SIZE`, and
-`WINDFORCE_LITE_WEBHOOK_RETENTION_TIME_BUDGET` bound cleanup work.
+`WINDFORCE_CORE_WEBHOOK_SUCCESS_RETENTION_DAYS` and
+`WINDFORCE_CORE_WEBHOOK_FAILURE_RETENTION_DAYS`; `0` keeps that outcome
+forever. `WINDFORCE_CORE_WEBHOOK_RETENTION_INTERVAL`,
+`WINDFORCE_CORE_WEBHOOK_RETENTION_BATCH_SIZE`, and
+`WINDFORCE_CORE_WEBHOOK_RETENTION_TIME_BUDGET` bound cleanup work.
+
+### Environment variable migration
+
+Core-owned environment variables use the `WINDFORCE_CORE_*` prefix. Starting
+with v0.5.0, the runtime, repository helper, Web UI development server,
+UI-guide harness, Make targets, and Docker Compose files read the new name
+first and then fall back to the corresponding `WINDFORCE_LITE_*` alias. When
+both names contain a value, `WINDFORCE_CORE_*` wins.
+
+The legacy aliases remain supported throughout v0.5.x and v0.6.x and may be
+removed no earlier than v0.7.0. New configuration and examples must use only
+`WINDFORCE_CORE_*`. See the [v0.5.0 release note](docs/release-notes/v0.5.0.md)
+for migration examples and the compatibility boundary.
 
 ## Runtime architecture
 
@@ -610,9 +623,9 @@ Raw job records are retained per outcome and pruned by the server process:
 succeeded runs for 7 days, failed/canceled runs for 30 days, and queued or
 running runs that make no progress for 24 hours are expired into the failure
 family first. Tune with `--job-success-retention`, `--job-failure-retention`,
-and `--job-stuck-after` (or `WINDFORCE_LITE_JOB_SUCCESS_RETENTION_DAYS`,
-`WINDFORCE_LITE_JOB_FAILURE_RETENTION_DAYS`,
-`WINDFORCE_LITE_JOB_STUCK_AFTER_HOURS`); `0` disables a rule. Release history
+and `--job-stuck-after` (or `WINDFORCE_CORE_JOB_SUCCESS_RETENTION_DAYS`,
+`WINDFORCE_CORE_JOB_FAILURE_RETENTION_DAYS`,
+`WINDFORCE_CORE_JOB_STUCK_AFTER_HOURS`); `0` disables a rule. Release history
 and the audit trail live in the catalog and are not affected. See
 [ADR 0007](docs/adr/0007-job-storage-retention.md).
 

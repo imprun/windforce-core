@@ -40,7 +40,7 @@ The UI was removed and re-planned from scratch. The screen model lives in
 - The Go server serves the SPA at `/ui/` with an index-html fallback for
   client-side routes (any `/ui/...` path that does not match a static file).
 - Development uses the Vite dev server (run with Bun) on
-  `WINDFORCE_LITE_WEB_PORT`, proxying `/api`, `/healthz`, and `/readyz` to
+  `WINDFORCE_CORE_WEB_PORT`, proxying `/api`, `/healthz`, and `/readyz` to
   the control plane, same as before. Docker Compose keeps a `web` service
   running the dev server for the local devstack.
 - The UI talks only to the documented control-plane API and keeps no

@@ -2,7 +2,6 @@ package state
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 )
@@ -40,9 +39,9 @@ func TestLocalStoreQueueDemandSnapshotContract(t *testing.T) {
 }
 
 func TestPostgresStoreQueueDemandSnapshotContract(t *testing.T) {
-	dsn := os.Getenv("WINDFORCE_LITE_POSTGRES_TEST_DSN")
+	dsn := postgresTestDSN()
 	if dsn == "" {
-		t.Skip("WINDFORCE_LITE_POSTGRES_TEST_DSN is not set")
+		t.Skip("WINDFORCE_CORE_POSTGRES_TEST_DSN is not set")
 	}
 	store := openIsolatedPostgresCatalogStore(t, dsn)
 	exerciseQueueDemandSnapshotContract(t, store, func(jobID string) {

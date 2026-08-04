@@ -46,6 +46,20 @@ func TestUsageShowsOnlyServerWorkerAndStandaloneRoles(t *testing.T) {
 	}
 }
 
+func TestCoreEnvironmentVariablesTakePrecedenceAndFallBackToLegacyAliases(t *testing.T) {
+	const name = "WINDFORCE_CORE_JOB_STUCK_AFTER_HOURS"
+	t.Setenv(name, "3")
+	t.Setenv("WINDFORCE_LITE_JOB_STUCK_AFTER_HOURS", "7")
+	if got := envHours(name, time.Hour); got != 3*time.Hour {
+		t.Fatalf("new environment value = %s, want 3h", got)
+	}
+
+	t.Setenv(name, "")
+	if got := envHours(name, time.Hour); got != 7*time.Hour {
+		t.Fatalf("legacy environment fallback = %s, want 7h", got)
+	}
+}
+
 func TestImportReleaseCatalogMigratesFileStateIdempotently(t *testing.T) {
 	ctx := context.Background()
 	tempDir := t.TempDir()
