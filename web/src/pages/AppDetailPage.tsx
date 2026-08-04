@@ -20,6 +20,7 @@ import { RepositorySettings } from "../features/RepositorySettings";
 import { RollbackReleaseDialog } from "../features/RollbackReleaseDialog";
 import { SourceReleaseActions } from "../features/SourceReleaseActions";
 import { actionDisplayName } from "../lib/action-label";
+import { findAppForSource } from "../lib/app-rows";
 import type {
   ActionSchemas,
   ActionView,
@@ -71,7 +72,7 @@ export function AppDetailPage({
   const state = useAsync(async () => {
     const [sources, apps] = await Promise.all([api.gitSources(), api.apps()]);
     const source = sources.find((item) => item.id === sourceID) || null;
-    const app = (apps.apps || []).find((item) => item.git_source_id === sourceID) || null;
+    const app = findAppForSource(source, apps.apps || []);
     const detail = app ? await api.app(app.app_key) : null;
     return { source, app, detail };
   }, [api, sourceID]);

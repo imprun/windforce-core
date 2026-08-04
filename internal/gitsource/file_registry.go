@@ -21,6 +21,7 @@ type Source struct {
 	Workspace        string     `json:"workspace,omitempty"`
 	ID               string     `json:"id"`
 	Name             string     `json:"name,omitempty"`
+	AppKey           string     `json:"appKey,omitempty"`
 	RepoURL          string     `json:"repoUrl"`
 	Branch           string     `json:"branch,omitempty"`
 	Subpath          string     `json:"subpath,omitempty"`
@@ -173,6 +174,7 @@ func (r *FileRegistry) Patch(ctx context.Context, workspace string, id string, p
 		return Source{}, err
 	}
 	if source.RepoURL != previousRepoURL || source.Branch != previousBranch || source.Subpath != previousSubpath {
+		source.AppKey = ""
 		source.LastSyncedCommit = nil
 		source.LastSyncedAt = nil
 	}
@@ -193,7 +195,7 @@ func (r *FileRegistry) Patch(ctx context.Context, workspace string, id string, p
 	return source, nil
 }
 
-func (r *FileRegistry) MarkSynced(ctx context.Context, workspace string, id string, commit string, syncedAt time.Time) (Source, error) {
+func (r *FileRegistry) MarkSynced(ctx context.Context, workspace string, id string, appKey string, commit string, syncedAt time.Time) (Source, error) {
 	if err := ctx.Err(); err != nil {
 		return Source{}, err
 	}
@@ -209,6 +211,7 @@ func (r *FileRegistry) MarkSynced(ctx context.Context, workspace string, id stri
 	if syncedAt.IsZero() {
 		syncedAt = time.Now().UTC()
 	}
+	source.AppKey = strings.TrimSpace(appKey)
 	source.LastSyncedCommit = &commit
 	source.LastSyncedAt = &syncedAt
 	snapshot.Sources[sourceKey] = source
@@ -296,6 +299,7 @@ func normalizeSource(source Source) (Source, error) {
 	rawID := strings.TrimSpace(source.ID)
 	source.ID = normalizeNumericID(rawID)
 	source.Name = strings.TrimSpace(source.Name)
+	source.AppKey = strings.TrimSpace(source.AppKey)
 	if source.Name == "" && source.ID != "" {
 		source.Name = source.ID
 	}

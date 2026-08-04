@@ -22,6 +22,7 @@ type canonicalGitSourceView struct {
 	ID               int64      `json:"id"`
 	WorkspaceID      string     `json:"workspace_id"`
 	Name             string     `json:"name"`
+	AppKey           string     `json:"app_key,omitempty"`
 	RepoURL          string     `json:"repo_url"`
 	Branch           string     `json:"branch"`
 	Subpath          string     `json:"subpath"`
@@ -37,6 +38,7 @@ func newCanonicalGitSourceView(source gitsourcepkg.Source) canonicalGitSourceVie
 		ID:               parseCanonicalGitSourceID(source.ID),
 		WorkspaceID:      contract.NormalizeWorkspace(source.Workspace),
 		Name:             source.Name,
+		AppKey:           source.AppKey,
 		RepoURL:          source.RepoURL,
 		Branch:           firstNonEmpty(source.Branch, "main"),
 		Subpath:          source.Subpath,
