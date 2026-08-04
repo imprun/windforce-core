@@ -61,6 +61,15 @@ and marker definitions, and
 [Release and execution lifecycle](concepts/release-lifecycle.md) for the state
 transitions.
 
+Core prunes a completed Source Store snapshot only when active deployments,
+immutable release history, latest release candidates, and source release
+markers do not reference it and its completion marker is older than the
+configured grace period. Invalid or incomplete marker state is retained. The
+default seven-day grace period can be disabled with
+`--source-bundle-grace-period=0`, and
+`--source-bundle-retention-dry-run` observes eligible snapshots without
+deleting them. See [ADR 0028](adr/0028-prune-unreferenced-source-bundles.md).
+
 The selected state backend owns the active release catalog. A publication writes
 the active release, immutable release history, source release marker, and audit
 record in one transaction. Local mode persists the catalog in its state JSON

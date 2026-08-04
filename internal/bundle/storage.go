@@ -142,12 +142,12 @@ func copyFile(src string, dst string) error {
 }
 
 func markerPayload(workspace string, gitSourceID string, commit string, dir string) []byte {
-	payload, _ := json.Marshal(map[string]any{
-		"completedAt": time.Now().UTC().Format(time.RFC3339),
-		"commit":      commit,
-		"fileCount":   countFiles(dir),
-		"gitSourceId": gitSourceID,
-		"workspace":   workspace,
+	payload, _ := json.Marshal(marker{
+		CompletedAt: time.Now().UTC(),
+		Commit:      commit,
+		FileCount:   countFiles(dir),
+		GitSourceID: gitSourceID,
+		Workspace:   workspace,
 	})
 	return payload
 }
