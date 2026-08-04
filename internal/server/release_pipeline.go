@@ -71,9 +71,9 @@ func (h *Handler) syncGitSourceRevision(w http.ResponseWriter, r *http.Request, 
 		return catalog.ReleaseCandidate{}, false
 	}
 	if marker, ok := h.gitSources.(interface {
-		MarkSynced(context.Context, string, string, string, time.Time) (gitsourcepkg.Source, error)
+		MarkSynced(context.Context, string, string, string, string, time.Time) (gitsourcepkg.Source, error)
 	}); ok {
-		if _, err := marker.MarkSynced(operationCtx, workspaceID, source.ID, candidate.Deployment.Commit, candidate.SyncedAt); err != nil {
+		if _, err := marker.MarkSynced(operationCtx, workspaceID, source.ID, candidate.Deployment.App, candidate.Deployment.Commit, candidate.SyncedAt); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return catalog.ReleaseCandidate{}, false
 		}

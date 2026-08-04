@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -106,8 +107,22 @@ func TestGitSourceSyncStoresSourceWithoutRuntimePreparation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if source.LastSyncedCommit == nil || *source.LastSyncedCommit != candidate.Deployment.Commit || source.LastSyncedAt == nil {
+	if source.AppKey != candidate.Deployment.App || source.LastSyncedCommit == nil || *source.LastSyncedCommit != candidate.Deployment.Commit || source.LastSyncedAt == nil {
 		t.Fatalf("source synchronization marker = %#v", source)
+	}
+	listResponse, err := http.Get(server.URL + "/api/w/ws-a/git_sources")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listResponse.Body.Close()
+	var sources []struct {
+		AppKey string `json:"app_key"`
+	}
+	if err := json.NewDecoder(listResponse.Body).Decode(&sources); err != nil {
+		t.Fatal(err)
+	}
+	if listResponse.StatusCode != http.StatusOK || len(sources) != 1 || sources[0].AppKey != candidate.Deployment.App {
+		t.Fatalf("git source list = status %d body %#v", listResponse.StatusCode, sources)
 	}
 }
 

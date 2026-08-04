@@ -4,19 +4,13 @@ import { EmptyState, ErrorNotice, Loading, ReleaseStateBadge } from "../componen
 import { PublishReleaseDialog } from "../features/PublishReleaseDialog";
 import { RegisterAppDialog } from "../features/RegisterAppDialog";
 import { SourceReleaseActions } from "../features/SourceReleaseActions";
-import type { AppSummary, GitSource } from "../lib/api";
+import type { GitSource } from "../lib/api";
 import { useApp, useAsync } from "../lib/app-context";
 import { formatRelative, shortSHA } from "../lib/format";
 import { displayRepoURL } from "../lib/repo";
 import { Link, useRouter } from "../lib/router";
 import { translate } from "../shared/i18n";
-
-// Either side may be missing: a registered source may not be released yet,
-// and a released app's source registration may have been deleted.
-type AppRow = {
-  source: GitSource | null;
-  app: AppSummary | null;
-};
+import { buildAppRows } from "../lib/app-rows";
 
 export function AppsPage() {
   const { api } = useApp();
@@ -31,20 +25,10 @@ export function AppsPage() {
     return { sources, apps: apps.apps || [] };
   }, [api]);
 
-  const rows = useMemo<AppRow[]>(() => {
+  const rows = useMemo(() => {
     if (!state.data) return [];
-    const bySource = new Map<number, AppSummary>();
-    for (const app of state.data.apps) bySource.set(app.git_source_id, app);
-    const sourceIDs = new Set(state.data.sources.map((source) => source.id));
-    const sourceRows = state.data.sources.map((source) => ({
-      source,
-      app: bySource.get(source.id) || null,
-    }));
-    const orphanRows = state.data.apps
-      .filter((app) => !sourceIDs.has(app.git_source_id))
-      .map((app) => ({ source: null, app }));
     const query = search.trim().toLowerCase();
-    return [...sourceRows, ...orphanRows].filter((row) => {
+    return buildAppRows(state.data.sources, state.data.apps).filter((row) => {
       if (!query) return true;
       return (
         (row.source?.name || "").toLowerCase().includes(query) ||
@@ -235,7 +219,11 @@ export function AppsPage() {
         <PublishReleaseDialog
           source={publishing}
           activeCommit={
-            state.data?.apps.find((app) => app.git_source_id === publishing.id)?.commit_sha
+            state.data?.apps.find(
+              (app) =>
+                (publishing.app_key && app.app_key === publishing.app_key) ||
+                app.git_source_id === publishing.id,
+            )?.commit_sha
           }
           onClose={() => setPublishing(null)}
           onPublished={() => {

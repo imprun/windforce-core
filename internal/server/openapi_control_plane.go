@@ -1343,6 +1343,7 @@ func controlPlaneSchemas() map[string]any {
 			"properties": map[string]any{
 				"id":                 oapiIntegerSchema(),
 				"name":               oapiStringSchema(),
+				"app_key":            oapiStringSchema(),
 				"workspace_id":       oapiStringSchema(),
 				"repo_url":           oapiStringSchema(),
 				"branch":             oapiStringSchema(),

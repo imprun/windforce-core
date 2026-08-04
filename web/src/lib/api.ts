@@ -36,6 +36,7 @@ export type GitSource = {
   id: number;
   workspace_id: string;
   name: string;
+  app_key?: string;
   repo_url: string;
   branch: string;
   subpath: string;
