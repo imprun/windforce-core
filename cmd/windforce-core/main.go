@@ -132,6 +132,9 @@ func runServer(args []string, mode string) int {
 	jobFailureRetention := flags.Duration("job-failure-retention", envDays("WINDFORCE_LITE_JOB_FAILURE_RETENTION_DAYS", defaultJobFailureRetention), "how long failed/canceled/expired job records are kept; 0 keeps them forever")
 	jobStuckAfter := flags.Duration("job-stuck-after", envHours("WINDFORCE_LITE_JOB_STUCK_AFTER_HOURS", defaultJobStuckAfter), "expire queued/running jobs with no progress for this long; 0 disables")
 	jobRetentionInterval := flags.Duration("job-retention-interval", defaultJobRetentionInterval, "how often the retention pruner runs")
+	sourceBundleGracePeriod := flags.Duration("source-bundle-grace-period", defaultSourceBundleGracePeriod, "minimum age before an unreferenced source snapshot can be removed; 0 disables")
+	sourceBundleRetentionInterval := flags.Duration("source-bundle-retention-interval", defaultSourceBundleRetentionInterval, "how often unreferenced source snapshots are checked")
+	sourceBundleRetentionDryRun := flags.Bool("source-bundle-retention-dry-run", false, "report eligible unreferenced source snapshots without deleting them")
 	humanTaskDeadlineInterval := flags.Duration("human-task-deadline-interval", envParsedDuration("WINDFORCE_HUMAN_TASK_DEADLINE_INTERVAL", defaultHumanTaskDeadlineInterval), "how often due HumanTask holds are expired")
 	humanTaskDeadlineBatch := flags.Int("human-task-deadline-batch", envInt("WINDFORCE_HUMAN_TASK_DEADLINE_BATCH", defaultHumanTaskDeadlineBatch), "maximum HumanTask holds expired per deadline sweep batch")
 	publicAPIRPS := flags.Float64("public-api-rps", 100, "maximum public API requests per second per instance")
@@ -150,6 +153,10 @@ func runServer(args []string, mode string) int {
 	}
 	if *humanTaskDeadlineInterval <= 0 || *humanTaskDeadlineBatch <= 0 || *humanTaskDeadlineBatch > 1000 {
 		fmt.Fprintln(os.Stderr, "HumanTask deadline interval must be positive and batch must be between 1 and 1000")
+		return 2
+	}
+	if *sourceBundleGracePeriod < 0 || *sourceBundleRetentionInterval <= 0 {
+		fmt.Fprintln(os.Stderr, "source bundle grace period must not be negative and retention interval must be positive")
 		return 2
 	}
 	runCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -289,6 +296,14 @@ func runServer(args []string, mode string) int {
 	}
 	if retention.Enabled() {
 		go runJobRetentionLoop(runCtx, stateStore, retention)
+	}
+	sourceBundleRetention := sourceBundleRetentionPolicy{
+		GracePeriod: *sourceBundleGracePeriod,
+		Interval:    *sourceBundleRetentionInterval,
+		DryRun:      *sourceBundleRetentionDryRun,
+	}
+	if sourceBundleRetention.Enabled() {
+		go runSourceBundleRetentionLoop(runCtx, bundleStore, releaseCatalog, sourceBundleRetention)
 	}
 	go runHumanTaskDeadlineLoop(runCtx, stateStore, *humanTaskDeadlineInterval, *humanTaskDeadlineBatch)
 

@@ -94,7 +94,7 @@ type TransactionalReleaseStore interface {
 - Invocation API와 Control Plane 조회는 같은 release store를 사용한다.
 - local backend는 하나의 lock과 atomic snapshot replace로 같은 service contract를 구현한다. 다중 process 원자성은 PostgreSQL backend만 보장한다.
 - 현재 catalog와 release history를 PostgreSQL로 옮기는 idempotent import 검증 경로를 제공한다.
-- transaction 실패로 참조되지 않는 materialized bundle을 찾고 정리할 수 있게 bundle reference 조회와 retention을 추가한다.
+- [x] transaction 실패로 참조되지 않는 materialized bundle을 찾고 정리할 수 있게 bundle reference 조회와 retention을 추가한다. 구현 계약은 [ADR 0028](adr/0028-prune-unreferenced-source-bundles.md)에 고정한다.
 
 ### 완료 조건
 
