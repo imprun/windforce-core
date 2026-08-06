@@ -36,22 +36,23 @@ language wrapper
 
 ## Distributed tracing
 
-Trace context is optional at every independently invocable boundary. When tracing is enabled, an ingress, Admission path, Worker, launcher, or SDK continues a valid ambient or W3C `traceparent`; if none exists or the carrier is malformed, that boundary starts a new root trace. Missing trace context never makes an otherwise valid request or Job fail.
+Trace context is optional at every independently invocable boundary. At HTTP or protocol ingress, Core continues a valid ambient context, otherwise extracts a valid W3C `traceparent`, otherwise starts a new root when its tracing SDK is enabled. Missing, malformed, or oversized trace context never makes an otherwise valid request or Job fail and raw invalid values are not logged.
 
-Admission persists the effective W3C creation context with the Run and Job. PostgreSQL is the durable carrier across queue delay, not a reason to leave the Admission span open. A local or remote Worker restores that context when it claims the Job. A legacy, direct, or test Job without context starts a Worker root. The launcher then passes the current carrier through Core's private transport so the Core Author SDK can expose it read-only and an opaque Application SDK can continue it.
+Admission persists a validated, versioned creation context with the Run and Job outside Application input. The configured State Store—local JSON or PostgreSQL—is the durable carrier across queue delay, not a reason to leave the Admission span open. A local, remote, or standalone Worker uses that stored execution context rather than an ambient polling or claim transport context. A legacy, direct, or test Job without context starts a Worker root when Worker tracing is enabled. The launcher passes only the Job execution carrier through Core's private transport so the Core Author SDK can expose it read-only and an opaque Application SDK can continue it.
 
 ```text
 instrumented gateway or adapter (optional)
   -> Core API / Admission, or new Core root
-    -> PostgreSQL Run + Job + trace context
-      -> Worker process span, or new Worker root
+    -> State Store Run + Job + creation context
+      -> attempt 1 continues the creation trace
+      -> attempt >1 starts a root linked to creation
         -> launcher and Core Author SDK
           -> Application SDK / App / Action spans, or new SDK root
 ```
 
-Normal single-Job processing may remain in one trace. Batch or fan-out work uses span links. Retry, replay, or a future suspend/resume that creates another execution attempt starts a new trace linked to the creation context and previous attempt; the current in-process HumanTask hold stays in its existing attempt and trace. `correlation_id` remains a business correlation value and is not a trace ID.
+Remote Worker claim client/server spans describe transport and never become the Job processing parent. Attempt 1 normally remains in the creation trace. A lease recovery that increments the same Job to `attempt > 1` starts a new root linked to the immutable creation context. Version 1 does not persist previous-attempt span contexts. Invocation idempotency replay returns the existing Run and Job without changing their creation context or creating an attempt, while a caller-requested new Run gets a new creation context. The current in-process HumanTask hold stays in its existing attempt and trace; future suspend/resume starts a new attempt trace linked to creation. Parent-child propagation represents one causal parent, while links represent a new attempt or multiple causal parents; batch or fan-out alone does not force links. `correlation_id` remains a business correlation value and is not a trace ID.
 
-Core exports backend-neutral OTLP and does not depend on Tempo or another storage backend. Service logs may carry `trace_id` and `span_id` for external log-to-trace navigation. High-cardinality Run and Job identifiers stay out of metric and log-index labels, and inputs, results, credentials, tokens, and secret values never become trace attributes. The full decision and conformance matrix are recorded in [ADR 0029](../adr/0029-optional-trace-context-continuity.md).
+Core exports backend-neutral OTLP and does not depend on Tempo or another storage backend. Standard `OTEL_*` settings own SDK enablement, sampling, export, resource identity, and shutdown flush; Core adds no sampling trust policy. Carrier validation and forwarding remain compatible during mixed-role rollout even when one role does not export spans. Exporter failure never changes execution state. Service logs may carry `trace_id` and `span_id` for external log-to-trace navigation. High-cardinality Run, Job, and attempt identifiers stay out of metric and log-index labels, and inputs, results, credentials, tokens, secret values, raw invalid carriers, and baggage never become trace attributes. The full decision and conformance matrix are recorded in [ADR 0029](../adr/0029-optional-trace-context-continuity.md).
 
 ## Read and follow logs
 

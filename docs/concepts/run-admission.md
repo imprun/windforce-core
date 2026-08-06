@@ -218,7 +218,7 @@ Provider implementation work must choose one mode explicitly. A provider that ex
 AdmissionService creates two related records:
 
 - A **Run** is the stable caller-visible invocation. It owns idempotency, status, result, cancel and retention.
-- A **Job** is an internal execution attempt. It owns queue state, lease, priority, worker claim and attempt data.
+- A **Job** is the durable internal work item created for the Run. It owns queue state, priority, worker claim and attempt data. An **Attempt** is one lease-fenced Worker execution of that Job; lease recovery increments the attempt without creating another Job.
 
 Invocation APIs and SDKs expose Run identity and never expose Job identity as the stable execution contract. Workers claim and complete Jobs through the Worker Plane, not through the Invocation API.
 

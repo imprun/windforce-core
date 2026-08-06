@@ -218,7 +218,7 @@ Provider 구현에서는 두 모드 중 하나를 명확히 선택해야 합니�
 AdmissionService는 서로 연관된 두 종류의 레코드를 만듭니다.
 
 - **Run**은 호출자에게 공개되는 안정적인 호출 단위입니다. 멱등성, 상태, 결과, 취소, 보존을 담당합니다.
-- **Job**은 내부 실행 시도입니다. 큐 상태, lease, 우선순위, Worker claim, 시도 데이터를 담당합니다.
+- **Job**은 Run을 위해 생성하는 영속 내부 작업입니다. 큐 상태, 우선순위, Worker claim, 시도 데이터를 담당합니다. **Attempt**는 해당 Job을 Worker가 lease로 fence하여 실행하는 한 번의 시도이며, lease 복구는 새 Job을 만들지 않고 attempt를 증가시킵니다.
 
 Invocation API와 SDK는 Run 식별자를 공개하며 Job 식별자를 안정적인 실행 통신규격으로 공개하지 않습니다. Worker는 Invocation API가 아닌 Worker Plane을 통해 Job을 claim하고 완료합니다.
 

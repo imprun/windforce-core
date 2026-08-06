@@ -21,8 +21,8 @@ Release publication and Job execution are deliberately separate:
 | --- | --- | --- |
 | Sync | Fetch an exact Git commit, validate source metadata, and materialize the immutable source snapshot in the Source Store. | Install runtime dependencies or select an active release. |
 | Publish Release | Fetch the synchronized snapshot, prepare dependencies and SDKs, validate the entrypoint, publish the complete tree by digest, and select the release. | Create or execute a Job. |
-| Run admission | Resolve the active release once and pin its complete Deployment plus optional W3C trace creation context into the Run and Job. | Fetch source or execute application code. |
-| Worker execution | Claim the pinned Job, continue its trace context or start a Worker root, resolve effective input, fetch and validate its execution bundle, launch the entrypoint, and complete the Job. | Read Git, prepare dependencies, or resolve the active release again. |
+| Run admission | Resolve the active release once and pin its complete Deployment plus optional versioned W3C creation context into the Run and Job. | Fetch source or execute application code. |
+| Worker execution | Claim the pinned Job, select its stored execution context instead of an ambient polling context, start the attempt span, resolve effective input, fetch and validate its execution bundle, launch the entrypoint, and complete the Job. | Read Git, prepare dependencies, resolve the active release again, or parent execution from claim transport. |
 
 ## Canonical execution sequence
 
@@ -46,7 +46,10 @@ Run admission
   -> create Run + Job with trace context
                                                 claim Job + lease
                                                 start lease heartbeat
-                                                continue Job trace or start Worker root
+                                                select stored Job context, never poll context
+                                                attempt 1: continue creation trace
+                                                attempt >1: root + creation link
+                                                missing context: start Worker root
                                                 resolve effective input
                                                 open pinned execution bundle
                                                   -> validated cache hit, or
@@ -161,7 +164,8 @@ Before accepting a worker or runtime change, verify all of the following:
 - Managed credentials never broaden their exact labels or workspace scope, and draining groups acquire no new managed leases.
 - Shutdown stops new claims, exposes `active -> draining`, preserves the active Job until the drain deadline, and removes the registry record only after completion.
 - Logs and results remain secret-masked and lease-fenced.
-- Missing or malformed trace context never blocks execution; local and remote workers either continue a valid context or start a Worker root and pass the effective carrier to the launcher.
+- Missing, malformed, or oversized trace context never blocks execution. Local, remote, and standalone workers use the stored Job creation context rather than ambient claim transport, start a Worker root when no valid Job context exists, and pass only the effective execution carrier to the launcher.
+- A Job is the durable work item and an Attempt is one lease-fenced execution. Attempt 1 may continue the creation trace; lease recovery at `attempt > 1` starts a new root linked to creation without requiring durable previous-attempt context. Idempotency replay does not create an Attempt or replace creation context.
 - Log appends remain ordered and reconnectable by byte offset without mixing
   application logs, terminal results, service logs, or binary artifacts.
 - HumanTask hold keeps the original process, lease, and worker slot alive; terminal interruption causes cancel the pending task without creating another Job.

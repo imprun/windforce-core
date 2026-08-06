@@ -35,22 +35,23 @@ language wrapper
 
 ## 분산 추적
 
-독립적으로 호출할 수 있는 모든 경계에서 Trace Context는 선택 사항입니다. 추적이 활성화된 Ingress, Admission, Worker, Launcher 또는 SDK는 유효한 현재 Context나 W3C `traceparent`가 있으면 이어서 사용합니다. Context가 없거나 Carrier가 잘못됐으면 해당 경계에서 새 Root Trace를 시작합니다. Trace Context가 없다는 이유로 정상 요청이나 Job을 실패시키지 않습니다.
+독립적으로 호출할 수 있는 모든 경계에서 Trace Context는 선택 사항입니다. HTTP 또는 Protocol Ingress는 유효한 현재 Context를 이어서 사용하고, 없으면 유효한 W3C `traceparent`를 추출하며, 둘 다 없으면 해당 역할의 추적 SDK가 활성화됐을 때 새 Root를 시작합니다. 없거나 잘못됐거나 너무 큰 Trace Context 때문에 정상 요청이나 Job을 실패시키지 않으며 잘못된 원문은 Log에 남기지 않습니다.
 
-Admission은 유효한 W3C 생성 Context를 Run과 Job에 함께 저장합니다. PostgreSQL은 Queue 대기 시간을 넘기는 영속 Carrier이며, 이를 위해 Admission Span을 Job 완료까지 열어 두지 않습니다. Local과 Remote Worker는 Job claim 시 Context를 복원합니다. Context가 없는 Legacy, 직접 생성 또는 테스트 Job은 Worker Root를 시작합니다. Launcher는 현재 Carrier를 Core private transport로 전달하고 Core Author SDK가 이를 읽기 전용으로 노출하므로, 불투명한 Application SDK가 계속 사용할 수 있습니다.
+Admission은 검증한 Versioned 생성 Context를 Application input과 분리하여 Run과 Job에 저장합니다. Local JSON 또는 PostgreSQL로 구성한 State Store가 Queue 대기 시간을 넘기는 영속 Carrier이며, 이를 위해 Admission Span을 Job 완료까지 열어 두지 않습니다. Local, Remote, Standalone Worker는 Polling이나 claim transport의 현재 Context가 아니라 저장된 Job 실행 Context를 사용합니다. Context가 없는 Legacy, 직접 생성 또는 테스트 Job은 Worker 추적이 활성화됐을 때 Worker Root를 시작합니다. Launcher는 Job 실행 Carrier만 Core private transport로 전달하고 Core Author SDK가 이를 읽기 전용으로 노출하므로, 불투명한 Application SDK가 계속 사용할 수 있습니다.
 
 ```text
 계측된 Gateway 또는 Adapter (선택)
   -> Core API / Admission 또는 새 Core Root
-    -> PostgreSQL Run + Job + Trace Context
-      -> Worker Process Span 또는 새 Worker Root
+    -> State Store Run + Job + 생성 Context
+      -> attempt 1은 생성 Trace를 이어서 사용
+      -> attempt >1은 생성 Context에 Link한 Root 시작
         -> Launcher와 Core Author SDK
           -> Application SDK / App / Action Span 또는 새 SDK Root
 ```
 
-일반적인 단일 Job 처리는 하나의 Trace로 이어질 수 있습니다. Batch나 fan-out은 Span Link를 사용합니다. Retry, replay 또는 새로운 실행 attempt를 만드는 미래의 suspend/resume은 생성 Context와 이전 attempt에 Link한 새 Trace를 시작합니다. 현재의 in-process HumanTask hold는 기존 attempt와 Trace를 유지합니다. `correlation_id`는 업무 상관관계 값이며 Trace ID가 아닙니다.
+Remote Worker claim의 Client/Server Span은 Transport를 설명하며 Job Processing parent가 되지 않습니다. Attempt 1은 보통 생성 Trace를 이어서 사용합니다. Lease 복구로 같은 Job이 `attempt > 1`이 되면 불변 생성 Context에 Link한 새 Root를 시작합니다. Version 1은 이전 attempt Span Context를 저장하지 않습니다. Invocation 멱등 replay는 기존 Run과 Job을 반환하며 생성 Context를 바꾸거나 attempt를 만들지 않고, 호출자가 새 Run을 요청하면 새 생성 Context를 만듭니다. 현재 in-process HumanTask hold는 기존 attempt와 Trace를 유지하고, 미래 suspend/resume은 생성 Context에 Link한 새 attempt Trace를 시작합니다. 하나의 원인은 parent-child, 새 attempt 또는 여러 원인은 Link로 표현하며 Batch나 fan-out 자체만으로 Link를 강제하지 않습니다. `correlation_id`는 업무 상관관계 값이며 Trace ID가 아닙니다.
 
-Core는 Backend 중립 OTLP를 내보내며 Tempo 같은 저장 Backend에 의존하지 않습니다. Service Log에는 외부 Log-to-Trace 이동을 위한 `trace_id`와 `span_id`를 넣을 수 있습니다. 고유한 Run과 Job 식별자는 Metric label이나 Log index label에 넣지 않으며, 입력값, 결과, Credential, Token, Secret 값은 Trace attribute가 될 수 없습니다. 전체 결정과 적합성 기준은 [ADR 0029](../../adr/0029-optional-trace-context-continuity.md)에 기록합니다.
+Core는 Backend 중립 OTLP를 내보내며 Tempo 같은 저장 Backend에 의존하지 않습니다. 표준 `OTEL_*` 설정이 SDK 활성화, Sampling, Export, Resource identity와 shutdown flush를 소유하며 Core는 별도 Sampling 신뢰 정책을 만들지 않습니다. 역할별 Export 활성화가 다른 배치에서도 Carrier 검증과 전달은 호환되며 Exporter 장애는 실행 상태를 바꾸지 않습니다. Service Log에는 외부 Log-to-Trace 이동을 위한 `trace_id`와 `span_id`를 넣을 수 있습니다. 고유한 Run, Job, attempt 식별자는 Metric label이나 Log index label에 넣지 않으며, 입력값, 결과, Credential, Token, Secret 값, 잘못된 원문 Carrier와 Baggage는 Trace attribute가 될 수 없습니다. 전체 결정과 적합성 기준은 [ADR 0029](../../adr/0029-optional-trace-context-continuity.md)에 기록합니다.
 
 ## 로그 조회와 실시간 추적
 

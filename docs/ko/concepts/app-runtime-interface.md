@@ -50,7 +50,7 @@ Core는 Host Context의 의미를 소유합니다. 여기에는 유효 입력값
 
 App 코드와 dependency는 Context 기능을 사용해야 합니다. Private `WF_*` 환경변수를 직접 해석하거나 `WF_TOKEN`을 전달하거나 Core callback URL을 만들거나 Queue record에 쓰거나 Worker Plane을 호출해서는 안 됩니다. Core가 소유하는 Launcher와 Author SDK glue만 private process transport를 public Context 표면으로 변환할 수 있습니다. 이 예외가 private transport를 App API로 만들지는 않습니다.
 
-Application SDK는 Core Context가 노출하는 선택적 Telemetry Carrier를 이어서 사용하고 SDK, App 또는 Action Span을 만들 수 있습니다. Core나 유효한 Carrier 없이 SDK를 직접 실행하면 SDK가 자체 Root Trace를 시작할 수 있습니다. Core는 SDK를 탐지하지 않으며 실행을 위해 추적을 요구하지 않습니다. [실행 관측성과 디버깅](execution-observability.md)과 [ADR 0029](../../adr/0029-optional-trace-context-continuity.md)를 참고합니다.
+Application SDK는 Core Context가 노출하는 선택적 Telemetry Carrier를 이어서 사용하고 SDK, App 또는 Action Span을 만들 수 있습니다. 이 Carrier는 현재 Job 실행 Context이며 Worker Polling과 Worker Plane Transport Context는 App interface에 들어오지 않습니다. Core나 유효한 Carrier 없이 SDK를 직접 실행하면 SDK가 자체 Root Trace를 시작할 수 있습니다. Core는 SDK를 탐지하지 않으며 실행을 위해 추적을 요구하지 않습니다. [실행 관측성과 디버깅](execution-observability.md)과 [ADR 0029](../../adr/0029-optional-trace-context-continuity.md)를 참고합니다.
 
 현재 TypeScript의 low-level HTTP 기능은 `coreCtx.http.fetch`입니다. Application SDK는 의도적으로 다른 작성 API를 제공할 수 있습니다. 예를 들어 scraping SDK는 `scrapingCtx.httpService.get()`과 `post()`를 제공할 수 있습니다. 이 메서드는 App process 안에서 Host 기능을 사용해 구현하므로 Core는 해당 메서드를 이해하거나 검사하지 않습니다.
 

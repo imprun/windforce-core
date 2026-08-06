@@ -21,8 +21,8 @@ Release 발행과 Job 실행은 의도적으로 분리되어 있습니다.
 | --- | --- | --- |
 | Sync | 정확한 Git commit을 가져오고 소스 메타데이터를 검증하여 불변 소스 snapshot을 Source Store에 materialize합니다. | Runtime 의존성을 설치하거나 Active Release를 선택하는 일 |
 | Publish Release | 동기화된 snapshot을 가져와 의존성과 SDK를 준비하고 entrypoint를 검증한 뒤 완전한 tree를 digest로 발행하고 Release를 선택합니다. | Job을 만들거나 실행하는 일 |
-| Run admission | Active Release를 한 번만 결정하고 완전한 Deployment와 선택적인 W3C Trace 생성 Context를 Run과 Job에 고정합니다. | 소스를 가져오거나 애플리케이션 코드를 실행하는 일 |
-| Worker 실행 | 고정된 Job을 claim하고 Trace Context를 계속 사용하거나 Worker Root를 시작한 뒤 유효 입력을 구성하고 Execution Bundle을 가져와 검증하여 entrypoint를 실행하고 Job을 완료합니다. | Git을 읽거나 의존성을 준비하거나 Active Release를 다시 결정하는 일 |
+| Run admission | Active Release를 한 번만 결정하고 완전한 Deployment와 선택적인 Versioned W3C 생성 Context를 Run과 Job에 고정합니다. | 소스를 가져오거나 애플리케이션 코드를 실행하는 일 |
+| Worker 실행 | 고정된 Job을 claim하고 Polling의 현재 Context가 아니라 저장된 실행 Context를 선택하여 Attempt Span을 시작한 뒤 유효 입력을 구성하고 Execution Bundle을 가져와 검증하여 entrypoint를 실행하고 Job을 완료합니다. | Git을 읽거나 의존성을 준비하거나 Active Release를 다시 결정하거나 claim transport를 실행 parent로 사용하는 일 |
 
 ## 정본 실행 순서
 
@@ -46,7 +46,10 @@ Run admission
   -> Trace Context와 함께 Run + Job 생성
                                                 Job + lease claim
                                                 lease heartbeat 시작
-                                                Job Trace 계속 사용 또는 Worker Root 시작
+                                                Poll Context가 아닌 저장된 Job Context 선택
+                                                attempt 1: 생성 Trace 계속 사용
+                                                attempt >1: Root + 생성 Link
+                                                Context 없음: Worker Root 시작
                                                 유효 입력 구성
                                                 고정된 Execution Bundle 열기
                                                   -> 검증된 cache hit 또는
@@ -141,7 +144,8 @@ Worker 또는 Runtime 변경을 수용하기 전에 다음을 모두 확인해�
 - 로컬 및 원격 Worker 경로가 동일한 Bundle과 완료 의미를 보존합니다.
 - 종료 시 새 claim을 중단하고 `active -> draining`을 노출하며 drain deadline까지 실행 중 Job을 보존한 뒤 완료 후에만 registry record를 제거합니다.
 - 로그와 결과가 Secret 마스킹 및 lease fencing을 유지합니다.
-- Trace Context가 없거나 잘못되어도 실행을 막지 않습니다. Local과 Remote Worker는 유효한 Context를 이어서 사용하거나 Worker Root를 시작하고 유효 Carrier를 Launcher에 전달합니다.
+- Trace Context가 없거나 잘못됐거나 너무 커도 실행을 막지 않습니다. Local, Remote, Standalone Worker는 claim transport의 현재 Context가 아니라 저장된 Job 생성 Context를 사용하고, 유효한 Job Context가 없으면 Worker Root를 시작하며, 유효 실행 Carrier만 Launcher에 전달합니다.
+- Job은 영속 작업이고 Attempt는 lease로 fence된 한 번의 실행입니다. Attempt 1은 생성 Trace를 이어서 사용할 수 있고, `attempt > 1`의 lease 복구는 이전 attempt Context 저장을 요구하지 않으면서 생성 Context에 Link한 새 Root를 시작합니다. 멱등 replay는 Attempt를 만들거나 생성 Context를 바꾸지 않습니다.
 - 로그 추가가 byte offset 기준으로 순서를 보존하고 재연결 가능하며 App 로그,
   최종 결과, Service 로그, Binary Artifact를 서로 섞지 않습니다.
 - 테스트가 Bundle 발행/fetch, 캐시 동작, 원격 압축 해제, Runtime 실행, TypeScript `main` 정적 검증, 정상 drain과 timeout drain, Bundle 오류 시 Job 실패를 검증합니다.

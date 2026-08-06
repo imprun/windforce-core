@@ -19,7 +19,7 @@ runs only the immutable bundle pinned into each Job.
 | Release | An immutable publication record for a validated deployment. | Release history |
 | Active release | The release selected for new Runs of an app in a workspace. | Active release catalog |
 | Run | A caller-visible invocation of one app action. | Execution state backend |
-| Job | An internal execution attempt. It contains the deployment and action snapshot selected when the Run was admitted. | Execution queue |
+| Job | A durable internal work item. It contains the deployment and action snapshot selected when the Run was admitted and may have multiple lease-fenced Worker attempts. | Execution queue |
 
 The repository source may be renamed or replaced without changing the app key.
 Conversely, removing a repository source does not erase an already published
