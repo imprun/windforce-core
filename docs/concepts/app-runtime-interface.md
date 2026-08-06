@@ -5,6 +5,8 @@ description: The SDK-neutral system boundary between Core and executable App bun
 
 This document is the current human-readable reference for the interface between Windforce Core and executable applications. Here, an interface or contract means a runtime communication specification, not a legal agreement.
 
+> Trace implementation status (2026-08-06): the optional telemetry carrier is the accepted ADR 0029 target tracked by GitHub issue #128. It is not present in the current Core Author SDK yet.
+
 ## The central rule
 
 Core does not detect, classify, import, negotiate, or otherwise care which SDKs an App uses. An App may use a scraping SDK, Playwright, Puppeteer, a mobile SDK, several SDKs, or no SDK. To Core, all of those are opaque application dependencies inside the same immutable App bundle.
@@ -42,9 +44,11 @@ Core Worker
   -> complete the leased Job
 ```
 
-Core owns the meaning of the host context: effective input, trigger metadata, App and Action identity, Job-scoped identity, actor metadata, logging, Variables, Resources, State, low-level HTTP, generic HumanTask hold, approval, and flow-resume data. Core also owns the private transport used by its runtime wrapper and Author SDK to implement those capabilities.
+Core owns the meaning of the host context: effective input, trigger metadata, App and Action identity, Job-scoped identity, actor metadata, logging, Variables, Resources, State, low-level HTTP, generic HumanTask hold, approval, flow-resume data, and a read-only optional W3C telemetry carrier. Core also owns the private transport used by its runtime wrapper and Author SDK to implement those capabilities.
 
 Application code and its dependencies consume the context capabilities. They must not parse private `WF_*` variables, carry `WF_TOKEN`, build Core callback URLs, write queue records, or call the Worker Plane. Core-owned launcher and Author SDK glue may translate private process transport into the public context surface; that exception does not make the private transport an application API.
+
+An Application SDK may continue the optional telemetry carrier exposed by the Core context and create SDK-, App-, or Action-level spans. If that SDK is executed directly without Core or without a valid carrier, it may start its own root trace. Core does not detect the SDK or require tracing for execution. See [Execution observability and debugging](execution-observability.md) and [ADR 0029](../adr/0029-optional-trace-context-continuity.md).
 
 The current TypeScript low-level HTTP capability is `coreCtx.http.fetch`. An Application SDK may deliberately expose a different authoring API, for example `scrapingCtx.httpService.get()` and `post()`. Core does not understand or inspect those methods, because they are implemented inside the App process using the host capability.
 
@@ -103,6 +107,7 @@ Core is responsible for:
 - validating and pinning the manifest, Action schema, runtime, entrypoint, `runsOn`, timeout, and bundle digest at admission;
 - matching an eligible worker, claiming and leasing the Job, fetching and validating the pinned bundle, and selecting Bun, Python, Go, or an adapter command;
 - constructing the Core context and granting only Job-scoped runtime access;
+- continuing or creating backend-neutral trace context and exposing its read-only carrier without making telemetry a requirement for execution;
 - enforcing cancellation, timeout, drain, log/result masking, completion, and retry semantics;
 - returning the terminal result through the Run and Invocation APIs.
 

@@ -5,6 +5,8 @@ description: The canonical sequence from a pinned Job to bundle fetch, launcher 
 
 This document is the current canonical description of worker execution in Windforce Core. It defines the ordering and ownership rules that runtime implementations, tests, and coding agents must preserve.
 
+> Trace implementation status (2026-08-06): the trace-continuity clauses describe the accepted ADR 0029 target and remain pending in GitHub issue #128. Current workers do not yet persist, restore, or inject W3C trace context.
+
 ## The central rule
 
 A worker executes an immutable execution bundle pinned into the Job. It does not execute directly from Git, the Source Store, the active release, or a JSON file.
@@ -19,8 +21,8 @@ Release publication and Job execution are deliberately separate:
 | --- | --- | --- |
 | Sync | Fetch an exact Git commit, validate source metadata, and materialize the immutable source snapshot in the Source Store. | Install runtime dependencies or select an active release. |
 | Publish Release | Fetch the synchronized snapshot, prepare dependencies and SDKs, validate the entrypoint, publish the complete tree by digest, and select the release. | Create or execute a Job. |
-| Run admission | Resolve the active release once and pin its complete Deployment into the Run and Job. | Fetch source or execute application code. |
-| Worker execution | Claim the pinned Job, resolve effective input, fetch and validate its execution bundle, launch the entrypoint, and complete the Job. | Read Git, prepare dependencies, or resolve the active release again. |
+| Run admission | Resolve the active release once and pin its complete Deployment plus optional W3C trace creation context into the Run and Job. | Fetch source or execute application code. |
+| Worker execution | Claim the pinned Job, continue its trace context or start a Worker root, resolve effective input, fetch and validate its execution bundle, launch the entrypoint, and complete the Job. | Read Git, prepare dependencies, or resolve the active release again. |
 
 ## Canonical execution sequence
 
@@ -40,9 +42,11 @@ Publish Release
 
 Run admission
   -> pin Deployment + bundle digest
-  -> create Run + Job
+  -> continue or create trace context
+  -> create Run + Job with trace context
                                                 claim Job + lease
                                                 start lease heartbeat
+                                                continue Job trace or start Worker root
                                                 resolve effective input
                                                 open pinned execution bundle
                                                   -> validated cache hit, or
@@ -59,7 +63,7 @@ Run admission
                                                 complete or fail Job
 ```
 
-In the implementation, the Processor passes `job.Payload.PinnedDeployment()` to the runtime Runner. `Runner.Run` calls `openExecutionBundle` before the canonical executor creates its per-Job directory or writes `input.json`. The executor then writes a language wrapper and starts the selected runtime. For TypeScript, `bun run wrapper.ts` imports the absolute entrypoint path inside the fetched bundle and calls `main(ctx)`.
+In the implementation, the Processor passes `job.Payload.PinnedDeployment()` to the runtime Runner. Before that execution path is instrumented, it restores the optional creation context pinned at Admission or starts a Worker root for a legacy, direct, or test Job. `Runner.Run` calls `openExecutionBundle` before the canonical executor creates its per-Job directory or writes `input.json`. The executor then writes a language wrapper, injects the current W3C carrier through private transport, and starts the selected runtime. For TypeScript, `bun run wrapper.ts` imports the absolute entrypoint path inside the fetched bundle and calls `main(ctx)`.
 
 `scriptLang` is normalized to exactly `typescript`, `python`, or `go`. An omitted value defaults to TypeScript for manifest compatibility; any other value is rejected before preparation and never falls through to Bun. During TypeScript publication, Core uses Bun's static scanner to require a named `main` export and then runs `bun build` over the entrypoint dependency graph. Neither step imports or executes the App, so publication cannot trigger App top-level effects.
 
@@ -157,9 +161,10 @@ Before accepting a worker or runtime change, verify all of the following:
 - Managed credentials never broaden their exact labels or workspace scope, and draining groups acquire no new managed leases.
 - Shutdown stops new claims, exposes `active -> draining`, preserves the active Job until the drain deadline, and removes the registry record only after completion.
 - Logs and results remain secret-masked and lease-fenced.
+- Missing or malformed trace context never blocks execution; local and remote workers either continue a valid context or start a Worker root and pass the effective carrier to the launcher.
 - Log appends remain ordered and reconnectable by byte offset without mixing
   application logs, terminal results, service logs, or binary artifacts.
 - HumanTask hold keeps the original process, lease, and worker slot alive; terminal interruption causes cancel the pending task without creating another Job.
 - Tests cover bundle publication/fetch, cache behavior, remote extraction, runtime execution, static TypeScript `main` validation, graceful and timed-out drain, and Job failure on bundle errors.
 
-The primary implementation areas are `internal/worker`, `internal/runtime`, `internal/executor`, `internal/executionbundle`, `internal/remoteworker`, and `internal/server/worker_plane.go`. Execution-semantic changes require an ADR in addition to updating this current-state document.
+The primary implementation areas are `internal/worker`, `internal/runtime`, `internal/executor`, `internal/executionbundle`, `internal/remoteworker`, and `internal/server/worker_plane.go`. Execution-semantic changes require an ADR in addition to updating this current-state document. Optional trace propagation and independent root creation are defined in [ADR 0029](../adr/0029-optional-trace-context-continuity.md).

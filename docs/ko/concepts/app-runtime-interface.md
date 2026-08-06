@@ -5,6 +5,8 @@ description: Core와 실행 가능한 App Bundle 사이의 SDK 중립적인 시�
 
 이 문서는 Windforce Core와 실행되는 App 사이 통신규격의 현재 정본입니다. 여기서 interface 또는 contract는 법적 계약이 아니라 Runtime component, App, SDK 사이의 통신규격을 뜻합니다.
 
+> Trace 구현 상태 (2026-08-06): 선택적 Telemetry Carrier는 ADR 0029에서 승인하고 GitHub issue #128에서 추적하는 목표 통신규격입니다. 현재 Core Author SDK에는 아직 구현되지 않았습니다.
+
 [English](../../concepts/app-runtime-interface.md)
 
 ## 핵심 원칙
@@ -44,9 +46,11 @@ Core Worker
   -> lease가 걸린 Job 완료
 ```
 
-Core는 Host Context의 의미를 소유합니다. 여기에는 유효 입력값, Trigger metadata, App과 Action identity, Job 범위 identity, Actor metadata, Logger, Variable, Resource, State, low-level HTTP, Approval, Flow resume 값이 포함됩니다. Core는 Runtime wrapper와 Author SDK가 이 기능을 구현할 때 사용하는 private transport도 소유합니다.
+Core는 Host Context의 의미를 소유합니다. 여기에는 유효 입력값, Trigger metadata, App과 Action identity, Job 범위 identity, Actor metadata, Logger, Variable, Resource, State, low-level HTTP, Approval, Flow resume 값과 읽기 전용 선택적 W3C Telemetry Carrier가 포함됩니다. Core는 Runtime wrapper와 Author SDK가 이 기능을 구현할 때 사용하는 private transport도 소유합니다.
 
 App 코드와 dependency는 Context 기능을 사용해야 합니다. Private `WF_*` 환경변수를 직접 해석하거나 `WF_TOKEN`을 전달하거나 Core callback URL을 만들거나 Queue record에 쓰거나 Worker Plane을 호출해서는 안 됩니다. Core가 소유하는 Launcher와 Author SDK glue만 private process transport를 public Context 표면으로 변환할 수 있습니다. 이 예외가 private transport를 App API로 만들지는 않습니다.
+
+Application SDK는 Core Context가 노출하는 선택적 Telemetry Carrier를 이어서 사용하고 SDK, App 또는 Action Span을 만들 수 있습니다. Core나 유효한 Carrier 없이 SDK를 직접 실행하면 SDK가 자체 Root Trace를 시작할 수 있습니다. Core는 SDK를 탐지하지 않으며 실행을 위해 추적을 요구하지 않습니다. [실행 관측성과 디버깅](execution-observability.md)과 [ADR 0029](../../adr/0029-optional-trace-context-continuity.md)를 참고합니다.
 
 현재 TypeScript의 low-level HTTP 기능은 `coreCtx.http.fetch`입니다. Application SDK는 의도적으로 다른 작성 API를 제공할 수 있습니다. 예를 들어 scraping SDK는 `scrapingCtx.httpService.get()`과 `post()`를 제공할 수 있습니다. 이 메서드는 App process 안에서 Host 기능을 사용해 구현하므로 Core는 해당 메서드를 이해하거나 검사하지 않습니다.
 
@@ -103,6 +107,7 @@ Core는 다음을 책임집니다.
 - Admission에서 Manifest, Action schema, Runtime, Entrypoint, `runsOn`, Timeout, Bundle digest를 검증하고 고정합니다.
 - 적합한 Worker matching, Job claim과 lease, 고정 Bundle fetch와 검증, Bun, Python, Go 또는 Adapter command 선택을 수행합니다.
 - Core Context를 만들고 Job 범위 Runtime access만 부여합니다.
+- Backend 중립 Trace Context를 이어서 사용하거나 생성하고, Telemetry를 실행 필수조건으로 만들지 않으면서 읽기 전용 Carrier를 노출합니다.
 - Cancel, Timeout, Drain, Log/Result masking, Completion, Retry 의미를 집행합니다.
 - Run과 Invocation API를 통해 최종 Result를 반환합니다.
 

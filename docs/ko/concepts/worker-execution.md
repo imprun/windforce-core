@@ -5,6 +5,8 @@ description: 고정된 Job이 실행 번들을 가져와 launcher를 시작하�
 
 이 문서는 Windforce Core Worker 실행 절차의 현재 정본입니다. Runtime 구현, 테스트, AI Coding 에이전트가 반드시 보존해야 하는 실행 순서와 책임 경계를 정의합니다.
 
+> Trace 구현 상태 (2026-08-06): Trace 연속성 항목은 ADR 0029에서 승인하고 GitHub issue #128에서 추적하는 목표 통신규격입니다. 현재 Worker는 아직 W3C Trace Context를 저장, 복원 또는 주입하지 않습니다.
+
 ## 핵심 원칙
 
 Worker는 Job에 고정된 불변 Execution Bundle을 실행합니다. Git, Source Store, 현재 Active Release 또는 JSON 파일을 직접 실행하지 않습니다.
@@ -19,8 +21,8 @@ Release 발행과 Job 실행은 의도적으로 분리되어 있습니다.
 | --- | --- | --- |
 | Sync | 정확한 Git commit을 가져오고 소스 메타데이터를 검증하여 불변 소스 snapshot을 Source Store에 materialize합니다. | Runtime 의존성을 설치하거나 Active Release를 선택하는 일 |
 | Publish Release | 동기화된 snapshot을 가져와 의존성과 SDK를 준비하고 entrypoint를 검증한 뒤 완전한 tree를 digest로 발행하고 Release를 선택합니다. | Job을 만들거나 실행하는 일 |
-| Run admission | Active Release를 한 번만 결정하고 완전한 Deployment를 Run과 Job에 고정합니다. | 소스를 가져오거나 애플리케이션 코드를 실행하는 일 |
-| Worker 실행 | 고정된 Job을 claim하고 유효 입력을 구성하며 Execution Bundle을 가져와 검증한 뒤 entrypoint를 실행하고 Job을 완료합니다. | Git을 읽거나 의존성을 준비하거나 Active Release를 다시 결정하는 일 |
+| Run admission | Active Release를 한 번만 결정하고 완전한 Deployment와 선택적인 W3C Trace 생성 Context를 Run과 Job에 고정합니다. | 소스를 가져오거나 애플리케이션 코드를 실행하는 일 |
+| Worker 실행 | 고정된 Job을 claim하고 Trace Context를 계속 사용하거나 Worker Root를 시작한 뒤 유효 입력을 구성하고 Execution Bundle을 가져와 검증하여 entrypoint를 실행하고 Job을 완료합니다. | Git을 읽거나 의존성을 준비하거나 Active Release를 다시 결정하는 일 |
 
 ## 정본 실행 순서
 
@@ -40,9 +42,11 @@ Publish Release
 
 Run admission
   -> Deployment + Bundle digest 고정
-  -> Run + Job 생성
+  -> Trace Context 계속 사용 또는 생성
+  -> Trace Context와 함께 Run + Job 생성
                                                 Job + lease claim
                                                 lease heartbeat 시작
+                                                Job Trace 계속 사용 또는 Worker Root 시작
                                                 유효 입력 구성
                                                 고정된 Execution Bundle 열기
                                                   -> 검증된 cache hit 또는
@@ -59,7 +63,7 @@ Run admission
                                                 Job 완료 또는 실패
 ```
 
-구현에서 Processor는 `job.Payload.PinnedDeployment()`를 Runtime Runner에 전달합니다. `Runner.Run`은 정본 Executor가 Job 전용 디렉터리를 만들거나 `input.json`을 기록하기 전에 `openExecutionBundle`을 호출합니다. 그다음 Executor가 언어별 wrapper를 기록하고 선택한 Runtime을 시작합니다. TypeScript에서는 `bun run wrapper.ts`가 가져온 Bundle 내부 entrypoint의 절대 경로를 import하여 `main(ctx)`를 호출합니다.
+구현에서 Processor는 `job.Payload.PinnedDeployment()`를 Runtime Runner에 전달합니다. 해당 실행 경로가 계측되면 Admission에서 고정한 선택적 생성 Context를 복원하고, Context가 없는 Legacy, 직접 생성 또는 테스트 Job이면 Worker Root를 시작합니다. `Runner.Run`은 정본 Executor가 Job 전용 디렉터리를 만들거나 `input.json`을 기록하기 전에 `openExecutionBundle`을 호출합니다. 그다음 Executor가 현재 W3C Carrier를 Private Transport로 주입하고 언어별 wrapper와 선택한 Runtime을 시작합니다. TypeScript에서는 `bun run wrapper.ts`가 가져온 Bundle 내부 entrypoint의 절대 경로를 import하여 `main(ctx)`를 호출합니다.
 
 `scriptLang`은 정확히 `typescript`, `python`, `go` 중 하나로 정규화합니다. Manifest 호환성을 위해 생략하면 TypeScript가 되지만 다른 값은 준비 전에 거부하며 Bun으로 암묵적으로 fallback하지 않습니다. TypeScript 발행 시 Core는 Bun 정적 scanner로 이름 있는 `main` export를 요구한 뒤 `bun build`로 entrypoint dependency graph를 검증합니다. 두 단계 모두 App을 import하거나 실행하지 않으므로 발행 과정에서 App의 top-level side effect가 발생하지 않습니다.
 
@@ -137,8 +141,9 @@ Worker 또는 Runtime 변경을 수용하기 전에 다음을 모두 확인해�
 - 로컬 및 원격 Worker 경로가 동일한 Bundle과 완료 의미를 보존합니다.
 - 종료 시 새 claim을 중단하고 `active -> draining`을 노출하며 drain deadline까지 실행 중 Job을 보존한 뒤 완료 후에만 registry record를 제거합니다.
 - 로그와 결과가 Secret 마스킹 및 lease fencing을 유지합니다.
+- Trace Context가 없거나 잘못되어도 실행을 막지 않습니다. Local과 Remote Worker는 유효한 Context를 이어서 사용하거나 Worker Root를 시작하고 유효 Carrier를 Launcher에 전달합니다.
 - 로그 추가가 byte offset 기준으로 순서를 보존하고 재연결 가능하며 App 로그,
   최종 결과, Service 로그, Binary Artifact를 서로 섞지 않습니다.
 - 테스트가 Bundle 발행/fetch, 캐시 동작, 원격 압축 해제, Runtime 실행, TypeScript `main` 정적 검증, 정상 drain과 timeout drain, Bundle 오류 시 Job 실패를 검증합니다.
 
-주요 구현 위치는 `internal/worker`, `internal/runtime`, `internal/executor`, `internal/executionbundle`, `internal/remoteworker`, `internal/server/worker_plane.go`입니다. 실행 의미를 바꾸는 변경은 이 현재 상태 문서와 함께 ADR도 추가해야 합니다.
+주요 구현 위치는 `internal/worker`, `internal/runtime`, `internal/executor`, `internal/executionbundle`, `internal/remoteworker`, `internal/server/worker_plane.go`입니다. 실행 의미를 바꾸는 변경은 이 현재 상태 문서와 함께 ADR도 추가해야 합니다. 선택적인 Trace 전파와 독립 Root 생성은 [ADR 0029](../../adr/0029-optional-trace-context-continuity.md)에 정의합니다.

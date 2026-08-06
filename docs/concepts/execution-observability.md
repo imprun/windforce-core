@@ -7,6 +7,8 @@ This document is the current human-readable contract for observing and
 debugging an App executed by Windforce Core. Runtime code and coding agents
 must keep the surfaces below separate.
 
+> Trace implementation status (2026-08-06): ADR 0029 is an accepted target contract tracked by GitHub issue #128. The current release does not yet persist W3C trace context or export Core spans through OTLP. The existing log and metric behavior described below remains implemented.
+
 ## What a Worker records
 
 The launcher process writes application output to stdout and stderr. The
@@ -31,6 +33,25 @@ language wrapper
     -> Worker result masker
       -> terminal Job result
 ```
+
+## Distributed tracing
+
+Trace context is optional at every independently invocable boundary. When tracing is enabled, an ingress, Admission path, Worker, launcher, or SDK continues a valid ambient or W3C `traceparent`; if none exists or the carrier is malformed, that boundary starts a new root trace. Missing trace context never makes an otherwise valid request or Job fail.
+
+Admission persists the effective W3C creation context with the Run and Job. PostgreSQL is the durable carrier across queue delay, not a reason to leave the Admission span open. A local or remote Worker restores that context when it claims the Job. A legacy, direct, or test Job without context starts a Worker root. The launcher then passes the current carrier through Core's private transport so the Core Author SDK can expose it read-only and an opaque Application SDK can continue it.
+
+```text
+instrumented gateway or adapter (optional)
+  -> Core API / Admission, or new Core root
+    -> PostgreSQL Run + Job + trace context
+      -> Worker process span, or new Worker root
+        -> launcher and Core Author SDK
+          -> Application SDK / App / Action spans, or new SDK root
+```
+
+Normal single-Job processing may remain in one trace. Batch or fan-out work uses span links. Retry, replay, or a future suspend/resume that creates another execution attempt starts a new trace linked to the creation context and previous attempt; the current in-process HumanTask hold stays in its existing attempt and trace. `correlation_id` remains a business correlation value and is not a trace ID.
+
+Core exports backend-neutral OTLP and does not depend on Tempo or another storage backend. Service logs may carry `trace_id` and `span_id` for external log-to-trace navigation. High-cardinality Run and Job identifiers stay out of metric and log-index labels, and inputs, results, credentials, tokens, and secret values never become trace attributes. The full decision and conformance matrix are recorded in [ADR 0029](../adr/0029-optional-trace-context-continuity.md).
 
 ## Read and follow logs
 
@@ -147,5 +168,7 @@ and [workers and worker groups](https://www.windmill.dev/docs/core_concepts/work
   needs a separate ADR, authentication tunnel, TTL, audit, and secret policy.
 
 The worker ordering is defined in [Worker execution lifecycle](worker-execution.md).
-The rationale and Windmill comparison are recorded in
-[ADR 0024](../adr/0024-offset-job-log-streaming.md).
+The log-streaming rationale and Windmill comparison are recorded in
+[ADR 0024](../adr/0024-offset-job-log-streaming.md). Distributed trace
+continuity is defined by
+[ADR 0029](../adr/0029-optional-trace-context-continuity.md).

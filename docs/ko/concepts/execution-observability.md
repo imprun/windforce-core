@@ -6,6 +6,8 @@ description: Core Worker의 Job 로그, 결과, 서비스 로그, 아티팩트, 
 이 문서는 Windforce Core에서 실행하는 App을 관측하고 디버깅하는 현재 통신규격을
 사람과 AI Coding 에이전트가 이해할 수 있도록 정리한 정본입니다.
 
+> Trace 구현 상태 (2026-08-06): ADR 0029는 GitHub issue #128에서 추적하는 승인된 목표 통신규격입니다. 현재 Release는 아직 W3C Trace Context를 저장하거나 Core Span을 OTLP로 내보내지 않습니다. 아래의 기존 Log와 Metric 동작은 구현되어 있습니다.
+
 [English](../../concepts/execution-observability.md)
 
 ## Worker가 기록하는 것
@@ -30,6 +32,25 @@ language wrapper
     -> Worker 결과 마스킹
       -> 최종 Job 결과
 ```
+
+## 분산 추적
+
+독립적으로 호출할 수 있는 모든 경계에서 Trace Context는 선택 사항입니다. 추적이 활성화된 Ingress, Admission, Worker, Launcher 또는 SDK는 유효한 현재 Context나 W3C `traceparent`가 있으면 이어서 사용합니다. Context가 없거나 Carrier가 잘못됐으면 해당 경계에서 새 Root Trace를 시작합니다. Trace Context가 없다는 이유로 정상 요청이나 Job을 실패시키지 않습니다.
+
+Admission은 유효한 W3C 생성 Context를 Run과 Job에 함께 저장합니다. PostgreSQL은 Queue 대기 시간을 넘기는 영속 Carrier이며, 이를 위해 Admission Span을 Job 완료까지 열어 두지 않습니다. Local과 Remote Worker는 Job claim 시 Context를 복원합니다. Context가 없는 Legacy, 직접 생성 또는 테스트 Job은 Worker Root를 시작합니다. Launcher는 현재 Carrier를 Core private transport로 전달하고 Core Author SDK가 이를 읽기 전용으로 노출하므로, 불투명한 Application SDK가 계속 사용할 수 있습니다.
+
+```text
+계측된 Gateway 또는 Adapter (선택)
+  -> Core API / Admission 또는 새 Core Root
+    -> PostgreSQL Run + Job + Trace Context
+      -> Worker Process Span 또는 새 Worker Root
+        -> Launcher와 Core Author SDK
+          -> Application SDK / App / Action Span 또는 새 SDK Root
+```
+
+일반적인 단일 Job 처리는 하나의 Trace로 이어질 수 있습니다. Batch나 fan-out은 Span Link를 사용합니다. Retry, replay 또는 새로운 실행 attempt를 만드는 미래의 suspend/resume은 생성 Context와 이전 attempt에 Link한 새 Trace를 시작합니다. 현재의 in-process HumanTask hold는 기존 attempt와 Trace를 유지합니다. `correlation_id`는 업무 상관관계 값이며 Trace ID가 아닙니다.
+
+Core는 Backend 중립 OTLP를 내보내며 Tempo 같은 저장 Backend에 의존하지 않습니다. Service Log에는 외부 Log-to-Trace 이동을 위한 `trace_id`와 `span_id`를 넣을 수 있습니다. 고유한 Run과 Job 식별자는 Metric label이나 Log index label에 넣지 않으며, 입력값, 결과, Credential, Token, Secret 값은 Trace attribute가 될 수 없습니다. 전체 결정과 적합성 기준은 [ADR 0029](../../adr/0029-optional-trace-context-continuity.md)에 기록합니다.
 
 ## 로그 조회와 실시간 추적
 
@@ -144,5 +165,4 @@ CLI를 Runtime dependency로 채택하는 것이 아닙니다. 자세한 내용�
 - 일반 Executor에 `bun --inspect`를 추가하지 않습니다. 격리 Debug Session은 별도
   ADR, 인증 tunnel, TTL, audit, Secret 정책이 필요합니다.
 
-Worker 순서는 [Worker 실행 수명주기](worker-execution.md), 결정 이유와 Windmill
-비교는 [ADR 0024](../../adr/0024-offset-job-log-streaming.md)를 참고합니다.
+Worker 순서는 [Worker 실행 수명주기](worker-execution.md), Log Streaming 결정 이유와 Windmill 비교는 [ADR 0024](../../adr/0024-offset-job-log-streaming.md), 분산 Trace 연속성은 [ADR 0029](../../adr/0029-optional-trace-context-continuity.md)를 참고합니다.
