@@ -15,11 +15,15 @@ import (
 	"github.com/imprun/windforce-core/internal/contract"
 	executionpkg "github.com/imprun/windforce-core/internal/execution"
 	"github.com/imprun/windforce-core/internal/state"
+	"github.com/imprun/windforce-core/internal/telemetry"
 )
 
 func TestInvocationAPIPrincipalAuthorizationAndIdempotency(t *testing.T) {
 	ctx := context.Background()
-	store := state.NewLocalStore(filepath.Join(t.TempDir(), "state.json"))
+	telemetrySDK := telemetry.InitSDK(ctx, "server", "test")
+	t.Cleanup(func() { _ = telemetrySDK.Shutdown(context.Background()) })
+	statePath := filepath.Join(t.TempDir(), "state.json")
+	store := state.NewLocalStore(statePath)
 	if _, err := store.CreateWorkspace(ctx, "ws-a", "Workspace A", "admin"); err != nil {
 		t.Fatal(err)
 	}
@@ -75,8 +79,9 @@ func TestInvocationAPIPrincipalAuthorizationAndIdempotency(t *testing.T) {
 	if status != 0 || message != "" || devPrincipal.Kind != executionpkg.PrincipalClient || devPrincipal.ID != client.ID {
 		t.Fatalf("dev client principal = %#v, status=%d message=%q", devPrincipal, status, message)
 	}
-	server := httptest.NewServer(New(Config{Store: store, Catalog: store, AdminToken: "admin-secret"}))
+	server := httptest.NewServer(telemetry.HTTPHandler(New(Config{Store: store, Catalog: store, AdminToken: "admin-secret"}), "test.invocation"))
 	defer server.Close()
+	currentTraceParent := "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
 
 	call := func(method string, path string, token string, idempotencyKey string, body string) (*http.Response, []byte) {
 		t.Helper()
@@ -92,6 +97,9 @@ func TestInvocationAPIPrincipalAuthorizationAndIdempotency(t *testing.T) {
 		}
 		if body != "" {
 			req.Header.Set("Content-Type", "application/json")
+		}
+		if currentTraceParent != "" {
+			req.Header.Set("traceparent", currentTraceParent)
 		}
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -130,7 +138,16 @@ func TestInvocationAPIPrincipalAuthorizationAndIdempotency(t *testing.T) {
 		run.IdempotencyHash == "" || run.RequestFingerprint == "" {
 		t.Fatalf("persisted run principal/idempotency = %#v", run)
 	}
+	if telemetry.TraceID(run.TraceContext) != "4bf92f3577b34da6a3ce929d0e0e4736" ||
+		run.TraceContext.PropagationReason != telemetry.ReasonContinued {
+		t.Fatalf("persisted creation trace = %#v", run.TraceContext)
+	}
+	createdJob, _, found, err := store.GetJobByRunID(ctx, "ws-a", created.RunID)
+	if err != nil || !found || createdJob.TraceContext != run.TraceContext {
+		t.Fatalf("job creation trace = %#v, found=%v err=%v", createdJob.TraceContext, found, err)
+	}
 
+	currentTraceParent = "00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01"
 	replay, replayBody := call(http.MethodPost, "/api/v1/workspaces/ws-a/runs", firstToken, "request-1", createBody)
 	if replay.StatusCode != http.StatusOK {
 		t.Fatalf("replay status = %d: %s", replay.StatusCode, replayBody)
@@ -141,6 +158,14 @@ func TestInvocationAPIPrincipalAuthorizationAndIdempotency(t *testing.T) {
 	}
 	if replayed.RunID != created.RunID || !replayed.Replayed {
 		t.Fatalf("replayed = %#v, created = %#v", replayed, created)
+	}
+	replayedRun, err := store.GetRun(ctx, created.RunID)
+	if err != nil || replayedRun.TraceContext != run.TraceContext {
+		t.Fatalf("idempotency replay overwrote creation trace: %#v err=%v", replayedRun.TraceContext, err)
+	}
+	reloadedRun, err := state.NewLocalStore(statePath).GetRun(ctx, created.RunID)
+	if err != nil || reloadedRun.TraceContext != run.TraceContext {
+		t.Fatalf("local JSON trace round-trip = %#v err=%v", reloadedRun.TraceContext, err)
 	}
 	operatorCreate, operatorCreateBody := call(
 		http.MethodPost, "/api/v1/workspaces/ws-a/runs", "admin-secret", "request-1", createBody,

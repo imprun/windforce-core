@@ -13,12 +13,117 @@ import (
 	"testing"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/imprun/windforce-core/internal/bundle"
 	"github.com/imprun/windforce-core/internal/contract"
 	"github.com/imprun/windforce-core/internal/executionbundle"
 	actionruntime "github.com/imprun/windforce-core/internal/runtime"
 	"github.com/imprun/windforce-core/internal/state"
+	"github.com/imprun/windforce-core/internal/telemetry"
 )
+
+type tracingTestRunner struct {
+	spanContext trace.SpanContext
+	carrier     telemetry.TraceContextV1
+}
+
+func (r *tracingTestRunner) Run(ctx context.Context, request actionruntime.RunRequest) (contract.JobResult, error) {
+	r.spanContext = trace.SpanContextFromContext(ctx)
+	r.carrier = request.TraceContext
+	return contract.JobResult{ExitCode: 0, Output: json.RawMessage(`{"ok":true}`)}, nil
+}
+
+func TestProcessorUsesCreationTraceInsteadOfPollingTrace(t *testing.T) {
+	recorder := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	previous := otel.GetTracerProvider()
+	otel.SetTracerProvider(provider)
+	t.Cleanup(func() {
+		_ = provider.Shutdown(context.Background())
+		otel.SetTracerProvider(previous)
+	})
+
+	creation, _ := telemetry.ParseCarrier("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01", "", "http")
+	polling, _ := telemetry.ParseCarrier("00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01", "", "worker_plane")
+	deployment := contract.Deployment{
+		Workspace: "ws-a",
+		App:       "echo",
+		Commit:    "commit-a",
+		Actions:   map[string]contract.Action{"run": {Action: "run"}},
+	}
+	run := state.NewRun("http", "run-trace", "echo", "run", deployment, json.RawMessage(`{}`))
+	run.TraceContext = creation
+	job := state.NewActionJob(run, nil)
+	store := state.NewLocalStore(filepath.Join(t.TempDir(), "state.json"))
+	if err := store.CreateRunAndEnqueue(context.Background(), run, job); err != nil {
+		t.Fatal(err)
+	}
+	runner := &tracingTestRunner{}
+	processor := Processor{Store: store, Runner: runner, WorkerID: "worker-a", Group: "test", LeaseTTL: time.Minute}
+	processed, err := processor.ProcessOne(telemetry.ContextWithCarrier(context.Background(), polling))
+	if err != nil || !processed {
+		t.Fatalf("ProcessOne() = %v, %v", processed, err)
+	}
+	if got := runner.spanContext.TraceID().String(); got != telemetry.TraceID(creation) {
+		t.Fatalf("execution trace id = %s, want creation %s", got, telemetry.TraceID(creation))
+	}
+	if runner.spanContext.TraceID().String() == telemetry.TraceID(polling) {
+		t.Fatal("polling transport context became the execution parent")
+	}
+	if telemetry.TraceID(runner.carrier) != telemetry.TraceID(creation) || runner.carrier.TraceParent == creation.TraceParent {
+		t.Fatalf("launcher carrier = %#v, want child in creation trace", runner.carrier)
+	}
+}
+
+func TestProcessorRecoveryAttemptStartsLinkedRoot(t *testing.T) {
+	recorder := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	previous := otel.GetTracerProvider()
+	otel.SetTracerProvider(provider)
+	t.Cleanup(func() {
+		_ = provider.Shutdown(context.Background())
+		otel.SetTracerProvider(previous)
+	})
+	creation, _ := telemetry.ParseCarrier("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01", "", "http")
+	deployment := contract.Deployment{
+		Workspace: "ws-a",
+		App:       "echo",
+		Commit:    "commit-a",
+		Actions:   map[string]contract.Action{"run": {Action: "run"}},
+	}
+	run := state.NewRun("http", "run-recovery-trace", "echo", "run", deployment, json.RawMessage(`{}`))
+	run.TraceContext = creation
+	job := state.NewActionJob(run, nil)
+	job.Attempt = 1
+	store := state.NewLocalStore(filepath.Join(t.TempDir(), "state.json"))
+	if err := store.CreateRunAndEnqueue(context.Background(), run, job); err != nil {
+		t.Fatal(err)
+	}
+	runner := &tracingTestRunner{}
+	processor := Processor{Store: store, Runner: runner, WorkerID: "worker-a", Group: "test", LeaseTTL: time.Minute}
+	processed, err := processor.ProcessOne(context.Background())
+	if err != nil || !processed {
+		t.Fatalf("ProcessOne() = %v, %v", processed, err)
+	}
+	if !runner.spanContext.IsValid() || runner.spanContext.TraceID().String() == telemetry.TraceID(creation) {
+		t.Fatalf("recovery execution trace = %s, creation = %s", runner.spanContext.TraceID(), telemetry.TraceID(creation))
+	}
+	var attempt sdktrace.ReadOnlySpan
+	for _, span := range recorder.Ended() {
+		if span.Name() == "windforce.job.attempt" {
+			attempt = span
+			break
+		}
+	}
+	if attempt == nil || attempt.Parent().IsValid() || len(attempt.Links()) != 1 ||
+		attempt.Links()[0].SpanContext.TraceID().String() != telemetry.TraceID(creation) {
+		t.Fatalf("recovery attempt span = %#v", attempt)
+	}
+}
 
 func TestDevelopmentPayloadLogsIncludeCompleteValues(t *testing.T) {
 	var output bytes.Buffer

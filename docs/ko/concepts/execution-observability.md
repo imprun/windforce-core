@@ -6,7 +6,7 @@ description: Core Worker의 Job 로그, 결과, 서비스 로그, 아티팩트, 
 이 문서는 Windforce Core에서 실행하는 App을 관측하고 디버깅하는 현재 통신규격을
 사람과 AI Coding 에이전트가 이해할 수 있도록 정리한 정본입니다.
 
-> Trace 구현 상태 (2026-08-06): ADR 0029는 GitHub issue #128에서 추적하는 승인된 목표 통신규격입니다. 현재 Release는 아직 W3C Trace Context를 저장하거나 Core Span을 OTLP로 내보내지 않습니다. 아래의 기존 Log와 Metric 동작은 구현되어 있습니다.
+> Trace 구현 상태 (2026-08-06): 현재 Source는 GitHub issue #128에서 추적한 ADR 0029 통신규격을 구현합니다. W3C 생성 Context가 두 State Store, Worker Plane, attempt, Launcher transport와 Core Author SDK를 통과하며 Core Span을 OTLP로 내보낼 수 있습니다.
 
 [English](../../concepts/execution-observability.md)
 
@@ -52,6 +52,18 @@ Admission은 검증한 Versioned 생성 Context를 Application input과 분리�
 Remote Worker claim의 Client/Server Span은 Transport를 설명하며 Job Processing parent가 되지 않습니다. Attempt 1은 보통 생성 Trace를 이어서 사용합니다. Lease 복구로 같은 Job이 `attempt > 1`이 되면 불변 생성 Context에 Link한 새 Root를 시작합니다. Version 1은 이전 attempt Span Context를 저장하지 않습니다. Invocation 멱등 replay는 기존 Run과 Job을 반환하며 생성 Context를 바꾸거나 attempt를 만들지 않고, 호출자가 새 Run을 요청하면 새 생성 Context를 만듭니다. 현재 in-process HumanTask hold는 기존 attempt와 Trace를 유지하고, 미래 suspend/resume은 생성 Context에 Link한 새 attempt Trace를 시작합니다. 하나의 원인은 parent-child, 새 attempt 또는 여러 원인은 Link로 표현하며 Batch나 fan-out 자체만으로 Link를 강제하지 않습니다. `correlation_id`는 업무 상관관계 값이며 Trace ID가 아닙니다.
 
 Core는 Backend 중립 OTLP를 내보내며 Tempo 같은 저장 Backend에 의존하지 않습니다. 표준 `OTEL_*` 설정이 SDK 활성화, Sampling, Export, Resource identity와 shutdown flush를 소유하며 Core는 별도 Sampling 신뢰 정책을 만들지 않습니다. 역할별 Export 활성화가 다른 배치에서도 Carrier 검증과 전달은 호환되며 Exporter 장애는 실행 상태를 바꾸지 않습니다. Service Log에는 외부 Log-to-Trace 이동을 위한 `trace_id`와 `span_id`를 넣을 수 있습니다. 고유한 Run, Job, attempt 식별자는 Metric label이나 Log index label에 넣지 않으며, 입력값, 결과, Credential, Token, Secret 값, 잘못된 원문 Carrier와 Baggage는 Trace attribute가 될 수 없습니다. 전체 결정과 적합성 기준은 [ADR 0029](../../adr/0029-optional-trace-context-continuity.md)에 기록합니다.
+
+### Core OpenTelemetry 설정
+
+Core는 해당 역할에서 Export하지 않아도 유효한 Carrier를 다음 경계로 전달할 수 있도록 기본적으로 Process 내부 Trace ID를 만듭니다. SDK 자체를 끄려면 `OTEL_SDK_DISABLED=true`를 지정합니다. 설정하지 않은 설치가 Local Collector에 반복 접속하지 않도록 `OTEL_TRACES_EXPORTER`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` 중 하나를 명시했을 때만 Export합니다.
+
+- `OTEL_TRACES_EXPORTER=otlp`, `console`, `none`으로 Export 동작을 선택합니다.
+- `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL` 또는 `OTEL_EXPORTER_OTLP_PROTOCOL`은 `http/protobuf`와 `grpc`를 지원합니다.
+- 선택한 공식 Exporter가 표준 OTLP endpoint, header, timeout, compression, TLS 환경변수를 읽습니다.
+- `OTEL_TRACES_SAMPLER`와 `OTEL_TRACES_SAMPLER_ARG`로 Parent-based, Always-on/off, Trace-ID-ratio Sampling을 정합니다.
+- `OTEL_SERVICE_NAME`과 `OTEL_RESOURCE_ATTRIBUTES`로 Resource identity를 덮어쓸 수 있습니다. 기본 Service name은 `windforce-core-server`, `windforce-core-worker`, `windforce-core-standalone`이며 Standalone은 Resource 하나를 사용하고 Span attribute로 Component를 구분합니다.
+
+Job 상태 응답은 운영자 이동을 위한 생성 `trace_id`만 노출하고 원문 `traceparent`와 `tracestate`는 노출하지 않습니다. 복구 attempt는 생성 Context에 Link한 새 Trace이므로 Version 1에서는 생성 Trace가 안정적인 조회 기준입니다.
 
 ## 로그 조회와 실시간 추적
 

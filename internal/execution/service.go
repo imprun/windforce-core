@@ -10,9 +10,15 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/imprun/windforce-core/internal/contract"
 	"github.com/imprun/windforce-core/internal/runtimeconfig"
 	"github.com/imprun/windforce-core/internal/state"
+	"github.com/imprun/windforce-core/internal/telemetry"
 )
 
 type Catalog interface {
@@ -120,7 +126,29 @@ type AppDescription struct {
 	Actions    map[string]ActionDescription `json:"actions"`
 }
 
-func (s *AdmissionService) CreateRun(ctx context.Context, request CreateRunRequest) (Admission, error) {
+func (s *AdmissionService) CreateRun(ctx context.Context, request CreateRunRequest) (admission Admission, returnErr error) {
+	ctx = telemetry.EnsureIngressContext(ctx, "admission")
+	ctx, span := otel.Tracer("github.com/imprun/windforce-core").Start(ctx, "windforce.run.admit",
+		trace.WithAttributes(
+			attribute.String("windforce.component", "admission"),
+			attribute.String("windforce.workspace", contract.NormalizeWorkspace(request.Workspace)),
+			attribute.String("windforce.app", strings.TrimSpace(request.App)),
+			attribute.String("windforce.action", strings.TrimSpace(request.Action)),
+		),
+	)
+	defer func() {
+		if admission.Run.ID != "" {
+			span.SetAttributes(
+				attribute.String("windforce.run.id", admission.Run.ID),
+				attribute.String("windforce.job.id", admission.Job.ID),
+				attribute.Bool("windforce.admission.replayed", admission.Replayed),
+			)
+		}
+		if returnErr != nil {
+			span.SetStatus(codes.Error, string(FaultKindOf(returnErr)))
+		}
+		span.End()
+	}()
 	if s == nil || s.store == nil || s.catalog == nil {
 		return Admission{}, &Fault{Kind: FaultUnavailable, Message: "admission service is not configured"}
 	}
@@ -280,6 +308,7 @@ func (s *AdmissionService) CreateRun(ctx context.Context, request CreateRunReque
 	run.ClientID = clientID
 	run.IdempotencyHash = idempotencyHash
 	run.RequestFingerprint = fingerprint
+	run.TraceContext = telemetry.CreationContext(ctx, adapter)
 	if principal.Kind != "" {
 		run.PrincipalKind = string(principal.Kind)
 		run.PrincipalID = principal.ID

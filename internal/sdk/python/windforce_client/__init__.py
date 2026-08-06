@@ -39,6 +39,7 @@ __all__ = [
     "Trigger",
     "Job",
     "Actor",
+    "Telemetry",
     "Logger",
     "Variables",
     "Resources",
@@ -139,6 +140,12 @@ class Actor(Protocol):
 
 
 @runtime_checkable
+class Telemetry(Protocol):
+    traceparent: str | None
+    tracestate: str | None
+
+
+@runtime_checkable
 class WindforceContext(Protocol):
     """The execution context the wrapper builds and passes to ``main(ctx)``.
 
@@ -152,6 +159,7 @@ class WindforceContext(Protocol):
     action: str
     job: Job
     actor: Actor
+    telemetry: Telemetry
     logger: Logger
     variables: Variables
     resources: Resources

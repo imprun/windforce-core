@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/imprun/windforce-core/internal/contract"
+	"github.com/imprun/windforce-core/internal/telemetry"
 )
 
 type rowScanner interface {
@@ -32,11 +33,12 @@ func scanRun(row rowScanner) (Run, error) {
 	var requestFingerprint sql.NullString
 	var expiresAt sql.NullTime
 	var env json.RawMessage
+	var traceContext json.RawMessage
 	if err := row.Scan(
 		&run.ID, &run.Adapter, &run.App, &run.Action, &stateValue, &deployment, &run.Input,
 		&run.Output, &result, &run.Error, &taskID, &correlationID, &env, &clientID,
 		&principalKind, &principalID, &idempotencyHash, &requestFingerprint, &run.CreatedBy, &run.PermissionedAs,
-		&run.CreatedAt, &run.UpdatedAt, &expiresAt,
+		&run.CreatedAt, &run.UpdatedAt, &expiresAt, &traceContext,
 	); err != nil {
 		return Run{}, err
 	}
@@ -78,6 +80,14 @@ func scanRun(row rowScanner) (Run, error) {
 	if len(env) > 0 {
 		_ = json.Unmarshal(env, &run.Env)
 	}
+	if len(traceContext) > 0 {
+		if err := json.Unmarshal(traceContext, &run.TraceContext); err != nil {
+			return Run{}, err
+		}
+	}
+	if run.TraceContext.Version != 0 && !run.TraceContext.IsCanonical() {
+		run.TraceContext = telemetry.TraceContextV1{}
+	}
 	return run, nil
 }
 
@@ -90,9 +100,10 @@ func scanJob(row rowScanner) (Job, error) {
 	var startedAt sql.NullTime
 	var canceledBy sql.NullString
 	var canceledReason sql.NullString
+	var traceContext json.RawMessage
 	if err := row.Scan(
 		&job.ID, &job.RunID, &stateValue, &job.Kind, &payload, &job.Priority, &job.Attempt,
-		&leaseOwner, &leaseExpiresAt, &startedAt, &canceledBy, &canceledReason, &job.CreatedAt, &job.UpdatedAt,
+		&leaseOwner, &leaseExpiresAt, &startedAt, &canceledBy, &canceledReason, &job.CreatedAt, &job.UpdatedAt, &traceContext,
 	); err != nil {
 		return Job{}, err
 	}
@@ -114,6 +125,14 @@ func scanJob(row rowScanner) (Job, error) {
 	}
 	if canceledReason.Valid {
 		job.CanceledReason = &canceledReason.String
+	}
+	if len(traceContext) > 0 {
+		if err := json.Unmarshal(traceContext, &job.TraceContext); err != nil {
+			return Job{}, err
+		}
+	}
+	if job.TraceContext.Version != 0 && !job.TraceContext.IsCanonical() {
+		job.TraceContext = telemetry.TraceContextV1{}
 	}
 	return job, nil
 }

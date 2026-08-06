@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS runs (
     request_fingerprint TEXT,
     created_by TEXT NOT NULL DEFAULT 'system',
     permissioned_as TEXT NOT NULL DEFAULT 'system',
+    trace_context JSONB,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     expires_at TIMESTAMPTZ
@@ -60,6 +61,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     started_at TIMESTAMPTZ,
     canceled_by TEXT,
     canceled_reason TEXT,
+    trace_context JSONB,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -572,9 +574,11 @@ ALTER TABLE runs ADD COLUMN IF NOT EXISTS idempotency_hash TEXT;
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS request_fingerprint TEXT;
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS created_by TEXT NOT NULL DEFAULT 'system';
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS permissioned_as TEXT NOT NULL DEFAULT 'system';
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS trace_context JSONB;
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ;
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS canceled_by TEXT;
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS canceled_reason TEXT;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS trace_context JSONB;
 ALTER TABLE job_logs ADD COLUMN IF NOT EXISTS workspace_id TEXT NOT NULL DEFAULT 'default';
 ALTER TABLE workspace_key ADD COLUMN IF NOT EXISTS kek_version INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE human_tasks ADD COLUMN IF NOT EXISTS workspace_id TEXT NOT NULL DEFAULT 'default';

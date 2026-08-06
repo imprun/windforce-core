@@ -331,6 +331,7 @@ func (h *Handler) workerPlaneClaim(w http.ResponseWriter, r *http.Request) {
 		"lease":         leaseToWire(lease),
 		"job_token":     jobToken,
 		"secret_values": secretValues,
+		"telemetry":     job.TraceContext,
 	})
 }
 

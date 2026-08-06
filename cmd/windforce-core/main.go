@@ -33,6 +33,7 @@ import (
 	"github.com/imprun/windforce-core/internal/server"
 	"github.com/imprun/windforce-core/internal/state"
 	"github.com/imprun/windforce-core/internal/syncer"
+	"github.com/imprun/windforce-core/internal/telemetry"
 	triggerpkg "github.com/imprun/windforce-core/internal/trigger"
 	"github.com/imprun/windforce-core/internal/webhook"
 	"github.com/imprun/windforce-core/internal/worker"
@@ -161,6 +162,17 @@ func runServer(args []string, mode string) int {
 	}
 	runCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
+	telemetrySDK := telemetry.InitSDK(runCtx, mode, version)
+	if warning := telemetrySDK.Warning(); warning != nil {
+		fmt.Fprintf(os.Stderr, "%s telemetry: %v; continuing without the failed exporter or detector\n", mode, warning)
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := telemetrySDK.Shutdown(shutdownCtx); err != nil {
+			fmt.Fprintf(os.Stderr, "%s telemetry shutdown: %v\n", mode, err)
+		}
+	}()
 
 	stateStore, closeState, err := openStateStore(runCtx, *stateBackend, *statePath, *databaseURL, *migrate)
 	if err != nil {
@@ -359,7 +371,7 @@ func runServer(args []string, mode string) int {
 	}()
 
 	fmt.Fprintf(os.Stderr, "windforce-core %s listening on %s\n", mode, *addr)
-	httpServer := &http.Server{Addr: *addr, Handler: handler}
+	httpServer := &http.Server{Addr: *addr, Handler: telemetry.HTTPHandler(handler, "windforce.http.server")}
 	serverDone := make(chan error, 1)
 	go func() {
 		serverDone <- httpServer.ListenAndServe()
@@ -452,6 +464,17 @@ func runWorker(args []string) int {
 	}
 	runCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
+	telemetrySDK := telemetry.InitSDK(runCtx, "worker", version)
+	if warning := telemetrySDK.Warning(); warning != nil {
+		fmt.Fprintf(os.Stderr, "worker telemetry: %v; continuing without the failed exporter or detector\n", warning)
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := telemetrySDK.Shutdown(shutdownCtx); err != nil {
+			fmt.Fprintf(os.Stderr, "worker telemetry shutdown: %v\n", err)
+		}
+	}()
 	runtimeBindings, err := worker.NewRuntimeBindings(*authSessionURL, *authSessionTokenEnv, *authSessionTokenFile, *authSessionTimeout)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "worker runtime bindings: %v\n", err)

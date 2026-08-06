@@ -5,7 +5,7 @@ description: Core와 실행 가능한 App Bundle 사이의 SDK 중립적인 시�
 
 이 문서는 Windforce Core와 실행되는 App 사이 통신규격의 현재 정본입니다. 여기서 interface 또는 contract는 법적 계약이 아니라 Runtime component, App, SDK 사이의 통신규격을 뜻합니다.
 
-> Trace 구현 상태 (2026-08-06): 선택적 Telemetry Carrier는 ADR 0029에서 승인하고 GitHub issue #128에서 추적하는 목표 통신규격입니다. 현재 Core Author SDK에는 아직 구현되지 않았습니다.
+> Trace 구현 상태 (2026-08-06): 선택적 ADR 0029 Carrier는 TypeScript, Python, Go Core Author SDK 표면과 Launcher transport에 구현되어 있습니다.
 
 [English](../../concepts/app-runtime-interface.md)
 
@@ -51,6 +51,8 @@ Core는 Host Context의 의미를 소유합니다. 여기에는 유효 입력값
 App 코드와 dependency는 Context 기능을 사용해야 합니다. Private `WF_*` 환경변수를 직접 해석하거나 `WF_TOKEN`을 전달하거나 Core callback URL을 만들거나 Queue record에 쓰거나 Worker Plane을 호출해서는 안 됩니다. Core가 소유하는 Launcher와 Author SDK glue만 private process transport를 public Context 표면으로 변환할 수 있습니다. 이 예외가 private transport를 App API로 만들지는 않습니다.
 
 Application SDK는 Core Context가 노출하는 선택적 Telemetry Carrier를 이어서 사용하고 SDK, App 또는 Action Span을 만들 수 있습니다. 이 Carrier는 현재 Job 실행 Context이며 Worker Polling과 Worker Plane Transport Context는 App interface에 들어오지 않습니다. Core나 유효한 Carrier 없이 SDK를 직접 실행하면 SDK가 자체 Root Trace를 시작할 수 있습니다. Core는 SDK를 탐지하지 않으며 실행을 위해 추적을 요구하지 않습니다. [실행 관측성과 디버깅](execution-observability.md)과 [ADR 0029](../../adr/0029-optional-trace-context-continuity.md)를 참고합니다.
+
+읽기 전용 Carrier는 TypeScript의 `coreCtx.telemetry.traceparent`와 `.tracestate`, Python의 `core_ctx.telemetry.traceparent`와 `.tracestate`, Go의 `ctx.Telemetry.TraceParent`와 `.TraceState`입니다. Low-level HTTP 기능은 Application SDK가 자체 Child Carrier를 지정하지 않은 경우 이를 전달합니다. App 코드는 이 Context 표면을 사용해야 하며 이를 구성하는 Private Launcher 환경을 직접 읽어서는 안 됩니다.
 
 현재 TypeScript의 low-level HTTP 기능은 `coreCtx.http.fetch`입니다. Application SDK는 의도적으로 다른 작성 API를 제공할 수 있습니다. 예를 들어 scraping SDK는 `scrapingCtx.httpService.get()`과 `post()`를 제공할 수 있습니다. 이 메서드는 App process 안에서 Host 기능을 사용해 구현하므로 Core는 해당 메서드를 이해하거나 검사하지 않습니다.
 

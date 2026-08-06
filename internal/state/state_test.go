@@ -11,6 +11,7 @@ import (
 
 	"github.com/imprun/windforce-core/internal/contract"
 	wfcrypto "github.com/imprun/windforce-core/internal/crypto"
+	"github.com/imprun/windforce-core/internal/telemetry"
 )
 
 var canonicalUUIDPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
@@ -1008,6 +1009,7 @@ func exerciseStoreLifecycle(t *testing.T, store Store) {
 	}
 	run := NewRun("windforce", "run-a", "echo", "echo", deployment, json.RawMessage(`{"message":"hello"}`))
 	run.CorrelationID = "task-a"
+	run.TraceContext, _ = telemetry.ParseCarrier("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01", "vendor=value", "http")
 	job := NewActionJob(run, nil)
 	if job.Payload.CorrelationID != "task-a" {
 		t.Fatalf("job correlation id = %q, want task-a", job.Payload.CorrelationID)
@@ -1021,6 +1023,9 @@ func exerciseStoreLifecycle(t *testing.T, store Store) {
 	}
 	if !found || storedJob.ID != job.ID || storedRun.ID != run.ID {
 		t.Fatalf("GetJob found=%v job=%q run=%q", found, storedJob.ID, storedRun.ID)
+	}
+	if storedRun.TraceContext != run.TraceContext || storedJob.TraceContext != run.TraceContext {
+		t.Fatalf("stored trace context run=%#v job=%#v", storedRun.TraceContext, storedJob.TraceContext)
 	}
 	storedJob, storedRun, found, err = store.GetJobByRunID(context.Background(), "default", run.ID)
 	if err != nil {
@@ -1036,6 +1041,9 @@ func exerciseStoreLifecycle(t *testing.T, store Store) {
 	}
 	if claimed.ID != job.ID {
 		t.Fatalf("claimed job = %q, want %q", claimed.ID, job.ID)
+	}
+	if claimed.TraceContext != run.TraceContext {
+		t.Fatalf("claimed trace context = %#v", claimed.TraceContext)
 	}
 	if err := store.AppendLogs(context.Background(), job.ID, "default", "first\n"); err != nil {
 		t.Fatalf("AppendLogs returned error: %v", err)
@@ -1124,6 +1132,9 @@ func exerciseStoreLifecycle(t *testing.T, store Store) {
 	if resumed.CorrelationID != "task-a" || resumeJob.Payload.CorrelationID != "task-a" {
 		t.Fatalf("resumed correlation id = %q, job = %q, want task-a", resumed.CorrelationID, resumeJob.Payload.CorrelationID)
 	}
+	if resumed.TraceContext != run.TraceContext || resumeJob.TraceContext != run.TraceContext {
+		t.Fatalf("resumed trace context run=%#v job=%#v", resumed.TraceContext, resumeJob.TraceContext)
+	}
 	input := string(resumeJob.Payload.Input)
 	if !strings.Contains(input, `"$resume"`) || !strings.Contains(input, `"approved":true`) {
 		t.Fatalf("resume job input = %s", input)
@@ -1145,6 +1156,9 @@ func exerciseStoreLifecycle(t *testing.T, store Store) {
 	}
 	if retried.CorrelationID != "task-a" || retryJob.Payload.CorrelationID != "task-a" {
 		t.Fatalf("retried correlation id = %q, job = %q, want task-a", retried.CorrelationID, retryJob.Payload.CorrelationID)
+	}
+	if retried.TraceContext != run.TraceContext || retryJob.TraceContext != run.TraceContext {
+		t.Fatalf("retry trace context run=%#v job=%#v", retried.TraceContext, retryJob.TraceContext)
 	}
 	var retryInput struct {
 		Message string `json:"message"`

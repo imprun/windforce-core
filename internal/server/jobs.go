@@ -12,6 +12,7 @@ import (
 
 	"github.com/imprun/windforce-core/internal/contract"
 	"github.com/imprun/windforce-core/internal/state"
+	"github.com/imprun/windforce-core/internal/telemetry"
 )
 
 func (h *Handler) handleJobList(w http.ResponseWriter, r *http.Request, workspaceID string) {
@@ -327,6 +328,7 @@ type jobStatusResponse struct {
 	State          string          `json:"state"`
 	Status         *string         `json:"status,omitempty"`
 	Worker         *string         `json:"worker,omitempty"`
+	TraceID        string          `json:"trace_id,omitempty"`
 	AppKey         *string         `json:"app_key,omitempty"`
 	ActionKey      *string         `json:"action_key,omitempty"`
 	TriggerKind    *string         `json:"trigger_kind,omitempty"`
@@ -387,6 +389,7 @@ func newJobStatus(workspaceID string, job state.Job, run state.Run) jobStatusRes
 		State:          stateValue,
 		Status:         statusValue,
 		Worker:         worker,
+		TraceID:        firstNonEmpty(telemetry.TraceID(job.TraceContext), telemetry.TraceID(run.TraceContext)),
 		AppKey:         stringPtr(app),
 		ActionKey:      stringPtr(action),
 		TriggerKind:    stringPtr(jobStatusTriggerKind(job, run)),

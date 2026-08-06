@@ -667,6 +667,11 @@ func TestGeneratedWrappersUseJobTokenForVariableReads(t *testing.T) {
 		!strings.Contains(ts, `flow: {`) || !strings.Contains(ts, `resumeValue: KIND === "flow_resume" ? input : undefined`) {
 		t.Fatalf("typescript wrapper does not expose canonical approval/flow ctx shape:\n%s", ts)
 	}
+	if !strings.Contains(ts, `telemetry: { traceparent: TRACEPARENT || undefined`) ||
+		!strings.Contains(ts, `headers.has("traceparent")`) ||
+		!strings.Contains(ts, `headers.set("traceparent", TRACEPARENT)`) {
+		t.Fatalf("typescript wrapper does not expose and propagate the W3C carrier:\n%s", ts)
+	}
 
 	py := wrapperPy("main.py")
 	if strings.Contains(py, `?app=`) {
@@ -685,6 +690,10 @@ func TestGeneratedWrappersUseJobTokenForVariableReads(t *testing.T) {
 	if !strings.Contains(py, `_source_root = _env("WF_PY_SOURCE_ROOT")`) ||
 		!strings.Contains(py, `os.path.join(_source_root, "src")`) {
 		t.Fatalf("python wrapper does not add source root/src layout import paths:\n%s", py)
+	}
+	if !strings.Contains(py, `telemetry=SimpleNamespace(`) ||
+		!strings.Contains(py, `headers["traceparent"] = _TRACEPARENT`) {
+		t.Fatalf("python wrapper does not expose and propagate the W3C carrier:\n%s", py)
 	}
 }
 

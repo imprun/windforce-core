@@ -243,6 +243,8 @@ const BASE = env("WF_BASE_URL")
 const TOKEN = env("WF_TOKEN")
 const KIND = env("WF_TRIGGER_KIND")
 const STATE_PATH = env("WF_STATE_PATH")
+const TRACEPARENT = env("WF_TRACEPARENT")
+const TRACESTATE = env("WF_TRACESTATE")
 
 let input = {}
 try { input = JSON.parse(readFileSync("input.json", "utf8")) } catch { input = {} }
@@ -252,6 +254,8 @@ try { const h = env("WF_TRIGGER_HEADERS"); if (h) headers = JSON.parse(h) } catc
 
 async function api(method, path, body, signal) {
   const reqHeaders = { Authorization: "Bearer " + TOKEN, "Content-Type": "application/json" }
+  if (TRACEPARENT) reqHeaders["traceparent"] = TRACEPARENT
+  if (TRACESTATE) reqHeaders["tracestate"] = TRACESTATE
   return fetch(BASE + "/api/w/" + WS + path, {
     method,
     headers: reqHeaders,
@@ -323,6 +327,7 @@ const ctx = {
   action: env("WF_ACTION"),
   job: { id: env("WF_JOB_ID"), workspace: WS, tag: env("WF_TAG"), path: env("WF_RUNNABLE_PATH") || undefined },
   actor: { email: env("WF_EMAIL"), username: env("WF_USERNAME"), permissionedAs: env("WF_PERMISSIONED_AS") },
+  telemetry: { traceparent: TRACEPARENT || undefined, tracestate: TRACESTATE || undefined },
   logger: {
     info: (...a) => console.log(...a),
     warn: (...a) => console.error(...a),
@@ -358,8 +363,10 @@ const ctx = {
     fetch(inp, init) {
       let url = inp
       if (typeof inp === "string" && inp.startsWith("/")) url = BASE + inp
-      const headers = { ...(init && init.headers) }
-      if (typeof url === "string" && url.startsWith(BASE)) headers["Authorization"] = "Bearer " + TOKEN
+      const headers = new Headers(init && init.headers ? init.headers : undefined)
+      if (typeof url === "string" && url.startsWith(BASE)) headers.set("Authorization", "Bearer " + TOKEN)
+      if (TRACEPARENT && !headers.has("traceparent")) headers.set("traceparent", TRACEPARENT)
+      if (TRACESTATE && !headers.has("tracestate")) headers.set("tracestate", TRACESTATE)
       return fetch(url, { ...init, headers })
     },
   },
@@ -422,6 +429,8 @@ _BASE = _env("WF_BASE_URL")
 _TOKEN = _env("WF_TOKEN")
 _KIND = _env("WF_TRIGGER_KIND")
 _STATE_PATH = _env("WF_STATE_PATH")
+_TRACEPARENT = _env("WF_TRACEPARENT")
+_TRACESTATE = _env("WF_TRACESTATE")
 
 _vendor = _env("WF_PY_VENDOR")
 _source_root = _env("WF_PY_SOURCE_ROOT")
@@ -475,6 +484,10 @@ def _call(method, url, headers, body):
 def _api(method, path, body=None):
     url = _BASE + "/api/w/" + _WS + path
     headers = {"Authorization": "Bearer " + _TOKEN, "Content-Type": "application/json"}
+    if _TRACEPARENT:
+        headers["traceparent"] = _TRACEPARENT
+    if _TRACESTATE:
+        headers["tracestate"] = _TRACESTATE
     return _call(method, url, headers, body)
 
 
@@ -530,6 +543,11 @@ class _Http:
         headers = dict(options.get("headers") or {})
         if isinstance(target, str) and target.startswith(_BASE):
             headers["Authorization"] = "Bearer " + _TOKEN
+        header_names = {str(key).lower() for key in headers}
+        if _TRACEPARENT and "traceparent" not in header_names:
+            headers["traceparent"] = _TRACEPARENT
+        if _TRACESTATE and "tracestate" not in header_names:
+            headers["tracestate"] = _TRACESTATE
         method = options.get("method", "GET")
         body = options.get("body")
         status, raw = await asyncio.to_thread(_call, method, target, headers, body)
@@ -581,6 +599,10 @@ _ctx = SimpleNamespace(
         email=_env("WF_EMAIL"),
         username=_env("WF_USERNAME"),
         permissioned_as=_env("WF_PERMISSIONED_AS"),
+    ),
+    telemetry=SimpleNamespace(
+        traceparent=_TRACEPARENT or None,
+        tracestate=_TRACESTATE or None,
     ),
     logger=_Logger(),
     variables=_Variables(),

@@ -9,10 +9,15 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/imprun/windforce-core/internal/contract"
 	actionruntime "github.com/imprun/windforce-core/internal/runtime"
 	"github.com/imprun/windforce-core/internal/secretmask"
 	"github.com/imprun/windforce-core/internal/state"
+	"github.com/imprun/windforce-core/internal/telemetry"
 )
 
 type Runner interface {
@@ -70,13 +75,31 @@ func (p *Processor) processOne(claimCtx context.Context, executionCtx context.Co
 	if err != nil {
 		return false, err
 	}
+	executionCtx, attemptSpan := telemetry.StartAttempt(executionCtx, job.TraceContext, job.Attempt,
+		attribute.String("windforce.component", "worker"),
+		attribute.String("windforce.run.id", job.RunID),
+		attribute.String("windforce.job.id", job.ID),
+		attribute.Int("windforce.job.attempt", job.Attempt),
+		attribute.String("windforce.worker.id", workerID),
+		attribute.String("windforce.worker.group", p.Group),
+		attribute.String("windforce.workspace", job.Payload.Workspace),
+		attribute.String("windforce.app", job.Payload.App),
+		attribute.String("windforce.action", job.Payload.Action),
+	)
 	startedAt := time.Now()
 	outcome := "running"
 	jobError := ""
-	log.Printf("worker job started job=%s app=%s action=%s", job.ID, job.Payload.App, job.Payload.Action)
+	spanContext := trace.SpanContextFromContext(executionCtx)
+	log.Printf("worker job started job=%s app=%s action=%s trace_id=%s span_id=%s", job.ID, job.Payload.App, job.Payload.Action, spanContext.TraceID(), spanContext.SpanID())
 	defer func() {
-		log.Printf("worker job finished job=%s app=%s action=%s outcome=%s duration=%s error=%q",
-			job.ID, job.Payload.App, job.Payload.Action, outcome, time.Since(startedAt).Round(time.Millisecond), jobError)
+		duration := time.Since(startedAt).Round(time.Millisecond)
+		attemptSpan.SetAttributes(attribute.String("windforce.job.outcome", outcome))
+		if jobError != "" {
+			attemptSpan.SetStatus(codes.Error, "job attempt failed")
+		}
+		attemptSpan.End()
+		log.Printf("worker job finished job=%s app=%s action=%s outcome=%s duration=%s error=%q trace_id=%s span_id=%s",
+			job.ID, job.Payload.App, job.Payload.Action, outcome, duration, jobError, spanContext.TraceID(), spanContext.SpanID())
 	}()
 
 	workspaceID := job.Payload.Workspace
@@ -192,6 +215,7 @@ func (p *Processor) processOne(claimCtx context.Context, executionCtx context.Co
 		JobToken:        jobToken,
 		WorkerGroup:     p.Group,
 		EgressProxyAddr: p.EgressProxyAddr,
+		TraceContext:    telemetry.FromContext(runCtx, "worker", attemptPropagationReason(job.Attempt)),
 		LogSink: func(chunk []byte) {
 			maskedLogs.Write(chunk)
 		},
@@ -257,6 +281,13 @@ func (p *Processor) processOne(claimCtx context.Context, executionCtx context.Co
 	}
 	outcome = "succeeded"
 	return completeProcessed(p.Store.CompleteJobSucceeded(completeCtx, lease, result))
+}
+
+func attemptPropagationReason(attempt int) string {
+	if attempt > 1 {
+		return telemetry.ReasonAttemptRecovery
+	}
+	return telemetry.ReasonContinued
 }
 
 func logJobInput(enabled bool, jobID string, app string, action string, input []byte, secrets []string) {

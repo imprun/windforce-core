@@ -15,18 +15,20 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/imprun/windforce-core/internal/contract"
+	"github.com/imprun/windforce-core/internal/telemetry"
 )
 
 const runColumns = `
 	id, adapter, app, action, state, deployment, input, output, result, error,
 	task_id, correlation_id, env, client_id, principal_kind, principal_id,
 	idempotency_hash, request_fingerprint, created_by, permissioned_as,
-	created_at, updated_at, expires_at
+	created_at, updated_at, expires_at, trace_context
 `
 
 const jobColumns = `
 	id, run_id, state, kind, payload, priority, attempt, lease_owner,
-	lease_expires_at, started_at, canceled_by, canceled_reason, created_at, updated_at
+	lease_expires_at, started_at, canceled_by, canceled_reason, created_at, updated_at,
+	trace_context
 `
 
 const humanTaskColumns = `
@@ -351,27 +353,28 @@ INSERT INTO runs (
 	id, adapter, app, action, state, deployment, input, output, result, error,
 	task_id, correlation_id, env, client_id, principal_kind, principal_id,
 	idempotency_hash, request_fingerprint, created_by, permissioned_as,
-	created_at, updated_at, expires_at
+	created_at, updated_at, expires_at, trace_context
 ) VALUES (
 	$1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
 	$11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-	$21, $22, $23
+	$21, $22, $23, $24
 )
 `, run.ID, run.Adapter, run.App, run.Action, string(run.State), mustRaw(run.Deployment), requiredRaw(run.Input),
 			nullableRaw(run.Output), nullableResult(run.Result), nullableRaw(run.Error), nullableString(run.TaskID),
 			nullableString(run.CorrelationID), nullableStrings(run.Env), nullableString(run.ClientID),
 			nullableString(run.PrincipalKind), nullableString(run.PrincipalID), nullableString(run.IdempotencyHash),
 			nullableString(run.RequestFingerprint), run.CreatedBy, run.PermissionedAs,
-			run.CreatedAt, run.UpdatedAt, run.ExpiresAt); err != nil {
+			run.CreatedAt, run.UpdatedAt, run.ExpiresAt, nullableTraceContext(run.TraceContext)); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `
 INSERT INTO jobs (
 	id, run_id, state, kind, payload, priority, attempt, lease_owner,
-	lease_expires_at, canceled_by, canceled_reason, created_at, updated_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+	lease_expires_at, canceled_by, canceled_reason, created_at, updated_at, trace_context
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 `, job.ID, job.RunID, string(job.State), job.Kind, mustRaw(job.Payload), job.Priority, job.Attempt,
-			nullableString(job.LeaseOwner), job.LeaseExpiresAt, nullableStringPtr(job.CanceledBy), nullableStringPtr(job.CanceledReason), job.CreatedAt, job.UpdatedAt); err != nil {
+			nullableString(job.LeaseOwner), job.LeaseExpiresAt, nullableStringPtr(job.CanceledBy), nullableStringPtr(job.CanceledReason), job.CreatedAt, job.UpdatedAt,
+			nullableTraceContext(job.TraceContext)); err != nil {
 			return err
 		}
 		runCreated := eventPayload(run.CorrelationID, map[string]any{"app": run.App, "action": run.Action})
@@ -386,6 +389,13 @@ INSERT INTO jobs (
 		return fmt.Errorf("%w: run or job already exists", ErrConflict)
 	}
 	return err
+}
+
+func nullableTraceContext(value telemetry.TraceContextV1) any {
+	if !value.IsCanonical() {
+		return nil
+	}
+	return mustRaw(value)
 }
 
 func (s *PostgresStore) GetRun(ctx context.Context, runID string) (Run, error) {

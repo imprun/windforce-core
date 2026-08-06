@@ -1091,7 +1091,7 @@ func (s *LocalStore) write(snapshot Snapshot) error {
 	}
 	data = append(data, '\n')
 	tmpPath := s.Path + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0o644); err != nil {
+	if err := os.WriteFile(tmpPath, data, 0o600); err != nil {
 		return err
 	}
 	return os.Rename(tmpPath, s.Path)

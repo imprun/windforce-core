@@ -16,6 +16,7 @@ import (
 
 	"github.com/imprun/windforce-core/internal/execution"
 	"github.com/imprun/windforce-core/internal/state"
+	"github.com/imprun/windforce-core/internal/telemetry"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
@@ -41,16 +42,52 @@ func (s *triggerTestStore) UpsertTriggerDelivery(_ context.Context, delivery sta
 }
 
 type triggerTestAdmission struct {
-	request execution.CreateRunRequest
-	err     error
+	request      execution.CreateRunRequest
+	traceContext telemetry.TraceContextV1
+	err          error
 }
 
-func (a *triggerTestAdmission) CreateRun(_ context.Context, request execution.CreateRunRequest) (execution.Admission, error) {
+func (a *triggerTestAdmission) CreateRun(ctx context.Context, request execution.CreateRunRequest) (execution.Admission, error) {
 	a.request = request
+	a.traceContext = telemetry.CreationContext(ctx, "trigger")
 	if a.err != nil {
 		return execution.Admission{}, a.err
 	}
 	return execution.Admission{Run: state.Run{ID: "run-1"}}, nil
+}
+
+func TestSubmitterContinuesProtocolTraceContext(t *testing.T) {
+	admission := &triggerTestAdmission{}
+	submitter := &Submitter{Store: &triggerTestStore{}, Admission: admission}
+	definition := state.TriggerDefinition{
+		ID: "trg-rabbit", WorkspaceID: "ws", Kind: KindRabbitMQ, AppKey: "demo", ActionKey: "run",
+	}
+	submission := submitter.Submit(context.Background(), definition, Event{
+		TriggerID:  definition.ID,
+		DeliveryID: "delivery-1",
+		Input:      json.RawMessage(`{}`),
+		SafeMetadata: map[string]string{
+			"TraceParent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+			"TraceState":  "vendor=value",
+		},
+	})
+	if submission.State != DeliveryAdmitted || telemetry.TraceID(admission.traceContext) != "4bf92f3577b34da6a3ce929d0e0e4736" {
+		t.Fatalf("protocol submission = %#v trace=%#v", submission, admission.traceContext)
+	}
+}
+
+func TestRabbitMQMetadataCarriesOnlyBoundedTraceHeaders(t *testing.T) {
+	metadata := safeRabbitMQMetadata(amqp.Delivery{Headers: amqp.Table{
+		"TraceParent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+		"TraceState":  "vendor=value",
+		"Secret":      "must-not-cross",
+	}})
+	if metadata["traceparent"] == "" || metadata["tracestate"] != "vendor=value" {
+		t.Fatalf("trace metadata = %#v", metadata)
+	}
+	if _, exists := metadata["Secret"]; exists {
+		t.Fatalf("unapproved RabbitMQ header crossed metadata boundary: %#v", metadata)
+	}
 }
 
 func TestWebhookTriggerVerifiesSignatureAndRedactsSecretHeader(t *testing.T) {

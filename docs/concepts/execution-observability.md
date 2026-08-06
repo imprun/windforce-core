@@ -7,7 +7,7 @@ This document is the current human-readable contract for observing and
 debugging an App executed by Windforce Core. Runtime code and coding agents
 must keep the surfaces below separate.
 
-> Trace implementation status (2026-08-06): ADR 0029 is an accepted target contract tracked by GitHub issue #128. The current release does not yet persist W3C trace context or export Core spans through OTLP. The existing log and metric behavior described below remains implemented.
+> Trace implementation status (2026-08-06): the source now implements the accepted ADR 0029 contract tracked by GitHub issue #128. W3C creation context crosses both State Stores, the Worker Plane, attempts, launcher transport, and Core Author SDKs; Core spans can be exported through OTLP.
 
 ## What a Worker records
 
@@ -53,6 +53,18 @@ instrumented gateway or adapter (optional)
 Remote Worker claim client/server spans describe transport and never become the Job processing parent. Attempt 1 normally remains in the creation trace. A lease recovery that increments the same Job to `attempt > 1` starts a new root linked to the immutable creation context. Version 1 does not persist previous-attempt span contexts. Invocation idempotency replay returns the existing Run and Job without changing their creation context or creating an attempt, while a caller-requested new Run gets a new creation context. The current in-process HumanTask hold stays in its existing attempt and trace; future suspend/resume starts a new attempt trace linked to creation. Parent-child propagation represents one causal parent, while links represent a new attempt or multiple causal parents; batch or fan-out alone does not force links. `correlation_id` remains a business correlation value and is not a trace ID.
 
 Core exports backend-neutral OTLP and does not depend on Tempo or another storage backend. Standard `OTEL_*` settings own SDK enablement, sampling, export, resource identity, and shutdown flush; Core adds no sampling trust policy. Carrier validation and forwarding remain compatible during mixed-role rollout even when one role does not export spans. Exporter failure never changes execution state. Service logs may carry `trace_id` and `span_id` for external log-to-trace navigation. High-cardinality Run, Job, and attempt identifiers stay out of metric and log-index labels, and inputs, results, credentials, tokens, secret values, raw invalid carriers, and baggage never become trace attributes. The full decision and conformance matrix are recorded in [ADR 0029](../adr/0029-optional-trace-context-continuity.md).
+
+### Core OpenTelemetry settings
+
+Core creates in-process trace IDs by default so roles can forward a valid carrier even when that role does not export. Set `OTEL_SDK_DISABLED=true` to disable that SDK. Export is enabled only when `OTEL_TRACES_EXPORTER`, `OTEL_EXPORTER_OTLP_ENDPOINT`, or `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` is set explicitly; this avoids an unconfigured installation repeatedly dialing a local collector.
+
+- `OTEL_TRACES_EXPORTER=otlp`, `console`, or `none` selects export behavior.
+- `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL` or `OTEL_EXPORTER_OTLP_PROTOCOL` accepts `http/protobuf` or `grpc`.
+- Standard OTLP endpoint, header, timeout, compression, and TLS environment variables are read by the selected official exporter.
+- `OTEL_TRACES_SAMPLER` and `OTEL_TRACES_SAMPLER_ARG` control parent-based, always-on/off, or trace-ID-ratio sampling.
+- `OTEL_SERVICE_NAME` and `OTEL_RESOURCE_ATTRIBUTES` override resource identity. Defaults are `windforce-core-server`, `windforce-core-worker`, and `windforce-core-standalone`; standalone keeps one resource and distinguishes components on spans.
+
+The Job status response exposes only the effective creation `trace_id` for operator navigation. It does not expose raw `traceparent` or `tracestate`. Recovery attempts are new linked traces, so the creation trace remains the stable inspection anchor in version 1.
 
 ## Read and follow logs
 

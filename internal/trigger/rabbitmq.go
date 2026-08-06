@@ -258,6 +258,14 @@ func safeRabbitMQMetadata(delivery amqp.Delivery) map[string]string {
 		"message_id":     delivery.MessageId,
 		"correlation_id": delivery.CorrelationId,
 	}
+	for _, name := range []string{"traceparent", "tracestate"} {
+		for key, value := range delivery.Headers {
+			if strings.EqualFold(strings.TrimSpace(key), name) {
+				result[name] = strings.TrimSpace(fmt.Sprint(value))
+				break
+			}
+		}
+	}
 	for key, value := range result {
 		value = strings.TrimSpace(value)
 		if value == "" {

@@ -17,6 +17,7 @@ import (
 	"github.com/imprun/windforce-core/internal/executionbundle"
 	"github.com/imprun/windforce-core/internal/server"
 	"github.com/imprun/windforce-core/internal/state"
+	"github.com/imprun/windforce-core/internal/telemetry"
 	"github.com/imprun/windforce-core/internal/worker"
 )
 
@@ -47,6 +48,7 @@ func TestClientLifecycleAgainstRealServer(t *testing.T) {
 		Actions:        map[string]contract.Action{"run": {Action: "run", Command: []string{"helper"}}},
 	}
 	run := state.NewRun("windforce", "run-remote", "echo", "run", deployment, json.RawMessage(`{"message":"hi"}`))
+	run.TraceContext, _ = telemetry.ParseCarrier("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01", "vendor=value", "http")
 	job := state.NewActionJob(run, nil)
 	if err := store.CreateRunAndEnqueue(context.Background(), run, job); err != nil {
 		t.Fatal(err)
@@ -71,6 +73,9 @@ func TestClientLifecycleAgainstRealServer(t *testing.T) {
 	}
 	if claimed.Payload.App != "echo" || lease.JobID != claimed.ID {
 		t.Fatalf("claimed = %#v", claimed.Payload)
+	}
+	if claimed.TraceContext != run.TraceContext {
+		t.Fatalf("remote Worker Plane trace context = %#v, want %#v", claimed.TraceContext, run.TraceContext)
 	}
 	if token := client.JobTokenFor(claimed.ID); !strings.HasPrefix(token, "wfjob_") {
 		t.Fatalf("job token = %q, want pre-minted wfjob_ token", token)

@@ -14,6 +14,7 @@ import (
 	"github.com/imprun/windforce-core/internal/bundle"
 	"github.com/imprun/windforce-core/internal/contract"
 	"github.com/imprun/windforce-core/internal/executionbundle"
+	"github.com/imprun/windforce-core/internal/telemetry"
 	"github.com/imprun/windforce-core/internal/token"
 )
 
@@ -929,6 +930,11 @@ func TestRunnerJobEnvIncludesSDKCallbackEndpoint(t *testing.T) {
 		PermissionedAs:  "delegate@example.test",
 		WorkerGroup:     "test",
 		EgressProxyAddr: "proxy:18080",
+		TraceContext: telemetry.TraceContextV1{
+			Version:     telemetry.Version1,
+			TraceParent: "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+			TraceState:  "vendor=value",
+		},
 	}, contract.Action{Action: "run"})
 
 	for _, want := range []string{
@@ -943,6 +949,8 @@ func TestRunnerJobEnvIncludesSDKCallbackEndpoint(t *testing.T) {
 		"WF_PROXY_URL=http://job-job-a@proxy:18080",
 		"HTTP_PROXY=http://job-job-a@proxy:18080",
 		"HTTPS_PROXY=http://job-job-a@proxy:18080",
+		"WF_TRACEPARENT=00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+		"WF_TRACESTATE=vendor=value",
 	} {
 		if !containsEnv(env, want) {
 			t.Fatalf("env missing %q in %#v", want, env)

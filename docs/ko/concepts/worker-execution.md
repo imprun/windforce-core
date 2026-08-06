@@ -5,7 +5,7 @@ description: 고정된 Job이 실행 번들을 가져와 launcher를 시작하�
 
 이 문서는 Windforce Core Worker 실행 절차의 현재 정본입니다. Runtime 구현, 테스트, AI Coding 에이전트가 반드시 보존해야 하는 실행 순서와 책임 경계를 정의합니다.
 
-> Trace 구현 상태 (2026-08-06): Trace 연속성 항목은 ADR 0029에서 승인하고 GitHub issue #128에서 추적하는 목표 통신규격입니다. 현재 Worker는 아직 W3C Trace Context를 저장, 복원 또는 주입하지 않습니다.
+> Trace 구현 상태 (2026-08-06): 현재 Worker는 ADR 0029 연속성 규칙에 따라 생성 Context 영속화, Polling parent 격리, 복구 Link와 Launcher 주입을 구현합니다.
 
 ## 핵심 원칙
 

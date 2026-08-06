@@ -11,6 +11,7 @@ import (
 
 	"github.com/imprun/windforce-core/internal/execution"
 	"github.com/imprun/windforce-core/internal/state"
+	"github.com/imprun/windforce-core/internal/telemetry"
 )
 
 const (
@@ -95,6 +96,12 @@ func (s *Submitter) Submit(ctx context.Context, definition state.TriggerDefiniti
 	if err != nil {
 		return s.record(ctx, definition, event, Submission{State: DeliveryTerminal, Err: fmt.Errorf("%w: metadata", ErrInvalidEvent)})
 	}
+	ctx = telemetry.IngressContext(
+		ctx,
+		metadataValue(event.SafeMetadata, "traceparent"),
+		metadataValue(event.SafeMetadata, "tracestate"),
+		"trigger:"+definition.Kind,
+	)
 	admission, err := s.Admission.CreateRun(ctx, execution.CreateRunRequest{
 		Workspace:      definition.WorkspaceID,
 		App:            definition.AppKey,
@@ -121,6 +128,15 @@ func (s *Submitter) Submit(ctx context.Context, definition state.TriggerDefiniti
 		RunID:    admission.Run.ID,
 		Replayed: admission.Replayed,
 	})
+}
+
+func metadataValue(metadata map[string]string, name string) string {
+	for key, value := range metadata {
+		if strings.EqualFold(strings.TrimSpace(key), name) {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func (s *Submitter) record(ctx context.Context, definition state.TriggerDefinition, event Event, result Submission) Submission {

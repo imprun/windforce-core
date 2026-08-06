@@ -5,7 +5,7 @@ description: The canonical sequence from a pinned Job to bundle fetch, launcher 
 
 This document is the current canonical description of worker execution in Windforce Core. It defines the ordering and ownership rules that runtime implementations, tests, and coding agents must preserve.
 
-> Trace implementation status (2026-08-06): the trace-continuity clauses describe the accepted ADR 0029 target and remain pending in GitHub issue #128. Current workers do not yet persist, restore, or inject W3C trace context.
+> Trace implementation status (2026-08-06): workers now implement the accepted ADR 0029 continuity rules, including durable creation context, polling-parent isolation, recovery links, and launcher injection.
 
 ## The central rule
 

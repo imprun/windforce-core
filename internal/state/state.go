@@ -13,6 +13,7 @@ import (
 	"github.com/imprun/windforce-core/internal/catalog"
 	"github.com/imprun/windforce-core/internal/contract"
 	controlevent "github.com/imprun/windforce-core/internal/event"
+	"github.com/imprun/windforce-core/internal/telemetry"
 	"github.com/imprun/windforce-core/internal/webhook"
 )
 
@@ -97,30 +98,31 @@ var (
 )
 
 type Run struct {
-	ID                  string              `json:"id"`
-	Adapter             string              `json:"adapter,omitempty"`
-	App                 string              `json:"app"`
-	Action              string              `json:"action"`
-	State               RunState            `json:"state"`
-	Deployment          contract.Deployment `json:"deployment"`
-	Input               json.RawMessage     `json:"input,omitempty"`
-	InputConfigResolved bool                `json:"inputConfigResolved,omitempty"`
-	Output              json.RawMessage     `json:"output,omitempty"`
-	Result              *contract.JobResult `json:"result,omitempty"`
-	Error               json.RawMessage     `json:"error,omitempty"`
-	TaskID              string              `json:"taskId,omitempty"`
-	CorrelationID       string              `json:"correlationId,omitempty"`
-	Env                 []string            `json:"env,omitempty"`
-	CreatedBy           string              `json:"createdBy,omitempty"`
-	PermissionedAs      string              `json:"permissionedAs,omitempty"`
-	ClientID            string              `json:"clientId,omitempty"`
-	PrincipalKind       string              `json:"principalKind,omitempty"`
-	PrincipalID         string              `json:"principalId,omitempty"`
-	IdempotencyHash     string              `json:"idempotencyHash,omitempty"`
-	RequestFingerprint  string              `json:"requestFingerprint,omitempty"`
-	CreatedAt           time.Time           `json:"createdAt"`
-	UpdatedAt           time.Time           `json:"updatedAt"`
-	ExpiresAt           *time.Time          `json:"expiresAt,omitempty"`
+	ID                  string                   `json:"id"`
+	Adapter             string                   `json:"adapter,omitempty"`
+	App                 string                   `json:"app"`
+	Action              string                   `json:"action"`
+	State               RunState                 `json:"state"`
+	Deployment          contract.Deployment      `json:"deployment"`
+	Input               json.RawMessage          `json:"input,omitempty"`
+	InputConfigResolved bool                     `json:"inputConfigResolved,omitempty"`
+	Output              json.RawMessage          `json:"output,omitempty"`
+	Result              *contract.JobResult      `json:"result,omitempty"`
+	Error               json.RawMessage          `json:"error,omitempty"`
+	TaskID              string                   `json:"taskId,omitempty"`
+	CorrelationID       string                   `json:"correlationId,omitempty"`
+	Env                 []string                 `json:"env,omitempty"`
+	CreatedBy           string                   `json:"createdBy,omitempty"`
+	PermissionedAs      string                   `json:"permissionedAs,omitempty"`
+	ClientID            string                   `json:"clientId,omitempty"`
+	PrincipalKind       string                   `json:"principalKind,omitempty"`
+	PrincipalID         string                   `json:"principalId,omitempty"`
+	IdempotencyHash     string                   `json:"idempotencyHash,omitempty"`
+	RequestFingerprint  string                   `json:"requestFingerprint,omitempty"`
+	TraceContext        telemetry.TraceContextV1 `json:"traceContext,omitempty,omitzero"`
+	CreatedAt           time.Time                `json:"createdAt"`
+	UpdatedAt           time.Time                `json:"updatedAt"`
+	ExpiresAt           *time.Time               `json:"expiresAt,omitempty"`
 }
 
 type JobPayload struct {
@@ -169,20 +171,21 @@ type JobPayload struct {
 }
 
 type Job struct {
-	ID             string     `json:"id"`
-	RunID          string     `json:"runId"`
-	State          JobState   `json:"state"`
-	Kind           string     `json:"kind"`
-	Payload        JobPayload `json:"payload"`
-	Priority       int        `json:"priority"`
-	Attempt        int        `json:"attempt"`
-	LeaseOwner     string     `json:"leaseOwner,omitempty"`
-	LeaseExpiresAt *time.Time `json:"leaseExpiresAt,omitempty"`
-	StartedAt      *time.Time `json:"startedAt,omitempty"`
-	CanceledBy     *string    `json:"canceledBy,omitempty"`
-	CanceledReason *string    `json:"canceledReason,omitempty"`
-	CreatedAt      time.Time  `json:"createdAt"`
-	UpdatedAt      time.Time  `json:"updatedAt"`
+	ID             string                   `json:"id"`
+	RunID          string                   `json:"runId"`
+	State          JobState                 `json:"state"`
+	Kind           string                   `json:"kind"`
+	Payload        JobPayload               `json:"payload"`
+	Priority       int                      `json:"priority"`
+	Attempt        int                      `json:"attempt"`
+	LeaseOwner     string                   `json:"leaseOwner,omitempty"`
+	LeaseExpiresAt *time.Time               `json:"leaseExpiresAt,omitempty"`
+	StartedAt      *time.Time               `json:"startedAt,omitempty"`
+	CanceledBy     *string                  `json:"canceledBy,omitempty"`
+	CanceledReason *string                  `json:"canceledReason,omitempty"`
+	TraceContext   telemetry.TraceContextV1 `json:"traceContext,omitempty,omitzero"`
+	CreatedAt      time.Time                `json:"createdAt"`
+	UpdatedAt      time.Time                `json:"updatedAt"`
 }
 
 type Lease struct {
@@ -918,13 +921,14 @@ func NewActionJob(run Run, input json.RawMessage) Job {
 	actionSpec.OperatorSettingsSchemaBody = nil
 	now := time.Now().UTC()
 	return Job{
-		ID:        NewID("job"),
-		RunID:     run.ID,
-		State:     JobQueued,
-		Kind:      "action",
-		Priority:  100,
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:           NewID("job"),
+		RunID:        run.ID,
+		State:        JobQueued,
+		Kind:         "action",
+		Priority:     100,
+		TraceContext: run.TraceContext,
+		CreatedAt:    now,
+		UpdatedAt:    now,
 		Payload: JobPayload{
 			Workspace:             run.Deployment.SourceWorkspace(),
 			GitSourceID:           run.Deployment.SourceGitSourceID(),

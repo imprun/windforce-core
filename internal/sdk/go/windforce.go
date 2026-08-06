@@ -81,13 +81,14 @@ func CreateApp(app App) Handler {
 // Go-idiomatic PascalCase; the values mirror the TS/Python ctx exactly. Cancellation
 // is by process kill (ADR-0011), so the SDK methods take no context.Context.
 type Context struct {
-	Input   any     // the run payload (ctx.input); author casts it
-	Trigger Trigger // what created this run
-	App     string  // app_key (Application Project)
-	Action  string  // action_key — dispatched on
-	Job     Job     // id / workspace / tag
-	Actor   Actor   // email / username / permissioned_as
-	Logger  Logger  // log channel (stdout/stderr)
+	Input     any       // the run payload (ctx.input); author casts it
+	Trigger   Trigger   // what created this run
+	App       string    // app_key (Application Project)
+	Action    string    // action_key — dispatched on
+	Job       Job       // id / workspace / tag
+	Actor     Actor     // email / username / permissioned_as
+	Telemetry Telemetry // read-only W3C carrier for App SDK instrumentation
+	Logger    Logger    // log channel (stdout/stderr)
 
 	Variables Variables // ctx.Variables.Get(path) — secrets/variables
 	Resources Resources // ctx.Resources.Get(path) — resources (json)
@@ -124,6 +125,11 @@ type Actor struct {
 	Email          string
 	Username       string
 	PermissionedAs string
+}
+
+type Telemetry struct {
+	TraceParent string
+	TraceState  string
 }
 
 // Logger writes to stdout/stderr; the worker captures both as job logs (ADR-0014 §8).
@@ -164,6 +170,7 @@ func cpDo(method, path string, body io.Reader) (*http.Response, error) {
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	setTraceHeaders(req)
 	return http.DefaultClient.Do(req)
 }
 
@@ -306,7 +313,19 @@ func (Http) Fetch(target string, opts ...func(*http.Request)) (*http.Response, e
 	for _, o := range opts {
 		o(req)
 	}
+	if req.Header.Get("traceparent") == "" {
+		setTraceHeaders(req)
+	}
 	return http.DefaultClient.Do(req)
+}
+
+func setTraceHeaders(req *http.Request) {
+	if traceParent := strings.TrimSpace(os.Getenv("WF_TRACEPARENT")); traceParent != "" {
+		req.Header.Set("traceparent", traceParent)
+	}
+	if traceState := strings.TrimSpace(os.Getenv("WF_TRACESTATE")); traceState != "" {
+		req.Header.Set("tracestate", traceState)
+	}
 }
 
 // RunMain is the wrapper entry: it builds ctx from WF_* env + input.json, calls the
@@ -360,8 +379,9 @@ func newContext() (*Context, error) {
 			Kind:         os.Getenv("WF_TRIGGER_KIND"),
 			ScheduledFor: os.Getenv("WF_SCHEDULED_FOR"),
 		},
-		Job:   Job{ID: os.Getenv("WF_JOB_ID"), Workspace: os.Getenv("WF_WORKSPACE"), Tag: os.Getenv("WF_TAG")},
-		Actor: Actor{Email: os.Getenv("WF_EMAIL"), Username: os.Getenv("WF_USERNAME"), PermissionedAs: os.Getenv("WF_PERMISSIONED_AS")},
+		Job:       Job{ID: os.Getenv("WF_JOB_ID"), Workspace: os.Getenv("WF_WORKSPACE"), Tag: os.Getenv("WF_TAG")},
+		Actor:     Actor{Email: os.Getenv("WF_EMAIL"), Username: os.Getenv("WF_USERNAME"), PermissionedAs: os.Getenv("WF_PERMISSIONED_AS")},
+		Telemetry: Telemetry{TraceParent: os.Getenv("WF_TRACEPARENT"), TraceState: os.Getenv("WF_TRACESTATE")},
 	}
 	// webhook raw body is the same value as ctx.Input (a JSON string passthrough).
 	if c.Trigger.Kind == "webhook" {

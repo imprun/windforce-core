@@ -21,6 +21,7 @@ import (
 	"github.com/imprun/windforce-core/internal/contract"
 	"github.com/imprun/windforce-core/internal/executionbundle"
 	"github.com/imprun/windforce-core/internal/state"
+	"github.com/imprun/windforce-core/internal/telemetry"
 )
 
 type Client struct {
@@ -57,7 +58,7 @@ func New(baseURL, token string) *Client {
 	return &Client{
 		baseURL:      strings.TrimRight(baseURL, "/"),
 		token:        token,
-		http:         &http.Client{Timeout: 60 * time.Second},
+		http:         &http.Client{Timeout: 60 * time.Second, Transport: telemetry.HTTPTransport(nil)},
 		jobTokens:    map[string]string{},
 		secretValues: map[string][]string{},
 	}
@@ -166,10 +167,11 @@ func fromLease(l state.Lease) leaseWire {
 
 func (c *Client) ClaimJobForWorker(ctx context.Context, workerID string, tags []string, labels []string, leaseTTL time.Duration) (state.Job, state.Lease, error) {
 	var out struct {
-		Job          state.Job `json:"job"`
-		Lease        leaseWire `json:"lease"`
-		JobToken     string    `json:"job_token"`
-		SecretValues []string  `json:"secret_values"`
+		Job          state.Job                `json:"job"`
+		Lease        leaseWire                `json:"lease"`
+		JobToken     string                   `json:"job_token"`
+		SecretValues []string                 `json:"secret_values"`
+		Telemetry    telemetry.TraceContextV1 `json:"telemetry"`
 	}
 	status, err := c.do(ctx, http.MethodPost, "/worker/v1/claims", map[string]any{
 		"worker_id":    workerID,
@@ -187,6 +189,9 @@ func (c *Client) ClaimJobForWorker(ctx context.Context, workerID string, tags []
 	c.jobTokens[out.Job.ID] = out.JobToken
 	c.secretValues[out.Job.ID] = append([]string(nil), out.SecretValues...)
 	c.mu.Unlock()
+	if out.Telemetry.IsValid() {
+		out.Job.TraceContext = out.Telemetry
+	}
 	return out.Job, toLease(out.Lease), nil
 }
 

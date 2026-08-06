@@ -154,6 +154,8 @@ func TestNewContextMapsEnvAndInput(t *testing.T) {
 		"WF_TAG":          "default",
 		"WF_EMAIL":        "u@x.io",
 		"WF_TRIGGER_KIND": "webhook",
+		"WF_TRACEPARENT":  "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+		"WF_TRACESTATE":   "vendor=value",
 	} {
 		t.Setenv(key, value)
 	}
@@ -170,6 +172,10 @@ func TestNewContextMapsEnvAndInput(t *testing.T) {
 	}
 	if input, ok := ctx.Input.(map[string]any); !ok || input["k"] != float64(1) {
 		t.Fatalf("ctx.Input = %#v, want map{k:1}", ctx.Input)
+	}
+	if ctx.Telemetry.TraceParent != "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01" ||
+		ctx.Telemetry.TraceState != "vendor=value" {
+		t.Fatalf("ctx.Telemetry = %#v", ctx.Telemetry)
 	}
 }
 

@@ -10,11 +10,17 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/imprun/windforce-core/internal/bundle"
 	"github.com/imprun/windforce-core/internal/contract"
 	"github.com/imprun/windforce-core/internal/executionbundle"
 	"github.com/imprun/windforce-core/internal/executor"
 	"github.com/imprun/windforce-core/internal/runner"
+	"github.com/imprun/windforce-core/internal/telemetry"
 	"github.com/imprun/windforce-core/internal/token"
 )
 
@@ -50,6 +56,7 @@ type RunRequest struct {
 	PermissionedAs   string
 	WorkerGroup      string
 	EgressProxyAddr  string
+	TraceContext     telemetry.TraceContextV1
 	LogSink          func([]byte)
 	LogFlushInterval time.Duration
 	LogCapBytes      int
@@ -100,7 +107,29 @@ func (r *Runner) Prepare(ctx context.Context, deployment contract.Deployment) (s
 	)
 }
 
-func (r *Runner) Run(ctx context.Context, req RunRequest) (contract.JobResult, error) {
+func (r *Runner) Run(ctx context.Context, req RunRequest) (result contract.JobResult, returnErr error) {
+	ctx, span := otel.Tracer("github.com/imprun/windforce-core").Start(ctx, "windforce.launcher.run",
+		trace.WithAttributes(
+			attribute.String("windforce.component", "launcher"),
+			attribute.String("windforce.job.id", req.JobID),
+			attribute.Int("windforce.job.attempt", req.Attempt),
+			attribute.String("windforce.workspace", req.WorkspaceID),
+			attribute.String("windforce.app", req.Deployment.App),
+			attribute.String("windforce.action", req.Action),
+			attribute.String("windforce.release.commit", req.Deployment.Commit),
+			attribute.String("windforce.bundle.digest", req.Deployment.BundleDigest),
+		),
+	)
+	req.TraceContext = telemetry.FromContext(ctx, "launcher", telemetry.ReasonContinued)
+	defer func() {
+		span.SetAttributes(attribute.Int("process.exit.code", result.ExitCode))
+		if returnErr != nil {
+			span.SetStatus(codes.Error, "launcher failed")
+		} else if result.ExitCode != 0 {
+			span.SetStatus(codes.Error, "action process failed")
+		}
+		span.End()
+	}()
 	if req.Deployment.App == "" {
 		return contract.JobResult{}, errors.New("deployment app is required")
 	}
@@ -367,6 +396,12 @@ func (r *Runner) jobEnv(req RunRequest, action contract.Action) []string {
 	add("WF_PERMISSIONED_AS", permissionedAs)
 	add("WF_STATE_PATH", req.Deployment.App+"/"+req.Action)
 	add("WF_TRIGGER_KIND", triggerKind)
+	if req.TraceContext.IsValid() {
+		add("WF_TRACEPARENT", req.TraceContext.TraceParent)
+		if req.TraceContext.TraceState != "" {
+			add("WF_TRACESTATE", req.TraceContext.TraceState)
+		}
+	}
 	if scheduledFor := strings.TrimSpace(req.ScheduledFor); scheduledFor != "" {
 		add("WF_SCHEDULED_FOR", scheduledFor)
 	}

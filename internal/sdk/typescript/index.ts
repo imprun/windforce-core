@@ -48,6 +48,8 @@ export interface WindforceContext {
   action: string
   job: { id: string; path?: string; workspace: string; tag: string }
   actor: { email: string; username: string; permissionedAs: string }
+  /** Read-only W3C carrier for Application SDK instrumentation and outbound propagation. */
+  telemetry: { traceparent?: string; tracestate?: string }
   logger: {
     info(...args: unknown[]): void
     warn(...args: unknown[]): void
