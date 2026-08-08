@@ -10,14 +10,33 @@ import (
 	"github.com/imprun/windforce-core/internal/contract"
 )
 
+// FileName is the manifest an app declares at its source root by default.
+//
+// A deployment may serve an app ecosystem that does not present itself as
+// Windforce. Such an operator names the file after that ecosystem instead, once
+// per instance, and every source is then read with that name. Only the name
+// changes; the contents, validation, and every downstream stage are identical.
 const FileName = "windforce.json"
 
-func Load(dir string) (contract.App, error) {
-	path := filepath.Join(dir, FileName)
+// ResolveFileName returns the manifest name to read, falling back to FileName
+// when the operator did not choose one.
+func ResolveFileName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return FileName
+	}
+	return name
+}
+
+// Load reads the manifest named fileName from dir. An empty fileName reads the
+// default.
+func Load(dir string, fileName string) (contract.App, error) {
+	fileName = ResolveFileName(fileName)
+	path := filepath.Join(dir, fileName)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return contract.App{}, fmt.Errorf("no %s manifest at source root (subpath)", FileName)
+			return contract.App{}, fmt.Errorf("no %s manifest at source root (subpath)", fileName)
 		}
 		return contract.App{}, err
 	}

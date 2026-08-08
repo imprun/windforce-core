@@ -44,6 +44,9 @@ type Syncer struct {
 	Store     bundle.Store
 	CloneRoot string
 	Git       GitClient
+	// ManifestFile names the manifest read at each source root. Empty reads
+	// the default, so deployments that keep the default need not set it.
+	ManifestFile string
 }
 
 type inspectedSource struct {
@@ -120,7 +123,7 @@ func (s *Syncer) inspect(ctx context.Context, src Source) (inspectedSource, erro
 		}
 	}()
 
-	app, err := manifest.Load(sourceDir)
+	app, err := manifest.Load(sourceDir, s.ManifestFile)
 	if err != nil {
 		return inspectedSource{}, err
 	}

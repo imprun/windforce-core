@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	manifestpkg "github.com/imprun/windforce-core/internal/manifest"
 )
 
 const (
@@ -23,7 +25,10 @@ type Repository struct {
 	Branch     string
 }
 
-func EnsureRepository(ctx context.Context, root, workspaceID, appKey string) (*Repository, error) {
+// EnsureRepository materializes the managed sample source. manifestFile names
+// the manifest written at its root; empty writes the default so callers that
+// keep the default need not pass one.
+func EnsureRepository(ctx context.Context, root, workspaceID, appKey, manifestFile string) (*Repository, error) {
 	if appKey = strings.TrimSpace(appKey); appKey == "" {
 		appKey = DefaultAppKey
 	}
@@ -59,7 +64,7 @@ func EnsureRepository(ctx context.Context, root, workspaceID, appKey string) (*R
 	if err := initWorktree(ctx, work); err != nil {
 		return nil, err
 	}
-	if err := writeSampleFiles(work, appKey); err != nil {
+	if err := writeSampleFiles(work, appKey, manifestFile); err != nil {
 		return nil, err
 	}
 	if _, err := runGit(ctx, work, "config", "user.name", "Windforce"); err != nil {
@@ -91,7 +96,8 @@ func initWorktree(ctx context.Context, work string) error {
 	return err
 }
 
-func writeSampleFiles(root, appKey string) error {
+func writeSampleFiles(root, appKey, manifestFile string) error {
+	manifestFile = manifestpkg.ResolveFileName(manifestFile)
 	manifest := map[string]any{
 		"app":        appKey,
 		"entrypoint": "main.py",
@@ -104,7 +110,7 @@ func writeSampleFiles(root, appKey string) error {
 			},
 		},
 	}
-	if err := writeJSON(filepath.Join(root, "windforce.json"), manifest); err != nil {
+	if err := writeJSON(filepath.Join(root, manifestFile), manifest); err != nil {
 		return err
 	}
 	if err := os.WriteFile(filepath.Join(root, "main.py"), []byte(sampleActionPy), 0o644); err != nil {

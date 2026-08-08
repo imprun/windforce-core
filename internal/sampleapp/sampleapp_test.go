@@ -12,7 +12,7 @@ func TestEnsureRepositoryPointsHeadAtDefaultBranch(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not available")
 	}
-	repo, err := EnsureRepository(context.Background(), t.TempDir(), "default", "")
+	repo, err := EnsureRepository(context.Background(), t.TempDir(), "default", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,5 +32,27 @@ func TestEnsureRepositoryPointsHeadAtDefaultBranch(t *testing.T) {
 	}
 	if out, err := exec.Command("git", "-C", work, "show", "HEAD:windforce.json").CombinedOutput(); err != nil {
 		t.Fatalf("cloned repo missing windforce.json: %v\n%s", err, out)
+	}
+}
+
+func TestEnsureRepositoryWritesOperatorSelectedManifestName(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	repo, err := EnsureRepository(context.Background(), t.TempDir(), "default", "", "scraping.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	remote := filepath.FromSlash(repo.RepoURL)
+	out, err := exec.Command("git", "-C", remote, "ls-tree", "--name-only", "HEAD").CombinedOutput()
+	if err != nil {
+		t.Fatalf("ls-tree: %v\n%s", err, out)
+	}
+	listing := string(out)
+	if !strings.Contains(listing, "scraping.json") {
+		t.Fatalf("sample tree = %q, want scraping.json", listing)
+	}
+	if strings.Contains(listing, "windforce.json") {
+		t.Fatalf("sample tree = %q, want no default manifest when a name is selected", listing)
 	}
 }

@@ -242,7 +242,7 @@ func (h *Handler) handleCanonicalSampleGitSource(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
-	repo, err := sampleapp.EnsureRepository(r.Context(), h.sampleRoot, workspaceID, request.AppKey)
+	repo, err := sampleapp.EnsureRepository(r.Context(), h.sampleRoot, workspaceID, request.AppKey, h.manifestFileName())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -665,4 +665,14 @@ func mustGitCredentialJSON(request gitCredentialRequest) (string, error) {
 		return "", err
 	}
 	return string(data), nil
+}
+
+// manifestFileName reports the manifest name this instance reads at app source
+// roots. The syncer owns the operator's choice; sample sources must write the
+// same name or the instance cannot read what it just created.
+func (h *Handler) manifestFileName() string {
+	if h.syncer == nil {
+		return ""
+	}
+	return h.syncer.ManifestFile
 }

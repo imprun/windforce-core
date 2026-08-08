@@ -70,7 +70,7 @@ func TestParseRejectsCommandAdapterManifest(t *testing.T) {
 }
 
 func TestLoadMissingManifestUsesCanonicalMessage(t *testing.T) {
-	_, err := Load(t.TempDir())
+	_, err := Load(t.TempDir(), "")
 	if err == nil || err.Error() != "no windforce.json manifest at source root (subpath)" {
 		t.Fatalf("Load error = %v", err)
 	}
@@ -81,9 +81,43 @@ func TestLoadWrapsParseErrorWithManifestName(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, FileName), []byte(`{not json`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, err := Load(root)
+	_, err := Load(root, "")
 	if err == nil || !strings.Contains(err.Error(), "parse windforce.json:") {
 		t.Fatalf("Load error = %v, want parse windforce.json prefix", err)
+	}
+}
+
+func TestLoadReadsOperatorSelectedManifestName(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "scraping.json"), []byte(`{
+		"app": "echo",
+		"entrypoint": "main.ts",
+		"actions": {"run": {}}
+	}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	app, err := Load(root, "scraping.json")
+	if err != nil {
+		t.Fatalf("Load error = %v", err)
+	}
+	if app.App != "echo" {
+		t.Fatalf("app = %q, want echo", app.App)
+	}
+}
+
+func TestLoadMissingSelectedManifestNamesThatFile(t *testing.T) {
+	_, err := Load(t.TempDir(), "scraping.json")
+	if err == nil || err.Error() != "no scraping.json manifest at source root (subpath)" {
+		t.Fatalf("Load error = %v, want the selected name in the message", err)
+	}
+}
+
+func TestResolveFileNameFallsBackToDefault(t *testing.T) {
+	if got := ResolveFileName("  "); got != FileName {
+		t.Fatalf("ResolveFileName(blank) = %q, want %q", got, FileName)
+	}
+	if got := ResolveFileName(" scraping.json "); got != "scraping.json" {
+		t.Fatalf("ResolveFileName trimmed = %q", got)
 	}
 }
 

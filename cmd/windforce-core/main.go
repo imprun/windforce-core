@@ -24,6 +24,7 @@ import (
 	"github.com/imprun/windforce-core/internal/execution"
 	"github.com/imprun/windforce-core/internal/executionbundle"
 	"github.com/imprun/windforce-core/internal/gitsource"
+	"github.com/imprun/windforce-core/internal/manifest"
 	"github.com/imprun/windforce-core/internal/provisioning"
 	"github.com/imprun/windforce-core/internal/remoteworker"
 	"github.com/imprun/windforce-core/internal/runner"
@@ -104,6 +105,7 @@ func runServer(args []string, mode string) int {
 	uiHostLabel := flags.String("ui-host-label", strings.TrimSpace(os.Getenv("WINDFORCE_UI_HOST_LABEL")), "accessible label for the optional host console action")
 	uiHostAccountEndpoint := flags.String("ui-host-account-endpoint", strings.TrimSpace(os.Getenv("WINDFORCE_UI_HOST_ACCOUNT_ENDPOINT")), "optional same-origin endpoint that presents the authenticated host account")
 	httpRouteProvider := flags.String("http-route-provider", strings.TrimSpace(os.Getenv("WINDFORCE_HTTP_ROUTE_PROVIDER")), "external HTTP Route Binding provider name advertised to the Web UI")
+	manifestFile := flags.String("manifest-file", envString("WINDFORCE_CORE_MANIFEST_FILE"), "manifest file name read at each app source root; empty uses "+manifest.FileName)
 	storeDir := flags.String("store", defaultStoreDir(), "source snapshot and execution bundle store directory")
 	catalogPath := flags.String("catalog", defaultCatalogPath(), "catalog JSON import path")
 	gitSourcesPath := flags.String("git-sources", defaultGitSourcesPath(), "registered git sources JSON path")
@@ -278,7 +280,7 @@ func runServer(args []string, mode string) int {
 	handler := server.New(server.Config{
 		Store:                 stateStore,
 		Catalog:               releaseCatalog,
-		Syncer:                &syncer.Syncer{Store: bundleStore},
+		Syncer:                &syncer.Syncer{Store: bundleStore, ManifestFile: *manifestFile},
 		ExecutionBundles:      runtimeRunner,
 		GitSources:            gitSources,
 		PublicAPIRPS:          *publicAPIRPS,
