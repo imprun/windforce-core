@@ -40,27 +40,34 @@ func Load(dir string, fileName string) (contract.App, error) {
 		}
 		return contract.App{}, err
 	}
-	return Parse(data)
+	return parseNamed(data, fileName)
 }
 
+// Parse reads manifest bytes that carry no file name of their own, so its
+// diagnostics name the default. Load names the file the operator chose.
 func Parse(data []byte) (contract.App, error) {
+	return parseNamed(data, FileName)
+}
+
+func parseNamed(data []byte, fileName string) (contract.App, error) {
+	fileName = ResolveFileName(fileName)
 	var parsed struct {
 		contract.App
 		Flows map[string]json.RawMessage `json:"flows"`
 	}
 	if err := json.Unmarshal(data, &parsed); err != nil {
-		return contract.App{}, fmt.Errorf("parse %s: %w", FileName, err)
+		return contract.App{}, fmt.Errorf("parse %s: %w", fileName, err)
 	}
 	app := parsed.App
 	if !contract.ValidAppKey(app.App) {
-		return contract.App{}, fmt.Errorf("invalid app key %q in %s", app.App, FileName)
+		return contract.App{}, fmt.Errorf("invalid app key %q in %s", app.App, fileName)
 	}
 	if len(parsed.Flows) > 0 {
-		return contract.App{}, fmt.Errorf("app %s declares flows in %s, but windforce-core does not support flows", app.App, FileName)
+		return contract.App{}, fmt.Errorf("app %s declares flows in %s, but windforce-core does not support flows", app.App, fileName)
 	}
 	app.Runtime = ""
 	if len(app.Actions) == 0 {
-		return contract.App{}, fmt.Errorf("%s declares no actions", FileName)
+		return contract.App{}, fmt.Errorf("%s declares no actions", fileName)
 	}
 	if app.Entrypoint != "" && (filepath.IsAbs(app.Entrypoint) || strings.HasPrefix(app.Entrypoint, "/") || strings.Contains(app.Entrypoint, "..")) {
 		return contract.App{}, fmt.Errorf("app %s entrypoint %q must be a relative path inside the app", app.App, app.Entrypoint)
@@ -74,7 +81,7 @@ func Parse(data []byte) (contract.App, error) {
 		app.TimeoutS = contract.DefaultTimeoutS
 	}
 	if app.MaxConcurrent != nil && *app.MaxConcurrent <= 0 {
-		return contract.App{}, fmt.Errorf("app %s maxConcurrent must be positive in %s", app.App, FileName)
+		return contract.App{}, fmt.Errorf("app %s maxConcurrent must be positive in %s", app.App, fileName)
 	}
 	caps, err := contract.NormalizeCapabilities(app.Capabilities)
 	if err != nil {
@@ -89,7 +96,7 @@ func Parse(data []byte) (contract.App, error) {
 
 	for name, action := range app.Actions {
 		if !contract.ValidActionKey(name) {
-			return contract.App{}, fmt.Errorf("invalid action key %q in %s", name, FileName)
+			return contract.App{}, fmt.Errorf("invalid action key %q in %s", name, fileName)
 		}
 		action.Action = name
 		clearRuntimeOwnedActionManifestFields(&action)
@@ -131,7 +138,7 @@ func Parse(data []byte) (contract.App, error) {
 		if err != nil {
 			return contract.App{}, fmt.Errorf("action %s.%s runtimeAccess: %w", app.App, name, err)
 		}
-		if err := validateExecutableAction(app.App, name, action); err != nil {
+		if err := validateExecutableAction(app.App, name, action, fileName); err != nil {
 			return contract.App{}, err
 		}
 		app.Actions[name] = action
@@ -166,15 +173,15 @@ func applyAppDefaults(app contract.App, action *contract.Action) {
 	}
 }
 
-func validateExecutableAction(app string, actionName string, action contract.Action) error {
+func validateExecutableAction(app string, actionName string, action contract.Action, fileName string) error {
 	if action.Adapter != nil {
-		return fmt.Errorf("action %s.%s adapter is not supported in %s", app, actionName, FileName)
+		return fmt.Errorf("action %s.%s adapter is not supported in %s", app, actionName, fileName)
 	}
 	if len(action.Command) > 0 {
-		return fmt.Errorf("action %s.%s command is not supported in %s", app, actionName, FileName)
+		return fmt.Errorf("action %s.%s command is not supported in %s", app, actionName, fileName)
 	}
 	if action.Entrypoint == "" {
-		return fmt.Errorf("app %s has no entrypoint in %s", app, FileName)
+		return fmt.Errorf("app %s has no entrypoint in %s", app, fileName)
 	}
 	if err := validateActionPath(app, actionName, "entrypoint", action.Entrypoint); err != nil {
 		return err

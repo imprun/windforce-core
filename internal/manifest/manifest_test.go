@@ -87,6 +87,24 @@ func TestLoadWrapsParseErrorWithManifestName(t *testing.T) {
 	}
 }
 
+func TestLoadValidationErrorsNameOperatorSelectedManifest(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "scraping.json"), []byte(`{
+		"app": "echo",
+		"entrypoint": "main.ts",
+		"actions": {"Not A Key": {}}
+	}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Load(root, "scraping.json")
+	if err == nil || !strings.Contains(err.Error(), "in scraping.json") {
+		t.Fatalf("Load error = %v, want the operator-selected manifest name", err)
+	}
+	if strings.Contains(err.Error(), FileName) {
+		t.Fatalf("Load error = %v, leaks the default manifest name", err)
+	}
+}
+
 func TestLoadReadsOperatorSelectedManifestName(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "scraping.json"), []byte(`{
