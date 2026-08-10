@@ -33,12 +33,14 @@ const SYSTEM_INFO_LABELS: Record<string, TranslationKey> = {
   triggers_count: "info.label.triggersCount",
   wait_ms: "info.label.waitMs",
   web_ui: "info.label.webUI",
+  ui_mode: "info.label.uiMode",
+  worker_group_operator: "info.label.workerGroupOperator",
   worker_api: "info.label.workerAPI",
   worker_token_configured: "info.label.workerToken",
 };
 
 export function SettingsInfoPage() {
-  const { api } = useApp();
+  const { api, runtimeConfig } = useApp();
   const [info, setInfo] = useState<SystemInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -91,6 +93,45 @@ export function SettingsInfoPage() {
       }
     >
       <SettingsNav />
+      <Panel
+        title={translate("info.workerGroupOperations")}
+        subtitle={translate("info.workerGroupOperationsHint")}
+      >
+        <div className="flex flex-col gap-4">
+          <DefinitionList
+            items={[
+              [
+                translate("info.workerGroupOperator"),
+                runtimeConfig?.workerGroupOperator === "external"
+                  ? translate("info.workerGroupOperator.external")
+                  : translate("info.workerGroupOperator.selfManaged"),
+              ],
+              [translate("info.uiMode"), translate("info.uiMode.embedded")],
+            ]}
+          />
+          <p className="text-sm leading-6 text-muted-foreground">
+            {runtimeConfig?.workerGroupOperator === "external"
+              ? translate("info.workerGroupOperator.externalBody")
+              : translate("info.workerGroupOperator.selfManagedBody")}
+          </p>
+          {runtimeConfig?.workerGroupOperator === "external" ? (
+            runtimeConfig.hostConsole ? (
+              <div>
+                <a className="button primary no-underline" href={runtimeConfig.hostConsole.url}>
+                  {runtimeConfig.hostConsole.label}
+                </a>
+              </div>
+            ) : (
+              <span className="inlineNotice">
+                {translate("info.workerGroupOperator.hostUnavailable")}
+              </span>
+            )
+          ) : null}
+          <p className="text-xs leading-5 text-muted-foreground">
+            {translate("info.workerGroupOperator.metadataOnly")}
+          </p>
+        </div>
+      </Panel>
       {error ? <ErrorNotice message={error} onRetry={() => void loadInfo()} /> : null}
       {loading && !info ? <Loading label={translate("info.loading")} /> : null}
       {info ? (

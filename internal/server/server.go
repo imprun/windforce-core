@@ -65,6 +65,8 @@ type Config struct {
 	UIHostURL             string
 	UIHostLabel           string
 	UIHostAccountEndpoint string
+	UIMode                string
+	WorkerGroupOperator   string
 	HTTPRouteProvider     string
 	Admission             *executionpkg.Service
 	TriggerManager        *triggerpkg.Manager
@@ -94,6 +96,8 @@ type Handler struct {
 	uiHostURL             string
 	uiHostLabel           string
 	uiHostAccountEndpoint string
+	uiMode                string
+	workerGroupOperator   string
 	httpRouteProvider     string
 	triggerManager        *triggerpkg.Manager
 }
@@ -160,6 +164,14 @@ func New(config Config) http.Handler {
 	}
 	uiHostURL, uiHostLabel := normalizeUIHost(config.UIHostURL, config.UIHostLabel)
 	uiHostAccountEndpoint := normalizeUIHostAccountEndpoint(config.UIHostAccountEndpoint)
+	uiMode, err := ParseUIMode(config.UIMode)
+	if err != nil {
+		uiMode = UIModeEmbedded
+	}
+	workerGroupOperator, err := ParseWorkerGroupOperator(config.WorkerGroupOperator)
+	if err != nil {
+		workerGroupOperator = WorkerGroupOperatorSelfManaged
+	}
 	var bundleStore executionpkg.BundleStore
 	if config.Syncer != nil {
 		bundleStore = config.Syncer.Store
@@ -200,6 +212,8 @@ func New(config Config) http.Handler {
 		uiHostURL:             uiHostURL,
 		uiHostLabel:           uiHostLabel,
 		uiHostAccountEndpoint: uiHostAccountEndpoint,
+		uiMode:                uiMode,
+		workerGroupOperator:   workerGroupOperator,
 		httpRouteProvider:     strings.ToLower(strings.TrimSpace(config.HTTPRouteProvider)),
 		triggerManager:        config.TriggerManager,
 	}
