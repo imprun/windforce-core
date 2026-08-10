@@ -6,11 +6,11 @@ import { RegisterAppDialog } from "../features/RegisterAppDialog";
 import { SourceReleaseActions } from "../features/SourceReleaseActions";
 import type { GitSource } from "../lib/api";
 import { useApp, useAsync } from "../lib/app-context";
+import { buildAppRows } from "../lib/app-rows";
 import { formatRelative, shortSHA } from "../lib/format";
 import { displayRepoURL } from "../lib/repo";
 import { Link, useRouter } from "../lib/router";
 import { translate } from "../shared/i18n";
-import { buildAppRows } from "../lib/app-rows";
 
 export function AppsPage() {
   const { api } = useApp();

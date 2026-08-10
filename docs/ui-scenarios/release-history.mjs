@@ -12,6 +12,8 @@ export default {
   ],
   async run({ page, capture }) {
     await page.goto();
+    await page.evaluate(() => localStorage.setItem("wf.locale", "en"));
+    await page.goto();
     await page.waitForSelector("#appList .tableRow");
     await page.click("#appList .cellTitle");
     await page.clickText("Releases");

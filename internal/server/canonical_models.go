@@ -217,28 +217,31 @@ func canonicalDeploymentActions(deployment contract.Deployment) []string {
 }
 
 type canonicalAppModel struct {
-	ID                   string                    `json:"id"`
-	WorkspaceID          string                    `json:"workspace_id"`
-	AppKey               string                    `json:"app_key"`
-	GitSourceID          int64                     `json:"git_source_id"`
-	CommitSha            string                    `json:"commit_sha"`
-	Entrypoint           string                    `json:"entrypoint"`
-	Tag                  string                    `json:"tag"`
-	TagOverride          *string                   `json:"tag_override,omitempty"`
-	TimeoutS             int32                     `json:"timeout_s"`
-	ScriptLang           string                    `json:"script_lang"`
-	BundleStatus         string                    `json:"bundle_status"`
-	BundleDigest         string                    `json:"bundle_digest,omitempty"`
-	BundleURI            string                    `json:"bundle_uri,omitempty"`
-	ExecutionProfile     contract.ExecutionProfile `json:"execution_profile,omitempty,omitzero"`
-	RequiredCapabilities []string                  `json:"required_capabilities"`
-	MaxConcurrent        *int32                    `json:"max_concurrent,omitempty"`
-	UpdatedAt            time.Time                 `json:"updated_at"`
+	ID                     string                    `json:"id"`
+	WorkspaceID            string                    `json:"workspace_id"`
+	AppKey                 string                    `json:"app_key"`
+	GitSourceID            int64                     `json:"git_source_id"`
+	CommitSha              string                    `json:"commit_sha"`
+	Entrypoint             string                    `json:"entrypoint"`
+	Tag                    string                    `json:"tag"`
+	TagOverride            *string                   `json:"tag_override,omitempty"`
+	TimeoutS               int32                     `json:"timeout_s"`
+	ScriptLang             string                    `json:"script_lang"`
+	BundleStatus           string                    `json:"bundle_status"`
+	BundleDigest           string                    `json:"bundle_digest,omitempty"`
+	BundleURI              string                    `json:"bundle_uri,omitempty"`
+	ExecutionProfile       contract.ExecutionProfile `json:"execution_profile,omitempty,omitzero"`
+	RequiredCapabilities   []string                  `json:"required_capabilities"`
+	RequiredLabels         []string                  `json:"required_labels"`
+	RequiredLabelsOverride *[]string                 `json:"required_labels_override,omitempty"`
+	MaxConcurrent          *int32                    `json:"max_concurrent,omitempty"`
+	UpdatedAt              time.Time                 `json:"updated_at"`
 }
 
 type canonicalAppView struct {
 	canonicalAppModel
-	EffectiveRouteTag string `json:"effective_route_tag"`
+	EffectiveRouteTag       string   `json:"effective_route_tag"`
+	EffectiveRequiredLabels []string `json:"effective_required_labels"`
 }
 
 type canonicalAppSummaryView struct {
@@ -262,19 +265,21 @@ type canonicalAppHistoryItem struct {
 }
 
 type canonicalActionModel struct {
-	ID                   string                 `json:"id"`
-	WorkspaceID          string                 `json:"workspace_id"`
-	AppKey               string                 `json:"app_key"`
-	ActionKey            string                 `json:"action_key"`
-	DisplayName          string                 `json:"display_name,omitempty"`
-	InputSchema          []byte                 `json:"input_schema"`
-	OutputSchema         []byte                 `json:"output_schema"`
-	Tag                  *string                `json:"tag,omitempty"`
-	TagOverride          *string                `json:"tag_override,omitempty"`
-	TimeoutS             *int32                 `json:"timeout_s,omitempty"`
-	RequiredCapabilities []string               `json:"required_capabilities,omitempty"`
-	RuntimeAccess        contract.RuntimeAccess `json:"runtime_access"`
-	UpdatedAt            time.Time              `json:"updated_at"`
+	ID                     string                 `json:"id"`
+	WorkspaceID            string                 `json:"workspace_id"`
+	AppKey                 string                 `json:"app_key"`
+	ActionKey              string                 `json:"action_key"`
+	DisplayName            string                 `json:"display_name,omitempty"`
+	InputSchema            []byte                 `json:"input_schema"`
+	OutputSchema           []byte                 `json:"output_schema"`
+	Tag                    *string                `json:"tag,omitempty"`
+	TagOverride            *string                `json:"tag_override,omitempty"`
+	TimeoutS               *int32                 `json:"timeout_s,omitempty"`
+	RequiredCapabilities   []string               `json:"required_capabilities,omitempty"`
+	RequiredLabels         []string               `json:"required_labels"`
+	RequiredLabelsOverride *[]string              `json:"required_labels_override,omitempty"`
+	RuntimeAccess          contract.RuntimeAccess `json:"runtime_access"`
+	UpdatedAt              time.Time              `json:"updated_at"`
 }
 
 type canonicalActionSchemaView struct {
@@ -288,8 +293,49 @@ type canonicalActionSchemaView struct {
 
 type canonicalActionView struct {
 	canonicalActionModel
-	EffectiveCapabilities []string `json:"effective_capabilities"`
-	EffectiveRouteTag     string   `json:"effective_route_tag"`
+	EffectiveCapabilities   []string `json:"effective_capabilities"`
+	EffectiveRouteTag       string   `json:"effective_route_tag"`
+	EffectiveRequiredLabels []string `json:"effective_required_labels"`
+}
+
+type canonicalManifestRoutingPreview struct {
+	AppKey         string                                  `json:"app_key"`
+	RouteTag       string                                  `json:"worker_tag"`
+	RequiredLabels []string                                `json:"required_labels"`
+	Actions        []canonicalManifestActionRoutingPreview `json:"actions"`
+}
+
+type canonicalManifestActionRoutingPreview struct {
+	ActionKey      string   `json:"action_key"`
+	RouteTag       string   `json:"worker_tag"`
+	RequiredLabels []string `json:"required_labels"`
+}
+
+func newCanonicalManifestRoutingPreview(deployment contract.Deployment) canonicalManifestRoutingPreview {
+	appLabels := deployment.RequiredLabels
+	if appLabels == nil {
+		appLabels = deployment.RequiredCapabilities
+	}
+	preview := canonicalManifestRoutingPreview{
+		AppKey:         deployment.App,
+		RouteTag:       contract.EffectiveRouteTagForApp(deployment),
+		RequiredLabels: append([]string{}, appLabels...),
+		Actions:        make([]canonicalManifestActionRoutingPreview, 0, len(deployment.Actions)),
+	}
+	keys := make([]string, 0, len(deployment.Actions))
+	for key := range deployment.Actions {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		action := deployment.Actions[key]
+		preview.Actions = append(preview.Actions, canonicalManifestActionRoutingPreview{
+			ActionKey:      key,
+			RouteTag:       contract.EffectiveRouteTagForAction(deployment, action),
+			RequiredLabels: contract.EffectiveRequiredLabels(deployment, action),
+		})
+	}
+	return preview
 }
 
 type canonicalWorkerTagsView struct {
@@ -347,23 +393,25 @@ func newCanonicalAppHistoryItem(item catalogpkg.DeploymentHistory, active bool) 
 
 func newCanonicalAppModel(deployment contract.Deployment) canonicalAppModel {
 	return canonicalAppModel{
-		ID:                   canonicalAppID(deployment),
-		WorkspaceID:          contract.NormalizeWorkspace(deployment.SourceWorkspace()),
-		AppKey:               deployment.App,
-		GitSourceID:          parseCanonicalGitSourceID(deployment.SourceGitSourceID()),
-		CommitSha:            deployment.Commit,
-		Entrypoint:           canonicalDeploymentEntrypoint(deployment),
-		Tag:                  firstNonEmpty(strings.TrimSpace(deployment.Tag), defaultRouteTag()),
-		TagOverride:          cloneStringPtr(deployment.TagOverride),
-		TimeoutS:             canonicalDeploymentTimeoutSeconds(deployment),
-		ScriptLang:           canonicalDeploymentScriptLang(deployment),
-		BundleStatus:         canonicalBundleStatus(deployment),
-		BundleDigest:         strings.TrimSpace(deployment.BundleDigest),
-		BundleURI:            strings.TrimSpace(deployment.BundleURI),
-		ExecutionProfile:     deployment.ExecutionProfile,
-		RequiredCapabilities: cloneStringSlice(deployment.RequiredCapabilities),
-		MaxConcurrent:        cloneInt32Ptr(deployment.MaxConcurrent),
-		UpdatedAt:            canonicalDeploymentUpdatedAt(deployment),
+		ID:                     canonicalAppID(deployment),
+		WorkspaceID:            contract.NormalizeWorkspace(deployment.SourceWorkspace()),
+		AppKey:                 deployment.App,
+		GitSourceID:            parseCanonicalGitSourceID(deployment.SourceGitSourceID()),
+		CommitSha:              deployment.Commit,
+		Entrypoint:             canonicalDeploymentEntrypoint(deployment),
+		Tag:                    firstNonEmpty(strings.TrimSpace(deployment.Tag), defaultRouteTag()),
+		TagOverride:            cloneStringPtr(deployment.TagOverride),
+		TimeoutS:               canonicalDeploymentTimeoutSeconds(deployment),
+		ScriptLang:             canonicalDeploymentScriptLang(deployment),
+		BundleStatus:           canonicalBundleStatus(deployment),
+		BundleDigest:           strings.TrimSpace(deployment.BundleDigest),
+		BundleURI:              strings.TrimSpace(deployment.BundleURI),
+		ExecutionProfile:       deployment.ExecutionProfile,
+		RequiredCapabilities:   cloneStringSlice(deployment.RequiredCapabilities),
+		RequiredLabels:         canonicalAppManifestLabels(deployment),
+		RequiredLabelsOverride: cloneStringSlicePointer(deployment.RequiredLabelsOverride),
+		MaxConcurrent:          cloneInt32Ptr(deployment.MaxConcurrent),
+		UpdatedAt:              canonicalDeploymentUpdatedAt(deployment),
 	}
 }
 
@@ -376,8 +424,9 @@ func canonicalBundleStatus(deployment contract.Deployment) string {
 
 func newCanonicalAppView(deployment contract.Deployment) canonicalAppView {
 	return canonicalAppView{
-		canonicalAppModel: newCanonicalAppModel(deployment),
-		EffectiveRouteTag: contract.EffectiveRouteTagForApp(deployment),
+		canonicalAppModel:       newCanonicalAppModel(deployment),
+		EffectiveRouteTag:       contract.EffectiveRouteTagForApp(deployment),
+		EffectiveRequiredLabels: canonicalEffectiveAppLabels(deployment),
 	}
 }
 
@@ -404,17 +453,19 @@ func (h *Handler) newCanonicalActionModel(schemaReader *canonicalSchemaReader, d
 		return canonicalActionModel{}, err
 	}
 	return canonicalActionModel{
-		ID:                   canonicalAppID(deployment) + "/" + actionKey,
-		WorkspaceID:          contract.NormalizeWorkspace(deployment.SourceWorkspace()),
-		AppKey:               deployment.App,
-		ActionKey:            actionKey,
-		DisplayName:          canonicalActionDisplayName(schemaView.InputSchema, schemaView.OutputSchema),
-		InputSchema:          canonicalCatalogSchemaBytes(schemaView.InputSchema),
-		OutputSchema:         canonicalCatalogSchemaBytes(schemaView.OutputSchema),
-		Tag:                  cloneStringPtr(action.Tag),
-		TagOverride:          cloneStringPtr(action.TagOverride),
-		TimeoutS:             cloneInt32Ptr(action.TimeoutS),
-		RequiredCapabilities: cloneStringSlicePtr(action.Capabilities),
+		ID:                     canonicalAppID(deployment) + "/" + actionKey,
+		WorkspaceID:            contract.NormalizeWorkspace(deployment.SourceWorkspace()),
+		AppKey:                 deployment.App,
+		ActionKey:              actionKey,
+		DisplayName:            canonicalActionDisplayName(schemaView.InputSchema, schemaView.OutputSchema),
+		InputSchema:            canonicalCatalogSchemaBytes(schemaView.InputSchema),
+		OutputSchema:           canonicalCatalogSchemaBytes(schemaView.OutputSchema),
+		Tag:                    cloneStringPtr(action.Tag),
+		TagOverride:            cloneStringPtr(action.TagOverride),
+		TimeoutS:               cloneInt32Ptr(action.TimeoutS),
+		RequiredCapabilities:   cloneStringSlicePtr(action.Capabilities),
+		RequiredLabels:         canonicalActionManifestLabels(action),
+		RequiredLabelsOverride: cloneStringSlicePointer(action.RequiredLabelsOverride),
 		RuntimeAccess: contract.RuntimeAccess{
 			Variables: append([]string{}, action.RuntimeAccess.Variables...),
 			Resources: append([]string{}, action.RuntimeAccess.Resources...),
@@ -478,10 +529,32 @@ func (h *Handler) newCanonicalActionView(schemaReader *canonicalSchemaReader, de
 	// union, ADR 0009) — a divergent view here misleads worker operators.
 	effectiveCapabilities := contract.EffectiveRequiredLabels(deployment, action)
 	return canonicalActionView{
-		canonicalActionModel:  model,
-		EffectiveCapabilities: cloneStringSlice(effectiveCapabilities),
-		EffectiveRouteTag:     contract.EffectiveRouteTagForAction(deployment, action),
+		canonicalActionModel:    model,
+		EffectiveCapabilities:   cloneStringSliceOrEmpty(effectiveCapabilities),
+		EffectiveRouteTag:       contract.EffectiveRouteTagForAction(deployment, action),
+		EffectiveRequiredLabels: cloneStringSliceOrEmpty(effectiveCapabilities),
 	}, nil
+}
+
+func canonicalAppManifestLabels(deployment contract.Deployment) []string {
+	if deployment.RequiredLabels != nil {
+		return cloneStringSliceOrEmpty(deployment.RequiredLabels)
+	}
+	return cloneStringSliceOrEmpty(deployment.RequiredCapabilities)
+}
+
+func canonicalActionManifestLabels(action contract.Action) []string {
+	if action.RunsOn != nil {
+		return cloneStringSliceOrEmpty(*action.RunsOn)
+	}
+	return cloneStringSliceOrEmpty(cloneStringSlicePtr(action.Capabilities))
+}
+
+func canonicalEffectiveAppLabels(deployment contract.Deployment) []string {
+	if deployment.RequiredLabelsOverride != nil {
+		return cloneStringSliceOrEmpty(*deployment.RequiredLabelsOverride)
+	}
+	return canonicalAppManifestLabels(deployment)
 }
 
 type canonicalSchemaReader = executionpkg.SchemaReader
@@ -553,6 +626,90 @@ func decodeCanonicalTagOverride(w http.ResponseWriter, r *http.Request) (*string
 	return &value, true
 }
 
+type canonicalRoutingPolicyRequest struct {
+	RouteTagOverride       json.RawMessage `json:"tag_override"`
+	RequiredLabelsOverride json.RawMessage `json:"required_labels_override"`
+}
+
+func decodeCanonicalRoutingPolicyPatch(w http.ResponseWriter, r *http.Request) (catalogpkg.RoutingPolicyPatch, bool) {
+	var request canonicalRoutingPolicyRequest
+	if err := readOptionalJSON(r, &request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return catalogpkg.RoutingPolicyPatch{}, false
+	}
+	return parseCanonicalRoutingPolicyPatch(w, request)
+}
+
+func parseCanonicalRoutingPolicyPatch(w http.ResponseWriter, request canonicalRoutingPolicyRequest) (catalogpkg.RoutingPolicyPatch, bool) {
+	patch := catalogpkg.RoutingPolicyPatch{
+		RouteTagSet:       request.RouteTagOverride != nil,
+		RequiredLabelsSet: request.RequiredLabelsOverride != nil,
+	}
+	if !patch.RouteTagSet && !patch.RequiredLabelsSet {
+		writeError(w, http.StatusBadRequest, "tag_override or required_labels_override is required")
+		return catalogpkg.RoutingPolicyPatch{}, false
+	}
+	if patch.RouteTagSet && string(bytes.TrimSpace(request.RouteTagOverride)) != "null" {
+		var value string
+		if err := json.Unmarshal(request.RouteTagOverride, &value); err != nil || !validRouteTag(value) {
+			writeError(w, http.StatusBadRequest, "tag_override must be a valid tag (lowercase alphanumeric, _ or -, max 64) or null")
+			return catalogpkg.RoutingPolicyPatch{}, false
+		}
+		value = strings.TrimSpace(value)
+		patch.RouteTagOverride = &value
+	}
+	if patch.RequiredLabelsSet && string(bytes.TrimSpace(request.RequiredLabelsOverride)) != "null" {
+		var labels []string
+		if err := json.Unmarshal(request.RequiredLabelsOverride, &labels); err != nil {
+			writeError(w, http.StatusBadRequest, "required_labels_override must be an array of labels or null")
+			return catalogpkg.RoutingPolicyPatch{}, false
+		}
+		normalized, err := contract.NormalizeLabels(labels, false)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return catalogpkg.RoutingPolicyPatch{}, false
+		}
+		if len(labels) == 0 {
+			normalized = []string{}
+		}
+		patch.RequiredLabelsOverride = &normalized
+	}
+	return patch, true
+}
+
+func routingPolicyMutationDetail(scope string, actionKey string, previous catalogpkg.RoutingPolicy, updated catalogpkg.RoutingPolicy) string {
+	type values struct {
+		RouteTagOverride       *string   `json:"tag_override"`
+		RequiredLabelsOverride *[]string `json:"required_labels_override"`
+	}
+	selectValues := func(policy catalogpkg.RoutingPolicy) values {
+		if actionKey == "" {
+			return values{
+				RouteTagOverride:       policy.RouteTagOverride,
+				RequiredLabelsOverride: policy.RequiredLabelsOverride,
+			}
+		}
+		action := policy.Actions[actionKey]
+		return values{
+			RouteTagOverride:       action.RouteTagOverride,
+			RequiredLabelsOverride: action.RequiredLabelsOverride,
+		}
+	}
+	detail := map[string]any{
+		"scope":    scope,
+		"previous": selectValues(previous),
+		"new":      selectValues(updated),
+	}
+	if actionKey != "" {
+		detail["action_key"] = actionKey
+	}
+	encoded, err := json.Marshal(detail)
+	if err != nil {
+		return scope + " execution placement updated"
+	}
+	return string(encoded)
+}
+
 func validRouteTag(value string) bool {
 	if value == "" || len(value) > 64 {
 		return false
@@ -602,11 +759,26 @@ func cloneStringSlice(values []string) []string {
 	return append([]string(nil), values...)
 }
 
+func cloneStringSliceOrEmpty(values []string) []string {
+	if len(values) == 0 {
+		return []string{}
+	}
+	return append([]string(nil), values...)
+}
+
 func cloneStringSlicePtr(values *[]string) []string {
 	if values == nil {
 		return nil
 	}
 	return cloneStringSlice(*values)
+}
+
+func cloneStringSlicePointer(values *[]string) *[]string {
+	if values == nil {
+		return nil
+	}
+	cloned := append([]string{}, (*values)...)
+	return &cloned
 }
 
 func cloneTimePtr(value *time.Time) *time.Time {

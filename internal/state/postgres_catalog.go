@@ -138,7 +138,11 @@ FOR SHARE
 			return catalog.ErrReleaseAlreadyActive
 		}
 		result = catalog.NewReleaseRollbackResult(target, previous.ID, previous.Commit, request)
-		deploymentJSON, err := json.Marshal(target.Deployment)
+		// A release created before execution placement was separated may still
+		// carry embedded overrides. The active release stays immutable and the
+		// current workspace policy is overlaid only when it is read/admitted.
+		activeDeployment := catalog.ApplyRoutingPolicy(target.Deployment, catalog.RoutingPolicy{})
+		deploymentJSON, err := json.Marshal(activeDeployment)
 		if err != nil {
 			return err
 		}
@@ -293,11 +297,14 @@ func (s *PostgresStore) GetDeployment(ctx context.Context, app string) (contract
 
 func (s *PostgresStore) GetDeploymentForWorkspace(ctx context.Context, workspace string, app string) (contract.Deployment, error) {
 	var raw []byte
+	var policyRaw []byte
 	err := s.pool.QueryRow(ctx, `
-SELECT deployment
-FROM control_active_release
-WHERE workspace_id = $1 AND app_key = $2
-`, contract.NormalizeWorkspace(workspace), app).Scan(&raw)
+SELECT release.deployment, policy.policy
+FROM control_active_release release
+LEFT JOIN control_routing_policy policy
+  ON policy.workspace_id = release.workspace_id AND policy.app_key = release.app_key
+WHERE release.workspace_id = $1 AND release.app_key = $2
+`, contract.NormalizeWorkspace(workspace), app).Scan(&raw, &policyRaw)
 	if err == pgx.ErrNoRows {
 		return contract.Deployment{}, catalog.ErrDeploymentNotFound
 	}
@@ -308,7 +315,13 @@ WHERE workspace_id = $1 AND app_key = $2
 	if err := json.Unmarshal(raw, &deployment); err != nil {
 		return contract.Deployment{}, err
 	}
-	return deployment, nil
+	policy := catalog.NewRoutingPolicy(workspace, app)
+	if len(policyRaw) > 0 {
+		if err := json.Unmarshal(policyRaw, &policy); err != nil {
+			return contract.Deployment{}, err
+		}
+	}
+	return catalog.ApplyRoutingPolicy(deployment, policy), nil
 }
 
 func (s *PostgresStore) LoadCatalog(ctx context.Context) (catalog.Snapshot, error) {
@@ -336,6 +349,31 @@ func (s *PostgresStore) LoadCatalog(ctx context.Context) (catalog.Snapshot, erro
 		if historyID != nil {
 			snapshot.ActiveHistoryIDs[key] = *historyID
 		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return catalog.Snapshot{}, err
+	}
+	rows.Close()
+
+	rows, err = s.pool.Query(ctx, `SELECT workspace_id, app_key, policy FROM control_routing_policy`)
+	if err != nil {
+		return catalog.Snapshot{}, err
+	}
+	for rows.Next() {
+		var workspace string
+		var app string
+		var raw []byte
+		if err := rows.Scan(&workspace, &app, &raw); err != nil {
+			rows.Close()
+			return catalog.Snapshot{}, err
+		}
+		var policy catalog.RoutingPolicy
+		if err := json.Unmarshal(raw, &policy); err != nil {
+			rows.Close()
+			return catalog.Snapshot{}, err
+		}
+		snapshot.RoutingPolicies[catalog.RoutingPolicyKey(workspace, app)] = catalog.NormalizeRoutingPolicy(policy)
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
@@ -394,8 +432,7 @@ func (s *PostgresStore) LoadCatalog(ctx context.Context) (catalog.Snapshot, erro
 		return catalog.Snapshot{}, err
 	}
 	snapshot.SourceMarkers = markers
-	catalog.NormalizeSnapshot(&snapshot)
-	return snapshot, nil
+	return catalog.SnapshotWithAppliedRoutingPolicies(snapshot), nil
 }
 
 func (s *PostgresStore) AppendAudit(ctx context.Context, record catalog.AuditRecord) error {
@@ -438,41 +475,83 @@ ORDER BY created_at
 }
 
 func (s *PostgresStore) SetAppTagOverride(ctx context.Context, workspace string, app string, tagOverride *string) (contract.Deployment, error) {
+	return s.SetAppRoutingPolicy(ctx, workspace, app, catalog.RoutingPolicyPatch{RouteTagSet: true, RouteTagOverride: tagOverride})
+}
+
+func (s *PostgresStore) GetRoutingPolicy(ctx context.Context, workspace string, app string) (catalog.RoutingPolicy, error) {
+	policy, err := postgresRoutingPolicy(ctx, s.pool, workspace, app, false)
+	if err != nil {
+		return catalog.RoutingPolicy{}, err
+	}
+	return policy, nil
+}
+
+func (s *PostgresStore) SetInitialAppRoutingPolicy(ctx context.Context, workspace string, app string, patch catalog.RoutingPolicyPatch) (catalog.RoutingPolicy, error) {
+	var updated catalog.RoutingPolicy
+	err := s.withTx(ctx, func(tx pgx.Tx) error {
+		if err := lockPostgresRoutingPolicy(ctx, tx, workspace, app); err != nil {
+			return err
+		}
+		policy, err := postgresRoutingPolicy(ctx, tx, workspace, app, true)
+		if err != nil {
+			return err
+		}
+		updated = catalog.ApplyRoutingPolicyPatch(policy, "", patch, time.Now().UTC())
+		return upsertPostgresRoutingPolicy(ctx, tx, updated)
+	})
+	return updated, err
+}
+
+func (s *PostgresStore) SetAppRoutingPolicy(ctx context.Context, workspace string, app string, patch catalog.RoutingPolicyPatch) (contract.Deployment, error) {
 	var updated contract.Deployment
 	err := s.withTx(ctx, func(tx pgx.Tx) error {
+		if err := lockPostgresRoutingPolicy(ctx, tx, workspace, app); err != nil {
+			return err
+		}
 		deployment, err := postgresDeploymentForUpdate(ctx, tx, workspace, app)
 		if err != nil {
 			return err
 		}
-		deployment.TagOverride = cloneCatalogString(tagOverride)
-		deployment.UpdatedAt = catalogTimePtr(time.Now().UTC())
-		if err := updatePostgresDeployment(ctx, tx, workspace, app, deployment); err != nil {
+		policy, err := postgresRoutingPolicy(ctx, tx, workspace, app, true)
+		if err != nil {
 			return err
 		}
-		updated = deployment
+		policy = catalog.ApplyRoutingPolicyPatch(policy, "", patch, time.Now().UTC())
+		if err := upsertPostgresRoutingPolicy(ctx, tx, policy); err != nil {
+			return err
+		}
+		updated = catalog.ApplyRoutingPolicy(deployment, policy)
 		return nil
 	})
 	return updated, err
 }
 
 func (s *PostgresStore) SetActionTagOverride(ctx context.Context, workspace string, app string, actionKey string, tagOverride *string) (contract.Action, error) {
+	return s.SetActionRoutingPolicy(ctx, workspace, app, actionKey, catalog.RoutingPolicyPatch{RouteTagSet: true, RouteTagOverride: tagOverride})
+}
+
+func (s *PostgresStore) SetActionRoutingPolicy(ctx context.Context, workspace string, app string, actionKey string, patch catalog.RoutingPolicyPatch) (contract.Action, error) {
 	var updated contract.Action
 	err := s.withTx(ctx, func(tx pgx.Tx) error {
+		if err := lockPostgresRoutingPolicy(ctx, tx, workspace, app); err != nil {
+			return err
+		}
 		deployment, err := postgresDeploymentForUpdate(ctx, tx, workspace, app)
 		if err != nil {
 			return err
 		}
-		action, ok := deployment.Actions[actionKey]
-		if !ok {
+		if _, ok := deployment.Actions[actionKey]; !ok {
 			return catalog.ErrActionNotFound
 		}
-		action.TagOverride = cloneCatalogString(tagOverride)
-		action.UpdatedAt = catalogTimePtr(time.Now().UTC())
-		deployment.Actions[actionKey] = action
-		if err := updatePostgresDeployment(ctx, tx, workspace, app, deployment); err != nil {
+		policy, err := postgresRoutingPolicy(ctx, tx, workspace, app, true)
+		if err != nil {
 			return err
 		}
-		updated = action
+		policy = catalog.ApplyRoutingPolicyPatch(policy, actionKey, patch, time.Now().UTC())
+		if err := upsertPostgresRoutingPolicy(ctx, tx, policy); err != nil {
+			return err
+		}
+		updated = catalog.ApplyRoutingPolicy(deployment, policy).Actions[actionKey]
 		return nil
 	})
 	return updated, err
@@ -532,6 +611,11 @@ ON CONFLICT (workspace_id, app_key) DO NOTHING
 				return err
 			}
 		}
+		for _, policy := range imported.RoutingPolicies {
+			if err := upsertPostgresRoutingPolicy(ctx, tx, policy); err != nil {
+				return err
+			}
+		}
 		for _, record := range imported.Audit {
 			raw, err := json.Marshal(record)
 			if err != nil {
@@ -556,6 +640,55 @@ ON CONFLICT (workspace_id, git_source_id) DO NOTHING
 		}
 		return nil
 	})
+}
+
+type postgresRoutingPolicyQuerier interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}
+
+func lockPostgresRoutingPolicy(ctx context.Context, tx pgx.Tx, workspace string, app string) error {
+	_, err := tx.Exec(
+		ctx,
+		`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
+		"execution-placement/"+contract.NormalizeWorkspace(workspace)+"/"+app,
+	)
+	return err
+}
+
+func postgresRoutingPolicy(ctx context.Context, querier postgresRoutingPolicyQuerier, workspace string, app string, forUpdate bool) (catalog.RoutingPolicy, error) {
+	query := `SELECT policy FROM control_routing_policy WHERE workspace_id = $1 AND app_key = $2`
+	if forUpdate {
+		query += ` FOR UPDATE`
+	}
+	var raw []byte
+	err := querier.QueryRow(ctx, query, contract.NormalizeWorkspace(workspace), app).Scan(&raw)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return catalog.NewRoutingPolicy(workspace, app), nil
+	}
+	if err != nil {
+		return catalog.RoutingPolicy{}, err
+	}
+	var policy catalog.RoutingPolicy
+	if err := json.Unmarshal(raw, &policy); err != nil {
+		return catalog.RoutingPolicy{}, err
+	}
+	return catalog.NormalizeRoutingPolicy(policy), nil
+}
+
+func upsertPostgresRoutingPolicy(ctx context.Context, tx pgx.Tx, policy catalog.RoutingPolicy) error {
+	policy = catalog.NormalizeRoutingPolicy(policy)
+	raw, err := json.Marshal(policy)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `
+INSERT INTO control_routing_policy (workspace_id, app_key, policy, updated_at)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (workspace_id, app_key) DO UPDATE SET
+    policy = EXCLUDED.policy,
+    updated_at = EXCLUDED.updated_at
+`, policy.Workspace, policy.App, raw, policy.UpdatedAt)
+	return err
 }
 
 func postgresDeploymentForUpdate(ctx context.Context, tx pgx.Tx, workspace string, app string) (contract.Deployment, error) {

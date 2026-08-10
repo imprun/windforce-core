@@ -15,12 +15,12 @@ import {
 import { AppInputSettings } from "../features/AppInputSettings";
 import { AppTriggers } from "../features/AppTriggers";
 import { AuditEventTable } from "../features/AuditEventTable";
+import { ExecutionPlacementPanel } from "../features/ExecutionPlacementPanel";
 import { PublishReleaseDialog } from "../features/PublishReleaseDialog";
 import { RepositorySettings } from "../features/RepositorySettings";
 import { RollbackReleaseDialog } from "../features/RollbackReleaseDialog";
 import { SourceReleaseActions } from "../features/SourceReleaseActions";
 import { actionDisplayName } from "../lib/action-label";
-import { findAppForSource } from "../lib/app-rows";
 import type {
   ActionSchemas,
   ActionView,
@@ -31,6 +31,7 @@ import type {
   HistoryItem,
 } from "../lib/api";
 import { useApp, useAsync } from "../lib/app-context";
+import { findAppForSource } from "../lib/app-rows";
 import { formatJSON, formatRelative, formatTime, shortSHA } from "../lib/format";
 import { displayRepoURL, forgeCommitURL, forgeName, forgeTreeURL } from "../lib/repo";
 import { Link, useRouter } from "../lib/router";
@@ -42,6 +43,7 @@ const tabs = [
   { key: "docs", labelKey: "appDetail.tab.docs" as TranslationKey },
   { key: "triggers", labelKey: "trigger.title" as TranslationKey },
   { key: "input-settings", labelKey: "audit.inputSettings" as TranslationKey },
+  { key: "placement", labelKey: "appDetail.tab.placement" as TranslationKey },
   { key: "monitoring", labelKey: "navigation.monitoring" as TranslationKey },
   { key: "repository", labelKey: "audit.repository" as TranslationKey },
   { key: "releases", labelKey: "appDetail.tab.releases" as TranslationKey },
@@ -196,6 +198,7 @@ export function AppDetailPage({
           selectedClientID={section === "client" ? actionKey : undefined}
         />
       ) : null}
+      {activeTab === "placement" ? <PlacementTab detail={detail} onUpdated={state.reload} /> : null}
       {activeTab === "monitoring" ? <MonitoringTab app={app} /> : null}
       {activeTab === "repository" && source ? (
         <RepositorySettings source={source} onChanged={state.reload} />
@@ -261,8 +264,8 @@ function OverviewTab({
     );
   }
 
-  const routeTag = app.effective_route_tag || app.tag;
-  const tagSummary = summary.data?.by_tag?.find((item) => item.tag === routeTag);
+  const effectiveWorkerTag = app.effective_route_tag || app.tag;
+  const tagSummary = summary.data?.by_tag?.find((item) => item.tag === effectiveWorkerTag);
   const tagActivity = summary.error
     ? translate("appDetail.unavailable")
     : summary.loading
@@ -317,7 +320,7 @@ function OverviewTab({
                   translate("appDetail.bundleMissing")
                 ),
               ],
-              [translate("apps.column.routeTag"), <span className="mono">{routeTag}</span>],
+              [translate("appDetail.releaseWorkerTag"), <span className="mono">{app.tag}</span>],
               [
                 translate("appDetail.execution"),
                 `${app.timeout_s}s${app.required_capabilities?.length ? ` · ${app.required_capabilities.join(", ")}` : ""}`,
@@ -355,12 +358,31 @@ function OverviewTab({
                 ? `${shortSHA(source.last_synced_commit, 12)} · ${formatRelative(source.last_synced_at)}`
                 : translate("appDetail.notSynchronized"),
             ],
-            [translate("appDetail.jobsOnRouteTag", { tag: routeTag }), tagActivity],
+            [
+              translate("appDetail.effectiveWorkerTag"),
+              <Link to={`/apps/${sourceID}/placement`}>
+                <span className="mono">{effectiveWorkerTag}</span>
+              </Link>,
+            ],
+            [translate("appDetail.jobsOnWorkerTag", { tag: effectiveWorkerTag }), tagActivity],
           ]}
         />
       </Panel>
     </>
   );
+}
+
+function PlacementTab({ detail, onUpdated }: { detail: AppDetail | null; onUpdated: () => void }) {
+  if (!detail) {
+    return (
+      <Panel title={translate("routing.title")} subtitle={translate("routing.subtitle")}>
+        <EmptyState title={translate("appDetail.noRelease")}>
+          <p>{translate("appDetail.placementNeedsRelease")}</p>
+        </EmptyState>
+      </Panel>
+    );
+  }
+  return <ExecutionPlacementPanel detail={detail} onUpdated={onUpdated} />;
 }
 
 function ReleasesTab({

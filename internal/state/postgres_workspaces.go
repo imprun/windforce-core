@@ -204,6 +204,7 @@ WHERE COALESCE(NULLIF(payload->>'workspace', ''), NULLIF(payload->'deployment'->
 			`DELETE FROM control_release_candidate WHERE workspace_id=$1`,
 			`DELETE FROM control_source_operation_lease WHERE workspace_id=$1`,
 			`DELETE FROM control_source_release_marker WHERE workspace_id=$1`,
+			`DELETE FROM control_routing_policy WHERE workspace_id=$1`,
 			`DELETE FROM control_active_release WHERE workspace_id=$1`,
 			`DELETE FROM control_audit WHERE workspace_id=$1`,
 			`DELETE FROM control_release_history WHERE workspace_id=$1`,

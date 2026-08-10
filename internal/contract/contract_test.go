@@ -109,8 +109,8 @@ func TestEffectiveRouteTagPrecedence(t *testing.T) {
 	if got := EffectiveRouteTag("app-main", &appOverride, &actionTag, &actionOverride); got != "action-fast" {
 		t.Fatalf("action override tag = %q, want action-fast", got)
 	}
-	if got := EffectiveRouteTag("app-main", &appOverride, &actionTag, nil); got != "action-main" {
-		t.Fatalf("action manifest tag = %q, want action-main", got)
+	if got := EffectiveRouteTag("app-main", &appOverride, &actionTag, nil); got != "app-blue" {
+		t.Fatalf("app operator override = %q, want app-blue", got)
 	}
 	if got := EffectiveRouteTag("app-main", &appOverride, nil, nil); got != "app-blue" {
 		t.Fatalf("app override tag = %q, want app-blue", got)
@@ -174,6 +174,22 @@ func TestEffectiveRequiredLabels(t *testing.T) {
 	legacy := Deployment{RequiredCapabilities: []string{"browser"}}
 	if got := EffectiveRequiredLabels(legacy, Action{}); !reflect.DeepEqual(got, []string{"browser"}) {
 		t.Fatalf("legacy effective labels = %#v", got)
+	}
+}
+
+func TestEffectiveRequiredLabelsOperatorPrecedence(t *testing.T) {
+	appOverride := []string{"gpu"}
+	actionOverride := []string{}
+	actionManifest := []string{"browser"}
+	deployment := Deployment{
+		RequiredLabels:         []string{"linux"},
+		RequiredLabelsOverride: &appOverride,
+	}
+	if got := EffectiveRequiredLabels(deployment, Action{RunsOn: &actionManifest}); !reflect.DeepEqual(got, []string{"gpu"}) {
+		t.Fatalf("app override labels = %#v, want gpu", got)
+	}
+	if got := EffectiveRequiredLabels(deployment, Action{RunsOn: &actionManifest, RequiredLabelsOverride: &actionOverride}); len(got) != 0 {
+		t.Fatalf("explicit action empty override = %#v, want none", got)
 	}
 }
 

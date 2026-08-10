@@ -63,6 +63,29 @@ func TestFileCatalogUpsertAndGet(t *testing.T) {
 	}
 }
 
+func TestNormalizeSnapshotMigratesEmbeddedRoutingOverrides(t *testing.T) {
+	appOverride := "operator-app"
+	actionOverride := "operator-action"
+	snapshot := NewSnapshot()
+	snapshot.Deployments[DeploymentKey("ws-a", "echo")] = contract.Deployment{
+		Workspace: "ws-a", App: "echo", TagOverride: &appOverride,
+		Actions: map[string]contract.Action{
+			"run": {Action: "run", TagOverride: &actionOverride},
+		},
+	}
+
+	NormalizeSnapshot(&snapshot)
+	deployment := snapshot.Deployments[DeploymentKey("ws-a", "echo")]
+	if deployment.TagOverride != nil || deployment.Actions["run"].TagOverride != nil {
+		t.Fatalf("embedded overrides were not removed: %#v", deployment)
+	}
+	policy := snapshot.RoutingPolicies[RoutingPolicyKey("ws-a", "echo")]
+	if policy.Workspace != "ws-a" || policy.RouteTagOverride == nil || *policy.RouteTagOverride != appOverride ||
+		policy.Actions["run"].RouteTagOverride == nil || *policy.Actions["run"].RouteTagOverride != actionOverride {
+		t.Fatalf("migrated routing policy = %#v", policy)
+	}
+}
+
 func TestFileCatalogReleaseCandidatesAreImmutable(t *testing.T) {
 	store := NewFileCatalog(filepath.Join(t.TempDir(), "catalog.json"))
 	ctx := context.Background()
@@ -129,6 +152,19 @@ func TestFileCatalogRollbackSwitchesActiveReleaseWithoutChangingHistoryOrCandida
 	if err != nil {
 		t.Fatal(err)
 	}
+	legacyTag := "legacy-embedded"
+	legacyLabels := []string{"legacy"}
+	legacyTarget := before.History[0]
+	legacyTarget.Deployment.TagOverride = &legacyTag
+	legacyTarget.Deployment.RequiredLabelsOverride = &legacyLabels
+	legacyAction := legacyTarget.Deployment.Actions["run"]
+	legacyAction.TagOverride = &legacyTag
+	legacyAction.RequiredLabelsOverride = &legacyLabels
+	legacyTarget.Deployment.Actions["run"] = legacyAction
+	before.History[0] = legacyTarget
+	if err := store.write(before); err != nil {
+		t.Fatal(err)
+	}
 	result, err := store.RollbackRelease(ctx, ReleaseRollbackRequest{
 		Workspace: "ws-a", App: "echo", ReleaseID: before.History[0].ID,
 		Actor: "operator", Reason: "restore stable release",
@@ -150,6 +186,19 @@ func TestFileCatalogRollbackSwitchesActiveReleaseWithoutChangingHistoryOrCandida
 	}
 	if result.PreviousReleaseID != before.History[1].ID || result.Audit.Kind != "release_rolled_back" {
 		t.Fatalf("rollback result = %#v", result)
+	}
+	raw, err := os.ReadFile(store.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var persisted Snapshot
+	if err := json.Unmarshal(raw, &persisted); err != nil {
+		t.Fatal(err)
+	}
+	active := persisted.Deployments[key]
+	if active.TagOverride != nil || active.RequiredLabelsOverride != nil ||
+		active.Actions["run"].TagOverride != nil || active.Actions["run"].RequiredLabelsOverride != nil {
+		t.Fatalf("rollback restored legacy placement into active release: %#v", active)
 	}
 	if _, err := store.RollbackRelease(ctx, ReleaseRollbackRequest{
 		Workspace: "ws-a", App: "echo", ReleaseID: before.History[0].ID,

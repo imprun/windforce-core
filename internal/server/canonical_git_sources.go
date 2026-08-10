@@ -12,6 +12,7 @@ import (
 	"time"
 	"unicode"
 
+	catalogpkg "github.com/imprun/windforce-core/internal/catalog"
 	"github.com/imprun/windforce-core/internal/contract"
 	gitsourcepkg "github.com/imprun/windforce-core/internal/gitsource"
 	"github.com/imprun/windforce-core/internal/sampleapp"
@@ -90,6 +91,8 @@ func (h *Handler) handleCanonicalRegisterGitSource(w http.ResponseWriter, r *htt
 		BranchCamel   string `json:"Branch"`
 		SubpathCamel  string `json:"Subpath"`
 		CredsRefCamel string `json:"CredsRef"`
+
+		PlacementPolicy *canonicalRoutingPolicyRequest `json:"placement_policy"`
 	}
 	if err := readOptionalJSON(r, &request); err != nil {
 		writeError(w, http.StatusBadRequest, "name and repo_url required")
@@ -124,14 +127,73 @@ func (h *Handler) handleCanonicalRegisterGitSource(w http.ResponseWriter, r *htt
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if _, ok := h.validateGitSourceContract(w, r, source, validationToken); !ok {
-		return
-	}
-	source, ok := h.createGitSource(w, r, source)
+	deployment, ok := h.validateGitSourceContract(w, r, source, validationToken)
 	if !ok {
 		return
 	}
+	var initialPolicyPatch *catalogpkg.RoutingPolicyPatch
+	var initializer interface {
+		GetRoutingPolicy(context.Context, string, string) (catalogpkg.RoutingPolicy, error)
+		SetInitialAppRoutingPolicy(context.Context, string, string, catalogpkg.RoutingPolicyPatch) (catalogpkg.RoutingPolicy, error)
+	}
+	var previousPolicy catalogpkg.RoutingPolicy
+	if request.PlacementPolicy != nil {
+		patch, parsed := parseCanonicalRoutingPolicyPatch(w, *request.PlacementPolicy)
+		if !parsed {
+			return
+		}
+		patch.Actor = requestActorSubject(r)
+		initialPolicyPatch = &patch
+		var supported bool
+		initializer, supported = h.catalog.(interface {
+			GetRoutingPolicy(context.Context, string, string) (catalogpkg.RoutingPolicy, error)
+			SetInitialAppRoutingPolicy(context.Context, string, string, catalogpkg.RoutingPolicyPatch) (catalogpkg.RoutingPolicy, error)
+		})
+		if !supported {
+			writeError(w, http.StatusNotImplemented, "initial execution placement is not supported")
+			return
+		}
+		previousPolicy, err = initializer.GetRoutingPolicy(r.Context(), workspaceID, deployment.App)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	source, ok = h.createGitSource(w, r, source)
+	if !ok {
+		return
+	}
+	if initialPolicyPatch != nil {
+		updated, err := initializer.SetInitialAppRoutingPolicy(r.Context(), workspaceID, deployment.App, *initialPolicyPatch)
+		if err != nil {
+			if rollbackErr := h.rollbackGitSourceRegistration(r.Context(), workspaceID, source.ID); rollbackErr != nil {
+				writeError(w, http.StatusInternalServerError, fmt.Sprintf("store initial execution placement: %v; roll back git source: %v", err, rollbackErr))
+				return
+			}
+			h.recordAudit(r, workspaceID, source.ID, deployment.App, "source_registration_rolled_back", "initial execution placement could not be stored")
+			writeError(w, http.StatusInternalServerError, fmt.Sprintf("store initial execution placement: %v", err))
+			return
+		}
+		h.recordAudit(r, workspaceID, source.ID, deployment.App, "execution_placement_updated", routingPolicyMutationDetail("app", "", previousPolicy, updated))
+	}
 	writeJSON(w, http.StatusCreated, newCanonicalGitSourceView(source))
+}
+
+func (h *Handler) rollbackGitSourceRegistration(ctx context.Context, workspaceID string, sourceID string) error {
+	deleter, ok := h.gitSources.(interface {
+		Delete(context.Context, string, string) (bool, error)
+	})
+	if !ok {
+		return errors.New("git source delete is not supported")
+	}
+	deleted, err := deleter.Delete(ctx, workspaceID, sourceID)
+	if err != nil {
+		return err
+	}
+	if !deleted {
+		return errors.New("git source disappeared before rollback")
+	}
+	return nil
 }
 
 func (h *Handler) createGitSource(w http.ResponseWriter, r *http.Request, source gitsourcepkg.Source) (gitsourcepkg.Source, bool) {
@@ -180,6 +242,7 @@ func (h *Handler) handleCanonicalProbeGitSource(w http.ResponseWriter, r *http.R
 		Username    string `json:"username"`
 		Password    string `json:"password"`
 		CredsRef    string `json:"creds_ref"`
+		Subpath     string `json:"subpath"`
 	}
 	if err := readOptionalJSON(r, &request); err != nil || strings.TrimSpace(request.RepoURL) == "" {
 		writeError(w, http.StatusBadRequest, "repo_url required")
@@ -218,12 +281,26 @@ func (h *Handler) handleCanonicalProbeGitSource(w http.ResponseWriter, r *http.R
 	if branch == "" {
 		branch = "main"
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	branchExists := stringSliceContains(branches, branch)
+	result := map[string]any{
 		"reachable":     true,
 		"branch":        branch,
-		"branch_exists": stringSliceContains(branches, branch),
+		"branch_exists": branchExists,
 		"branches":      branches,
-	})
+	}
+	if branchExists && h.syncer != nil {
+		deployment, ok := h.validateGitSourceContract(w, r, gitsourcepkg.Source{
+			Workspace: workspaceID,
+			RepoURL:   strings.TrimSpace(request.RepoURL),
+			Branch:    branch,
+			Subpath:   strings.TrimSpace(request.Subpath),
+		}, token)
+		if !ok {
+			return
+		}
+		result["manifest"] = newCanonicalManifestRoutingPreview(deployment)
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (h *Handler) handleCanonicalSampleGitSource(w http.ResponseWriter, r *http.Request, workspaceID string) {

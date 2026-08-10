@@ -452,9 +452,10 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 			},
 			"patch": map[string]any{
 				"operationId": "patchApp",
-				"summary":     "Set or clear the app route tag override",
+				"summary":     "Update app execution placement",
+				"description": "Sets operator-owned worker-tag and required-label overrides. null inherits the active release default; an empty label array explicitly requires no labels.",
 				"parameters":  []any{oapiWorkspaceParam(workspaceID), oapiPathParam("app", "App key.")},
-				"requestBody": oapiJSONBody(oapiSchemaRef("TagOverrideRequest"), true),
+				"requestBody": oapiJSONBody(oapiSchemaRef("ExecutionPlacementPatch"), true),
 				"responses": withErrors(map[string]any{
 					"200": oapiResponse("Updated app.", oapiSchemaRef("App")),
 				}, "400", "401", "403", "404"),
@@ -571,9 +572,10 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 			},
 			"patch": map[string]any{
 				"operationId": "patchAction",
-				"summary":     "Set or clear the action route tag override",
+				"summary":     "Update action execution placement",
+				"description": "Action overrides take precedence over app policy and active-release defaults. null inherits; an empty label array explicitly requires no labels.",
 				"parameters":  []any{oapiWorkspaceParam(workspaceID), oapiPathParam("app", "App key."), oapiPathParam("action", "Action key.")},
-				"requestBody": oapiJSONBody(oapiSchemaRef("TagOverrideRequest"), true),
+				"requestBody": oapiJSONBody(oapiSchemaRef("ExecutionPlacementPatch"), true),
 				"responses": withErrors(map[string]any{
 					"200": oapiResponse("Updated action.", oapiSchemaRef("Action")),
 				}, "400", "401", "403", "404"),
@@ -898,47 +900,54 @@ func controlPlaneSchemas() map[string]any {
 	jsonSchema := oapiSchemaRef("JSONSchema")
 	catalogSchema := oapiSchemaRef("Base64JSONSchema")
 	stringArray := map[string]any{"type": "array", "items": oapiStringSchema()}
+	nullableStringArray := map[string]any{"type": []any{"array", "null"}, "items": oapiStringSchema()}
 	nullableString := map[string]any{"type": []any{"string", "null"}}
 	nullableInteger := map[string]any{"type": []any{"integer", "null"}}
 	nullableDateTime := map[string]any{"type": []any{"string", "null"}, "format": "date-time"}
 	appProperties := map[string]any{
-		"id":                    oapiStringSchema(),
-		"workspace_id":          oapiStringSchema(),
-		"app_key":               oapiStringSchema(),
-		"git_source_id":         oapiIntegerSchema(),
-		"commit_sha":            oapiStringSchema(),
-		"entrypoint":            oapiStringSchema(),
-		"tag":                   oapiStringSchema(),
-		"tag_override":          nullableString,
-		"timeout_s":             oapiIntegerSchema(),
-		"script_lang":           oapiStringSchema(),
-		"bundle_status":         map[string]any{"type": "string", "enum": []any{"ready", "missing"}},
-		"bundle_digest":         oapiStringSchema(),
-		"bundle_uri":            oapiStringSchema(),
-		"required_capabilities": stringArray,
-		"max_concurrent":        nullableInteger,
-		"updated_at":            oapiDateTimeSchema(),
+		"id":                       oapiStringSchema(),
+		"workspace_id":             oapiStringSchema(),
+		"app_key":                  oapiStringSchema(),
+		"git_source_id":            oapiIntegerSchema(),
+		"commit_sha":               oapiStringSchema(),
+		"entrypoint":               oapiStringSchema(),
+		"tag":                      oapiStringSchema(),
+		"tag_override":             nullableString,
+		"timeout_s":                oapiIntegerSchema(),
+		"script_lang":              oapiStringSchema(),
+		"bundle_status":            map[string]any{"type": "string", "enum": []any{"ready", "missing"}},
+		"bundle_digest":            oapiStringSchema(),
+		"bundle_uri":               oapiStringSchema(),
+		"required_capabilities":    stringArray,
+		"required_labels":          stringArray,
+		"required_labels_override": nullableStringArray,
+		"max_concurrent":           nullableInteger,
+		"updated_at":               oapiDateTimeSchema(),
 	}
 	appViewProperties := cloneSchemaProperties(appProperties)
 	appViewProperties["effective_route_tag"] = oapiStringSchema()
+	appViewProperties["effective_required_labels"] = stringArray
 	actionProperties := map[string]any{
-		"id":                    oapiStringSchema(),
-		"workspace_id":          oapiStringSchema(),
-		"app_key":               oapiStringSchema(),
-		"action_key":            oapiStringSchema(),
-		"display_name":          map[string]any{"type": "string", "description": "Human-readable label derived from a materialized JSON Schema title, preferring the input schema."},
-		"input_schema":          catalogSchema,
-		"output_schema":         catalogSchema,
-		"tag":                   nullableString,
-		"tag_override":          nullableString,
-		"timeout_s":             nullableInteger,
-		"required_capabilities": stringArray,
-		"runtime_access":        oapiSchemaRef("RuntimeAccess"),
-		"updated_at":            oapiDateTimeSchema(),
+		"id":                       oapiStringSchema(),
+		"workspace_id":             oapiStringSchema(),
+		"app_key":                  oapiStringSchema(),
+		"action_key":               oapiStringSchema(),
+		"display_name":             map[string]any{"type": "string", "description": "Human-readable label derived from a materialized JSON Schema title, preferring the input schema."},
+		"input_schema":             catalogSchema,
+		"output_schema":            catalogSchema,
+		"tag":                      nullableString,
+		"tag_override":             nullableString,
+		"timeout_s":                nullableInteger,
+		"required_capabilities":    stringArray,
+		"required_labels":          stringArray,
+		"required_labels_override": nullableStringArray,
+		"runtime_access":           oapiSchemaRef("RuntimeAccess"),
+		"updated_at":               oapiDateTimeSchema(),
 	}
 	appActionProperties := cloneSchemaProperties(actionProperties)
 	appActionProperties["effective_capabilities"] = stringArray
 	appActionProperties["effective_route_tag"] = oapiStringSchema()
+	appActionProperties["effective_required_labels"] = stringArray
 
 	return map[string]any{
 		"RuntimeAccess": map[string]any{
@@ -1359,11 +1368,12 @@ func controlPlaneSchemas() map[string]any {
 		"RegisterGitSourceRequest": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"name":      oapiStringSchema(),
-				"repo_url":  oapiStringSchema(),
-				"branch":    oapiStringSchema(),
-				"subpath":   oapiStringSchema(),
-				"creds_ref": oapiStringSchema(),
+				"name":             oapiStringSchema(),
+				"repo_url":         oapiStringSchema(),
+				"branch":           oapiStringSchema(),
+				"subpath":          oapiStringSchema(),
+				"creds_ref":        oapiStringSchema(),
+				"placement_policy": oapiSchemaRef("ExecutionPlacementPatch"),
 			},
 			"required": []any{"name", "repo_url"},
 		},
@@ -1372,6 +1382,7 @@ func controlPlaneSchemas() map[string]any {
 			"properties": map[string]any{
 				"repo_url":     oapiStringSchema(),
 				"branch":       oapiStringSchema(),
+				"subpath":      oapiStringSchema(),
 				"auth_method":  oapiStringEnumSchema("none", "pat", "basic"),
 				"access_token": oapiStringSchema(),
 				"username":     oapiStringSchema(),
@@ -1417,8 +1428,31 @@ func controlPlaneSchemas() map[string]any {
 				"branch_exists": oapiBooleanSchema(),
 				"branches":      stringArray,
 				"error":         oapiStringSchema(),
+				"manifest":      oapiSchemaRef("ManifestPlacementPreview"),
 			},
 			"required": []any{"reachable", "branches"},
+		},
+		"ManifestPlacementPreview": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"app_key":         oapiStringSchema(),
+				"worker_tag":      oapiStringSchema(),
+				"required_labels": stringArray,
+				"actions": map[string]any{
+					"type":  "array",
+					"items": oapiSchemaRef("ManifestActionPlacementPreview"),
+				},
+			},
+			"required": []any{"app_key", "worker_tag", "required_labels", "actions"},
+		},
+		"ManifestActionPlacementPreview": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"action_key":      oapiStringSchema(),
+				"worker_tag":      oapiStringSchema(),
+				"required_labels": stringArray,
+			},
+			"required": []any{"action_key", "worker_tag", "required_labels"},
 		},
 		"GitSourceSyncResult": map[string]any{
 			"type": "object",
@@ -1467,33 +1501,36 @@ func controlPlaneSchemas() map[string]any {
 		},
 		"AppView": map[string]any{
 			"type":        "object",
-			"description": "App detail view returned by GET /apps/{app}, including server-computed routing fields.",
+			"description": "App detail view returned by GET /apps/{app}, including server-computed execution-placement fields.",
 			"properties":  appViewProperties,
-			"required":    []any{"id", "workspace_id", "app_key", "git_source_id", "commit_sha", "entrypoint", "timeout_s", "updated_at", "effective_route_tag"},
+			"required":    []any{"id", "workspace_id", "app_key", "git_source_id", "commit_sha", "entrypoint", "timeout_s", "updated_at", "required_labels", "effective_route_tag", "effective_required_labels"},
 		},
 		"AppSummary": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"id":                    oapiStringSchema(),
-				"workspace_id":          oapiStringSchema(),
-				"app_key":               oapiStringSchema(),
-				"git_source_id":         oapiIntegerSchema(),
-				"commit_sha":            oapiStringSchema(),
-				"entrypoint":            oapiStringSchema(),
-				"tag":                   oapiStringSchema(),
-				"tag_override":          nullableString,
-				"timeout_s":             oapiIntegerSchema(),
-				"script_lang":           oapiStringSchema(),
-				"bundle_status":         map[string]any{"type": "string", "enum": []any{"ready", "missing"}},
-				"bundle_digest":         oapiStringSchema(),
-				"bundle_uri":            oapiStringSchema(),
-				"required_capabilities": stringArray,
-				"max_concurrent":        nullableInteger,
-				"updated_at":            oapiDateTimeSchema(),
-				"effective_route_tag":   oapiStringSchema(),
-				"actions_count":         oapiIntegerSchema(),
-				"schedules_count":       oapiIntegerSchema(),
-				"flows_count":           oapiIntegerSchema(),
+				"id":                        oapiStringSchema(),
+				"workspace_id":              oapiStringSchema(),
+				"app_key":                   oapiStringSchema(),
+				"git_source_id":             oapiIntegerSchema(),
+				"commit_sha":                oapiStringSchema(),
+				"entrypoint":                oapiStringSchema(),
+				"tag":                       oapiStringSchema(),
+				"tag_override":              nullableString,
+				"timeout_s":                 oapiIntegerSchema(),
+				"script_lang":               oapiStringSchema(),
+				"bundle_status":             map[string]any{"type": "string", "enum": []any{"ready", "missing"}},
+				"bundle_digest":             oapiStringSchema(),
+				"bundle_uri":                oapiStringSchema(),
+				"required_capabilities":     stringArray,
+				"required_labels":           stringArray,
+				"required_labels_override":  nullableStringArray,
+				"max_concurrent":            nullableInteger,
+				"updated_at":                oapiDateTimeSchema(),
+				"effective_route_tag":       oapiStringSchema(),
+				"effective_required_labels": stringArray,
+				"actions_count":             oapiIntegerSchema(),
+				"schedules_count":           oapiIntegerSchema(),
+				"flows_count":               oapiIntegerSchema(),
 			},
 		},
 		"AppsSummaryResponse": map[string]any{
@@ -1522,11 +1559,11 @@ func controlPlaneSchemas() map[string]any {
 		},
 		"AppAction": map[string]any{
 			"type":        "object",
-			"description": "Action view returned inside app detail, including server-computed routing fields.",
+			"description": "Action view returned inside app detail, including server-computed execution-placement fields.",
 			"properties":  appActionProperties,
 			"required": []any{
 				"id", "workspace_id", "app_key", "action_key", "input_schema", "output_schema", "updated_at",
-				"effective_capabilities", "effective_route_tag",
+				"required_labels", "effective_capabilities", "effective_route_tag", "effective_required_labels",
 			},
 		},
 		"AppDetailResponse": map[string]any{
@@ -1537,10 +1574,14 @@ func controlPlaneSchemas() map[string]any {
 			},
 			"required": []any{"app", "actions"},
 		},
-		"TagOverrideRequest": map[string]any{
-			"type":       "object",
-			"properties": map[string]any{"tag_override": nullableString},
-			"required":   []any{"tag_override"},
+		"ExecutionPlacementPatch": map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"minProperties":        1,
+			"properties": map[string]any{
+				"tag_override":             nullableString,
+				"required_labels_override": nullableStringArray,
+			},
 		},
 		"AppSourceResponse": map[string]any{
 			"type": "object",
