@@ -67,9 +67,18 @@ func TestWorkerPlaneClaimAndComplete(t *testing.T) {
 	}
 
 	resp, payload := workerPlanePost(t, server.URL+"/worker/v1/workers", "admin-secret",
-		`{"id":"w-remote","group":"default","labels":["browser"],"slots":2}`)
+		`{"id":"w-remote","group":"default","engine_version":"v0.9.2","build_revision":"abcdef123456","labels":["browser"],"slots":2}`)
 	if resp.StatusCode != http.StatusCreated || !strings.Contains(payload, "w-remote") {
 		t.Fatalf("register = %d: %s", resp.StatusCode, payload)
+	}
+	workers, err := store.ListWorkers(context.Background())
+	if err != nil || len(workers) != 1 || workers[0].EngineVersion != "v0.9.2" || workers[0].BuildRevision != "abcdef123456" {
+		t.Fatalf("registered worker build identity = %#v, err=%v", workers, err)
+	}
+	resp, payload = workerPlanePost(t, server.URL+"/worker/v1/workers", "admin-secret",
+		`{"id":"invalid-build","engine_version":"v1\nspoof"}`)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("invalid build identity = %d: %s", resp.StatusCode, payload)
 	}
 
 	// A claim without the required label yields no job.

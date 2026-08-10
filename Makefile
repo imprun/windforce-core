@@ -41,6 +41,7 @@ EXECUTABLE_SUFFIX ?=
 endif
 BIN ?= $(BIN_DIR)/$(APP)$(EXECUTABLE_SUFFIX)
 VERSION ?= dev
+REVISION ?= unknown
 STORE ?= $(DEV_DIR)/store
 CATALOG ?= $(DEV_DIR)/catalog.json
 STATE ?= $(DEV_DIR)/state.json
@@ -214,7 +215,7 @@ test-rabbitmq: compose-rabbitmq
 
 build:
 	@mkdir -p "$(BIN_DIR)"
-	$(GO) build -ldflags "-X main.version=$(VERSION)" -o "$(BIN)" $(CMD)
+	$(GO) build -ldflags "-X main.version=$(VERSION) -X main.revision=$(REVISION)" -o "$(BIN)" $(CMD)
 
 build-smoke: build
 	"$(BIN)" version

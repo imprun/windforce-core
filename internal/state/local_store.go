@@ -1447,6 +1447,16 @@ func (s *LocalStore) ExpireStuckJobs(ctx context.Context, stuckBefore time.Time)
 }
 
 func (s *LocalStore) RegisterWorker(ctx context.Context, record WorkerRecord) error {
+	engineVersion, err := NormalizeWorkerBuildValue(record.EngineVersion)
+	if err != nil {
+		return err
+	}
+	buildRevision, err := NormalizeWorkerBuildValue(record.BuildRevision)
+	if err != nil {
+		return err
+	}
+	record.EngineVersion = engineVersion
+	record.BuildRevision = buildRevision
 	profiles, err := contract.NormalizeExecutionProfiles(record.ExecutionProfiles)
 	if err != nil {
 		return err

@@ -12,6 +12,7 @@ FROM go-toolchain AS build
 
 WORKDIR /src
 ARG VERSION=dev
+ARG REVISION=unknown
 COPY go.mod go.sum ./
 RUN go mod download
 
@@ -19,7 +20,7 @@ COPY . .
 RUN rm -rf internal/webui/assets
 COPY --from=web-build /src/web/dist ./internal/webui/assets
 RUN CGO_ENABLED=0 GOOS=linux go build \
-    -ldflags "-s -w -X main.version=${VERSION}" \
+    -ldflags "-s -w -X main.version=${VERSION} -X main.revision=${REVISION}" \
     -o /out/windforce-core ./cmd/windforce-core
 
 FROM python:3.14.6-slim-bookworm AS runtime

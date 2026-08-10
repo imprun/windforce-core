@@ -134,6 +134,8 @@ func (c *Client) RegisterWorker(ctx context.Context, record state.WorkerRecord) 
 	_, err := c.do(ctx, http.MethodPost, "/worker/v1/workers", map[string]any{
 		"id":                 record.ID,
 		"group":              record.Group,
+		"engine_version":     record.EngineVersion,
+		"build_revision":     record.BuildRevision,
 		"tags":               record.Tags,
 		"labels":             record.Labels,
 		"execution_profiles": record.ExecutionProfiles,

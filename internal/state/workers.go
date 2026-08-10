@@ -2,7 +2,10 @@ package state
 
 import (
 	"fmt"
+	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/imprun/windforce-core/internal/contract"
 )
@@ -13,6 +16,8 @@ import (
 type WorkerRecord struct {
 	ID                   string                      `json:"id"`
 	Group                string                      `json:"group,omitempty"`
+	EngineVersion        string                      `json:"engineVersion,omitempty"`
+	BuildRevision        string                      `json:"buildRevision,omitempty"`
 	Tags                 []string                    `json:"tags,omitempty"`
 	Labels               []string                    `json:"labels,omitempty"`
 	ExecutionProfiles    []contract.ExecutionProfile `json:"executionProfiles,omitempty"`
@@ -22,6 +27,26 @@ type WorkerRecord struct {
 	CredentialGeneration int64                       `json:"credentialGeneration,omitempty"`
 	StartedAt            time.Time                   `json:"startedAt"`
 	LastHeartbeatAt      time.Time                   `json:"lastHeartbeatAt"`
+}
+
+const WorkerBuildValueMaxBytes = 128
+
+// NormalizeWorkerBuildValue bounds self-reported build metadata before it is
+// persisted or returned by the canonical worker registry.
+func NormalizeWorkerBuildValue(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", nil
+	}
+	if len(value) > WorkerBuildValueMaxBytes || !utf8.ValidString(value) {
+		return "", fmt.Errorf("worker build value must be valid UTF-8 and at most %d bytes", WorkerBuildValueMaxBytes)
+	}
+	for _, char := range value {
+		if unicode.IsControl(char) {
+			return "", fmt.Errorf("worker build value must not contain control characters")
+		}
+	}
+	return value, nil
 }
 
 const (

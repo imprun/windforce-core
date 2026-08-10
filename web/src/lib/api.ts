@@ -235,6 +235,8 @@ export type RoutingPolicyPatch = {
 export type WorkerView = {
   id: string;
   group?: string;
+  engine_version?: string;
+  build_revision?: string;
   tags: string[];
   labels: string[];
   slots: number;

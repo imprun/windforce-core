@@ -867,6 +867,8 @@ func workerServesTag(worker state.WorkerRecord, tag string) bool {
 type canonicalWorkerView struct {
 	ID                string                      `json:"id"`
 	Group             string                      `json:"group,omitempty"`
+	EngineVersion     string                      `json:"engine_version,omitempty"`
+	BuildRevision     string                      `json:"build_revision,omitempty"`
 	Tags              []string                    `json:"tags"`
 	Labels            []string                    `json:"labels"`
 	ExecutionProfiles []contract.ExecutionProfile `json:"execution_profiles"`
@@ -882,6 +884,8 @@ func newCanonicalWorkersView(workers []state.WorkerRecord, now time.Time) map[st
 		views = append(views, canonicalWorkerView{
 			ID:                worker.ID,
 			Group:             worker.Group,
+			EngineVersion:     worker.EngineVersion,
+			BuildRevision:     worker.BuildRevision,
 			Tags:              append([]string{}, worker.Tags...),
 			Labels:            append([]string{}, worker.Labels...),
 			ExecutionProfiles: append([]contract.ExecutionProfile{}, worker.ExecutionProfiles...),

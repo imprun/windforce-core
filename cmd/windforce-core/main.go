@@ -40,7 +40,10 @@ import (
 	"github.com/imprun/windforce-core/internal/worker"
 )
 
-var version = "dev"
+var (
+	version  = "dev"
+	revision = "unknown"
+)
 
 const (
 	defaultLogFlushInterval = 2 * time.Second
@@ -339,6 +342,8 @@ func runServer(args []string, mode string) int {
 			Runner:            runtimeRunner,
 			WorkerID:          *workerID,
 			Group:             *workerGroup,
+			EngineVersion:     version,
+			BuildRevision:     revision,
 			Tags:              parseTags(*workerTags),
 			Labels:            parseLabels(*workerLabels),
 			ExecutionProfiles: executionProfiles,
@@ -526,6 +531,8 @@ func runWorker(args []string) int {
 			Runner:            runtimeRunner,
 			WorkerID:          *workerID,
 			Group:             *workerGroup,
+			EngineVersion:     version,
+			BuildRevision:     revision,
 			Tags:              parseTags(*workerTags),
 			Labels:            parseLabels(*workerLabels),
 			ExecutionProfiles: executionProfiles,
@@ -584,6 +591,8 @@ func runWorker(args []string) int {
 		Runner:            runtimeRunner,
 		WorkerID:          *workerID,
 		Group:             *workerGroup,
+		EngineVersion:     version,
+		BuildRevision:     revision,
 		Tags:              parseTags(*workerTags),
 		Labels:            parseLabels(*workerLabels),
 		ExecutionProfiles: executionProfiles,

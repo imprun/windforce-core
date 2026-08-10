@@ -713,6 +713,8 @@ CREATE INDEX IF NOT EXISTS webhook_delivery_retention_idx
 CREATE TABLE IF NOT EXISTS worker_registry (
     id                text PRIMARY KEY,
     worker_group      text NOT NULL DEFAULT '',
+    engine_version    text NOT NULL DEFAULT '',
+    build_revision    text NOT NULL DEFAULT '',
     tags              jsonb NOT NULL DEFAULT '[]'::jsonb,
     labels            jsonb NOT NULL DEFAULT '[]'::jsonb,
     execution_profiles jsonb NOT NULL DEFAULT '[]'::jsonb,
@@ -732,6 +734,10 @@ ALTER TABLE worker_registry
     ADD COLUMN IF NOT EXISTS credential_generation bigint NOT NULL DEFAULT 0;
 ALTER TABLE worker_registry
     ADD COLUMN IF NOT EXISTS execution_profiles jsonb NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE worker_registry
+    ADD COLUMN IF NOT EXISTS engine_version text NOT NULL DEFAULT '';
+ALTER TABLE worker_registry
+    ADD COLUMN IF NOT EXISTS build_revision text NOT NULL DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS worker_credential (
     id                  text PRIMARY KEY,
