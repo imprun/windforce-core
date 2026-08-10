@@ -156,20 +156,21 @@ type canonicalSourceSyncResult struct {
 }
 
 type canonicalDeployResult struct {
-	Commit           string   `json:"commit"`
-	App              string   `json:"app"`
-	Actions          []string `json:"actions"`
-	Flows            []string `json:"flows,omitempty"`
-	Source           string   `json:"source,omitempty"`
-	ReleaseID        string   `json:"release_id"`
-	DeploymentID     *string  `json:"deployment_id,omitempty"`
-	CreatedBy        *string  `json:"created_by,omitempty"`
-	Message          *string  `json:"message,omitempty"`
-	BundleStatus     string   `json:"bundle_status"`
-	BundleDigest     string   `json:"bundle_digest,omitempty"`
-	BundleURI        string   `json:"bundle_uri,omitempty"`
-	Runtime          string   `json:"runtime"`
-	ValidationChecks []string `json:"validation_checks"`
+	Commit           string                    `json:"commit"`
+	App              string                    `json:"app"`
+	Actions          []string                  `json:"actions"`
+	Flows            []string                  `json:"flows,omitempty"`
+	Source           string                    `json:"source,omitempty"`
+	ReleaseID        string                    `json:"release_id"`
+	DeploymentID     *string                   `json:"deployment_id,omitempty"`
+	CreatedBy        *string                   `json:"created_by,omitempty"`
+	Message          *string                   `json:"message,omitempty"`
+	BundleStatus     string                    `json:"bundle_status"`
+	BundleDigest     string                    `json:"bundle_digest,omitempty"`
+	BundleURI        string                    `json:"bundle_uri,omitempty"`
+	Runtime          string                    `json:"runtime"`
+	ExecutionProfile contract.ExecutionProfile `json:"execution_profile,omitempty,omitzero"`
+	ValidationChecks []string                  `json:"validation_checks"`
 }
 
 func newCanonicalSourceSyncResult(candidate catalogpkg.ReleaseCandidate) canonicalSourceSyncResult {
@@ -201,6 +202,7 @@ func newCanonicalDeployResult(deployment contract.Deployment, releaseID string) 
 		BundleDigest:     strings.TrimSpace(deployment.BundleDigest),
 		BundleURI:        strings.TrimSpace(deployment.BundleURI),
 		Runtime:          canonicalDeploymentScriptLang(deployment),
+		ExecutionProfile: deployment.ExecutionProfile,
 		ValidationChecks: []string{"dependencies_prepared", "entrypoint_validated", "artifact_stored"},
 	}
 }
@@ -215,22 +217,23 @@ func canonicalDeploymentActions(deployment contract.Deployment) []string {
 }
 
 type canonicalAppModel struct {
-	ID                   string    `json:"id"`
-	WorkspaceID          string    `json:"workspace_id"`
-	AppKey               string    `json:"app_key"`
-	GitSourceID          int64     `json:"git_source_id"`
-	CommitSha            string    `json:"commit_sha"`
-	Entrypoint           string    `json:"entrypoint"`
-	Tag                  string    `json:"tag"`
-	TagOverride          *string   `json:"tag_override,omitempty"`
-	TimeoutS             int32     `json:"timeout_s"`
-	ScriptLang           string    `json:"script_lang"`
-	BundleStatus         string    `json:"bundle_status"`
-	BundleDigest         string    `json:"bundle_digest,omitempty"`
-	BundleURI            string    `json:"bundle_uri,omitempty"`
-	RequiredCapabilities []string  `json:"required_capabilities"`
-	MaxConcurrent        *int32    `json:"max_concurrent,omitempty"`
-	UpdatedAt            time.Time `json:"updated_at"`
+	ID                   string                    `json:"id"`
+	WorkspaceID          string                    `json:"workspace_id"`
+	AppKey               string                    `json:"app_key"`
+	GitSourceID          int64                     `json:"git_source_id"`
+	CommitSha            string                    `json:"commit_sha"`
+	Entrypoint           string                    `json:"entrypoint"`
+	Tag                  string                    `json:"tag"`
+	TagOverride          *string                   `json:"tag_override,omitempty"`
+	TimeoutS             int32                     `json:"timeout_s"`
+	ScriptLang           string                    `json:"script_lang"`
+	BundleStatus         string                    `json:"bundle_status"`
+	BundleDigest         string                    `json:"bundle_digest,omitempty"`
+	BundleURI            string                    `json:"bundle_uri,omitempty"`
+	ExecutionProfile     contract.ExecutionProfile `json:"execution_profile,omitempty,omitzero"`
+	RequiredCapabilities []string                  `json:"required_capabilities"`
+	MaxConcurrent        *int32                    `json:"max_concurrent,omitempty"`
+	UpdatedAt            time.Time                 `json:"updated_at"`
 }
 
 type canonicalAppView struct {
@@ -357,6 +360,7 @@ func newCanonicalAppModel(deployment contract.Deployment) canonicalAppModel {
 		BundleStatus:         canonicalBundleStatus(deployment),
 		BundleDigest:         strings.TrimSpace(deployment.BundleDigest),
 		BundleURI:            strings.TrimSpace(deployment.BundleURI),
+		ExecutionProfile:     deployment.ExecutionProfile,
 		RequiredCapabilities: cloneStringSlice(deployment.RequiredCapabilities),
 		MaxConcurrent:        cloneInt32Ptr(deployment.MaxConcurrent),
 		UpdatedAt:            canonicalDeploymentUpdatedAt(deployment),
@@ -689,28 +693,30 @@ func workerServesTag(worker state.WorkerRecord, tag string) bool {
 }
 
 type canonicalWorkerView struct {
-	ID              string    `json:"id"`
-	Group           string    `json:"group,omitempty"`
-	Tags            []string  `json:"tags"`
-	Labels          []string  `json:"labels"`
-	Slots           int       `json:"slots"`
-	Live            bool      `json:"live"`
-	StartedAt       time.Time `json:"started_at"`
-	LastHeartbeatAt time.Time `json:"last_heartbeat_at"`
+	ID                string                      `json:"id"`
+	Group             string                      `json:"group,omitempty"`
+	Tags              []string                    `json:"tags"`
+	Labels            []string                    `json:"labels"`
+	ExecutionProfiles []contract.ExecutionProfile `json:"execution_profiles"`
+	Slots             int                         `json:"slots"`
+	Live              bool                        `json:"live"`
+	StartedAt         time.Time                   `json:"started_at"`
+	LastHeartbeatAt   time.Time                   `json:"last_heartbeat_at"`
 }
 
 func newCanonicalWorkersView(workers []state.WorkerRecord, now time.Time) map[string]any {
 	views := make([]canonicalWorkerView, 0, len(workers))
 	for _, worker := range workers {
 		views = append(views, canonicalWorkerView{
-			ID:              worker.ID,
-			Group:           worker.Group,
-			Tags:            append([]string{}, worker.Tags...),
-			Labels:          append([]string{}, worker.Labels...),
-			Slots:           worker.Slots,
-			Live:            worker.Live(now),
-			StartedAt:       worker.StartedAt,
-			LastHeartbeatAt: worker.LastHeartbeatAt,
+			ID:                worker.ID,
+			Group:             worker.Group,
+			Tags:              append([]string{}, worker.Tags...),
+			Labels:            append([]string{}, worker.Labels...),
+			ExecutionProfiles: append([]contract.ExecutionProfile{}, worker.ExecutionProfiles...),
+			Slots:             worker.Slots,
+			Live:              worker.Live(now),
+			StartedAt:         worker.StartedAt,
+			LastHeartbeatAt:   worker.LastHeartbeatAt,
 		})
 	}
 	return map[string]any{"workers": views}

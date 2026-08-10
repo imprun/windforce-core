@@ -7,13 +7,16 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"hash"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
-	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -129,12 +132,13 @@ func wireError(method string, path string, status int, payload []byte) error {
 
 func (c *Client) RegisterWorker(ctx context.Context, record state.WorkerRecord) error {
 	_, err := c.do(ctx, http.MethodPost, "/worker/v1/workers", map[string]any{
-		"id":     record.ID,
-		"group":  record.Group,
-		"tags":   record.Tags,
-		"labels": record.Labels,
-		"slots":  record.Slots,
-		"status": record.Status,
+		"id":                 record.ID,
+		"group":              record.Group,
+		"tags":               record.Tags,
+		"labels":             record.Labels,
+		"execution_profiles": record.ExecutionProfiles,
+		"slots":              record.Slots,
+		"status":             record.Status,
 	}, nil)
 	return err
 }
@@ -328,20 +332,15 @@ func (a ArtifactStore) FetchTo(ctx context.Context, destinationDir string, diges
 		return executionbundle.Descriptor{}, err
 	}
 	defer os.RemoveAll(tempDir)
-	if err := extractTar(tempDir, tar.NewReader(resp.Body)); err != nil {
+	actual, err := extractTar(tempDir, tar.NewReader(resp.Body))
+	if err != nil {
 		return executionbundle.Descriptor{}, fmt.Errorf("extract artifact %s: %w", digest, err)
 	}
-	// The digest hashes names, modes, symlink targets, and contents. Windows
-	// cannot represent POSIX modes faithfully, so only POSIX hosts (the
-	// deploy target) enforce the match.
-	if runtime.GOOS != "windows" {
-		actual, err := executionbundle.HashTree(ctx, tempDir)
-		if err != nil {
-			return executionbundle.Descriptor{}, err
-		}
-		if actual != digest {
-			return executionbundle.Descriptor{}, fmt.Errorf("fetched artifact digest mismatch: got %s, want %s", actual, digest)
-		}
+	// Verify the canonical tree while reading tar headers and bytes. This is
+	// required on Windows, where extraction cannot preserve POSIX modes well
+	// enough for a post-extraction HashTree comparison.
+	if actual != digest {
+		return executionbundle.Descriptor{}, fmt.Errorf("fetched artifact digest mismatch: got %s, want %s", actual, digest)
 	}
 	if err := os.RemoveAll(destinationDir); err != nil {
 		return executionbundle.Descriptor{}, err
@@ -352,61 +351,81 @@ func (a ArtifactStore) FetchTo(ctx context.Context, destinationDir string, diges
 	return executionbundle.Descriptor{Digest: digest}, nil
 }
 
-func extractTar(root string, reader *tar.Reader) error {
+func extractTar(root string, reader *tar.Reader) (string, error) {
+	digest := sha256.New()
 	for {
 		header, err := reader.Next()
 		if err == io.EOF {
-			return nil
+			return "sha256:" + hex.EncodeToString(digest.Sum(nil)), nil
 		}
 		if err != nil {
-			return err
+			return "", err
 		}
 		name := filepath.Clean(filepath.FromSlash(strings.TrimSuffix(header.Name, "/")))
 		if name == "." || name == "" || strings.HasPrefix(name, "..") || filepath.IsAbs(name) {
-			return fmt.Errorf("artifact entry escapes destination: %q", header.Name)
+			return "", fmt.Errorf("artifact entry escapes destination: %q", header.Name)
 		}
 		target := filepath.Join(root, name)
 		mode := os.FileMode(header.Mode) & 0o777
+		writeArtifactHashString(digest, filepath.ToSlash(name))
+		writeArtifactHashString(digest, strconv.FormatUint(uint64(mode.Perm()), 8))
 		switch header.Typeflag {
 		case tar.TypeDir:
+			writeArtifactHashString(digest, "dir")
 			if err := os.MkdirAll(target, 0o755); err != nil {
-				return err
+				return "", err
 			}
 			if err := os.Chmod(target, mode); err != nil {
-				return err
+				return "", err
 			}
 		case tar.TypeReg:
+			writeArtifactHashString(digest, "file")
+			writeArtifactHashString(digest, strconv.FormatInt(header.Size, 10))
 			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-				return err
+				return "", err
 			}
 			file, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
 			if err != nil {
-				return err
+				return "", err
 			}
-			if _, err := io.Copy(file, reader); err != nil {
+			written, err := io.Copy(file, io.TeeReader(reader, digest))
+			if err != nil {
 				file.Close()
-				return err
+				return "", err
+			}
+			if written != header.Size {
+				file.Close()
+				return "", fmt.Errorf("artifact entry %q size mismatch: got %d, want %d", header.Name, written, header.Size)
 			}
 			if err := file.Close(); err != nil {
-				return err
+				return "", err
 			}
 			if err := os.Chmod(target, mode); err != nil {
-				return err
+				return "", err
 			}
 		case tar.TypeSymlink:
+			writeArtifactHashString(digest, "symlink")
+			writeArtifactHashString(digest, header.Linkname)
 			// Bundles legitimately carry in-tree symlinks (e.g. node_modules
 			// .bin); anything pointing outside the tree is rejected.
 			if err := executionbundle.ValidateSymlink(root, target, header.Linkname); err != nil {
-				return err
+				return "", err
 			}
 			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-				return err
+				return "", err
 			}
 			if err := os.Symlink(header.Linkname, target); err != nil {
-				return err
+				return "", err
 			}
 		default:
-			return fmt.Errorf("unsupported artifact entry type %d: %q", header.Typeflag, header.Name)
+			return "", fmt.Errorf("unsupported artifact entry type %d: %q", header.Typeflag, header.Name)
 		}
 	}
+}
+
+func writeArtifactHashString(digest hash.Hash, value string) {
+	_, _ = io.WriteString(digest, strconv.Itoa(len(value)))
+	_, _ = io.WriteString(digest, ":")
+	_, _ = io.WriteString(digest, value)
+	_, _ = io.WriteString(digest, "\x00")
 }

@@ -1132,6 +1132,20 @@ func buildExecutionBundleForTest(t *testing.T, runner *Runner, deployment contra
 	if prepared.BundleDigest == "" || prepared.BundleURI == "" {
 		t.Fatalf("execution bundle identity is empty: %#v", prepared)
 	}
+	if err := contract.ValidateExecutionProfile(prepared.ExecutionProfile); err != nil {
+		t.Fatalf("execution profile is not pinned: %#v: %v", prepared.ExecutionProfile, err)
+	}
+	profileLabel, err := contract.ExecutionProfileLabel(prepared.ExecutionProfile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundProfileLabel := false
+	for _, label := range prepared.RequiredLabels {
+		foundProfileLabel = foundProfileLabel || label == profileLabel
+	}
+	if !foundProfileLabel {
+		t.Fatalf("required labels %v do not include profile label %q", prepared.RequiredLabels, profileLabel)
+	}
 	runner.Store = nil
 	return prepared
 }

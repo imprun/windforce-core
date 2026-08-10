@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -14,6 +15,7 @@ import (
 )
 
 const executionBundleReadyFile = ".windforce-execution-ready"
+const executionProfileFile = ".windforce-execution-profile.json"
 
 var executionBundleFetchGroup singleflight.Group
 
@@ -27,6 +29,26 @@ func (r *Runner) BuildExecutionBundle(ctx context.Context, deployment contract.D
 	}
 	if err := r.validatePreparedSource(ctx, preparedDir, deployment); err != nil {
 		return contract.Deployment{}, fmt.Errorf("validate prepared runtime: %w", err)
+	}
+	profile, err := r.ExecutionProfile(ctx, deployment.ScriptLang)
+	if err != nil {
+		return contract.Deployment{}, fmt.Errorf("resolve execution profile: %w", err)
+	}
+	profileData, err := json.Marshal(profile)
+	if err != nil {
+		return contract.Deployment{}, err
+	}
+	if err := os.WriteFile(filepath.Join(preparedDir, executionProfileFile), profileData, 0o644); err != nil {
+		return contract.Deployment{}, fmt.Errorf("write execution profile: %w", err)
+	}
+	deployment.ExecutionProfile = profile
+	requiredLabels := deployment.RequiredLabels
+	if requiredLabels == nil {
+		requiredLabels = deployment.RequiredCapabilities
+	}
+	deployment.RequiredLabels, err = contract.WithExecutionProfileLabel(requiredLabels, profile)
+	if err != nil {
+		return contract.Deployment{}, fmt.Errorf("pin execution profile: %w", err)
 	}
 	descriptor, err := r.ArtifactStore.Publish(ctx, preparedDir)
 	if err != nil {
@@ -108,6 +130,27 @@ func (r *Runner) openExecutionBundle(ctx context.Context, deployment contract.De
 }
 
 func (r *Runner) validateBundleRuntime(ctx context.Context, bundleDir string, deployment contract.Deployment) error {
+	if deployment.ExecutionProfile != (contract.ExecutionProfile{}) {
+		profileData, err := os.ReadFile(filepath.Join(bundleDir, executionProfileFile))
+		if err != nil {
+			return errors.New("execution bundle profile is missing")
+		}
+		var bundled contract.ExecutionProfile
+		if err := json.Unmarshal(profileData, &bundled); err != nil {
+			return errors.New("execution bundle profile is invalid")
+		}
+		if !contract.ExecutionProfilesCompatible(deployment.ExecutionProfile, bundled) {
+			return errors.New("execution bundle profile does not match the pinned release")
+		}
+		current, err := r.ExecutionProfile(ctx, deployment.ScriptLang)
+		if err != nil {
+			return err
+		}
+		if !contract.ExecutionProfilesCompatible(deployment.ExecutionProfile, current) {
+			return errors.New("execution bundle profile is incompatible with this worker")
+		}
+		return nil
+	}
 	preparedFingerprint, err := os.ReadFile(filepath.Join(bundleDir, sourceReadyFile))
 	if err != nil {
 		return errors.New("execution bundle runtime fingerprint is missing")

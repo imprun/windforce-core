@@ -701,6 +701,7 @@ CREATE TABLE IF NOT EXISTS worker_registry (
     worker_group      text NOT NULL DEFAULT '',
     tags              jsonb NOT NULL DEFAULT '[]'::jsonb,
     labels            jsonb NOT NULL DEFAULT '[]'::jsonb,
+    execution_profiles jsonb NOT NULL DEFAULT '[]'::jsonb,
     slots             integer NOT NULL DEFAULT 1,
     status            text NOT NULL DEFAULT 'active',
     credential_id     text NOT NULL DEFAULT '',
@@ -715,6 +716,8 @@ ALTER TABLE worker_registry
     ADD COLUMN IF NOT EXISTS credential_id text NOT NULL DEFAULT '';
 ALTER TABLE worker_registry
     ADD COLUMN IF NOT EXISTS credential_generation bigint NOT NULL DEFAULT 0;
+ALTER TABLE worker_registry
+    ADD COLUMN IF NOT EXISTS execution_profiles jsonb NOT NULL DEFAULT '[]'::jsonb;
 
 CREATE TABLE IF NOT EXISTS worker_credential (
     id                  text PRIMARY KEY,

@@ -2,8 +2,10 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -126,5 +128,51 @@ func TestOpenExecutionBundlePreservesContextAcrossSingleflightCallerCancellation
 	}
 	if got := store.fetches.Load(); got != 1 {
 		t.Fatalf("artifact fetches = %d, want 1", got)
+	}
+}
+
+func TestValidateExecutionBundleUsesPinnedProfileInsteadOfPublisherFingerprint(t *testing.T) {
+	runner := Runner{}
+	profile, err := runner.ExecutionProfile(context.Background(), contract.ScriptLangGo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundleDir := t.TempDir()
+	profileData, err := json.Marshal(profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bundleDir, executionProfileFile), profileData, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// New profile-pinned bundles do not compare the producer's legacy
+	// prepare-v3 platform fingerprint to the worker.
+	if err := os.WriteFile(filepath.Join(bundleDir, sourceReadyFile), []byte("publisher-specific-v3"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	deployment := contract.Deployment{ScriptLang: contract.ScriptLangGo, ExecutionProfile: profile}
+	if err := runner.validateBundleRuntime(context.Background(), bundleDir, deployment); err != nil {
+		t.Fatalf("profile-pinned bundle validation: %v", err)
+	}
+
+	incompatible, err := contract.NewExecutionProfile(profile.ID, "incompatible-os", profile.Arch, profile.Runtime, profile.RuntimeABI, profile.Libc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deployment.ExecutionProfile = incompatible
+	if err := runner.validateBundleRuntime(context.Background(), bundleDir, deployment); err == nil {
+		t.Fatal("incompatible pinned profile was accepted")
+	}
+}
+
+func TestValidateLegacyExecutionBundleKeepsStrictPrepareV3Fingerprint(t *testing.T) {
+	bundleDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bundleDir, sourceReadyFile), []byte("stale-prepare-v3"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runner := Runner{}
+	err := runner.validateBundleRuntime(context.Background(), bundleDir, contract.Deployment{ScriptLang: contract.ScriptLangGo})
+	if err == nil || !strings.Contains(err.Error(), "incompatible") {
+		t.Fatalf("legacy validation error = %v, want strict incompatibility", err)
 	}
 }

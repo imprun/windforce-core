@@ -31,6 +31,46 @@ func TestNormalizeScriptLanguage(t *testing.T) {
 	}
 }
 
+func TestExecutionProfileCanonicalCompatibility(t *testing.T) {
+	bun, err := NewExecutionProfile("sha256:image-a", "linux", "amd64", "typescript", "1.2.3", "glibc-2.39")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bun.Runtime != ExecutionRuntimeBun {
+		t.Fatalf("runtime = %q, want bun", bun.Runtime)
+	}
+	same, err := NewExecutionProfile("sha256:image-a", "linux", "amd64", "bun", "1.2.3", "glibc-2.39")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ExecutionProfilesCompatible(bun, same) {
+		t.Fatal("equivalent TypeScript/Bun profiles are not compatible")
+	}
+	windows, err := NewExecutionProfile("sha256:image-a", "windows", "amd64", "bun", "1.2.3", "none")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ExecutionProfilesCompatible(bun, windows) {
+		t.Fatal("Linux and Windows profiles must not be compatible")
+	}
+	musl, err := NewExecutionProfile("sha256:image-a", "linux", "amd64", "bun", "1.2.3", "musl-1.2.5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ExecutionProfilesCompatible(bun, musl) {
+		t.Fatal("glibc and musl profiles must not be compatible")
+	}
+	tampered := bun
+	tampered.RuntimeABI = "9.9.9"
+	if err := ValidateExecutionProfile(tampered); err == nil {
+		t.Fatal("tampered profile key was accepted")
+	}
+	label, err := ExecutionProfileLabel(bun)
+	if err != nil || !strings.HasPrefix(label, "sys/execution-profile-") {
+		t.Fatalf("profile label = %q, err=%v", label, err)
+	}
+}
+
 func TestValidAppKeyAcceptsLiteAndFCodeKeys(t *testing.T) {
 	valid := []string{"greet", "a1", "my_app", "4MDCPCM", "CESTORE", "A1", "1greet"}
 	invalid := []string{"", "a", " Greet", "greet ", "my-app", "my.app", "with space", "a/b", "\uD55C\uAE00"}

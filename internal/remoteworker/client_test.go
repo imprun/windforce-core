@@ -1,6 +1,7 @@
 package remoteworker
 
 import (
+	"archive/tar"
 	"context"
 	"encoding/json"
 	"errors"
@@ -20,6 +21,28 @@ import (
 	"github.com/imprun/windforce-core/internal/telemetry"
 	"github.com/imprun/windforce-core/internal/worker"
 )
+
+func TestArtifactStoreRejectsTarDigestMismatchBeforePromotion(t *testing.T) {
+	payload := []byte("export const main = () => 'tampered'\n")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/x-tar")
+		writer := tar.NewWriter(w)
+		_ = writer.WriteHeader(&tar.Header{Name: "main.ts", Mode: 0o644, Size: int64(len(payload)), Typeflag: tar.TypeReg})
+		_, _ = writer.Write(payload)
+		_ = writer.Close()
+	}))
+	defer srv.Close()
+
+	destination := filepath.Join(t.TempDir(), "bundle")
+	wrongDigest := "sha256:" + strings.Repeat("0", 64)
+	_, err := (ArtifactStore{Client: New(srv.URL, "")}).FetchTo(context.Background(), destination, wrongDigest)
+	if err == nil || !strings.Contains(err.Error(), "digest mismatch") {
+		t.Fatalf("FetchTo error = %v, want digest mismatch", err)
+	}
+	if _, statErr := os.Stat(destination); !os.IsNotExist(statErr) {
+		t.Fatalf("mismatched artifact was promoted: %v", statErr)
+	}
+}
 
 // The client must satisfy the worker backend and token provider contracts.
 var (

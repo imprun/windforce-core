@@ -1447,6 +1447,11 @@ func (s *LocalStore) ExpireStuckJobs(ctx context.Context, stuckBefore time.Time)
 }
 
 func (s *LocalStore) RegisterWorker(ctx context.Context, record WorkerRecord) error {
+	profiles, err := contract.NormalizeExecutionProfiles(record.ExecutionProfiles)
+	if err != nil {
+		return err
+	}
+	record.ExecutionProfiles = profiles
 	return s.update(ctx, func(snapshot *Snapshot, now time.Time) error {
 		if snapshot.Workers == nil {
 			snapshot.Workers = map[string]WorkerRecord{}

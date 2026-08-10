@@ -263,11 +263,11 @@ RETURNING updated_at`,
 
 func (s *PostgresStore) GetWorker(ctx context.Context, workerID string) (WorkerRecord, error) {
 	var record WorkerRecord
-	var tags, labels []byte
+	var tags, labels, profiles []byte
 	err := s.pool.QueryRow(ctx, `
-SELECT id, worker_group, tags, labels, slots, status, credential_id, credential_generation, started_at, last_heartbeat_at
+SELECT id, worker_group, tags, labels, execution_profiles, slots, status, credential_id, credential_generation, started_at, last_heartbeat_at
 FROM worker_registry WHERE id=$1`, strings.TrimSpace(workerID)).Scan(
-		&record.ID, &record.Group, &tags, &labels, &record.Slots, &record.Status,
+		&record.ID, &record.Group, &tags, &labels, &profiles, &record.Slots, &record.Status,
 		&record.CredentialID, &record.CredentialGeneration, &record.StartedAt, &record.LastHeartbeatAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -280,6 +280,9 @@ FROM worker_registry WHERE id=$1`, strings.TrimSpace(workerID)).Scan(
 		return WorkerRecord{}, err
 	}
 	if err := json.Unmarshal(labels, &record.Labels); err != nil {
+		return WorkerRecord{}, err
+	}
+	if err := json.Unmarshal(profiles, &record.ExecutionProfiles); err != nil {
 		return WorkerRecord{}, err
 	}
 	return record, nil

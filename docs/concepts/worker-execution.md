@@ -13,6 +13,10 @@ A worker executes an immutable execution bundle pinned into the Job. It does not
 
 `input.json` contains invocation input. Application source and prepared dependencies live separately in the worker-local execution bundle cache. The launcher starts only after that bundle has been fetched and validated.
 
+Each Release targets exactly one execution profile. Core does not make one prepared bundle portable across operating systems or architectures: a Windows bundle is scheduled only to compatible Windows workers, and a Linux bundle only to compatible Linux workers. Correct placement is the contract.
+
+Bun is the tier-1/default execution runtime for TypeScript Apps. Python and Go are also supported App runtimes. One App selects one runtime for the whole Release; Actions may select different entrypoints but cannot override the App runtime.
+
 ## Two distinct lifecycles
 
 Release publication and Job execution are deliberately separate:
@@ -55,7 +59,7 @@ Run admission
                                                   -> validated cache hit, or
                                                   -> fetch digest to temp
                                                   -> verify and atomically promote
-                                                  -> validate preparation fingerprint
+                                                  -> validate pinned execution profile
                                                   -> write ready marker
                                                 resolve entrypoint inside bundle
                                                 create per-Job directory
@@ -70,6 +74,8 @@ In the implementation, the Processor passes `job.Payload.PinnedDeployment()` to 
 
 `scriptLang` is normalized to exactly `typescript`, `python`, or `go`. An omitted value defaults to TypeScript for manifest compatibility; any other value is rejected before preparation and never falls through to Bun. During TypeScript publication, Core uses Bun's static scanner to require a named `main` export and then runs `bun build` over the entrypoint dependency graph. Neither step imports or executes the App, so publication cannot trigger App top-level effects.
 
+At publication Core detects the selected runtime target, writes `.windforce-execution-profile.json` into the bundle, and pins the same structured profile and an engine-owned `sys/execution-profile-*` placement label into the Deployment. The profile contains a version, OS, architecture, launcher runtime, runtime ABI, normalized libc identity, and an optional operator-supplied immutable profile ID. The exact container image digest is the recommended ID for container deployments. Core's Go version and the host distribution name are not compatibility fields. Go bundles are built with `CGO_ENABLED=0`, use `libc=none`, and keep the publisher Go toolchain as provenance rather than a worker requirement.
+
 ## Filesystem separation
 
 The worker uses two different locations:
@@ -79,6 +85,7 @@ The worker uses two different locations:
   main.ts
   node_modules/
   .ready
+  .windforce-execution-profile.json
   .windforce-execution-ready
   ...prepared application tree
 
@@ -94,7 +101,7 @@ The Core launcher constructs `WindforceContext` and calls the App entrypoint. Co
 
 ## Bundle acquisition and cache safety
 
-On every Job, the runtime requires a non-empty pinned bundle digest. A cache hit is accepted only when `.windforce-execution-ready` contains that digest and the bundle preparation fingerprint is compatible with the worker runtime.
+On every Job, the runtime requires a non-empty pinned bundle digest. A cache hit is accepted only when `.windforce-execution-ready` contains that digest and the bundle profile is compatible with the worker. A Release created before execution profiles existed has no profile metadata and remains on the strict `prepare-v3` fingerprint comparison; it is never silently upgraded to the new compatibility rules.
 
 On a cache miss, concurrent requests for the same digest are coalesced. The bundle is fetched into a temporary sibling directory, validated, and atomically promoted to its digest-addressed cache directory. The ready marker is written only after the runtime fingerprint has been accepted. A canceled, missing, corrupt, or incompatible bundle produces a named bundle failure; execution must not fall back to Git, dependency installation, compilation, or a different release.
 
@@ -103,8 +110,12 @@ On a cache miss, concurrent requests for the same digest are coalesced. The bund
 Local and remote workers preserve the same ordering and pinned-bundle semantics.
 
 - A local worker obtains the digest from the configured Execution Artifact Store and copies it into its worker-local cache.
-- A remote worker requests `GET /worker/v1/artifacts/{digest}`. For a managed credential, the client attaches the current Job, workspace, and worker lease context and Core verifies that the requested digest is pinned by that owned Job. Core reads the configured Artifact Store and streams a tar archive; the worker extracts it into a temporary directory, verifies the digest on the POSIX deployment target, and atomically promotes it into its local cache.
+- A remote worker requests `GET /worker/v1/artifacts/{digest}`. For a managed credential, the client attaches the current Job, workspace, and worker lease context and Core verifies that the requested digest is pinned by that owned Job. Core reads the configured Artifact Store and streams a tar archive; the worker verifies the canonical names, POSIX modes, link targets, sizes, and bytes while reading the archive, extracts it into a temporary directory, and atomically promotes it into its local cache. Stream verification is identical on Windows and POSIX even when the destination filesystem cannot preserve every POSIX mode.
 - A remote worker does not mount Core's database, Source Store, or Artifact Store filesystem. Repository credentials and the server encryption root remain in Core.
+
+Workers detect and register the Bun, Python, and static-Go profiles they can execute. Claim matching compiles those profiles into reserved labels and reuses the State Store's atomic label filter, so incompatible Jobs remain queued instead of being claimed and failed. The Processor repeats a structured profile check immediately after claim as an invariant defense. Operator labels and execution-profile labels remain separate: managed credentials constrain the former, while Core derives the latter from registered profiles.
+
+For a queued profile-pinned Job, the Job status response reports `scheduling_reason: "no_compatible_worker"` when the live registry contains no compatible execution profile. This is an observation, not a terminal Job state; registering a compatible Worker makes the existing Job claimable.
 
 The current server-side Artifact Store implementation is filesystem-backed. This is independent of remote worker transport: Core owns that filesystem and exposes digest-addressed artifacts to remote workers through the Worker Plane.
 
@@ -158,9 +169,13 @@ Before accepting a worker or runtime change, verify all of the following:
 - Bundle open and validation still happen before Job runtime files and process startup.
 - No execution path clones Git, installs dependencies, injects SDKs, compiles source, or queries the active release.
 - Cache miss handling remains temporary, verified, atomic, and safe under concurrent fetches.
-- Cache hits validate both the digest marker and preparation fingerprint.
+- New cache hits validate both the digest marker and pinned execution profile; legacy profile-less bundles retain strict `prepare-v3` fingerprint validation.
+- One Release has one App runtime and one execution profile; Action runtime overrides are rejected.
+- A worker cannot claim a profile-pinned Job unless its engine-derived profile label matches, and the Processor repeats the structured check before launch.
+- Container deployments should set `WINDFORCE_EXECUTION_PROFILE_ID` (or `--execution-profile-id`) to the exact immutable image digest or an equivalently immutable profile revision.
 - Entrypoint containment prevents paths from escaping the fetched bundle root.
 - Local and remote worker paths preserve equivalent bundle and completion semantics.
+- Remote archive integrity is verified before cache promotion on Windows as well as POSIX hosts.
 - Managed credentials never broaden their exact labels or workspace scope, and draining groups acquire no new managed leases.
 - Shutdown stops new claims, exposes `active -> draining`, preserves the active Job until the drain deadline, and removes the registry record only after completion.
 - Logs and results remain secret-masked and lease-fenced.
@@ -171,4 +186,4 @@ Before accepting a worker or runtime change, verify all of the following:
 - HumanTask hold keeps the original process, lease, and worker slot alive; terminal interruption causes cancel the pending task without creating another Job.
 - Tests cover bundle publication/fetch, cache behavior, remote extraction, runtime execution, static TypeScript `main` validation, graceful and timed-out drain, and Job failure on bundle errors.
 
-The primary implementation areas are `internal/worker`, `internal/runtime`, `internal/executor`, `internal/executionbundle`, `internal/remoteworker`, and `internal/server/worker_plane.go`. Execution-semantic changes require an ADR in addition to updating this current-state document. Optional trace propagation and independent root creation are defined in [ADR 0029](../adr/0029-optional-trace-context-continuity.md).
+The primary implementation areas are `internal/worker`, `internal/runtime`, `internal/executor`, `internal/executionbundle`, `internal/remoteworker`, and `internal/server/worker_plane.go`. Execution-semantic changes require an ADR in addition to updating this current-state document. Execution-profile placement is defined in [ADR 0030](../adr/0030-release-execution-profiles.md). Optional trace propagation and independent root creation are defined in [ADR 0029](../adr/0029-optional-trace-context-continuity.md).

@@ -1149,6 +1149,11 @@ WHERE id IN (SELECT id FROM stuck_runs)
 }
 
 func (s *PostgresStore) RegisterWorker(ctx context.Context, record WorkerRecord) error {
+	profilesNormalized, err := contract.NormalizeExecutionProfiles(record.ExecutionProfiles)
+	if err != nil {
+		return err
+	}
+	record.ExecutionProfiles = profilesNormalized
 	if record.Slots <= 0 {
 		record.Slots = 1
 	}
@@ -1164,13 +1169,18 @@ func (s *PostgresStore) RegisterWorker(ctx context.Context, record WorkerRecord)
 	if err != nil {
 		return err
 	}
+	profiles, err := json.Marshal(append([]contract.ExecutionProfile{}, record.ExecutionProfiles...))
+	if err != nil {
+		return err
+	}
 	commandTag, err := s.pool.Exec(ctx, `
-INSERT INTO worker_registry (id, worker_group, tags, labels, slots, status, credential_id, credential_generation, started_at, last_heartbeat_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), now())
+INSERT INTO worker_registry (id, worker_group, tags, labels, execution_profiles, slots, status, credential_id, credential_generation, started_at, last_heartbeat_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now(), now())
 ON CONFLICT (id) DO UPDATE SET
     worker_group = EXCLUDED.worker_group,
     tags = EXCLUDED.tags,
     labels = EXCLUDED.labels,
+    execution_profiles = EXCLUDED.execution_profiles,
     slots = EXCLUDED.slots,
     status = EXCLUDED.status,
     credential_id = EXCLUDED.credential_id,
@@ -1178,7 +1188,7 @@ ON CONFLICT (id) DO UPDATE SET
     last_heartbeat_at = now()
 WHERE worker_registry.credential_id = EXCLUDED.credential_id
   AND worker_registry.credential_generation = EXCLUDED.credential_generation`,
-		record.ID, record.Group, tags, labels, record.Slots, status, record.CredentialID, record.CredentialGeneration)
+		record.ID, record.Group, tags, labels, profiles, record.Slots, status, record.CredentialID, record.CredentialGeneration)
 	if err != nil {
 		return err
 	}
@@ -1212,7 +1222,7 @@ DELETE FROM worker_registry WHERE last_heartbeat_at < now() - $1::interval`,
 		return nil, err
 	}
 	rows, err := s.pool.Query(ctx, `
-SELECT id, worker_group, tags, labels, slots, status, credential_id, credential_generation, started_at, last_heartbeat_at
+SELECT id, worker_group, tags, labels, execution_profiles, slots, status, credential_id, credential_generation, started_at, last_heartbeat_at
 FROM worker_registry ORDER BY id`)
 	if err != nil {
 		return nil, err
@@ -1221,14 +1231,17 @@ FROM worker_registry ORDER BY id`)
 	out := []WorkerRecord{}
 	for rows.Next() {
 		var record WorkerRecord
-		var tags, labels []byte
-		if err := rows.Scan(&record.ID, &record.Group, &tags, &labels, &record.Slots, &record.Status, &record.CredentialID, &record.CredentialGeneration, &record.StartedAt, &record.LastHeartbeatAt); err != nil {
+		var tags, labels, profiles []byte
+		if err := rows.Scan(&record.ID, &record.Group, &tags, &labels, &profiles, &record.Slots, &record.Status, &record.CredentialID, &record.CredentialGeneration, &record.StartedAt, &record.LastHeartbeatAt); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal(tags, &record.Tags); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal(labels, &record.Labels); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(profiles, &record.ExecutionProfiles); err != nil {
 			return nil, err
 		}
 		out = append(out, record)

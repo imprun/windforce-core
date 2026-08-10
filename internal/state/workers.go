@@ -3,22 +3,25 @@ package state
 import (
 	"fmt"
 	"time"
+
+	"github.com/imprun/windforce-core/internal/contract"
 )
 
 // WorkerRecord is the worker registry entry (ADR 0009 §6): the observable
 // truth of which capabilities are alive right now. Slots is the worker's
 // quantitative concurrency cap; labels stay qualitative.
 type WorkerRecord struct {
-	ID                   string    `json:"id"`
-	Group                string    `json:"group,omitempty"`
-	Tags                 []string  `json:"tags,omitempty"`
-	Labels               []string  `json:"labels,omitempty"`
-	Slots                int       `json:"slots"`
-	Status               string    `json:"status"`
-	CredentialID         string    `json:"credentialId,omitempty"`
-	CredentialGeneration int64     `json:"credentialGeneration,omitempty"`
-	StartedAt            time.Time `json:"startedAt"`
-	LastHeartbeatAt      time.Time `json:"lastHeartbeatAt"`
+	ID                   string                      `json:"id"`
+	Group                string                      `json:"group,omitempty"`
+	Tags                 []string                    `json:"tags,omitempty"`
+	Labels               []string                    `json:"labels,omitempty"`
+	ExecutionProfiles    []contract.ExecutionProfile `json:"executionProfiles,omitempty"`
+	Slots                int                         `json:"slots"`
+	Status               string                      `json:"status"`
+	CredentialID         string                      `json:"credentialId,omitempty"`
+	CredentialGeneration int64                       `json:"credentialGeneration,omitempty"`
+	StartedAt            time.Time                   `json:"startedAt"`
+	LastHeartbeatAt      time.Time                   `json:"lastHeartbeatAt"`
 }
 
 const (

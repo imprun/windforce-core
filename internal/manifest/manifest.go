@@ -99,6 +99,15 @@ func parseNamed(data []byte, fileName string) (contract.App, error) {
 			return contract.App{}, fmt.Errorf("invalid action key %q in %s", name, fileName)
 		}
 		action.Action = name
+		if action.Adapter != nil {
+			return contract.App{}, fmt.Errorf("action %s.%s adapter is not supported in %s", app.App, name, fileName)
+		}
+		if len(action.Command) > 0 {
+			return contract.App{}, fmt.Errorf("action %s.%s command is not supported in %s", app.App, name, fileName)
+		}
+		if strings.TrimSpace(action.Runtime) != "" {
+			return contract.App{}, fmt.Errorf("action %s.%s runtime is not supported in %s; set app scriptLang once for the Release", app.App, name, fileName)
+		}
 		clearRuntimeOwnedActionManifestFields(&action)
 		if action.Capabilities != nil {
 			caps, err := contract.NormalizeCapabilities(*action.Capabilities)

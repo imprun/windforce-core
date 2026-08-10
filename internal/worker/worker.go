@@ -24,6 +24,10 @@ type Runner interface {
 	Run(ctx context.Context, request actionruntime.RunRequest) (contract.JobResult, error)
 }
 
+type executionProfileProvider interface {
+	ExecutionProfiles(context.Context) ([]contract.ExecutionProfile, error)
+}
+
 type Processor struct {
 	Store    Backend
 	Runner   Runner
@@ -32,6 +36,9 @@ type Processor struct {
 	Tags     []string
 	// Labels is the capability label set this worker offers (ADR 0009).
 	Labels []string
+	// ExecutionProfiles are engine-detected launcher targets. Their reserved
+	// labels participate in atomic claim matching but are not operator-authored.
+	ExecutionProfiles []contract.ExecutionProfile
 	// Slots is the worker concurrency cap advertised to the registry.
 	Slots             int
 	EgressProxyAddr   string
@@ -68,12 +75,24 @@ func (p *Processor) processOne(claimCtx context.Context, executionCtx context.Co
 		return false, errors.New("state store is required")
 	}
 	workerID := p.workerID()
-	job, lease, err := p.Store.ClaimJobForWorker(claimCtx, workerID, p.Tags, p.Labels, p.LeaseTTL)
+	claimLabels, err := p.claimLabels(claimCtx)
+	if err != nil {
+		return false, err
+	}
+	job, lease, err := p.Store.ClaimJobForWorker(claimCtx, workerID, p.Tags, claimLabels, p.LeaseTTL)
 	if errors.Is(err, state.ErrNoQueuedJob) {
 		return false, nil
 	}
 	if err != nil {
 		return false, err
+	}
+	if required := job.Payload.PinnedDeployment().ExecutionProfile; !contract.AnyExecutionProfileCompatible(required, p.ExecutionProfiles) {
+		message := "claimed job execution profile is incompatible with this worker"
+		result := contract.JobResult{
+			JobID: job.ID, App: job.Payload.App, Action: job.Payload.Action,
+			Output: actionruntime.ErrorResult("ExecutionProfileMismatch", message), ExitCode: -1, Error: message,
+		}
+		return completeProcessed(p.Store.CompleteJobFailed(context.WithoutCancel(executionCtx), lease, result))
 	}
 	executionCtx, attemptSpan := telemetry.StartAttempt(executionCtx, job.TraceContext, job.Attempt,
 		attribute.String("windforce.component", "worker"),
@@ -430,13 +449,17 @@ func (p *Processor) RunLoop(ctx context.Context, pollInterval time.Duration) err
 		drainTimeout = 30 * time.Second
 	}
 	workerID := p.workerID()
+	if _, err := p.claimLabels(ctx); err != nil {
+		return err
+	}
 	record := state.WorkerRecord{
-		ID:     workerID,
-		Group:  p.Group,
-		Tags:   append([]string(nil), p.Tags...),
-		Labels: append([]string(nil), p.Labels...),
-		Slots:  p.Slots,
-		Status: state.WorkerStatusActive,
+		ID:                workerID,
+		Group:             p.Group,
+		Tags:              append([]string(nil), p.Tags...),
+		Labels:            append([]string(nil), p.Labels...),
+		ExecutionProfiles: append([]contract.ExecutionProfile(nil), p.ExecutionProfiles...),
+		Slots:             p.Slots,
+		Status:            state.WorkerStatusActive,
 	}
 	if err := p.Store.RegisterWorker(ctx, record); err != nil {
 		return fmt.Errorf("register worker: %w", err)
@@ -542,6 +565,23 @@ func (p *Processor) RunLoop(ctx context.Context, pollInterval time.Duration) err
 		case <-time.After(pollInterval):
 		}
 	}
+}
+
+func (p *Processor) claimLabels(ctx context.Context) ([]string, error) {
+	if len(p.ExecutionProfiles) == 0 {
+		if provider, ok := p.Runner.(executionProfileProvider); ok {
+			profiles, err := provider.ExecutionProfiles(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("detect worker execution profiles: %w", err)
+			}
+			p.ExecutionProfiles = profiles
+		}
+	}
+	labels, err := contract.WithExecutionProfileLabels(p.Labels, p.ExecutionProfiles)
+	if err != nil {
+		return nil, fmt.Errorf("worker execution profiles: %w", err)
+	}
+	return labels, nil
 }
 
 // retryDelay backs off exponentially from the poll interval to 30s.
