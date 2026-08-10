@@ -11,7 +11,7 @@
     "groups": [
       {
         "group": "Getting started",
-        "pages": ["index"]
+        "pages": ["index", "guides/container-images"]
       },
       {
         "group": "Concepts",
@@ -32,6 +32,7 @@
       {
         "group": "한국어",
         "pages": [
+          "ko/guides/container-images",
           "ko/concepts/workspaces",
           "ko/concepts/worker-execution",
           "ko/concepts/app-runtime-interface",
