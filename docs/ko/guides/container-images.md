@@ -49,4 +49,4 @@ docker build --target runtime -t windforce-core:local .
 docker build --target runtime-ocr -t windforce-core-ocr:local .
 ```
 
-이미지 게시 워크플로는 GitHub-hosted runner만 사용합니다. Pull Request에서는 네이티브 amd64·arm64 runner가 두 target을 빌드하고 실행 검증하지만 게시하지 않습니다. 안정 태그에서는 플랫폼별 이미지를 게시하고 multi-architecture index를 만든 뒤 플랫폼 구성과 immutable digest 서명을 검증합니다.
+이미지 게시 워크플로는 GitHub-hosted runner만 사용합니다. Pull Request에서는 네이티브 amd64·arm64 runner가 두 target을 빌드하고 실행 검증하지만 게시하지 않으며, 최소 범위의 비차단 GitHub Actions 캐시만 내보냅니다. 안정 태그는 접근 가능한 캐시를 읽을 수 있지만 태그 범위 캐시는 내보내지 않으므로 릴리스할 때마다 캐시 저장공간이 누적되지 않습니다. 안정 태그에서는 플랫폼별 이미지를 게시하고 multi-architecture index를 만든 뒤 플랫폼 구성과 immutable digest 서명을 검증합니다.

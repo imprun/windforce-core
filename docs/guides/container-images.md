@@ -49,4 +49,4 @@ docker build --target runtime -t windforce-core:local .
 docker build --target runtime-ocr -t windforce-core-ocr:local .
 ```
 
-The image publication workflow runs only on GitHub-hosted runners. Pull requests build and smoke-test both targets on native amd64 and arm64 runners without publishing them. Stable tags publish per-platform images, create the multi-architecture indexes, verify their platform set, and sign the resulting immutable digests.
+The image publication workflow runs only on GitHub-hosted runners. Pull requests build and smoke-test both targets on native amd64 and arm64 runners without publishing them. Pull request builds export only a minimal, non-blocking GitHub Actions cache. Stable tags may restore an accessible cache but never export a tag-scoped cache, so repeated releases do not consume cache storage per tag. Stable tags publish per-platform images, create the multi-architecture indexes, verify their platform set, and sign the resulting immutable digests.
