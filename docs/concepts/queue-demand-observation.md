@@ -27,7 +27,7 @@ Content-Type: application/json
 
 `key` is opaque caller context. Core normalizes tag and label sets and echoes
 the selector in the response. A selector with no tags keeps the existing Core
-worker meaning: it can serve every route tag. A selector with no labels can
+worker meaning: it can serve every worker tag. A selector with no labels can
 serve only jobs without label requirements.
 
 ```json

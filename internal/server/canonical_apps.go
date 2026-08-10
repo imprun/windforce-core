@@ -185,17 +185,24 @@ func (h *Handler) handleCanonicalPatchApp(w http.ResponseWriter, r *http.Request
 		return
 	}
 	patcher, ok := h.catalog.(interface {
-		SetAppTagOverride(context.Context, string, string, *string) (contract.Deployment, error)
+		GetRoutingPolicy(context.Context, string, string) (catalogpkg.RoutingPolicy, error)
+		SetAppRoutingPolicy(context.Context, string, string, catalogpkg.RoutingPolicyPatch) (contract.Deployment, error)
 	})
 	if !ok {
 		writeError(w, http.StatusNotImplemented, "app patch is not supported")
 		return
 	}
-	tagOverride, ok := decodeCanonicalTagOverride(w, r)
+	patch, ok := decodeCanonicalRoutingPolicyPatch(w, r)
 	if !ok {
 		return
 	}
-	deployment, err := patcher.SetAppTagOverride(r.Context(), workspaceID, app, tagOverride)
+	patch.Actor = requestActorSubject(r)
+	previous, err := patcher.GetRoutingPolicy(r.Context(), workspaceID, app)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	deployment, err := patcher.SetAppRoutingPolicy(r.Context(), workspaceID, app, patch)
 	if errors.Is(err, catalogpkg.ErrDeploymentNotFound) {
 		writeError(w, http.StatusNotFound, "app not found")
 		return
@@ -204,7 +211,12 @@ func (h *Handler) handleCanonicalPatchApp(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	h.recordAudit(r, workspaceID, deployment.SourceGitSourceID(), app, "route_tag_override", tagOverrideDetail("app", tagOverride))
+	updated, err := patcher.GetRoutingPolicy(r.Context(), workspaceID, app)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	h.recordAudit(r, workspaceID, deployment.SourceGitSourceID(), app, "execution_placement_updated", routingPolicyMutationDetail("app", "", previous, updated))
 	writeJSON(w, http.StatusOK, newCanonicalAppModel(deployment))
 }
 
@@ -214,17 +226,24 @@ func (h *Handler) handleCanonicalPatchAction(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	patcher, ok := h.catalog.(interface {
-		SetActionTagOverride(context.Context, string, string, string, *string) (contract.Action, error)
+		GetRoutingPolicy(context.Context, string, string) (catalogpkg.RoutingPolicy, error)
+		SetActionRoutingPolicy(context.Context, string, string, string, catalogpkg.RoutingPolicyPatch) (contract.Action, error)
 	})
 	if !ok {
 		writeError(w, http.StatusNotImplemented, "action patch is not supported")
 		return
 	}
-	tagOverride, ok := decodeCanonicalTagOverride(w, r)
+	patch, ok := decodeCanonicalRoutingPolicyPatch(w, r)
 	if !ok {
 		return
 	}
-	action, err := patcher.SetActionTagOverride(r.Context(), workspaceID, app, actionKey, tagOverride)
+	patch.Actor = requestActorSubject(r)
+	previous, err := patcher.GetRoutingPolicy(r.Context(), workspaceID, app)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	action, err := patcher.SetActionRoutingPolicy(r.Context(), workspaceID, app, actionKey, patch)
 	if errors.Is(err, catalogpkg.ErrDeploymentNotFound) {
 		writeError(w, http.StatusNotFound, "action not found")
 		return
@@ -241,7 +260,12 @@ func (h *Handler) handleCanonicalPatchAction(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
-	h.recordAudit(r, workspaceID, deployment.SourceGitSourceID(), app, "route_tag_override", tagOverrideDetail("action "+actionKey, tagOverride))
+	updated, err := patcher.GetRoutingPolicy(r.Context(), workspaceID, app)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	h.recordAudit(r, workspaceID, deployment.SourceGitSourceID(), app, "execution_placement_updated", routingPolicyMutationDetail("action", actionKey, previous, updated))
 	schemaReader := h.newCanonicalSchemaReader(r.Context(), deployment)
 	defer schemaReader.Close()
 	view, err := h.newCanonicalActionModel(schemaReader, deployment, actionKey, action)

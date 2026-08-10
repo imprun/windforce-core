@@ -337,6 +337,11 @@ func purgeLocalWorkspace(snapshot *Snapshot, workspaceID string) {
 			delete(snapshot.ReleaseCatalog.ActiveHistoryIDs, key)
 		}
 	}
+	for key := range snapshot.ReleaseCatalog.RoutingPolicies {
+		if strings.HasPrefix(key, workspaceID+"/") {
+			delete(snapshot.ReleaseCatalog.RoutingPolicies, key)
+		}
+	}
 	for key := range snapshot.ReleaseCatalog.ActiveHistoryIDs {
 		if strings.HasPrefix(key, workspaceID+"/") {
 			delete(snapshot.ReleaseCatalog.ActiveHistoryIDs, key)

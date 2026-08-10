@@ -173,6 +173,7 @@ func TestLocalDeleteWorkspacePurgesScopedData(t *testing.T) {
 		deployment := contract.Deployment{Workspace: workspaceID, App: "demo"}
 		deploymentKey := catalog.DeploymentKey(workspaceID, deployment.App)
 		snapshot.ReleaseCatalog.Deployments[deploymentKey] = deployment
+		snapshot.ReleaseCatalog.RoutingPolicies[deploymentKey] = catalog.RoutingPolicy{Workspace: workspaceID, App: deployment.App}
 		snapshot.ReleaseCatalog.ActiveHistoryIDs[deploymentKey] = "history-delete"
 		snapshot.ReleaseCatalog.Candidates["candidate"] = catalog.ReleaseCandidate{Deployment: deployment, SyncedAt: now}
 		snapshot.ReleaseCatalog.History = append(snapshot.ReleaseCatalog.History, catalog.DeploymentHistory{ID: "history-delete", Workspace: workspaceID})
@@ -196,7 +197,7 @@ func TestLocalDeleteWorkspacePurgesScopedData(t *testing.T) {
 	if _, exists := snapshot.Workspaces[workspaceID]; exists || len(snapshot.Runs) != 0 || len(snapshot.Jobs) != 0 || len(snapshot.HumanTasks) != 0 || len(snapshot.Events) != 0 || len(snapshot.JobLogs) != 0 {
 		t.Fatalf("execution data remained after deletion: %#v", snapshot)
 	}
-	if _, exists := snapshot.JobState[workspaceID]; exists || len(snapshot.LegacyClients) != 0 || len(snapshot.LegacyClientAudits) != 0 || len(snapshot.Triggers) != 0 || len(snapshot.WebhookSubscriptions) != 0 || len(snapshot.ControlPlaneEvents) != 0 || len(snapshot.ReleaseCatalog.Deployments) != 0 {
+	if _, exists := snapshot.JobState[workspaceID]; exists || len(snapshot.LegacyClients) != 0 || len(snapshot.LegacyClientAudits) != 0 || len(snapshot.Triggers) != 0 || len(snapshot.WebhookSubscriptions) != 0 || len(snapshot.ControlPlaneEvents) != 0 || len(snapshot.ReleaseCatalog.Deployments) != 0 || len(snapshot.ReleaseCatalog.RoutingPolicies) != 0 {
 		t.Fatalf("workspace-scoped data remained after deletion: %#v", snapshot)
 	}
 	if _, err := store.GetWorkspace(ctx, contract.DefaultWorkspace); err != nil {
@@ -228,6 +229,7 @@ func TestPostgresWorkspaceLifecycle(t *testing.T) {
 
 	workspaceID := fmt.Sprintf("test-ws-%d", time.Now().UnixNano())
 	defer func() {
+		_, _ = store.pool.Exec(context.Background(), `DELETE FROM control_routing_policy WHERE workspace_id=$1`, workspaceID)
 		_, _ = store.pool.Exec(context.Background(), `DELETE FROM workspace_audit WHERE workspace_id=$1`, workspaceID)
 		_, _ = store.pool.Exec(context.Background(), `DELETE FROM workspace_token WHERE workspace_id=$1`, workspaceID)
 		_, _ = store.pool.Exec(context.Background(), `DELETE FROM workspace_key WHERE workspace_id=$1`, workspaceID)
@@ -303,13 +305,16 @@ func TestPostgresWorkspaceLifecycle(t *testing.T) {
 	if err := store.SetVariable(ctx, workspaceID, "", "delete-me", "value", false, ""); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := store.pool.Exec(ctx, `INSERT INTO control_routing_policy (workspace_id, app_key, policy) VALUES ($1, $2, $3::jsonb)`, workspaceID, "demo", `{"workspace":"`+workspaceID+`","app":"demo"}`); err != nil {
+		t.Fatal(err)
+	}
 	if err := store.DeleteWorkspace(ctx, workspaceID, "operator"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.GetWorkspace(ctx, workspaceID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("deleted workspace lookup error = %v", err)
 	}
-	for _, table := range []string{"workspace_registry", "workspace_key", "workspace_token", "workspace_audit", "variable"} {
+	for _, table := range []string{"workspace_registry", "workspace_key", "workspace_token", "workspace_audit", "variable", "control_routing_policy"} {
 		var count int
 		if err := store.pool.QueryRow(ctx, fmt.Sprintf(`SELECT count(*) FROM %s WHERE %s=$1`, table, map[bool]string{true: "id", false: "workspace_id"}[table == "workspace_registry"]), workspaceID).Scan(&count); err != nil {
 			t.Fatalf("count %s: %v", table, err)

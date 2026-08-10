@@ -135,6 +135,18 @@ export type ProbeResult = {
   branch_exists?: boolean;
   branches?: string[];
   error?: string;
+  manifest?: ManifestRoutingPreview;
+};
+
+export type ManifestRoutingPreview = {
+  app_key: string;
+  worker_tag: string;
+  required_labels: string[];
+  actions: Array<{
+    action_key: string;
+    worker_tag: string;
+    required_labels: string[];
+  }>;
 };
 
 export type SourceSyncResult = {
@@ -177,6 +189,9 @@ export type AppSummary = {
   bundle_digest?: string;
   bundle_uri?: string;
   required_capabilities?: string[];
+  required_labels?: string[];
+  required_labels_override?: string[];
+  effective_required_labels?: string[];
   max_concurrent?: number | null;
   updated_at: string;
   effective_route_tag: string;
@@ -195,6 +210,9 @@ export type ActionView = {
   tag_override?: string;
   timeout_s?: number;
   required_capabilities?: string[];
+  required_labels?: string[];
+  required_labels_override?: string[];
+  effective_required_labels?: string[];
   runtime_access?: {
     variables?: string[];
     resources?: string[];
@@ -207,6 +225,22 @@ export type ActionView = {
 export type AppDetail = {
   app: AppSummary;
   actions: ActionView[];
+};
+
+export type RoutingPolicyPatch = {
+  tag_override?: string | null;
+  required_labels_override?: string[] | null;
+};
+
+export type WorkerView = {
+  id: string;
+  group?: string;
+  tags: string[];
+  labels: string[];
+  slots: number;
+  live: boolean;
+  started_at: string;
+  last_heartbeat_at: string;
 };
 
 export type ActionSchemas = {
@@ -682,6 +716,7 @@ export type RegisterSourcePayload = {
   branch?: string;
   subpath?: string;
   creds_ref?: string;
+  placement_policy?: RoutingPolicyPatch;
 };
 
 export type PatchSourcePayload = {
@@ -921,6 +956,25 @@ export class WindforceApi {
 
   app(appKey: string): Promise<AppDetail> {
     return this.request(`/apps/${encodeURIComponent(appKey)}`);
+  }
+
+  patchAppRoutingPolicy(appKey: string, payload: RoutingPolicyPatch): Promise<AppSummary> {
+    return this.request(`/apps/${encodeURIComponent(appKey)}`, { method: "PATCH", body: payload });
+  }
+
+  patchActionRoutingPolicy(
+    appKey: string,
+    actionKey: string,
+    payload: RoutingPolicyPatch,
+  ): Promise<ActionView> {
+    return this.request(
+      `/apps/${encodeURIComponent(appKey)}/actions/${encodeURIComponent(actionKey)}`,
+      { method: "PATCH", body: payload },
+    );
+  }
+
+  workers(): Promise<{ workers: WorkerView[] }> {
+    return this.request("/workers");
   }
 
   appHistory(appKey: string): Promise<HistoryItem[]> {

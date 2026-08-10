@@ -38,6 +38,10 @@ in scope.
 Read [Core concepts](docs/concepts/core-concepts.md) for the exact storage,
 fingerprint, marker, Run, and Job definitions. The complete state flow is in
 [Release and execution lifecycle](docs/concepts/release-lifecycle.md).
+
+[Execution placement](docs/concepts/execution-placement.md) explains how generated or
+committed manifest defaults combine with persistent operator overrides, including
+API-only operation when the optional Web Console is not exposed.
 Configured event sources and external adapter guidance are in
 [Triggers](docs/concepts/triggers.md). The external routing ownership boundary
 is recorded in
@@ -281,7 +285,7 @@ go run ./cmd/windforce-core worker --state .tmp/state.json --store .tmp/store
 
 `worker --once` claims at most one queued job and exits, which is useful in
 tests and scripted smoke checks.
-`worker --tags default,app-blue` restricts claims to those pinned route tags;
+`worker --tags default,app-blue` restricts claims to those pinned worker tags;
 when omitted, the worker claims every queued tag for simple local development.
 `worker --log-flush-interval 2s --log-cap-bytes 20971520` matches the canonical
 default of incremental job log flushing with a 20 MiB per-job cap; set
@@ -602,7 +606,7 @@ The Web UI is intentionally narrow:
 - register apps backed by git repository sources
 - publish releases (validate a source at HEAD and expose the worker contract)
 - show release history and the currently active contract per app
-- monitor aggregate job activity per app and route tag (queued, running,
+- monitor aggregate job activity per app and worker tag (queued, running,
   recent completed/failed/canceled, failure rate)
 - review released action schemas (the materialized invocation contract)
 - link to the app source on GitHub/GitLab at the pinned release commit

@@ -6,13 +6,13 @@ This guide is generated from executable UI scenarios. Screenshots are captured f
 
 ## Review registered apps
 
-The Apps view is the home screen. Every row is one app: its release state, repository source, last release, and route tag.
+The Apps view is the home screen. Every row is one app: its release state, repository source, last release, and effective worker tag.
 
 ![Review registered apps](../assets/ui/apps-overview.png)
 
 1. Open the Web UI; the Apps view lists every registered app.
 2. Check the release state badge: released apps have a worker-visible contract, registered apps do not yet.
-3. Compare repository source, last release commit, action count, and route tag per app.
+3. Compare repository source, last release commit, action count, and worker tag per app.
 4. Select an app row or app name to open its full detail view, or publish a release from the row.
 
 ## Review the execution workspace in dark mode
@@ -27,14 +27,15 @@ Dark mode keeps the green runtime identity while separating the shell, work surf
 
 ## Register an app
 
-Register App points the control plane at a repository source. Registration validates repository access, branch, and windforce.json before saving.
+Register App validates the configured canonical manifest, previews its App identity and execution-placement defaults, and can store an initial operator policy.
 
 ![Register an app](../assets/ui/register-app.png)
 
 1. Click Register App in the Apps view.
 2. Enter the app name, repository URL, branch, and optional subpath.
 3. Pick a git auth method or reference an existing credential variable path.
-4. Use Probe repository to confirm reachability and branch existence before registering.
+4. Use Probe repository to confirm reachability and preview the configured canonical manifest.
+5. Optionally override the release worker tag or required labels. Core stores these values independently from later Releases.
 
 ## Use the console in Korean
 
@@ -49,14 +50,58 @@ The embedded console supports Korean across navigation and product screens while
 
 ## Inspect an app
 
-The app detail Overview tab shows the active release and readiness signals for workers.
+The app detail Overview keeps immutable release defaults separate from effective execution placement and worker readiness.
 
 ![Inspect an app](../assets/ui/app-detail.png)
 
 1. Open an app from the Apps view.
 2. Review the active release: app key, release commit, entrypoint, and update time.
 3. Follow the source code link to browse the repository at the pinned release commit on GitHub/GitLab.
-4. Use the tabs for repository settings, release history, and action schemas.
+4. Follow the effective worker tag to the separate Placement tab when you need to inspect or edit worker selection.
+5. Use the tabs for repository settings, release history, and action schemas.
+
+## Configure execution placement
+
+Execution placement is operator-owned configuration that selects eligible workers and survives releases and rollbacks without changing the release manifest.
+
+![Configure execution placement](../assets/ui/execution-placement.png)
+
+1. Open the app and choose the Placement tab.
+2. Choose whether the worker tag and required labels inherit the active release or use an operator override.
+3. An empty required-label override explicitly means no labels; Inherit follows the active release.
+4. Review the effective-after-save preview. The policy applies only to newly admitted Runs.
+5. After saving, review each Action for a matching live worker. Missing workers warn but do not block the change.
+
+## Configure execution placement in dark mode
+
+Dark mode keeps release defaults, operator overrides, and effective worker placement visually distinct.
+
+![Configure execution placement in dark mode](../assets/ui/execution-placement-dark.png)
+
+1. Open an App and choose Placement.
+2. Switch the console to dark mode and open the App placement editor.
+3. Confirm defaults, overrides, previews, and readiness warnings remain legible.
+
+## Configure execution placement on a narrow screen
+
+The App placement summary and editor collapse to one column without hiding worker selection or save controls.
+
+![Configure execution placement on a narrow screen](../assets/ui/execution-placement-mobile.png)
+
+1. Open an App and choose Placement on a narrow screen.
+2. Open the App placement editor.
+3. Review worker tag and required-label controls in the one-column layout.
+
+## Configure Action execution placement
+
+Each Action inherits App placement by default and can override its worker tag and required labels independently.
+
+![Configure Action execution placement](../assets/ui/action-execution-placement.png)
+
+1. Open the app and choose the Placement tab.
+2. Choose Edit on an Action row.
+3. Keep Inherit App placement or select an Action-specific override.
+4. The release-label default combines App and Action runsOn values.
 
 ## Synchronize source
 
@@ -193,7 +238,7 @@ The App Triggers tab keeps inbound Webhook, Schedule, and RabbitMQ sources besid
 
 ## Audit configuration changes
 
-The Audit tab records who changed the app's configuration: repository settings edits, source deletion, and route tag overrides. Releases have their own history on the Releases tab.
+The Audit tab records who changed the app's configuration: repository settings edits, source deletion, and execution-placement overrides. Releases have their own history on the Releases tab.
 
 ![Audit configuration changes](../assets/ui/audit.png)
 

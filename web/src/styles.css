@@ -1838,6 +1838,13 @@ textarea {
   overflow-wrap: anywhere;
 }
 
+.auditActor {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .auditCategory {
   border-radius: var(--radius-small);
   font-weight: 560;
@@ -2229,6 +2236,111 @@ textarea {
 .readinessFacts .defItem:last-child {
   padding-right: 0;
   border-right: none;
+}
+
+.routingPolicySummary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+}
+
+.routingValue,
+.routingEditorField {
+  border: 1px solid var(--border);
+  border-radius: var(--shape-radius-md);
+  background: var(--surface-2);
+  padding: var(--space-4);
+}
+
+.routingValue h3 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+  font-size: 0.875rem;
+}
+
+.routingValue dl,
+.routingPreview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.routingValue dt,
+.routingPreview dt {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.routingValue dd,
+.routingPreview dd {
+  margin: var(--space-1) 0 0;
+  overflow-wrap: anywhere;
+  font-family: var(--font-family-mono);
+  font-size: 0.8125rem;
+}
+
+.routingEffective {
+  border-left: 1px solid var(--border);
+  padding-left: var(--space-3);
+}
+
+.routingActionTable {
+  margin: 0;
+}
+
+.routingActionTable .badge {
+  white-space: nowrap;
+}
+
+.routingEditorGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.routingEditorField {
+  display: grid;
+  align-content: start;
+  gap: var(--space-4);
+}
+
+.routingPreview {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-3);
+}
+
+.registrationRoutingPolicy {
+  display: grid;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--shape-radius-md);
+  background: var(--surface-2);
+}
+
+.registrationRoutingHeader {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.registrationRoutingHeader > div {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.registrationRoutingHeader p {
+  max-width: 34rem;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
 }
 
 /* ---------- forms ---------- */
@@ -3260,6 +3372,25 @@ textarea {
   .readinessFacts .defItem:last-child {
     padding: 0;
     border: none;
+  }
+
+  .routingPolicySummary,
+  .routingEditorGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .routingValue dl {
+    grid-template-columns: 1fr;
+  }
+
+  .routingEffective {
+    border-left: 0;
+    border-top: 1px solid var(--border);
+    padding: var(--space-3) 0 0;
+  }
+
+  .registrationRoutingHeader {
+    display: grid;
   }
 
   .auditFilters {

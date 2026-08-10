@@ -6,11 +6,13 @@
 
 ## 목표
 
-Web UI는 운영자가 다음 질문에 브라우저에서 답할 수 있게 한다.
+Web UI는 운영자가 다음 질문에 브라우저에서 답할 수 있게 한다. 이 UI는 같은
+canonical API를 사용하는 선택적 클라이언트다. 자체 설치 환경은 `/ui`를 노출하지
+않고 GitOps나 운영 자동화에서 API만 사용할 수 있다.
 
 1. 어떤 App이 등록되어 있고, worker가 지금 실행할 수 있는 contract는 무엇인가?
 2. 누가 언제 어떤 commit을 release했는가?
-3. workload가 지금 어떤 모양인가 — 어느 App/route tag에서 얼마나 쌓이고,
+3. workload가 지금 어떤 모양인가 — 어느 App/워커 태그에서 얼마나 쌓이고,
    돌고, 실패하고 있는가?
 
 수백만 건 규모에서 개별 job 레코드를 열람하는 것은 운영 질문에 답하지
@@ -31,7 +33,7 @@ scheduler UI, workflow designer는 범위 밖이다 ([ADR 0003](adr/0003-lightwe
 | Repository source | App 코드를 가져올 Git repository, branch, subpath, credential 설정 | App 상세의 Repository 탭 |
 | Release | 특정 repository source commit을 검증하고 worker-visible contract로 게시한 결과 | App 상세의 Releases 탭과 active contract |
 | Contract | worker가 job 실행 시 읽는 app/action 실행 계약 | App 상세의 Overview 탭 |
-| Job activity | App/route tag 단위로 집계된 run 통계 (queued, running, 최근 완료/실패/취소) | Monitoring 대시보드, App 상세 readiness |
+| Job activity | App/워커 태그 단위로 집계된 run 통계 (queued, running, 최근 완료/실패/취소) | Monitoring 대시보드, App 상세 readiness |
 | Actor | release, 설정 변경 같은 상태 변경을 수행한 주체 (audit subject) | release history와 audit trail |
 
 ## 관계
@@ -71,7 +73,7 @@ App 상세는 repository source id를 URL 키로 쓴다. 아직 release되지 �
 
 행이 답하는 질문: App identity(released면 `app_key`, 아니면 source name),
 release 상태, repository와 branch/subpath, 마지막 release commit과 시각,
-action 수, route tag.
+action 수, 워커 태그.
 
 주요 동작: `Register App` (등록 다이얼로그), `Publish Release` (확인
 다이얼로그), `Open App` (상세로 이동), 샘플 App 생성.
@@ -83,9 +85,13 @@ credential을 받고, 등록 전에 `probe`로 도달성과 branch 존재를 확
 
 한 App의 모든 것을 탭으로 다룬다.
 
-- **Overview**: active contract (entrypoint, script lang, route tag, commit,
+- **Overview**: active contract (entrypoint, script lang, 릴리스 기본 워커 태그, commit,
   timeout, capabilities)와 action 목록, readiness 신호. 코드는 UI가
   미러링하지 않는다: release commit에 고정된 GitHub/GitLab 링크로 연결한다
+- **Placement / 실행 배치**: 릴리스 기본값과 운영자 재정의, 최종 워커 태그·필수
+  레이블을 App과 Action 단위로 구성한다. HTTP·Gateway 경로 설정이 아니다.
+  현재 매칭 상태를 진단할 수 있지만 WorkerGroup 생성·스케일링·selector 어휘
+  관리는 Hosted Portal 또는 자체 설치 배포 자동화가 담당한다.
   ([ADR 0006](adr/0006-source-links-not-source-mirror.md)). release되지
   않았으면 그 사실과 다음 단계를 안내한다.
 - **Monitoring**: 이 App으로 좁힌 job 집계 (`jobs/summary`의 by_app) —
@@ -97,7 +103,7 @@ credential을 받고, 등록 전에 `probe`로 도달성과 branch 존재를 확
   (deployment id), note, source, 시각을 보여준다. 상단에 `Publish Release`
   버튼을 둔다.
 - **Audit**: 설정 변경이력 (`git_sources/{id}/audit`) — repository 설정
-  수정, source 삭제, route tag override가 actor와 함께 기록된다. release
+  수정, source 삭제, 실행 배치 변경이 actor와 함께 기록된다. release
   게시는 Releases 탭이 담당하고 audit에는 중복 기록하지 않는다.
 - **Actions**: action별 input/output JSON Schema (`actions/{action}/schema`).
   action 호출은 Invocation API client의 몫이고 UI는 계약(스키마)만 보여준다.
@@ -113,7 +119,7 @@ workload 집계 대시보드. 개별 job 목록은 다루지 않는다.
 - 시간 창 선택: 1h / 24h / 7d (`recent_seconds`).
 - App별 집계 테이블: queued, running, 시간 창 내 completed/failed/canceled,
   실패율. App 이름은 App 상세로 연결된다.
-- Route tag별 집계 테이블: 같은 지표를 tag 단위로.
+- 워커 태그별 집계 테이블: 같은 지표를 워커 태그 단위로.
 - Job 로그 검사기: 운영자가 Job ID를 입력하거나 구 `/ui/jobs/{id}` 링크로
   들어왔을 때만 열고, SSE byte offset으로 마스킹된 로그와 상태를 추적한다.
   Job 목록, 입력값, 취소 동작은 제공하지 않는다.

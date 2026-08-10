@@ -82,6 +82,10 @@ export function AuditPage() {
                 { value: "", label: translate("audit.allCategories") },
                 { value: "workspace", label: translate("settingsNav.workspace") },
                 { value: "repository", label: translate("audit.repository") },
+                {
+                  value: "execution_placement",
+                  label: translate("audit.executionPlacement"),
+                },
                 { value: "release", label: translate("audit.release") },
                 { value: "client", label: translate("navigation.clientRegistry") },
                 { value: "input_settings", label: translate("audit.inputSettings") },

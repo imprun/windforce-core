@@ -1899,11 +1899,28 @@ func TestCanonicalControlPlaneOpenAPIExposesSchemaDiscovery(t *testing.T) {
 			t.Fatalf("probe request schema missing %s: %#v", field, probeRequest)
 		}
 	}
+	if probeRequest["subpath"] == nil || registerRequest["placement_policy"] == nil {
+		t.Fatalf("placement-aware git source schemas are incomplete: register=%#v probe=%#v", registerRequest, probeRequest)
+	}
+	placementPatch := schemas["ExecutionPlacementPatch"].(map[string]any)
+	placementPatchProperties := placementPatch["properties"].(map[string]any)
+	if placementPatch["minProperties"] != float64(1) || placementPatch["additionalProperties"] != false ||
+		placementPatchProperties["tag_override"] == nil || placementPatchProperties["required_labels_override"] == nil {
+		t.Fatalf("execution placement patch schema = %#v", placementPatch)
+	}
+	assertSchemaFields("AppView", []string{"required_labels", "required_labels_override", "effective_route_tag", "effective_required_labels"})
+	assertSchemaFields("AppAction", []string{"required_labels", "required_labels_override", "effective_route_tag", "effective_required_labels"})
+	manifestPlacement := schemas["ManifestPlacementPreview"].(map[string]any)["properties"].(map[string]any)
+	manifestActionPlacement := schemas["ManifestActionPlacementPreview"].(map[string]any)["properties"].(map[string]any)
+	if manifestPlacement["worker_tag"] == nil || manifestPlacement["route_tag"] != nil ||
+		manifestActionPlacement["worker_tag"] == nil || manifestActionPlacement["route_tag"] != nil {
+		t.Fatalf("placement previews must expose worker_tag, not gateway-like route_tag: app=%#v action=%#v", manifestPlacement, manifestActionPlacement)
+	}
 	if probeRequest["access_token"] == nil || probeRequest["creds_ref"] == nil {
 		t.Fatalf("probe request schema = %#v", probeRequest)
 	}
 	probeResult := schemas["GitSourceProbeResult"].(map[string]any)["properties"].(map[string]any)
-	for _, field := range []string{"reachable", "branch", "branch_exists", "branches", "error"} {
+	for _, field := range []string{"reachable", "branch", "branch_exists", "branches", "error", "manifest"} {
 		if probeResult[field] == nil {
 			t.Fatalf("probe result schema missing %s: %#v", field, probeResult)
 		}
@@ -4284,9 +4301,13 @@ func TestCanonicalJobRunAllowsTagOverrideWithLabels(t *testing.T) {
 	server := httptest.NewServer(New(Config{Store: store, Catalog: fileCatalog}))
 	defer server.Close()
 
-	_ = admitTestRun(t, store, server.URL, "ws-a", "echo", "echo", `{}`)
+	initialRun := admitTestRun(t, store, server.URL, "ws-a", "echo", "echo", `{}`)
+	initialJob := testJobForRun(t, store, initialRun.RunID)
+	if initialJob.Payload.Tag != contract.DefaultRouteTag || !reflect.DeepEqual(initialJob.Payload.RequiredLabels, []string{"browser"}) {
+		t.Fatalf("initial admission placement = tag:%q labels:%#v", initialJob.Payload.Tag, initialJob.Payload.RequiredLabels)
+	}
 
-	patchReq, err := http.NewRequest(http.MethodPatch, server.URL+"/api/w/ws-a/apps/echo", bytes.NewBufferString(`{"tag_override":"app-blue"}`))
+	patchReq, err := http.NewRequest(http.MethodPatch, server.URL+"/api/w/ws-a/apps/echo", bytes.NewBufferString(`{"tag_override":"app-blue","required_labels_override":["gpu"]}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -4302,7 +4323,16 @@ func TestCanonicalJobRunAllowsTagOverrideWithLabels(t *testing.T) {
 
 	// Tags and labels are orthogonal claim dimensions (ADR 0009): an explicit
 	// tag override no longer conflicts with capability labels.
-	_ = admitTestRun(t, store, server.URL, "ws-a", "echo", "echo", `{}`)
+	updatedRun := admitTestRun(t, store, server.URL, "ws-a", "echo", "echo", `{}`)
+	updatedJob := testJobForRun(t, store, updatedRun.RunID)
+	if updatedJob.Payload.Tag != "app-blue" || !reflect.DeepEqual(updatedJob.Payload.RequiredLabels, []string{"gpu"}) {
+		t.Fatalf("updated admission placement = tag:%q labels:%#v", updatedJob.Payload.Tag, updatedJob.Payload.RequiredLabels)
+	}
+	initialJobAfterPolicyChange := testJobForRun(t, store, initialRun.RunID)
+	if initialJobAfterPolicyChange.Payload.Tag != contract.DefaultRouteTag ||
+		!reflect.DeepEqual(initialJobAfterPolicyChange.Payload.RequiredLabels, []string{"browser"}) {
+		t.Fatalf("existing job was re-placed automatically = tag:%q labels:%#v", initialJobAfterPolicyChange.Payload.Tag, initialJobAfterPolicyChange.Payload.RequiredLabels)
+	}
 }
 
 func TestCanonicalDeploymentModelPreservesStoredValues(t *testing.T) {

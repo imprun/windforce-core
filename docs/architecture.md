@@ -75,6 +75,12 @@ the active release, immutable release history, source release marker, and audit
 record in one transaction. Local mode persists the catalog in its state JSON
 file; PostgreSQL mode persists it in tables shared by the server and workers.
 
+Release placement defaults do not own live execution placement. Workspace-scoped
+operator Execution Placement Policy is stored independently, survives publication and
+rollback, and is combined with the active release only at admission. The
+canonical manifest can be committed or generated before Core synchronizes it.
+See [Execution placement](concepts/execution-placement.md).
+
 The same publication transaction stores a CloudEvents-compatible Control Plane
 event and one pending delivery for each enabled matching Webhook subscription.
 Endpoint and signing-secret values use workspace encryption. External HTTP

@@ -67,7 +67,9 @@ Before changing the language wrappers, `internal/sdk`, `WindforceContext`, priva
 
 Core owns the generic `main(coreCtx)` host interface, Core Author SDK, launcher transport, Job-scoped access, and worker lifecycle. Every SDK used by an App is an opaque App dependency. Core must not inspect or classify SDK identity, import an SDK context, understand its module envelope, negotiate its version, or transfer service credentials and Worker Plane authority to it. `runsOn` and worker labels remain Core scheduling inputs regardless of whether the App uses a scraping SDK, Playwright, Puppeteer, a mobile SDK, or no SDK.
 
-Some App repositories generate a canonical deployment artifact instead of storing `windforce.json` in author source. Their external builder owns `--describe` or equivalent SDK-specific discovery, schema-file emission, dependency bundling, and creation of the deployment Git or snapshot. Core begins at the canonical `windforce.json` plus entrypoint boundary and must not execute author code to discover an SDK manifest.
+Some App repositories generate a canonical deployment artifact instead of storing `windforce.json` in author source. Their external builder owns `--describe` or equivalent SDK-specific discovery, schema-file emission, dependency bundling, and creation of the deployment Git or snapshot. Core begins at the configured canonical manifest file plus entrypoint boundary (`windforce.json` is only the default filename) and must not execute author code to discover an SDK manifest.
+
+Release-owned placement defaults and operator-owned execution placement are separate. Before changing worker-tag or worker-label resolution, read [docs/concepts/execution-placement.md](docs/concepts/execution-placement.md). New Jobs pin Action policy, App policy, and manifest defaults in that precedence order; published and historical releases must not store operator overrides.
 
 ## Decisions
 

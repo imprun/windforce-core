@@ -118,10 +118,3 @@ func sourceBranchOrDefault(source gitsourcepkg.Source) string {
 	}
 	return source.Branch
 }
-
-func tagOverrideDetail(scope string, tagOverride *string) string {
-	if tagOverride == nil {
-		return scope + " tag_override cleared"
-	}
-	return fmt.Sprintf("%s tag_override set to %q", scope, *tagOverride)
-}

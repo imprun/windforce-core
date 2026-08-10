@@ -88,7 +88,8 @@ func (s *LocalStore) GetDeploymentForWorkspace(ctx context.Context, workspace st
 	if !ok {
 		return contract.Deployment{}, catalog.ErrDeploymentNotFound
 	}
-	return deployment, nil
+	policy := snapshot.ReleaseCatalog.RoutingPolicies[catalog.RoutingPolicyKey(workspace, app)]
+	return catalog.ApplyRoutingPolicy(deployment, policy), nil
 }
 
 func (s *LocalStore) LoadCatalog(ctx context.Context) (catalog.Snapshot, error) {
@@ -96,7 +97,7 @@ func (s *LocalStore) LoadCatalog(ctx context.Context) (catalog.Snapshot, error) 
 	if err != nil {
 		return catalog.Snapshot{}, err
 	}
-	return snapshot.ReleaseCatalog, nil
+	return catalog.SnapshotWithAppliedRoutingPolicies(snapshot.ReleaseCatalog), nil
 }
 
 func (s *LocalStore) AppendAudit(ctx context.Context, record catalog.AuditRecord) error {
@@ -122,6 +123,38 @@ func (s *LocalStore) AuditTrail(ctx context.Context, workspace string, gitSource
 }
 
 func (s *LocalStore) SetAppTagOverride(ctx context.Context, workspace string, app string, tagOverride *string) (contract.Deployment, error) {
+	return s.SetAppRoutingPolicy(ctx, workspace, app, catalog.RoutingPolicyPatch{RouteTagSet: true, RouteTagOverride: tagOverride})
+}
+
+func (s *LocalStore) GetRoutingPolicy(ctx context.Context, workspace string, app string) (catalog.RoutingPolicy, error) {
+	snapshot, err := s.Load(ctx)
+	if err != nil {
+		return catalog.RoutingPolicy{}, err
+	}
+	key := catalog.DeploymentKey(workspace, app)
+	policy, ok := snapshot.ReleaseCatalog.RoutingPolicies[key]
+	if !ok {
+		policy = catalog.NewRoutingPolicy(workspace, app)
+	}
+	return catalog.NormalizeRoutingPolicy(policy), nil
+}
+
+func (s *LocalStore) SetInitialAppRoutingPolicy(ctx context.Context, workspace string, app string, patch catalog.RoutingPolicyPatch) (catalog.RoutingPolicy, error) {
+	var updated catalog.RoutingPolicy
+	err := s.update(ctx, func(snapshot *Snapshot, now time.Time) error {
+		key := catalog.DeploymentKey(workspace, app)
+		policy := snapshot.ReleaseCatalog.RoutingPolicies[key]
+		if policy.App == "" {
+			policy = catalog.NewRoutingPolicy(workspace, app)
+		}
+		updated = catalog.ApplyRoutingPolicyPatch(policy, "", patch, now)
+		snapshot.ReleaseCatalog.RoutingPolicies[key] = updated
+		return nil
+	})
+	return updated, err
+}
+
+func (s *LocalStore) SetAppRoutingPolicy(ctx context.Context, workspace string, app string, patch catalog.RoutingPolicyPatch) (contract.Deployment, error) {
 	var updated contract.Deployment
 	err := s.update(ctx, func(snapshot *Snapshot, now time.Time) error {
 		key := catalog.DeploymentKey(workspace, app)
@@ -129,16 +162,23 @@ func (s *LocalStore) SetAppTagOverride(ctx context.Context, workspace string, ap
 		if !ok {
 			return catalog.ErrDeploymentNotFound
 		}
-		deployment.TagOverride = cloneCatalogString(tagOverride)
-		deployment.UpdatedAt = catalogTimePtr(now)
-		snapshot.ReleaseCatalog.Deployments[key] = deployment
-		updated = deployment
+		policy := snapshot.ReleaseCatalog.RoutingPolicies[key]
+		if policy.App == "" {
+			policy = catalog.NewRoutingPolicy(workspace, app)
+		}
+		policy = catalog.ApplyRoutingPolicyPatch(policy, "", patch, now)
+		snapshot.ReleaseCatalog.RoutingPolicies[key] = policy
+		updated = catalog.ApplyRoutingPolicy(deployment, policy)
 		return nil
 	})
 	return updated, err
 }
 
 func (s *LocalStore) SetActionTagOverride(ctx context.Context, workspace string, app string, actionKey string, tagOverride *string) (contract.Action, error) {
+	return s.SetActionRoutingPolicy(ctx, workspace, app, actionKey, catalog.RoutingPolicyPatch{RouteTagSet: true, RouteTagOverride: tagOverride})
+}
+
+func (s *LocalStore) SetActionRoutingPolicy(ctx context.Context, workspace string, app string, actionKey string, patch catalog.RoutingPolicyPatch) (contract.Action, error) {
 	var updated contract.Action
 	err := s.update(ctx, func(snapshot *Snapshot, now time.Time) error {
 		key := catalog.DeploymentKey(workspace, app)
@@ -146,15 +186,16 @@ func (s *LocalStore) SetActionTagOverride(ctx context.Context, workspace string,
 		if !ok {
 			return catalog.ErrDeploymentNotFound
 		}
-		action, ok := deployment.Actions[actionKey]
-		if !ok {
+		if _, ok := deployment.Actions[actionKey]; !ok {
 			return catalog.ErrActionNotFound
 		}
-		action.TagOverride = cloneCatalogString(tagOverride)
-		action.UpdatedAt = catalogTimePtr(now)
-		deployment.Actions[actionKey] = action
-		snapshot.ReleaseCatalog.Deployments[key] = deployment
-		updated = action
+		policy := snapshot.ReleaseCatalog.RoutingPolicies[key]
+		if policy.App == "" {
+			policy = catalog.NewRoutingPolicy(workspace, app)
+		}
+		policy = catalog.ApplyRoutingPolicyPatch(policy, actionKey, patch, now)
+		snapshot.ReleaseCatalog.RoutingPolicies[key] = policy
+		updated = catalog.ApplyRoutingPolicy(deployment, policy).Actions[actionKey]
 		return nil
 	})
 	return updated, err

@@ -23,6 +23,7 @@ type FileCatalog struct {
 
 type Snapshot struct {
 	Deployments      map[string]contract.Deployment `json:"deployments"`
+	RoutingPolicies  map[string]RoutingPolicy       `json:"routingPolicies,omitempty"`
 	ActiveHistoryIDs map[string]string              `json:"activeHistoryIds,omitempty"`
 	Candidates       map[string]ReleaseCandidate    `json:"releaseCandidates,omitempty"`
 	History          []DeploymentHistory            `json:"history,omitempty"`
@@ -46,6 +47,10 @@ type Store interface {
 	AuditTrail(ctx context.Context, workspace string, gitSourceID string) ([]AuditRecord, error)
 	SetAppTagOverride(ctx context.Context, workspace string, app string, tagOverride *string) (contract.Deployment, error)
 	SetActionTagOverride(ctx context.Context, workspace string, app string, actionKey string, tagOverride *string) (contract.Action, error)
+	GetRoutingPolicy(ctx context.Context, workspace string, app string) (RoutingPolicy, error)
+	SetInitialAppRoutingPolicy(ctx context.Context, workspace string, app string, patch RoutingPolicyPatch) (RoutingPolicy, error)
+	SetAppRoutingPolicy(ctx context.Context, workspace string, app string, patch RoutingPolicyPatch) (contract.Deployment, error)
+	SetActionRoutingPolicy(ctx context.Context, workspace string, app string, actionKey string, patch RoutingPolicyPatch) (contract.Action, error)
 	ListSourceReleaseMarkers(ctx context.Context) (map[string]SourceReleaseMarker, error)
 	ImportCatalog(ctx context.Context, snapshot Snapshot) error
 }
@@ -182,10 +187,49 @@ func (c *FileCatalog) GetDeploymentForWorkspace(ctx context.Context, workspace s
 	if !ok {
 		return contract.Deployment{}, ErrDeploymentNotFound
 	}
-	return deployment, nil
+	policy := snapshot.RoutingPolicies[RoutingPolicyKey(workspace, app)]
+	return ApplyRoutingPolicy(deployment, policy), nil
 }
 
 func (c *FileCatalog) SetAppTagOverride(ctx context.Context, workspace string, app string, tagOverride *string) (contract.Deployment, error) {
+	return c.SetAppRoutingPolicy(ctx, workspace, app, RoutingPolicyPatch{RouteTagSet: true, RouteTagOverride: tagOverride})
+}
+
+func (c *FileCatalog) GetRoutingPolicy(ctx context.Context, workspace string, app string) (RoutingPolicy, error) {
+	snapshot, err := c.Load(ctx)
+	if err != nil {
+		return RoutingPolicy{}, err
+	}
+	key := DeploymentKey(workspace, app)
+	policy, ok := snapshot.RoutingPolicies[key]
+	if !ok {
+		policy = NewRoutingPolicy(workspace, app)
+	}
+	return NormalizeRoutingPolicy(policy), nil
+}
+
+func (c *FileCatalog) SetInitialAppRoutingPolicy(ctx context.Context, workspace string, app string, patch RoutingPolicyPatch) (RoutingPolicy, error) {
+	if err := ctx.Err(); err != nil {
+		return RoutingPolicy{}, err
+	}
+	snapshot, err := c.Load(ctx)
+	if err != nil {
+		return RoutingPolicy{}, err
+	}
+	key := DeploymentKey(workspace, app)
+	policy := snapshot.RoutingPolicies[key]
+	if policy.App == "" {
+		policy = NewRoutingPolicy(workspace, app)
+	}
+	policy = ApplyRoutingPolicyPatch(policy, "", patch, time.Now().UTC())
+	snapshot.RoutingPolicies[key] = policy
+	if err := c.write(snapshot); err != nil {
+		return RoutingPolicy{}, err
+	}
+	return policy, nil
+}
+
+func (c *FileCatalog) SetAppRoutingPolicy(ctx context.Context, workspace string, app string, patch RoutingPolicyPatch) (contract.Deployment, error) {
 	if err := ctx.Err(); err != nil {
 		return contract.Deployment{}, err
 	}
@@ -198,16 +242,24 @@ func (c *FileCatalog) SetAppTagOverride(ctx context.Context, workspace string, a
 	if !ok {
 		return contract.Deployment{}, ErrDeploymentNotFound
 	}
-	deployment.TagOverride = cloneStringPtr(tagOverride)
-	deployment.UpdatedAt = timePtr(time.Now().UTC())
-	snapshot.Deployments[key] = deployment
+	policy := snapshot.RoutingPolicies[key]
+	if policy.App == "" {
+		policy = NewRoutingPolicy(workspace, app)
+	}
+	now := time.Now().UTC()
+	policy = ApplyRoutingPolicyPatch(policy, "", patch, now)
+	snapshot.RoutingPolicies[key] = policy
 	if err := c.write(snapshot); err != nil {
 		return contract.Deployment{}, err
 	}
-	return deployment, nil
+	return ApplyRoutingPolicy(deployment, policy), nil
 }
 
 func (c *FileCatalog) SetActionTagOverride(ctx context.Context, workspace string, app string, actionKey string, tagOverride *string) (contract.Action, error) {
+	return c.SetActionRoutingPolicy(ctx, workspace, app, actionKey, RoutingPolicyPatch{RouteTagSet: true, RouteTagOverride: tagOverride})
+}
+
+func (c *FileCatalog) SetActionRoutingPolicy(ctx context.Context, workspace string, app string, actionKey string, patch RoutingPolicyPatch) (contract.Action, error) {
 	if err := ctx.Err(); err != nil {
 		return contract.Action{}, err
 	}
@@ -220,18 +272,19 @@ func (c *FileCatalog) SetActionTagOverride(ctx context.Context, workspace string
 	if !ok {
 		return contract.Action{}, ErrDeploymentNotFound
 	}
-	action, ok := deployment.Actions[actionKey]
-	if !ok {
+	if _, ok := deployment.Actions[actionKey]; !ok {
 		return contract.Action{}, ErrActionNotFound
 	}
-	action.TagOverride = cloneStringPtr(tagOverride)
-	action.UpdatedAt = timePtr(time.Now().UTC())
-	deployment.Actions[actionKey] = action
-	snapshot.Deployments[key] = deployment
+	policy := snapshot.RoutingPolicies[key]
+	if policy.App == "" {
+		policy = NewRoutingPolicy(workspace, app)
+	}
+	policy = ApplyRoutingPolicyPatch(policy, actionKey, patch, time.Now().UTC())
+	snapshot.RoutingPolicies[key] = policy
 	if err := c.write(snapshot); err != nil {
 		return contract.Action{}, err
 	}
-	return action, nil
+	return ApplyRoutingPolicy(deployment, policy).Actions[actionKey], nil
 }
 
 func (c *FileCatalog) Load(ctx context.Context) (Snapshot, error) {
@@ -254,7 +307,11 @@ func (c *FileCatalog) Load(ctx context.Context) (Snapshot, error) {
 }
 
 func (c *FileCatalog) LoadCatalog(ctx context.Context) (Snapshot, error) {
-	return c.Load(ctx)
+	snapshot, err := c.Load(ctx)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	return SnapshotWithAppliedRoutingPolicies(snapshot), nil
 }
 
 func (c *FileCatalog) ListSourceReleaseMarkers(ctx context.Context) (map[string]SourceReleaseMarker, error) {
@@ -282,6 +339,7 @@ func (c *FileCatalog) ImportCatalog(ctx context.Context, imported Snapshot) erro
 }
 
 func (c *FileCatalog) write(snapshot Snapshot) error {
+	NormalizeSnapshot(&snapshot)
 	if err := os.MkdirAll(filepath.Dir(c.Path), 0o755); err != nil {
 		return err
 	}
@@ -354,6 +412,9 @@ func PreparePublication(deployment contract.Deployment, releasedAt time.Time) (c
 		releasedAt = time.Now().UTC()
 	}
 	deployment = NormalizeDeploymentDefaults(deployment)
+	// A release is an immutable manifest snapshot. Operator overrides belong to
+	// RoutingPolicy and must never be copied into release history.
+	_ = ExtractEmbeddedRoutingPolicy(&deployment, NewRoutingPolicy(deployment.SourceWorkspace(), deployment.App))
 	deployment = EnsureDeploymentUpdatedAt(deployment, releasedAt)
 	history := NewDeploymentHistory(deployment, releasedAt)
 	return deployment, history, NewReleaseAudit(history)
@@ -408,6 +469,7 @@ func NewReleaseAudit(history DeploymentHistory) AuditRecord {
 func NewSnapshot() Snapshot {
 	return Snapshot{
 		Deployments:      map[string]contract.Deployment{},
+		RoutingPolicies:  map[string]RoutingPolicy{},
 		ActiveHistoryIDs: map[string]string{},
 		Candidates:       map[string]ReleaseCandidate{},
 		History:          []DeploymentHistory{},
@@ -431,6 +493,17 @@ func NormalizeSnapshot(snapshot *Snapshot) {
 		snapshot.Deployments = map[string]contract.Deployment{}
 	}
 	snapshot.Deployments = normalizeDeploymentMap(snapshot.Deployments)
+	if snapshot.RoutingPolicies == nil {
+		snapshot.RoutingPolicies = map[string]RoutingPolicy{}
+	}
+	for key, deployment := range snapshot.Deployments {
+		policy := snapshot.RoutingPolicies[key]
+		policy = ExtractEmbeddedRoutingPolicy(&deployment, policy)
+		snapshot.Deployments[key] = deployment
+		if !RoutingPolicyEmpty(policy) {
+			snapshot.RoutingPolicies[key] = policy
+		}
+	}
 	if snapshot.ActiveHistoryIDs == nil {
 		snapshot.ActiveHistoryIDs = map[string]string{}
 	}
@@ -455,6 +528,11 @@ func MergeSnapshot(target *Snapshot, imported Snapshot) {
 	for key, deployment := range imported.Deployments {
 		if _, exists := target.Deployments[key]; !exists {
 			target.Deployments[key] = deployment
+		}
+	}
+	for key, policy := range imported.RoutingPolicies {
+		if _, exists := target.RoutingPolicies[key]; !exists {
+			target.RoutingPolicies[key] = NormalizeRoutingPolicy(policy)
 		}
 	}
 	for key, historyID := range imported.ActiveHistoryIDs {
@@ -492,6 +570,16 @@ func MergeSnapshot(target *Snapshot, imported Snapshot) {
 			target.SourceMarkers[key] = marker
 		}
 	}
+}
+
+func SnapshotWithAppliedRoutingPolicies(snapshot Snapshot) Snapshot {
+	NormalizeSnapshot(&snapshot)
+	deployments := make(map[string]contract.Deployment, len(snapshot.Deployments))
+	for key, deployment := range snapshot.Deployments {
+		deployments[key] = ApplyRoutingPolicy(deployment, snapshot.RoutingPolicies[key])
+	}
+	snapshot.Deployments = deployments
+	return snapshot
 }
 
 func newAppVersionID(createdAt time.Time) string {

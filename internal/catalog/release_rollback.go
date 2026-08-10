@@ -111,7 +111,9 @@ func ApplyReleaseRollback(snapshot *Snapshot, request ReleaseRollbackRequest) (R
 		previousCommit = previous.Commit
 	}
 
-	snapshot.Deployments[key] = target.Deployment
+	// Release history can predate the standalone placement policy. Never restore
+	// those legacy embedded overrides into the active release record.
+	snapshot.Deployments[key] = ApplyRoutingPolicy(target.Deployment, RoutingPolicy{})
 	snapshot.ActiveHistoryIDs[key] = target.ID
 	marker := SourceReleaseMarker{
 		Workspace:   request.Workspace,

@@ -2,6 +2,12 @@ package state
 
 import (
 	"context"
+	"encoding/json"
+
+	"github.com/jackc/pgx/v5"
+
+	"github.com/imprun/windforce-core/internal/catalog"
+	"github.com/imprun/windforce-core/internal/contract"
 )
 
 const postgresMigrationAdvisoryLockID int64 = 0x57464c4d49475241
@@ -354,6 +360,14 @@ CREATE TABLE IF NOT EXISTS control_active_release (
     history_id TEXT,
     deployment JSONB NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (workspace_id, app_key)
+);
+
+CREATE TABLE IF NOT EXISTS control_routing_policy (
+    workspace_id TEXT NOT NULL,
+    app_key TEXT NOT NULL,
+    policy JSONB NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (workspace_id, app_key)
 );
 
@@ -829,7 +843,10 @@ WHERE token_hash <> ''
 ON CONFLICT (id) DO NOTHING;
 
 UPDATE workspace_registry SET token_hash='' WHERE token_hash <> '';
-`); err != nil {
+	`); err != nil {
+		return err
+	}
+	if err := migrateEmbeddedRoutingPolicies(ctx, tx); err != nil {
 		return err
 	}
 	const clientTokenMigration = "client-token-prefix-v1"
@@ -856,4 +873,77 @@ WHERE token_hash <> ''`); err != nil {
 		}
 	}
 	return tx.Commit(ctx)
+}
+
+func migrateEmbeddedRoutingPolicies(ctx context.Context, tx pgx.Tx) error {
+	rows, err := tx.Query(ctx, `SELECT workspace_id, app_key, deployment FROM control_active_release`)
+	if err != nil {
+		return err
+	}
+	type activeRelease struct {
+		workspace  string
+		app        string
+		deployment contract.Deployment
+	}
+	releases := make([]activeRelease, 0)
+	for rows.Next() {
+		var item activeRelease
+		var raw []byte
+		if err := rows.Scan(&item.workspace, &item.app, &raw); err != nil {
+			rows.Close()
+			return err
+		}
+		if err := json.Unmarshal(raw, &item.deployment); err != nil {
+			rows.Close()
+			return err
+		}
+		releases = append(releases, item)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+
+	for _, item := range releases {
+		hadEmbedded := item.deployment.TagOverride != nil || item.deployment.RequiredLabelsOverride != nil
+		if !hadEmbedded {
+			for _, action := range item.deployment.Actions {
+				if action.TagOverride != nil || action.RequiredLabelsOverride != nil {
+					hadEmbedded = true
+					break
+				}
+			}
+		}
+		if !hadEmbedded {
+			continue
+		}
+		policy := catalog.ExtractEmbeddedRoutingPolicy(&item.deployment, catalog.NewRoutingPolicy(item.workspace, item.app))
+		policy.UpdatedBy = "system:migration"
+		if policy.UpdatedAt.IsZero() {
+			policy.UpdatedAt = deploymentUpdatedAt(item.deployment)
+		}
+		policyRaw, err := json.Marshal(policy)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `
+INSERT INTO control_routing_policy (workspace_id, app_key, policy, updated_at)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (workspace_id, app_key) DO NOTHING
+`, contract.NormalizeWorkspace(item.workspace), item.app, policyRaw, policy.UpdatedAt); err != nil {
+			return err
+		}
+		deploymentRaw, err := json.Marshal(item.deployment)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `
+UPDATE control_active_release SET deployment = $3
+WHERE workspace_id = $1 AND app_key = $2
+`, contract.NormalizeWorkspace(item.workspace), item.app, deploymentRaw); err != nil {
+			return err
+		}
+	}
+	return nil
 }

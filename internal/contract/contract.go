@@ -118,15 +118,16 @@ type App struct {
 
 // Action is one executable unit inside an app.
 type Action struct {
-	Action       string         `json:"action"`
-	Tag          *string        `json:"tag,omitempty"`
-	TagOverride  *string        `json:"tagOverride,omitempty"`
-	Runtime      string         `json:"runtime,omitempty"`
-	Entrypoint   string         `json:"entrypoint,omitempty"`
-	Command      []string       `json:"command,omitempty"`
-	Adapter      *ActionAdapter `json:"adapter,omitempty"`
-	InputSchema  string         `json:"inputSchema,omitempty"`
-	OutputSchema string         `json:"outputSchema,omitempty"`
+	Action                 string         `json:"action"`
+	Tag                    *string        `json:"tag,omitempty"`
+	TagOverride            *string        `json:"tagOverride,omitempty"`
+	RequiredLabelsOverride *[]string      `json:"requiredLabelsOverride,omitempty"`
+	Runtime                string         `json:"runtime,omitempty"`
+	Entrypoint             string         `json:"entrypoint,omitempty"`
+	Command                []string       `json:"command,omitempty"`
+	Adapter                *ActionAdapter `json:"adapter,omitempty"`
+	InputSchema            string         `json:"inputSchema,omitempty"`
+	OutputSchema           string         `json:"outputSchema,omitempty"`
 	// OperatorSettingsSchema documents release-owned input settings that are
 	// not part of the public action request body.
 	OperatorSettingsSchema string `json:"operatorSettingsSchema,omitempty"`
@@ -215,30 +216,31 @@ type ActionAdapter struct {
 
 // Deployment is the active source bundle selected by the catalog.
 type Deployment struct {
-	Workspace            string            `json:"workspace,omitempty"`
-	GitSourceID          string            `json:"gitSourceId,omitempty"`
-	App                  string            `json:"app"`
-	Version              string            `json:"version,omitempty"`
-	Tag                  string            `json:"tag,omitempty"`
-	TagOverride          *string           `json:"tagOverride,omitempty"`
-	Entrypoint           string            `json:"entrypoint,omitempty"`
-	Runtime              string            `json:"runtime,omitempty"`
-	ScriptLang           string            `json:"scriptLang,omitempty"`
-	TimeoutS             int32             `json:"timeout,omitempty"`
-	MaxConcurrent        *int32            `json:"maxConcurrent,omitempty"`
-	RequiredCapabilities []string          `json:"requiredCapabilities,omitempty"`
-	RequiredLabels       []string          `json:"requiredLabels,omitempty"`
-	Commit               string            `json:"commit"`
-	Message              *string           `json:"message,omitempty"`
-	Source               string            `json:"source,omitempty"`
-	DeploymentID         *string           `json:"deploymentId,omitempty"`
-	CreatedBy            *string           `json:"createdBy,omitempty"`
-	BundleDigest         string            `json:"bundleDigest,omitempty"`
-	BundleURI            string            `json:"bundleUri,omitempty"`
-	ExecutionProfile     ExecutionProfile  `json:"executionProfile,omitempty,omitzero"`
-	ObjectURI            string            `json:"objectUri"`
-	Actions              map[string]Action `json:"actions"`
-	UpdatedAt            *time.Time        `json:"updatedAt,omitempty"`
+	Workspace              string            `json:"workspace,omitempty"`
+	GitSourceID            string            `json:"gitSourceId,omitempty"`
+	App                    string            `json:"app"`
+	Version                string            `json:"version,omitempty"`
+	Tag                    string            `json:"tag,omitempty"`
+	TagOverride            *string           `json:"tagOverride,omitempty"`
+	RequiredLabelsOverride *[]string         `json:"requiredLabelsOverride,omitempty"`
+	Entrypoint             string            `json:"entrypoint,omitempty"`
+	Runtime                string            `json:"runtime,omitempty"`
+	ScriptLang             string            `json:"scriptLang,omitempty"`
+	TimeoutS               int32             `json:"timeout,omitempty"`
+	MaxConcurrent          *int32            `json:"maxConcurrent,omitempty"`
+	RequiredCapabilities   []string          `json:"requiredCapabilities,omitempty"`
+	RequiredLabels         []string          `json:"requiredLabels,omitempty"`
+	Commit                 string            `json:"commit"`
+	Message                *string           `json:"message,omitempty"`
+	Source                 string            `json:"source,omitempty"`
+	DeploymentID           *string           `json:"deploymentId,omitempty"`
+	CreatedBy              *string           `json:"createdBy,omitempty"`
+	BundleDigest           string            `json:"bundleDigest,omitempty"`
+	BundleURI              string            `json:"bundleUri,omitempty"`
+	ExecutionProfile       ExecutionProfile  `json:"executionProfile,omitempty,omitzero"`
+	ObjectURI              string            `json:"objectUri"`
+	Actions                map[string]Action `json:"actions"`
+	UpdatedAt              *time.Time        `json:"updatedAt,omitempty"`
 }
 
 // PinExecutionDeployment keeps only the selected action while preserving the
@@ -247,6 +249,10 @@ func PinExecutionDeployment(deployment Deployment, actionKey string) Deployment 
 	pinned := deployment
 	pinned.RequiredCapabilities = append([]string(nil), deployment.RequiredCapabilities...)
 	pinned.RequiredLabels = append([]string(nil), deployment.RequiredLabels...)
+	if deployment.RequiredLabelsOverride != nil {
+		cloned := append([]string{}, (*deployment.RequiredLabelsOverride)...)
+		pinned.RequiredLabelsOverride = &cloned
+	}
 	pinned.Actions = make(map[string]Action, 1)
 	if action, ok := deployment.Actions[actionKey]; ok {
 		action.Command = append([]string(nil), action.Command...)
@@ -255,6 +261,10 @@ func PinExecutionDeployment(deployment Deployment, actionKey string) Deployment 
 		action.InputSchemaBody = append(json.RawMessage(nil), action.InputSchemaBody...)
 		action.OutputSchemaBody = append(json.RawMessage(nil), action.OutputSchemaBody...)
 		action.OperatorSettingsSchemaBody = append(json.RawMessage(nil), action.OperatorSettingsSchemaBody...)
+		if action.RequiredLabelsOverride != nil {
+			cloned := append([]string{}, (*action.RequiredLabelsOverride)...)
+			action.RequiredLabelsOverride = &cloned
+		}
 		pinned.Actions[actionKey] = action
 	}
 	return pinned
@@ -316,11 +326,11 @@ func EffectiveRouteTag(appTag string, appTagOverride *string, actionTag *string,
 	if actionTagOverride != nil && strings.TrimSpace(*actionTagOverride) != "" {
 		return strings.TrimSpace(*actionTagOverride)
 	}
-	if actionTag != nil && strings.TrimSpace(*actionTag) != "" {
-		return strings.TrimSpace(*actionTag)
-	}
 	if appTagOverride != nil && strings.TrimSpace(*appTagOverride) != "" {
 		return strings.TrimSpace(*appTagOverride)
+	}
+	if actionTag != nil && strings.TrimSpace(*actionTag) != "" {
+		return strings.TrimSpace(*actionTag)
 	}
 	if strings.TrimSpace(appTag) != "" {
 		return strings.TrimSpace(appTag)
@@ -376,6 +386,12 @@ func NormalizeCapabilities(caps []string) ([]string, error) {
 // deployment (app-level) labels unioned with the action's contribution.
 // Legacy deployments that only carry requiredCapabilities are honored.
 func EffectiveRequiredLabels(deployment Deployment, action Action) []string {
+	if action.RequiredLabelsOverride != nil {
+		return normalizedEffectiveLabels(*action.RequiredLabelsOverride)
+	}
+	if deployment.RequiredLabelsOverride != nil {
+		return normalizedEffectiveLabels(*deployment.RequiredLabelsOverride)
+	}
 	base := deployment.RequiredLabels
 	if base == nil {
 		base = deployment.RequiredCapabilities
@@ -386,12 +402,19 @@ func EffectiveRequiredLabels(deployment Deployment, action Action) []string {
 	} else if action.Capabilities != nil {
 		merged = append(merged, *action.Capabilities...)
 	}
-	if len(merged) == 0 {
+	return normalizedEffectiveLabels(merged)
+}
+
+func normalizedEffectiveLabels(labels []string) []string {
+	if len(labels) == 0 {
+		if labels != nil {
+			return []string{}
+		}
 		return nil
 	}
 	seen := map[string]bool{}
-	out := make([]string, 0, len(merged))
-	for _, label := range merged {
+	out := make([]string, 0, len(labels))
+	for _, label := range labels {
 		label = strings.TrimSpace(label)
 		if label == "" || seen[label] {
 			continue

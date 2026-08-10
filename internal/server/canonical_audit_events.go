@@ -194,13 +194,27 @@ func catalogAuditEvents(snapshot catalog.Snapshot, workspaceID string) []canonic
 			})
 			continue
 		}
+		category := "repository"
+		idPrefix := "repository:"
+		actionKey := ""
+		if record.Kind == "execution_placement_updated" {
+			category = "execution_placement"
+			idPrefix = "execution-placement:"
+			var detail struct {
+				ActionKey string `json:"action_key"`
+			}
+			if json.Unmarshal([]byte(record.Detail), &detail) == nil {
+				actionKey = strings.TrimSpace(detail.ActionKey)
+			}
+		}
 		events = append(events, canonicalAuditEvent{
-			ID:          "repository:" + record.ID,
-			Category:    "repository",
+			ID:          idPrefix + record.ID,
+			Category:    category,
 			Kind:        record.Kind,
-			Summary:     canonicalAuditSummary("repository", record.Kind),
+			Summary:     canonicalAuditSummary(category, record.Kind),
 			Detail:      record.Detail,
 			AppKey:      record.App,
+			ActionKey:   actionKey,
 			GitSourceID: sourceID,
 			Actor:       firstNonEmpty(record.Actor, "system"),
 			CreatedAt:   record.CreatedAt,
@@ -323,7 +337,7 @@ func parseCanonicalAuditQuery(r *http.Request) (canonicalAuditQuery, error) {
 		Limit:    100,
 	}
 	if query.Category != "" {
-		validCategories := map[string]bool{"workspace": true, "repository": true, "release": true, "client": true, "input_settings": true, "runtime_configuration": true, "webhook": true}
+		validCategories := map[string]bool{"workspace": true, "repository": true, "execution_placement": true, "release": true, "client": true, "input_settings": true, "runtime_configuration": true, "webhook": true}
 		if !validCategories[query.Category] {
 			return canonicalAuditQuery{}, fmt.Errorf("invalid audit category")
 		}
@@ -399,7 +413,8 @@ func canonicalAuditSummary(category string, kind string) string {
 		"source_registered":             "Repository source registered",
 		"settings_changed":              "Repository settings changed",
 		"source_deleted":                "Repository source removed",
-		"route_tag_override":            "Route tag changed",
+		"execution_placement_updated":   "Execution placement updated",
+		"route_tag_override":            "Worker tag changed",
 		"release_published":             "Release published",
 		"release_rolled_back":           "Release rolled back",
 		"created":                       "Client registered",

@@ -130,6 +130,13 @@ func TestCanonicalAuditEventsAggregateAndFilter(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	if err := catalogStore.AppendAudit(ctx, catalog.AuditRecord{
+		ID: "placement-a", Workspace: "ws-a", GitSourceID: "3", App: "shop",
+		Kind: "execution_placement_updated", Actor: actor,
+		Detail: `{"scope":"action","action_key":"orders","previous":{"tag_override":null},"new":{"tag_override":"browser"}}`,
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := store.CreateWorkspace(ctx, "ws-a", "Workspace A", actor); err != nil {
 		t.Fatal(err)
 	}
@@ -183,13 +190,18 @@ func TestCanonicalAuditEventsAggregateAndFilter(t *testing.T) {
 			releaseEvents++
 		}
 	}
-	for _, category := range []string{"workspace", "repository", "release", "client", "input_settings", "runtime_configuration"} {
+	for _, category := range []string{"workspace", "repository", "execution_placement", "release", "client", "input_settings", "runtime_configuration"} {
 		if !categories[category] {
 			t.Fatalf("missing category %q in %#v", category, all)
 		}
 	}
 	if releaseEvents != 1 {
 		t.Fatalf("release audit events = %d, want 1: %#v", releaseEvents, all)
+	}
+	placementEvents := get("/api/w/ws-a/audit-events?category=execution_placement")
+	if len(placementEvents) != 1 || placementEvents[0].Summary != "Execution placement updated" ||
+		placementEvents[0].AppKey != "shop" || placementEvents[0].ActionKey != "orders" || placementEvents[0].Actor != actor {
+		t.Fatalf("execution placement events = %#v", placementEvents)
 	}
 	appEvents := get("/api/w/ws-a/audit-events?app_key=shop&git_source_id=3")
 	for _, event := range appEvents {

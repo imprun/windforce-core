@@ -72,6 +72,18 @@ function AuditScope({ event }: { event: AuditEvent }) {
 }
 
 function AuditDetail({ event }: { event: AuditEvent }) {
+  const placementChanges = executionPlacementAuditChanges(event);
+  if (placementChanges) {
+    return (
+      <div className="auditChanges">
+        {placementChanges.map((change) => (
+          <span key={change.label}>
+            <strong>{change.label}</strong> <code>{change.value}</code>
+          </span>
+        ))}
+      </div>
+    );
+  }
   const groups = auditChangeGroups(event.changes);
   if (groups.length) {
     return (
@@ -89,6 +101,41 @@ function AuditDetail({ event }: { event: AuditEvent }) {
       {event.detail || translate("trigger.audit.noDetail")}
     </span>
   );
+}
+
+function executionPlacementAuditChanges(
+  event: AuditEvent,
+): Array<{ label: string; value: string }> | null {
+  if (event.kind !== "execution_placement_updated" || !event.detail) return null;
+  try {
+    const detail = JSON.parse(event.detail) as {
+      previous?: { tag_override?: unknown; required_labels_override?: unknown };
+      new?: { tag_override?: unknown; required_labels_override?: unknown };
+    };
+    if (!detail.previous || !detail.new) return null;
+    return [
+      {
+        label: translate("routing.routeTag"),
+        value: `${formatPlacementAuditValue(detail.previous.tag_override, "tag")} → ${formatPlacementAuditValue(detail.new.tag_override, "tag")}`,
+      },
+      {
+        label: translate("routing.requiredLabels"),
+        value: `${formatPlacementAuditValue(detail.previous.required_labels_override, "labels")} → ${formatPlacementAuditValue(detail.new.required_labels_override, "labels")}`,
+      },
+    ];
+  } catch {
+    return null;
+  }
+}
+
+function formatPlacementAuditValue(value: unknown, kind: "tag" | "labels"): string {
+  if (value === null || value === undefined) return translate("routing.inherit");
+  if (kind === "tag" && typeof value === "string") return value;
+  if (kind === "labels" && Array.isArray(value)) {
+    const labels = value.filter((item): item is string => typeof item === "string");
+    return labels.length ? labels.join(", ") : translate("routing.noLabels");
+  }
+  return String(value);
 }
 
 export function AuditEventTable({
@@ -122,12 +169,14 @@ export function AuditEventTable({
                 <span className="cellTitle">{formatRelative(event.created_at)}</span>
                 <span className="cellSub">{formatTime(event.created_at)}</span>
               </td>
-              <td>{event.actor || "system"}</td>
+              <td title={event.actor || "system"}>
+                <span className="auditActor">{event.actor || "system"}</span>
+              </td>
               <td>
                 <span className="badge auditCategory">{auditCategoryLabel(event.category)}</span>
               </td>
               <td>
-                <span className="cellTitle">{event.summary}</span>
+                <span className="cellTitle">{auditEventSummary(event)}</span>
                 <span className="cellSub mono">{event.kind}</span>
               </td>
               <td>
@@ -144,8 +193,16 @@ export function AuditEventTable({
   );
 }
 
+function auditEventSummary(event: AuditEvent): string {
+  if (event.kind === "execution_placement_updated") {
+    return translate("audit.executionPlacementUpdated");
+  }
+  return event.summary;
+}
+
 function auditCategoryLabel(category: string): string {
   if (category === "repository") return translate("audit.repository");
+  if (category === "execution_placement") return translate("audit.executionPlacement");
   if (category === "release") return translate("audit.release");
   if (category === "client") return translate("navigation.clientRegistry");
   if (category === "input_settings") return translate("audit.inputSettings");
