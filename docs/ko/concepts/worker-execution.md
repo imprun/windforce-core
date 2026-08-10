@@ -13,6 +13,10 @@ Worker는 Job에 고정된 불변 Execution Bundle을 실행합니다. Git, Sour
 
 `input.json`은 호출 입력값입니다. 애플리케이션 소스와 준비된 의존성은 별도의 Worker 로컬 Execution Bundle 캐시에 있습니다. Launcher는 이 Bundle을 가져와 검증한 다음에만 시작합니다.
 
+각 Release는 정확히 하나의 실행 프로필을 대상으로 합니다. Core는 하나의 준비된 Bundle을 OS나 아키텍처 사이에서 이식하지 않습니다. Windows Bundle은 호환 Windows Worker에만, Linux Bundle은 호환 Linux Worker에만 배치합니다. 올바른 배치가 통신규격입니다.
+
+Bun은 TypeScript App의 1급 기본 실행 Runtime입니다. Python과 Go도 App Runtime으로 지원합니다. 하나의 App은 Release 전체에서 하나의 Runtime을 선택하며 Action은 entrypoint만 달리할 수 있고 App Runtime을 덮어쓸 수 없습니다.
+
 ## 서로 다른 두 수명주기
 
 Release 발행과 Job 실행은 의도적으로 분리되어 있습니다.
@@ -55,7 +59,7 @@ Run admission
                                                   -> 검증된 cache hit 또는
                                                   -> digest를 임시 경로에 fetch
                                                   -> 검증 후 원자적으로 승격
-                                                  -> preparation fingerprint 검증
+                                                  -> 고정 execution profile 검증
                                                   -> ready marker 기록
                                                 Bundle 내부 entrypoint 결정
                                                 Job 전용 임시 디렉터리 생성
@@ -70,6 +74,8 @@ Run admission
 
 `scriptLang`은 정확히 `typescript`, `python`, `go` 중 하나로 정규화합니다. Manifest 호환성을 위해 생략하면 TypeScript가 되지만 다른 값은 준비 전에 거부하며 Bun으로 암묵적으로 fallback하지 않습니다. TypeScript 발행 시 Core는 Bun 정적 scanner로 이름 있는 `main` export를 요구한 뒤 `bun build`로 entrypoint dependency graph를 검증합니다. 두 단계 모두 App을 import하거나 실행하지 않으므로 발행 과정에서 App의 top-level side effect가 발생하지 않습니다.
 
+발행 시 Core는 선택한 Runtime target을 감지하여 `.windforce-execution-profile.json`을 Bundle에 쓰고, 같은 구조화 프로필과 Core 소유의 `sys/execution-profile-*` 배치 label을 Deployment에 고정합니다. 프로필에는 version, OS, architecture, launcher runtime, runtime ABI, 정규화한 libc identity와 선택적인 운영자 지정 불변 profile ID가 들어갑니다. Container 배포에서는 정확한 image digest를 ID로 쓰는 것을 권장합니다. Core의 Go version과 host distribution 이름은 호환성 필드가 아닙니다. Go Bundle은 `CGO_ENABLED=0`, `libc=none`으로 만들며 publisher Go toolchain은 Worker 요구 사항이 아니라 provenance입니다.
+
 ## 파일시스템 분리
 
 Worker는 서로 다른 두 위치를 사용합니다.
@@ -79,6 +85,7 @@ Worker는 서로 다른 두 위치를 사용합니다.
   main.ts
   node_modules/
   .ready
+  .windforce-execution-profile.json
   .windforce-execution-ready
   ...준비된 애플리케이션 tree
 
@@ -94,7 +101,7 @@ Core Launcher는 `WindforceContext`를 구성하고 App Entrypoint를 호출합�
 
 ## Bundle 획득과 캐시 안전성
 
-Runtime은 모든 Job에서 비어 있지 않은 고정 Bundle digest를 요구합니다. `.windforce-execution-ready`에 해당 digest가 기록되어 있고 Bundle preparation fingerprint가 Worker Runtime과 호환될 때만 cache hit를 인정합니다.
+Runtime은 모든 Job에서 비어 있지 않은 고정 Bundle digest를 요구합니다. `.windforce-execution-ready`에 해당 digest가 기록되어 있고 Bundle execution profile이 Worker와 호환될 때만 cache hit를 인정합니다. Execution profile 도입 전 Release는 profile metadata가 없으므로 기존의 엄격한 `prepare-v3` fingerprint 비교를 그대로 사용하며 새 호환 규칙으로 암묵 승격하지 않습니다.
 
 Cache miss이면 같은 digest의 동시 요청을 하나로 합칩니다. Bundle을 같은 상위 경로의 임시 디렉터리에 가져오고 검증한 다음 digest 기반 캐시 디렉터리로 원자적으로 승격합니다. Runtime fingerprint를 승인한 뒤에만 ready marker를 기록합니다. 취소되었거나 없거나 손상되었거나 호환되지 않는 Bundle은 명명된 Bundle 오류로 실패해야 하며 Git, 의존성 설치, 컴파일 또는 다른 Release로 fallback해서는 안 됩니다.
 
@@ -103,8 +110,12 @@ Cache miss이면 같은 digest의 동시 요청을 하나로 합칩니다. Bundl
 로컬 Worker와 원격 Worker는 같은 순서와 고정 Bundle 의미를 보존합니다.
 
 - 로컬 Worker는 설정된 Execution Artifact Store에서 digest를 읽어 Worker 로컬 캐시에 복사합니다.
-- 원격 Worker는 `GET /worker/v1/artifacts/{digest}`를 요청합니다. Core는 설정된 Artifact Store를 읽어 tar archive로 전송하고, Worker는 임시 디렉터리에 압축을 풀어 POSIX 배포 환경에서 digest를 검증한 뒤 로컬 캐시로 원자적으로 승격합니다.
+- 원격 Worker는 `GET /worker/v1/artifacts/{digest}`를 요청합니다. Core는 설정된 Artifact Store를 읽어 tar archive로 전송하고, Worker는 archive를 읽는 동안 canonical name, POSIX mode, link target, size, byte를 검증하여 임시 디렉터리에 푼 뒤 로컬 캐시로 원자적으로 승격합니다. 대상 filesystem이 모든 POSIX mode를 보존하지 못해도 Windows와 POSIX에서 같은 stream 검증을 수행합니다.
 - 원격 Worker는 Core의 데이터베이스, Source Store 또는 Artifact Store 파일시스템을 mount하지 않습니다. Repository credential과 서버 암호화 root는 Core에 남습니다.
+
+Worker는 실행할 수 있는 Bun, Python, 정적 Go 프로필을 감지하여 등록합니다. Claim은 이 프로필을 예약 label로 컴파일하고 State Store의 원자적 label filter를 재사용하므로 호환되지 않는 Job은 실패로 소비되지 않고 queue에 남습니다. Processor는 claim 직후 구조화 profile을 다시 검사해 불변식을 방어합니다. 운영자 label과 실행 profile label은 분리됩니다. Managed credential은 전자를 제한하고 Core는 등록된 profile에서 후자를 계산합니다.
+
+Profile이 고정된 queued Job인데 live registry에 호환 실행 profile이 없으면 Job status 응답은 `scheduling_reason: "no_compatible_worker"`를 표시합니다. 이것은 terminal Job state가 아니라 관측 정보이며 호환 Worker가 등록되면 기존 Job을 claim할 수 있습니다.
 
 현재 서버 측 Artifact Store 구현은 파일시스템 기반입니다. 이것은 원격 Worker 전송 방식과 별개입니다. Core가 해당 파일시스템을 소유하고 Worker Plane을 통해 digest 기반 Artifact를 원격 Worker에 제공합니다.
 
@@ -139,9 +150,13 @@ Worker 또는 Runtime 변경을 수용하기 전에 다음을 모두 확인해�
 - Bundle 열기와 검증이 Job Runtime 파일 생성 및 프로세스 시작보다 먼저 일어납니다.
 - 어떤 실행 경로도 Git clone, 의존성 설치, SDK 주입, 소스 컴파일 또는 Active Release 재조회를 하지 않습니다.
 - Cache miss 처리가 임시 경로, 검증, 원자적 승격 및 동시 fetch 안전성을 보존합니다.
-- Cache hit가 digest marker와 preparation fingerprint를 모두 검증합니다.
+- 새 Cache hit가 digest marker와 고정 execution profile을 모두 검증하며, profile 없는 기존 Bundle은 엄격한 `prepare-v3` fingerprint 검증을 유지합니다.
+- 하나의 Release는 하나의 App Runtime과 하나의 execution profile을 가지며 Action Runtime override를 거부합니다.
+- Worker의 Core 계산 profile label이 맞지 않으면 profile 고정 Job을 claim할 수 없고 Processor가 launch 전 구조화 검사를 반복합니다.
+- Container 배포는 `WINDFORCE_EXECUTION_PROFILE_ID` 또는 `--execution-profile-id`에 정확한 immutable image digest나 동등하게 불변인 profile revision을 지정해야 합니다.
 - Entrypoint containment가 가져온 Bundle root 밖으로 나가는 경로를 차단합니다.
 - 로컬 및 원격 Worker 경로가 동일한 Bundle과 완료 의미를 보존합니다.
+- 원격 archive 무결성을 Windows와 POSIX 모두에서 cache 승격 전에 검증합니다.
 - 종료 시 새 claim을 중단하고 `active -> draining`을 노출하며 drain deadline까지 실행 중 Job을 보존한 뒤 완료 후에만 registry record를 제거합니다.
 - 로그와 결과가 Secret 마스킹 및 lease fencing을 유지합니다.
 - Trace Context가 없거나 잘못됐거나 너무 커도 실행을 막지 않습니다. Local, Remote, Standalone Worker는 claim transport의 현재 Context가 아니라 저장된 Job 생성 Context를 사용하고, 유효한 Job Context가 없으면 Worker Root를 시작하며, 유효 실행 Carrier만 Launcher에 전달합니다.
@@ -150,4 +165,4 @@ Worker 또는 Runtime 변경을 수용하기 전에 다음을 모두 확인해�
   최종 결과, Service 로그, Binary Artifact를 서로 섞지 않습니다.
 - 테스트가 Bundle 발행/fetch, 캐시 동작, 원격 압축 해제, Runtime 실행, TypeScript `main` 정적 검증, 정상 drain과 timeout drain, Bundle 오류 시 Job 실패를 검증합니다.
 
-주요 구현 위치는 `internal/worker`, `internal/runtime`, `internal/executor`, `internal/executionbundle`, `internal/remoteworker`, `internal/server/worker_plane.go`입니다. 실행 의미를 바꾸는 변경은 이 현재 상태 문서와 함께 ADR도 추가해야 합니다. 선택적인 Trace 전파와 독립 Root 생성은 [ADR 0029](../../adr/0029-optional-trace-context-continuity.md)에 정의합니다.
+주요 구현 위치는 `internal/worker`, `internal/runtime`, `internal/executor`, `internal/executionbundle`, `internal/remoteworker`, `internal/server/worker_plane.go`입니다. 실행 의미를 바꾸는 변경은 이 현재 상태 문서와 함께 ADR도 추가해야 합니다. Execution profile 배치는 [ADR 0030](../../adr/0030-release-execution-profiles.md)에 정의합니다. 선택적인 Trace 전파와 독립 Root 생성은 [ADR 0029](../../adr/0029-optional-trace-context-continuity.md)에 정의합니다.

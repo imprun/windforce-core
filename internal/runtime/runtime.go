@@ -34,7 +34,10 @@ type Runner struct {
 	BunPath        string
 	PythonPath     string
 	GoPath         string
-	PrepareTimeout time.Duration
+	// ExecutionProfileID is an optional immutable operator identity, normally
+	// the exact container image digest or native worker image revision.
+	ExecutionProfileID string
+	PrepareTimeout     time.Duration
 }
 
 type RunRequest struct {

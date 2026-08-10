@@ -31,6 +31,63 @@ type tracingTestRunner struct {
 	carrier     telemetry.TraceContextV1
 }
 
+type mismatchGuardRunner struct{ called bool }
+
+func (r *mismatchGuardRunner) Run(context.Context, actionruntime.RunRequest) (contract.JobResult, error) {
+	r.called = true
+	return contract.JobResult{}, nil
+}
+
+type mismatchingClaimStore struct {
+	*state.LocalStore
+	requiredLabel string
+}
+
+func (s *mismatchingClaimStore) ClaimJobForWorker(ctx context.Context, workerID string, tags []string, _ []string, leaseTTL time.Duration) (state.Job, state.Lease, error) {
+	return s.LocalStore.ClaimJobForWorker(ctx, workerID, tags, []string{s.requiredLabel}, leaseTTL)
+}
+
+func TestProcessorDefendsAgainstMismatchedClaimedExecutionProfile(t *testing.T) {
+	required, err := contract.NewExecutionProfile("", "linux", "amd64", "bun", "1.2.3", "glibc-2.39")
+	if err != nil {
+		t.Fatal(err)
+	}
+	offered, err := contract.NewExecutionProfile("", "windows", "amd64", "bun", "1.2.3", "none")
+	if err != nil {
+		t.Fatal(err)
+	}
+	requiredLabel, _ := contract.ExecutionProfileLabel(required)
+	deployment := contract.Deployment{
+		Workspace: "ws-a", App: "profiled", Commit: "commit-a", ExecutionProfile: required,
+		RequiredLabels: []string{requiredLabel}, Actions: map[string]contract.Action{"run": {Action: "run"}},
+	}
+	run := state.NewRun("test", "run-profile-mismatch", deployment.App, "run", deployment, json.RawMessage(`{}`))
+	job := state.NewActionJob(run, nil)
+	local := state.NewLocalStore(filepath.Join(t.TempDir(), "state.json"))
+	if err := local.CreateRunAndEnqueue(context.Background(), run, job); err != nil {
+		t.Fatal(err)
+	}
+	runner := &mismatchGuardRunner{}
+	processor := Processor{
+		Store: &mismatchingClaimStore{LocalStore: local, requiredLabel: requiredLabel}, Runner: runner,
+		WorkerID: "wrong-profile", ExecutionProfiles: []contract.ExecutionProfile{offered}, LeaseTTL: time.Minute,
+	}
+	processed, err := processor.ProcessOne(context.Background())
+	if err != nil || !processed {
+		t.Fatalf("ProcessOne = %v, %v", processed, err)
+	}
+	if runner.called {
+		t.Fatal("launcher ran despite execution profile mismatch")
+	}
+	stored, err := local.GetRun(context.Background(), run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.State != state.RunFailed || !strings.Contains(string(stored.Error), "incompatible") {
+		t.Fatalf("run state/error = %s/%s", stored.State, stored.Error)
+	}
+}
+
 func (r *tracingTestRunner) Run(ctx context.Context, request actionruntime.RunRequest) (contract.JobResult, error) {
 	r.spanContext = trace.SpanContextFromContext(ctx)
 	r.carrier = request.TraceContext

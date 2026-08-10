@@ -235,6 +235,7 @@ type Deployment struct {
 	CreatedBy            *string           `json:"createdBy,omitempty"`
 	BundleDigest         string            `json:"bundleDigest,omitempty"`
 	BundleURI            string            `json:"bundleUri,omitempty"`
+	ExecutionProfile     ExecutionProfile  `json:"executionProfile,omitempty,omitzero"`
 	ObjectURI            string            `json:"objectUri"`
 	Actions              map[string]Action `json:"actions"`
 	UpdatedAt            *time.Time        `json:"updatedAt,omitempty"`

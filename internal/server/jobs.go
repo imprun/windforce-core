@@ -82,7 +82,14 @@ func (h *Handler) handleJobStatus(w http.ResponseWriter, r *http.Request, worksp
 		writeError(w, http.StatusNotFound, "job not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, newJobStatus(workspaceID, job, run))
+	response := newJobStatus(workspaceID, job, run)
+	if job.State == state.JobQueued && job.Payload.PinnedDeployment().ExecutionProfile != (contract.ExecutionProfile{}) {
+		if workers, listErr := h.store.ListWorkers(r.Context()); listErr == nil && !hasCompatibleExecutionWorker(job, workers, time.Now()) {
+			reason := "no_compatible_worker"
+			response.SchedulingReason = &reason
+		}
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (h *Handler) handleJobResult(w http.ResponseWriter, r *http.Request, workspaceID string, jobID string) {
@@ -323,35 +330,46 @@ func parseLogStreamTTL(value string) (time.Duration, error) {
 }
 
 type jobStatusResponse struct {
-	ID             string          `json:"id"`
-	WorkspaceID    string          `json:"workspace_id"`
-	State          string          `json:"state"`
-	Status         *string         `json:"status,omitempty"`
-	Worker         *string         `json:"worker,omitempty"`
-	TraceID        string          `json:"trace_id,omitempty"`
-	AppKey         *string         `json:"app_key,omitempty"`
-	ActionKey      *string         `json:"action_key,omitempty"`
-	TriggerKind    *string         `json:"trigger_kind,omitempty"`
-	Kind           *string         `json:"kind,omitempty"`
-	GitSourceID    *int64          `json:"git_source_id,omitempty"`
-	CommitSha      *string         `json:"commit_sha,omitempty"`
-	Entrypoint     *string         `json:"entrypoint,omitempty"`
-	InputSchema    json.RawMessage `json:"input_schema,omitempty"`
-	OutputSchema   json.RawMessage `json:"output_schema,omitempty"`
-	Tag            string          `json:"tag,omitempty"`
-	TimeoutS       int32           `json:"timeout_s,omitempty"`
-	CreatedBy      string          `json:"created_by,omitempty"`
-	PermissionedAs string          `json:"permissioned_as,omitempty"`
-	Input          json.RawMessage `json:"input,omitempty"`
-	CreatedAt      *time.Time      `json:"created_at,omitempty"`
-	StartedAt      *time.Time      `json:"started_at,omitempty"`
-	CompletedAt    *time.Time      `json:"completed_at,omitempty"`
-	DurationMs     int64           `json:"duration_ms,omitempty"`
-	CanceledBy     *string         `json:"canceled_by,omitempty"`
-	CanceledReason *string         `json:"canceled_reason,omitempty"`
-	FlowRunID      *string         `json:"flow_run_id,omitempty"`
-	FlowKey        *string         `json:"flow_key,omitempty"`
-	FlowStepKey    *string         `json:"flow_step_key,omitempty"`
+	ID               string          `json:"id"`
+	WorkspaceID      string          `json:"workspace_id"`
+	State            string          `json:"state"`
+	Status           *string         `json:"status,omitempty"`
+	SchedulingReason *string         `json:"scheduling_reason,omitempty"`
+	Worker           *string         `json:"worker,omitempty"`
+	TraceID          string          `json:"trace_id,omitempty"`
+	AppKey           *string         `json:"app_key,omitempty"`
+	ActionKey        *string         `json:"action_key,omitempty"`
+	TriggerKind      *string         `json:"trigger_kind,omitempty"`
+	Kind             *string         `json:"kind,omitempty"`
+	GitSourceID      *int64          `json:"git_source_id,omitempty"`
+	CommitSha        *string         `json:"commit_sha,omitempty"`
+	Entrypoint       *string         `json:"entrypoint,omitempty"`
+	InputSchema      json.RawMessage `json:"input_schema,omitempty"`
+	OutputSchema     json.RawMessage `json:"output_schema,omitempty"`
+	Tag              string          `json:"tag,omitempty"`
+	TimeoutS         int32           `json:"timeout_s,omitempty"`
+	CreatedBy        string          `json:"created_by,omitempty"`
+	PermissionedAs   string          `json:"permissioned_as,omitempty"`
+	Input            json.RawMessage `json:"input,omitempty"`
+	CreatedAt        *time.Time      `json:"created_at,omitempty"`
+	StartedAt        *time.Time      `json:"started_at,omitempty"`
+	CompletedAt      *time.Time      `json:"completed_at,omitempty"`
+	DurationMs       int64           `json:"duration_ms,omitempty"`
+	CanceledBy       *string         `json:"canceled_by,omitempty"`
+	CanceledReason   *string         `json:"canceled_reason,omitempty"`
+	FlowRunID        *string         `json:"flow_run_id,omitempty"`
+	FlowKey          *string         `json:"flow_key,omitempty"`
+	FlowStepKey      *string         `json:"flow_step_key,omitempty"`
+}
+
+func hasCompatibleExecutionWorker(job state.Job, workers []state.WorkerRecord, now time.Time) bool {
+	required := job.Payload.PinnedDeployment().ExecutionProfile
+	for _, worker := range workers {
+		if worker.Live(now) && contract.AnyExecutionProfileCompatible(required, worker.ExecutionProfiles) {
+			return true
+		}
+	}
+	return false
 }
 
 func newJobStatus(workspaceID string, job state.Job, run state.Run) jobStatusResponse {

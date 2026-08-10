@@ -1492,6 +1492,46 @@ func TestClaimJobForWorkerLabelSubset(t *testing.T) {
 	}
 }
 
+func TestClaimJobForWorkerExecutionProfile(t *testing.T) {
+	store := NewLocalStore(t.TempDir() + "/state.json")
+	required, err := contract.NewExecutionProfile("", "linux", "amd64", "bun", "1.2.3", "glibc-2.39")
+	if err != nil {
+		t.Fatal(err)
+	}
+	requiredLabel, err := contract.ExecutionProfileLabel(required)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deployment := contract.Deployment{
+		Workspace: "ws-a", App: "profiled", Commit: "commit-a",
+		ExecutionProfile: required, RequiredLabels: []string{requiredLabel},
+		Actions: map[string]contract.Action{"run": {Action: "run"}},
+	}
+	run := NewRun("windforce", "run-profiled", deployment.App, "run", deployment, json.RawMessage(`{}`))
+	job := NewActionJob(run, nil)
+	if job.Payload.ExecutionProfile != required {
+		t.Fatalf("job profile = %#v, want %#v", job.Payload.ExecutionProfile, required)
+	}
+	if err := store.CreateRunAndEnqueue(context.Background(), run, job); err != nil {
+		t.Fatal(err)
+	}
+	wrong, err := contract.NewExecutionProfile("", "windows", "amd64", "bun", "1.2.3", "none")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrongLabel, _ := contract.ExecutionProfileLabel(wrong)
+	if _, _, err := store.ClaimJobForWorker(context.Background(), "windows-worker", nil, []string{wrongLabel}, time.Minute); err != ErrNoQueuedJob {
+		t.Fatalf("incompatible worker claim error = %v, want ErrNoQueuedJob", err)
+	}
+	claimed, _, err := store.ClaimJobForWorker(context.Background(), "linux-worker", nil, []string{requiredLabel}, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claimed.Payload.PinnedDeployment().ExecutionProfile != required {
+		t.Fatalf("claimed profile = %#v, want %#v", claimed.Payload.PinnedDeployment().ExecutionProfile, required)
+	}
+}
+
 func TestClaimHonorsLegacyCapabilityJobs(t *testing.T) {
 	store := NewLocalStore(t.TempDir() + "/state.json")
 	legacy := contract.Deployment{
@@ -1523,7 +1563,11 @@ func TestClaimHonorsLegacyCapabilityJobs(t *testing.T) {
 func TestWorkerRegistryLifecycle(t *testing.T) {
 	store := NewLocalStore(t.TempDir() + "/state.json")
 	ctx := context.Background()
-	if err := store.RegisterWorker(ctx, WorkerRecord{ID: "w-1", Group: "default", Labels: []string{"browser"}, Tags: []string{"default"}}); err != nil {
+	profile, err := contract.NewExecutionProfile("image-a", "linux", "amd64", "bun", "1.2.3", "glibc-2.39")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RegisterWorker(ctx, WorkerRecord{ID: "w-1", Group: "default", Labels: []string{"browser"}, Tags: []string{"default"}, ExecutionProfiles: []contract.ExecutionProfile{profile}}); err != nil {
 		t.Fatal(err)
 	}
 	workers, err := store.ListWorkers(ctx)
@@ -1531,7 +1575,7 @@ func TestWorkerRegistryLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(workers) != 1 || workers[0].ID != "w-1" || workers[0].Slots != 1 ||
-		!workers[0].Live(time.Now()) {
+		!workers[0].Live(time.Now()) || len(workers[0].ExecutionProfiles) != 1 || workers[0].ExecutionProfiles[0] != profile {
 		t.Fatalf("workers = %#v", workers)
 	}
 	if err := store.HeartbeatWorker(ctx, "w-1"); err != nil {

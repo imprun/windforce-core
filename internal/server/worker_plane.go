@@ -85,6 +85,16 @@ func clampLeaseTTL(ms int64) time.Duration {
 	return leaseTTL
 }
 
+func workerClaimLabels(record state.WorkerRecord) ([]string, error) {
+	return contract.WithExecutionProfileLabels(record.Labels, record.ExecutionProfiles)
+}
+
+func sameExecutionProfiles(left []contract.ExecutionProfile, right []contract.ExecutionProfile) bool {
+	leftLabels, leftErr := contract.ExecutionProfileLabels(left)
+	rightLabels, rightErr := contract.ExecutionProfileLabels(right)
+	return leftErr == nil && rightErr == nil && state.SameWorkerScope(leftLabels, rightLabels)
+}
+
 func (h *Handler) handleWorkerPlane(w http.ResponseWriter, r *http.Request) {
 	authorizedRequest, status, message := h.authenticateWorkerPlane(r)
 	if status != 0 {
@@ -121,18 +131,24 @@ func (h *Handler) handleWorkerPlane(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) workerPlaneRegister(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		ID     string   `json:"id"`
-		Group  string   `json:"group"`
-		Tags   []string `json:"tags"`
-		Labels []string `json:"labels"`
-		Slots  int      `json:"slots"`
-		Status string   `json:"status"`
+		ID                string                      `json:"id"`
+		Group             string                      `json:"group"`
+		Tags              []string                    `json:"tags"`
+		Labels            []string                    `json:"labels"`
+		ExecutionProfiles []contract.ExecutionProfile `json:"execution_profiles"`
+		Slots             int                         `json:"slots"`
+		Status            string                      `json:"status"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	labels, err := contract.NormalizeLabels(req.Labels, true)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	profiles, err := contract.NormalizeExecutionProfiles(req.ExecutionProfiles)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -146,12 +162,13 @@ func (h *Handler) workerPlaneRegister(w http.ResponseWriter, r *http.Request) {
 		req.ID = state.NewID("worker")
 	}
 	record := state.WorkerRecord{
-		ID:     req.ID,
-		Group:  req.Group,
-		Tags:   req.Tags,
-		Labels: labels,
-		Slots:  req.Slots,
-		Status: status,
+		ID:                req.ID,
+		Group:             req.Group,
+		Tags:              req.Tags,
+		Labels:            labels,
+		ExecutionProfiles: profiles,
+		Slots:             req.Slots,
+		Status:            status,
 	}
 	if credential := managedWorkerCredential(r); credential != nil {
 		store, ok := h.workerControlStore()
@@ -171,7 +188,7 @@ func (h *Handler) workerPlaneRegister(w http.ResponseWriter, r *http.Request) {
 		if !credential.AllowsNewWork(time.Now().UTC()) {
 			existing, existingErr := managedWorkerRecord(r.Context(), store, *credential, req.ID)
 			if existingErr != nil || status != state.WorkerStatusDraining || !credentialAllowsContinuation(*credential) ||
-				!state.SameWorkerScope(existing.Labels, labels) {
+				!state.SameWorkerScope(existing.Labels, labels) || !sameExecutionProfiles(existing.ExecutionProfiles, record.ExecutionProfiles) {
 				writeError(w, http.StatusForbidden, "worker credential is not active")
 				return
 			}
@@ -263,8 +280,9 @@ func (h *Handler) workerPlaneClaim(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		record, recordErr := managedWorkerRecord(r.Context(), store, *credential, req.WorkerID)
-		if recordErr != nil || !state.SameWorkerScope(req.Labels, credential.Labels) ||
-			!state.SameWorkerScope(req.Labels, record.Labels) || !state.SameWorkerScope(req.Tags, record.Tags) {
+		claimLabels, labelsErr := workerClaimLabels(record)
+		if recordErr != nil || labelsErr != nil || !state.SameWorkerScope(record.Labels, credential.Labels) ||
+			!state.SameWorkerScope(req.Labels, claimLabels) || !state.SameWorkerScope(req.Tags, record.Tags) {
 			writeError(w, http.StatusForbidden, "worker claim exceeds registered credential scope")
 			return
 		}
@@ -278,9 +296,11 @@ func (h *Handler) workerPlaneClaim(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		job, lease, err = store.ClaimJobForWorkerScope(
-			r.Context(), req.WorkerID, req.Tags, credential.Labels, credential.WorkspaceIDs, leaseTTL,
+			r.Context(), req.WorkerID, req.Tags, claimLabels, credential.WorkspaceIDs, leaseTTL,
 		)
 	} else {
+		// Static worker-plane bearer tokens retain their historical unrestricted
+		// scope. Managed credentials above bind claims to the registered profile.
 		job, lease, err = h.store.ClaimJobForWorker(r.Context(), req.WorkerID, req.Tags, req.Labels, leaseTTL)
 	}
 	if errors.Is(err, state.ErrNoQueuedJob) {

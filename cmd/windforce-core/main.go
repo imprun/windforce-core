@@ -114,6 +114,7 @@ func runServer(args []string, mode string) int {
 	bunPath := flags.String("bun-path", "", "bun executable path")
 	pythonPath := flags.String("python-path", "", "python executable path")
 	goPath := flags.String("go-path", "", "go executable path")
+	executionProfileID := flags.String("execution-profile-id", strings.TrimSpace(os.Getenv("WINDFORCE_EXECUTION_PROFILE_ID")), "immutable execution image/profile identity; exact image digest is recommended")
 	prepareTimeout := flags.Duration("prepare-timeout", 0, "source prepare timeout; defaults to 5m")
 	poll := flags.Duration("poll", 500*time.Millisecond, "standalone worker poll interval")
 	leaseTTL := flags.Duration("lease", 30*time.Second, "worker job lease TTL")
@@ -245,15 +246,16 @@ func runServer(args []string, mode string) int {
 		return 1
 	}
 	runtimeRunner := &runtime.Runner{
-		Store:          bundleStore,
-		ArtifactStore:  executionBundleStore,
-		CacheRoot:      *cacheRoot,
-		BaseURL:        runtimeBaseURL,
-		JobTokenSecret: jobTokenSecret,
-		BunPath:        *bunPath,
-		PythonPath:     *pythonPath,
-		GoPath:         *goPath,
-		PrepareTimeout: *prepareTimeout,
+		Store:              bundleStore,
+		ArtifactStore:      executionBundleStore,
+		CacheRoot:          *cacheRoot,
+		BaseURL:            runtimeBaseURL,
+		JobTokenSecret:     jobTokenSecret,
+		BunPath:            *bunPath,
+		PythonPath:         *pythonPath,
+		GoPath:             *goPath,
+		ExecutionProfileID: *executionProfileID,
+		PrepareTimeout:     *prepareTimeout,
 	}
 	standaloneMode := mode == "standalone"
 	webhookStore, ok := stateStore.(webhook.Store)
@@ -322,27 +324,33 @@ func runServer(args []string, mode string) int {
 	go runHumanTaskDeadlineLoop(runCtx, stateStore, *humanTaskDeadlineInterval, *humanTaskDeadlineBatch)
 
 	if standaloneMode {
+		executionProfiles, err := runtimeRunner.ExecutionProfiles(runCtx)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "standalone execution profiles: %v\n", err)
+			return 1
+		}
 		runtimeBindings, err := worker.NewRuntimeBindings(*authSessionURL, *authSessionTokenEnv, *authSessionTokenFile, *authSessionTimeout)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "standalone runtime bindings: %v\n", err)
 			return 1
 		}
 		processor := worker.Processor{
-			Store:            stateStore,
-			Runner:           runtimeRunner,
-			WorkerID:         *workerID,
-			Group:            *workerGroup,
-			Tags:             parseTags(*workerTags),
-			Labels:           parseLabels(*workerLabels),
-			EgressProxyAddr:  strings.TrimSpace(*egressProxy),
-			LeaseTTL:         *leaseTTL,
-			DrainTimeout:     *drainTimeout,
-			LogFlushInterval: *logFlushInterval,
-			LogCapBytes:      *logCapBytes,
-			LogJobPayloads:   *logJobPayloads,
-			TeeJobLogs:       *teeJobLogs,
-			RuntimeBindings:  runtimeBindings,
-			RuntimeResolver:  runtimeResolver,
+			Store:             stateStore,
+			Runner:            runtimeRunner,
+			WorkerID:          *workerID,
+			Group:             *workerGroup,
+			Tags:              parseTags(*workerTags),
+			Labels:            parseLabels(*workerLabels),
+			ExecutionProfiles: executionProfiles,
+			EgressProxyAddr:   strings.TrimSpace(*egressProxy),
+			LeaseTTL:          *leaseTTL,
+			DrainTimeout:      *drainTimeout,
+			LogFlushInterval:  *logFlushInterval,
+			LogCapBytes:       *logCapBytes,
+			LogJobPayloads:    *logJobPayloads,
+			TeeJobLogs:        *teeJobLogs,
+			RuntimeBindings:   runtimeBindings,
+			RuntimeResolver:   runtimeResolver,
 		}
 		go func() {
 			if err := processor.RunLoop(runCtx, *poll); err != nil {
@@ -431,6 +439,7 @@ func runWorker(args []string) int {
 	bunPath := flags.String("bun-path", "", "bun executable path")
 	pythonPath := flags.String("python-path", "", "python executable path")
 	goPath := flags.String("go-path", "", "go executable path")
+	executionProfileID := flags.String("execution-profile-id", strings.TrimSpace(os.Getenv("WINDFORCE_EXECUTION_PROFILE_ID")), "immutable execution image/profile identity; exact image digest is recommended")
 	prepareTimeout := flags.Duration("prepare-timeout", 0, "source prepare timeout; defaults to 5m")
 	baseURL := flags.String("base-url", "", "public API base URL injected into job ctx helpers")
 	workerTokenEnv := flags.String("worker-token-env", "", "environment variable that contains the remote worker plane bearer token")
@@ -496,30 +505,38 @@ func runWorker(args []string) int {
 			return 1
 		}
 		backend := remoteworker.New(remoteURL, workerToken)
+		runtimeRunner := &runtime.Runner{
+			ArtifactStore:      remoteworker.ArtifactStore{Client: backend},
+			CacheRoot:          *cacheRoot,
+			BaseURL:            firstNonEmpty(strings.TrimSpace(*baseURL), remoteURL),
+			APIToken:           workerToken,
+			BunPath:            *bunPath,
+			PythonPath:         *pythonPath,
+			GoPath:             *goPath,
+			ExecutionProfileID: *executionProfileID,
+			PrepareTimeout:     *prepareTimeout,
+		}
+		executionProfiles, err := runtimeRunner.ExecutionProfiles(runCtx)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "worker execution profiles: %v\n", err)
+			return 1
+		}
 		processor := worker.Processor{
-			Store: backend,
-			Runner: &runtime.Runner{
-				ArtifactStore:  remoteworker.ArtifactStore{Client: backend},
-				CacheRoot:      *cacheRoot,
-				BaseURL:        firstNonEmpty(strings.TrimSpace(*baseURL), remoteURL),
-				APIToken:       workerToken,
-				BunPath:        *bunPath,
-				PythonPath:     *pythonPath,
-				GoPath:         *goPath,
-				PrepareTimeout: *prepareTimeout,
-			},
-			WorkerID:         *workerID,
-			Group:            *workerGroup,
-			Tags:             parseTags(*workerTags),
-			Labels:           parseLabels(*workerLabels),
-			EgressProxyAddr:  strings.TrimSpace(*egressProxy),
-			LeaseTTL:         *leaseTTL,
-			DrainTimeout:     *drainTimeout,
-			LogFlushInterval: *logFlushInterval,
-			LogCapBytes:      *logCapBytes,
-			LogJobPayloads:   *logJobPayloads,
-			TeeJobLogs:       *teeJobLogs,
-			RuntimeBindings:  runtimeBindings,
+			Store:             backend,
+			Runner:            runtimeRunner,
+			WorkerID:          *workerID,
+			Group:             *workerGroup,
+			Tags:              parseTags(*workerTags),
+			Labels:            parseLabels(*workerLabels),
+			ExecutionProfiles: executionProfiles,
+			EgressProxyAddr:   strings.TrimSpace(*egressProxy),
+			LeaseTTL:          *leaseTTL,
+			DrainTimeout:      *drainTimeout,
+			LogFlushInterval:  *logFlushInterval,
+			LogCapBytes:       *logCapBytes,
+			LogJobPayloads:    *logJobPayloads,
+			TeeJobLogs:        *teeJobLogs,
+			RuntimeBindings:   runtimeBindings,
 		}
 		if *once {
 			processed, err := processor.ProcessOne(context.Background())
@@ -546,31 +563,39 @@ func runWorker(args []string) int {
 	secretKeyPrevious := tokenFromEnv(*secretKeyPreviousEnv)
 	configureInputCrypto(stateStore, secretKey, secretKeyPrevious)
 	secretStore := secretbackend.NewDatabase(stateStore, secretKey, secretKeyPrevious)
+	runtimeRunner := &runtime.Runner{
+		ArtifactStore:      executionbundle.NewLocalStore(executionBundleStoreRoot(*storeDir)),
+		CacheRoot:          *cacheRoot,
+		BaseURL:            strings.TrimSpace(*baseURL),
+		JobTokenSecret:     jobTokenSecret,
+		BunPath:            *bunPath,
+		PythonPath:         *pythonPath,
+		GoPath:             *goPath,
+		ExecutionProfileID: *executionProfileID,
+		PrepareTimeout:     *prepareTimeout,
+	}
+	executionProfiles, err := runtimeRunner.ExecutionProfiles(runCtx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "worker execution profiles: %v\n", err)
+		return 1
+	}
 	processor := worker.Processor{
-		Store: stateStore,
-		Runner: &runtime.Runner{
-			ArtifactStore:  executionbundle.NewLocalStore(executionBundleStoreRoot(*storeDir)),
-			CacheRoot:      *cacheRoot,
-			BaseURL:        strings.TrimSpace(*baseURL),
-			JobTokenSecret: jobTokenSecret,
-			BunPath:        *bunPath,
-			PythonPath:     *pythonPath,
-			GoPath:         *goPath,
-			PrepareTimeout: *prepareTimeout,
-		},
-		WorkerID:         *workerID,
-		Group:            *workerGroup,
-		Tags:             parseTags(*workerTags),
-		Labels:           parseLabels(*workerLabels),
-		EgressProxyAddr:  strings.TrimSpace(*egressProxy),
-		LeaseTTL:         *leaseTTL,
-		DrainTimeout:     *drainTimeout,
-		LogFlushInterval: *logFlushInterval,
-		LogCapBytes:      *logCapBytes,
-		LogJobPayloads:   *logJobPayloads,
-		TeeJobLogs:       *teeJobLogs,
-		RuntimeBindings:  runtimeBindings,
-		RuntimeResolver:  runtimeconfig.New(stateStore, secretStore),
+		Store:             stateStore,
+		Runner:            runtimeRunner,
+		WorkerID:          *workerID,
+		Group:             *workerGroup,
+		Tags:              parseTags(*workerTags),
+		Labels:            parseLabels(*workerLabels),
+		ExecutionProfiles: executionProfiles,
+		EgressProxyAddr:   strings.TrimSpace(*egressProxy),
+		LeaseTTL:          *leaseTTL,
+		DrainTimeout:      *drainTimeout,
+		LogFlushInterval:  *logFlushInterval,
+		LogCapBytes:       *logCapBytes,
+		LogJobPayloads:    *logJobPayloads,
+		TeeJobLogs:        *teeJobLogs,
+		RuntimeBindings:   runtimeBindings,
+		RuntimeResolver:   runtimeconfig.New(stateStore, secretStore),
 	}
 	if *once {
 		processed, err := processor.ProcessOne(context.Background())

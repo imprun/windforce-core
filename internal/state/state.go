@@ -126,35 +126,36 @@ type Run struct {
 }
 
 type JobPayload struct {
-	Workspace             string                 `json:"workspace,omitempty"`
-	GitSourceID           string                 `json:"gitSourceId,omitempty"`
-	Commit                string                 `json:"commit,omitempty"`
-	App                   string                 `json:"app"`
-	Action                string                 `json:"action"`
-	Version               string                 `json:"version,omitempty"`
-	Tag                   string                 `json:"tag,omitempty"`
-	DeploymentTag         string                 `json:"deploymentTag,omitempty"`
-	DeploymentTagOverride *string                `json:"deploymentTagOverride,omitempty"`
-	Entrypoint            string                 `json:"entrypoint,omitempty"`
-	Runtime               string                 `json:"runtime,omitempty"`
-	ScriptLang            string                 `json:"scriptLang,omitempty"`
-	TimeoutS              int32                  `json:"timeout,omitempty"`
-	MaxConcurrent         *int32                 `json:"maxConcurrent,omitempty"`
-	RequiredCapabilities  []string               `json:"requiredCapabilities,omitempty"`
-	RequiredLabels        []string               `json:"requiredLabels,omitempty"`
-	DeploymentID          *string                `json:"deploymentId,omitempty"`
-	BundleDigest          string                 `json:"bundleDigest,omitempty"`
-	BundleURI             string                 `json:"bundleUri,omitempty"`
-	ObjectURI             string                 `json:"objectUri,omitempty"`
-	TriggerKind           string                 `json:"triggerKind,omitempty"`
-	TriggerHeaders        json.RawMessage        `json:"triggerHeaders,omitempty"`
-	ScheduledFor          string                 `json:"scheduledFor,omitempty"`
-	ActionSpec            contract.Action        `json:"actionSpec,omitempty"`
-	InputSchema           json.RawMessage        `json:"inputSchema,omitempty"`
-	OutputSchema          json.RawMessage        `json:"outputSchema,omitempty"`
-	Input                 json.RawMessage        `json:"input,omitempty"`
-	InputConfigResolved   bool                   `json:"inputConfigResolved,omitempty"`
-	RuntimeAccess         contract.RuntimeAccess `json:"runtimeAccess,omitempty"`
+	Workspace             string                    `json:"workspace,omitempty"`
+	GitSourceID           string                    `json:"gitSourceId,omitempty"`
+	Commit                string                    `json:"commit,omitempty"`
+	App                   string                    `json:"app"`
+	Action                string                    `json:"action"`
+	Version               string                    `json:"version,omitempty"`
+	Tag                   string                    `json:"tag,omitempty"`
+	DeploymentTag         string                    `json:"deploymentTag,omitempty"`
+	DeploymentTagOverride *string                   `json:"deploymentTagOverride,omitempty"`
+	Entrypoint            string                    `json:"entrypoint,omitempty"`
+	Runtime               string                    `json:"runtime,omitempty"`
+	ScriptLang            string                    `json:"scriptLang,omitempty"`
+	TimeoutS              int32                     `json:"timeout,omitempty"`
+	MaxConcurrent         *int32                    `json:"maxConcurrent,omitempty"`
+	RequiredCapabilities  []string                  `json:"requiredCapabilities,omitempty"`
+	RequiredLabels        []string                  `json:"requiredLabels,omitempty"`
+	DeploymentID          *string                   `json:"deploymentId,omitempty"`
+	BundleDigest          string                    `json:"bundleDigest,omitempty"`
+	BundleURI             string                    `json:"bundleUri,omitempty"`
+	ExecutionProfile      contract.ExecutionProfile `json:"executionProfile,omitempty,omitzero"`
+	ObjectURI             string                    `json:"objectUri,omitempty"`
+	TriggerKind           string                    `json:"triggerKind,omitempty"`
+	TriggerHeaders        json.RawMessage           `json:"triggerHeaders,omitempty"`
+	ScheduledFor          string                    `json:"scheduledFor,omitempty"`
+	ActionSpec            contract.Action           `json:"actionSpec,omitempty"`
+	InputSchema           json.RawMessage           `json:"inputSchema,omitempty"`
+	OutputSchema          json.RawMessage           `json:"outputSchema,omitempty"`
+	Input                 json.RawMessage           `json:"input,omitempty"`
+	InputConfigResolved   bool                      `json:"inputConfigResolved,omitempty"`
+	RuntimeAccess         contract.RuntimeAccess    `json:"runtimeAccess,omitempty"`
 	// Deployment is retained only to decode jobs created before compact pins.
 	Deployment     *contract.Deployment `json:"deployment,omitempty"`
 	CorrelationID  string               `json:"correlationId,omitempty"`
@@ -949,6 +950,7 @@ func NewActionJob(run Run, input json.RawMessage) Job {
 			DeploymentID:          cloneStringPointer(run.Deployment.DeploymentID),
 			BundleDigest:          run.Deployment.BundleDigest,
 			BundleURI:             run.Deployment.BundleURI,
+			ExecutionProfile:      run.Deployment.ExecutionProfile,
 			ObjectURI:             run.Deployment.ObjectURI,
 			TriggerKind:           run.Adapter,
 			ActionSpec:            actionSpec,
@@ -1068,6 +1070,9 @@ func (p JobPayload) PinnedDeployment() contract.Deployment {
 	}
 	if deployment.BundleURI == "" {
 		deployment.BundleURI = p.BundleURI
+	}
+	if deployment.ExecutionProfile == (contract.ExecutionProfile{}) {
+		deployment.ExecutionProfile = p.ExecutionProfile
 	}
 	if deployment.ObjectURI == "" {
 		deployment.ObjectURI = p.ObjectURI

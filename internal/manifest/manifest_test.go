@@ -406,7 +406,6 @@ func TestParseRejectsUnsupportedFlows(t *testing.T) {
 }
 
 func TestParsePreservesExecutionFieldsAndIgnoresRuntimeOwnedFields(t *testing.T) {
-	tagOverride := "operator-owned"
 	app, err := Parse([]byte(`{
 		"app": "echo",
 		"entrypoint": "main.ts",
@@ -417,7 +416,6 @@ func TestParsePreservesExecutionFieldsAndIgnoresRuntimeOwnedFields(t *testing.T)
 			"run": {
 				"action": "other",
 				"entrypoint": "run.ts",
-				"runtime": "go",
 				"timeoutMs": 30000,
 				"tagOverride": "operator-owned",
 				"inputSchemaBody": {"type": "string"},
@@ -428,17 +426,27 @@ func TestParsePreservesExecutionFieldsAndIgnoresRuntimeOwnedFields(t *testing.T)
 		}
 	}`))
 	if err != nil {
-		t.Fatalf("Parse returned error: %v", err)
+		t.Fatal(err)
 	}
 	if app.Runtime != "" {
 		t.Fatalf("app runtime = %q, want ignored", app.Runtime)
 	}
 	run := app.Actions["run"]
-	if run.Action != "run" || run.Entrypoint != "run.ts" || run.Runtime != "go" || run.TimeoutMs != 30000 {
+	if run.Action != "run" || run.Entrypoint != "run.ts" || run.Runtime != "typescript" || run.TimeoutMs != 30000 {
 		t.Fatalf("run execution fields = %#v", run)
 	}
 	if run.TagOverride != nil || len(run.InputSchemaBody) != 0 || len(run.OutputSchemaBody) != 0 || len(run.OperatorSettingsSchemaBody) != 0 || run.UpdatedAt != nil {
-		t.Fatalf("run non-canonical fields leaked = %#v; tagOverride input was %q", run, tagOverride)
+		t.Fatalf("runtime-owned fields leaked = %#v", run)
+	}
+}
+
+func TestParseRejectsActionRuntime(t *testing.T) {
+	_, err := Parse([]byte(`{
+		"app":"echo","entrypoint":"main.ts","scriptLang":"typescript",
+		"actions":{"run":{"runtime":"python"}}
+	}`))
+	if err == nil || !strings.Contains(err.Error(), "runtime is not supported") {
+		t.Fatalf("Parse error = %v, want action runtime rejection", err)
 	}
 }
 
