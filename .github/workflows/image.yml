@@ -103,7 +103,9 @@ jobs:
           push: false
           provenance: false
           sbom: false
-          build-args: VERSION=dev
+          build-args: |
+            VERSION=dev
+            REVISION=${{ github.event.pull_request.head.sha || github.sha }}
           tags: windforce-core-test:${{ matrix.image.name }}-${{ matrix.platform.arch }}
           cache-from: type=gha,scope=${{ matrix.image.name }}-${{ matrix.platform.arch }}
           cache-to: type=gha,mode=min,ignore-error=true,scope=${{ matrix.image.name }}-${{ matrix.platform.arch }}
@@ -124,7 +126,9 @@ jobs:
           outputs: type=image,name=${{ matrix.image.repository }},push-by-digest=true,name-canonical=true,push=true
           provenance: mode=max
           sbom: true
-          build-args: VERSION=${{ github.ref_name }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            REVISION=${{ github.sha }}
           # Tag-scoped GHA cache exports accumulate once per release. A release may
           # restore an accessible cache, but it must not create another tag cache.
           cache-from: type=gha,scope=${{ matrix.image.name }}-${{ matrix.platform.arch }}

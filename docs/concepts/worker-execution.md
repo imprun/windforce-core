@@ -115,6 +115,16 @@ Local and remote workers preserve the same ordering and pinned-bundle semantics.
 
 Workers detect and register the Bun, Python, and static-Go profiles they can execute. Claim matching compiles those profiles into reserved labels and reuses the State Store's atomic label filter, so incompatible Jobs remain queued instead of being claimed and failed. The Processor repeats a structured profile check immediately after claim as an invariant defense. Operator labels and execution-profile labels remain separate: managed credentials constrain the former, while Core derives the latter from registered profiles.
 
+Workers also register the Core build they are actually running as optional
+`engine_version` and `build_revision` observations. Release and container
+builds inject these values into the binary; local development builds report
+the explicit fallbacks `dev` and `unknown`. The values are visible through the
+canonical Worker registry API but do not affect claims, credentials, or
+placement. A deployment control plane such as Imprun Cloud owns the desired
+WorkerPool image and compares it with these observations to detect drift and
+coordinate rollout. Core does not own that desired state. See [ADR
+0032](../adr/0032-observe-worker-build-identity.md).
+
 For a queued profile-pinned Job, the Job status response reports `scheduling_reason: "no_compatible_worker"` when the live registry contains no compatible execution profile. This is an observation, not a terminal Job state; registering a compatible Worker makes the existing Job claimable.
 
 The current server-side Artifact Store implementation is filesystem-backed. This is independent of remote worker transport: Core owns that filesystem and exposes digest-addressed artifacts to remote workers through the Worker Plane.

@@ -33,7 +33,11 @@ type Processor struct {
 	Runner   Runner
 	WorkerID string
 	Group    string
-	Tags     []string
+	// EngineVersion and BuildRevision identify the running Core worker build.
+	// They are observational metadata, not claim or credential authority.
+	EngineVersion string
+	BuildRevision string
+	Tags          []string
 	// Labels is the capability label set this worker offers (ADR 0009).
 	Labels []string
 	// ExecutionProfiles are engine-detected launcher targets. Their reserved
@@ -455,6 +459,8 @@ func (p *Processor) RunLoop(ctx context.Context, pollInterval time.Duration) err
 	record := state.WorkerRecord{
 		ID:                workerID,
 		Group:             p.Group,
+		EngineVersion:     p.EngineVersion,
+		BuildRevision:     p.BuildRevision,
 		Tags:              append([]string(nil), p.Tags...),
 		Labels:            append([]string(nil), p.Labels...),
 		ExecutionProfiles: append([]contract.ExecutionProfile(nil), p.ExecutionProfiles...),

@@ -846,6 +846,8 @@ func newDrainTestProcessor(t *testing.T, drainTimeout time.Duration) (Processor,
 		Runner:            runner,
 		WorkerID:          "worker-drain",
 		Group:             "test",
+		EngineVersion:     "v0.9.2",
+		BuildRevision:     "abcdef123456",
 		LeaseTTL:          time.Second,
 		HeartbeatInterval: 20 * time.Millisecond,
 		DrainTimeout:      drainTimeout,
@@ -862,6 +864,9 @@ func waitForWorkerStatus(t *testing.T, store *state.LocalStore, workerID string,
 		}
 		for _, worker := range workers {
 			if worker.ID == workerID && worker.Status == status {
+				if worker.EngineVersion != "v0.9.2" || worker.BuildRevision != "abcdef123456" {
+					t.Fatalf("worker build identity = %#v", worker)
+				}
 				return
 			}
 		}

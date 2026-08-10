@@ -116,3 +116,38 @@ The process reads the token from the named environment variable. Do not put the
 bearer directly in arguments, manifests, logs, or registry metadata.
 Re-registering a worker ID is allowed only for the same credential ID and
 generation; another generation or the legacy static token cannot take it over.
+
+## Observe live Workers
+
+```http
+GET /api/w/{workspace}/workers
+Authorization: Bearer <workspace-or-instance-admin-token>
+```
+
+The response lists the live registry. `engine_version` and `build_revision`
+identify the Core build reported by each Worker:
+
+```json
+{
+  "workers": [
+    {
+      "id": "worker-a",
+      "group": "group-a",
+      "engine_version": "v0.9.2",
+      "build_revision": "abcdef123456",
+      "tags": ["default"],
+      "labels": ["browser"],
+      "execution_profiles": [],
+      "slots": 1,
+      "live": true,
+      "started_at": "2026-08-11T00:00:00Z",
+      "last_heartbeat_at": "2026-08-11T00:00:10Z"
+    }
+  ]
+}
+```
+
+The fields are optional for compatibility, self-reported, and diagnostic only.
+They are not credential authority or signed provenance. Core records observed
+state; a hosted portal or self-hosted deployment controller owns the desired
+Worker image/version, drift comparison, rollout, and replacement policy.

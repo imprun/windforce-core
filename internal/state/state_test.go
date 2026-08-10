@@ -1567,7 +1567,10 @@ func TestWorkerRegistryLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.RegisterWorker(ctx, WorkerRecord{ID: "w-1", Group: "default", Labels: []string{"browser"}, Tags: []string{"default"}, ExecutionProfiles: []contract.ExecutionProfile{profile}}); err != nil {
+	if err := store.RegisterWorker(ctx, WorkerRecord{
+		ID: "w-1", Group: "default", EngineVersion: " v0.9.2 ", BuildRevision: "abcdef123456",
+		Labels: []string{"browser"}, Tags: []string{"default"}, ExecutionProfiles: []contract.ExecutionProfile{profile},
+	}); err != nil {
 		t.Fatal(err)
 	}
 	workers, err := store.ListWorkers(ctx)
@@ -1575,6 +1578,7 @@ func TestWorkerRegistryLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(workers) != 1 || workers[0].ID != "w-1" || workers[0].Slots != 1 ||
+		workers[0].EngineVersion != "v0.9.2" || workers[0].BuildRevision != "abcdef123456" ||
 		!workers[0].Live(time.Now()) || len(workers[0].ExecutionProfiles) != 1 || workers[0].ExecutionProfiles[0] != profile {
 		t.Fatalf("workers = %#v", workers)
 	}
@@ -1593,5 +1597,16 @@ func TestWorkerRegistryLifecycle(t *testing.T) {
 	}
 	if len(workers) != 0 {
 		t.Fatalf("workers after deregister = %#v", workers)
+	}
+}
+
+func TestWorkerRegistryRejectsInvalidBuildIdentity(t *testing.T) {
+	store := NewLocalStore(t.TempDir() + "/state.json")
+	ctx := context.Background()
+	if err := store.RegisterWorker(ctx, WorkerRecord{ID: "control", EngineVersion: "v1\nspoof"}); err == nil {
+		t.Fatal("control character in worker build identity must fail")
+	}
+	if err := store.RegisterWorker(ctx, WorkerRecord{ID: "oversized", BuildRevision: strings.Repeat("a", WorkerBuildValueMaxBytes+1)}); err == nil {
+		t.Fatal("oversized worker build identity must fail")
 	}
 }

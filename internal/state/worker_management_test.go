@@ -110,7 +110,8 @@ func exerciseWorkerControlStore(t *testing.T, store workerControlTestStore) {
 	}
 
 	ownedWorker := WorkerRecord{
-		ID: "owned-worker", Group: "group-a", Labels: []string{"linux", "arm64"}, Slots: 1,
+		ID: "owned-worker", Group: "group-a", EngineVersion: "v0.9.2", BuildRevision: "abcdef123456",
+		Labels: []string{"linux", "arm64"}, Slots: 1,
 		Status: WorkerStatusActive, CredentialID: created.ID, CredentialGeneration: created.Generation,
 	}
 	if err := store.RegisterWorker(ctx, ownedWorker); err != nil {
@@ -118,6 +119,10 @@ func exerciseWorkerControlStore(t *testing.T, store workerControlTestStore) {
 	}
 	if err := store.RegisterWorker(ctx, ownedWorker); err != nil {
 		t.Fatalf("reregister worker with same owner: %v", err)
+	}
+	storedWorker, err := store.GetWorker(ctx, ownedWorker.ID)
+	if err != nil || storedWorker.EngineVersion != ownedWorker.EngineVersion || storedWorker.BuildRevision != ownedWorker.BuildRevision {
+		t.Fatalf("worker build identity = %#v, err=%v", storedWorker, err)
 	}
 	takeover := ownedWorker
 	takeover.CredentialID = second.ID

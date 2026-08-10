@@ -79,8 +79,14 @@ func TestClientLifecycleAgainstRealServer(t *testing.T) {
 
 	client := New(srv.URL, "admin-secret")
 	ctx := context.Background()
-	if err := client.RegisterWorker(ctx, state.WorkerRecord{ID: "w-remote", Labels: []string{"browser"}, Slots: 1}); err != nil {
+	if err := client.RegisterWorker(ctx, state.WorkerRecord{
+		ID: "w-remote", EngineVersion: "v0.9.2", BuildRevision: "abcdef123456", Labels: []string{"browser"}, Slots: 1,
+	}); err != nil {
 		t.Fatal(err)
+	}
+	workers, err := store.ListWorkers(ctx)
+	if err != nil || len(workers) != 1 || workers[0].EngineVersion != "v0.9.2" || workers[0].BuildRevision != "abcdef123456" {
+		t.Fatalf("remote worker build identity = %#v, err=%v", workers, err)
 	}
 	if err := client.HeartbeatWorker(ctx, "w-remote"); err != nil {
 		t.Fatal(err)

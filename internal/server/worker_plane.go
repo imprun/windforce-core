@@ -133,6 +133,8 @@ func (h *Handler) workerPlaneRegister(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		ID                string                      `json:"id"`
 		Group             string                      `json:"group"`
+		EngineVersion     string                      `json:"engine_version"`
+		BuildRevision     string                      `json:"build_revision"`
 		Tags              []string                    `json:"tags"`
 		Labels            []string                    `json:"labels"`
 		ExecutionProfiles []contract.ExecutionProfile `json:"execution_profiles"`
@@ -158,12 +160,24 @@ func (h *Handler) workerPlaneRegister(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	engineVersion, err := state.NormalizeWorkerBuildValue(req.EngineVersion)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	buildRevision, err := state.NormalizeWorkerBuildValue(req.BuildRevision)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	if strings.TrimSpace(req.ID) == "" {
 		req.ID = state.NewID("worker")
 	}
 	record := state.WorkerRecord{
 		ID:                req.ID,
 		Group:             req.Group,
+		EngineVersion:     engineVersion,
+		BuildRevision:     buildRevision,
 		Tags:              req.Tags,
 		Labels:            labels,
 		ExecutionProfiles: profiles,

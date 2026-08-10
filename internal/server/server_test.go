@@ -4746,7 +4746,8 @@ func TestCanonicalWorkersEndpointServesRegistry(t *testing.T) {
 	tempDir := t.TempDir()
 	store := state.NewLocalStore(filepath.Join(tempDir, "state.json"))
 	if err := store.RegisterWorker(context.Background(), state.WorkerRecord{
-		ID: "w-live", Group: "default", Labels: []string{"browser", "kr"}, Slots: 4,
+		ID: "w-live", Group: "default", EngineVersion: "v0.9.2", BuildRevision: "abcdef123456",
+		Labels: []string{"browser", "kr"}, Slots: 4,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -4763,16 +4764,19 @@ func TestCanonicalWorkersEndpointServesRegistry(t *testing.T) {
 	defer resp.Body.Close()
 	var body struct {
 		Workers []struct {
-			ID     string   `json:"id"`
-			Labels []string `json:"labels"`
-			Slots  int      `json:"slots"`
-			Live   bool     `json:"live"`
+			ID            string   `json:"id"`
+			EngineVersion string   `json:"engine_version"`
+			BuildRevision string   `json:"build_revision"`
+			Labels        []string `json:"labels"`
+			Slots         int      `json:"slots"`
+			Live          bool     `json:"live"`
 		} `json:"workers"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatal(err)
 	}
 	if len(body.Workers) != 1 || body.Workers[0].ID != "w-live" ||
+		body.Workers[0].EngineVersion != "v0.9.2" || body.Workers[0].BuildRevision != "abcdef123456" ||
 		!reflect.DeepEqual(body.Workers[0].Labels, []string{"browser", "kr"}) ||
 		body.Workers[0].Slots != 4 || !body.Workers[0].Live {
 		t.Fatalf("workers body = %#v", body)

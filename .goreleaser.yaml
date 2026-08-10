@@ -19,7 +19,7 @@ builds:
     flags:
       - -trimpath
     ldflags:
-      - -s -w -X main.version={{.Version}}
+      - -s -w -X main.version={{.Version}} -X main.revision={{.Commit}}
 
 archives:
   - id: windforce-core

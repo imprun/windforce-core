@@ -265,9 +265,9 @@ func (s *PostgresStore) GetWorker(ctx context.Context, workerID string) (WorkerR
 	var record WorkerRecord
 	var tags, labels, profiles []byte
 	err := s.pool.QueryRow(ctx, `
-SELECT id, worker_group, tags, labels, execution_profiles, slots, status, credential_id, credential_generation, started_at, last_heartbeat_at
+SELECT id, worker_group, engine_version, build_revision, tags, labels, execution_profiles, slots, status, credential_id, credential_generation, started_at, last_heartbeat_at
 FROM worker_registry WHERE id=$1`, strings.TrimSpace(workerID)).Scan(
-		&record.ID, &record.Group, &tags, &labels, &profiles, &record.Slots, &record.Status,
+		&record.ID, &record.Group, &record.EngineVersion, &record.BuildRevision, &tags, &labels, &profiles, &record.Slots, &record.Status,
 		&record.CredentialID, &record.CredentialGeneration, &record.StartedAt, &record.LastHeartbeatAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
