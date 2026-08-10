@@ -103,6 +103,7 @@ jobs:
           push: false
           provenance: false
           sbom: false
+          build-args: VERSION=dev
           tags: windforce-core-test:${{ matrix.image.name }}-${{ matrix.platform.arch }}
           cache-from: type=gha,scope=${{ matrix.image.name }}-${{ matrix.platform.arch }}
           cache-to: type=gha,mode=min,ignore-error=true,scope=${{ matrix.image.name }}-${{ matrix.platform.arch }}
@@ -123,6 +124,7 @@ jobs:
           outputs: type=image,name=${{ matrix.image.repository }},push-by-digest=true,name-canonical=true,push=true
           provenance: mode=max
           sbom: true
+          build-args: VERSION=${{ github.ref_name }}
           # Tag-scoped GHA cache exports accumulate once per release. A release may
           # restore an accessible cache, but it must not create another tag cache.
           cache-from: type=gha,scope=${{ matrix.image.name }}-${{ matrix.platform.arch }}
@@ -225,6 +227,13 @@ jobs:
           docker buildx imagetools inspect "${REFERENCE}"
           docker buildx imagetools inspect "${REFERENCE}" --raw \
             | jq -e '[.manifests[] | select(.platform.os == "linux") | select(.platform.architecture == "amd64" or .platform.architecture == "arm64") | .platform.architecture] | unique | sort == ["amd64", "arm64"]'
+      - name: Verify release version
+        shell: bash
+        env:
+          REFERENCE: ${{ steps.manifest.outputs.reference }}
+        run: |
+          set -euo pipefail
+          test "$(docker run --rm "${REFERENCE}" version)" = "${GITHUB_REF_NAME}"
       - name: Install Cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         with:
