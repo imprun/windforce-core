@@ -57,6 +57,13 @@ func (h *Handler) handleWebUI(w http.ResponseWriter, r *http.Request) bool {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		return false
 	}
+	if h.uiMode == UIModeDisabled {
+		if r.URL.Path == "/" || r.URL.Path == "/ui" || strings.HasPrefix(r.URL.Path, "/ui/") {
+			writeError(w, http.StatusNotFound, "web UI disabled")
+			return true
+		}
+		return false
+	}
 	switch r.URL.Path {
 	case "/":
 		http.Redirect(w, r, "/ui/", http.StatusFound)
@@ -79,7 +86,9 @@ func (h *Handler) handleWebUI(w http.ResponseWriter, r *http.Request) bool {
 			authMode = "host_managed"
 		}
 		config := map[string]interface{}{
-			"auth_mode": authMode,
+			"auth_mode":             authMode,
+			"ui_mode":               h.uiMode,
+			"worker_group_operator": h.workerGroupOperator,
 		}
 		if h.uiHostURL != "" {
 			config["host_console"] = map[string]string{

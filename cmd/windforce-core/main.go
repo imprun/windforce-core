@@ -107,6 +107,8 @@ func runServer(args []string, mode string) int {
 	uiHostURL := flags.String("ui-host-url", strings.TrimSpace(os.Getenv("WINDFORCE_UI_HOST_URL")), "optional host console URL shown in the Web UI")
 	uiHostLabel := flags.String("ui-host-label", strings.TrimSpace(os.Getenv("WINDFORCE_UI_HOST_LABEL")), "accessible label for the optional host console action")
 	uiHostAccountEndpoint := flags.String("ui-host-account-endpoint", strings.TrimSpace(os.Getenv("WINDFORCE_UI_HOST_ACCOUNT_ENDPOINT")), "optional same-origin endpoint that presents the authenticated host account")
+	uiMode := flags.String("ui-mode", firstNonEmpty(strings.TrimSpace(os.Getenv("WINDFORCE_UI_MODE")), server.UIModeEmbedded), "Web UI mode: embedded or disabled")
+	workerGroupOperator := flags.String("worker-group-operator", firstNonEmpty(strings.TrimSpace(os.Getenv("WINDFORCE_WORKER_GROUP_OPERATOR")), server.WorkerGroupOperatorSelfManaged), "Worker Group lifecycle owner: self-managed or external")
 	httpRouteProvider := flags.String("http-route-provider", strings.TrimSpace(os.Getenv("WINDFORCE_HTTP_ROUTE_PROVIDER")), "external HTTP Route Binding provider name advertised to the Web UI")
 	manifestFile := flags.String("manifest-file", envString("WINDFORCE_CORE_MANIFEST_FILE"), "manifest file name read at each app source root; empty uses "+manifest.FileName)
 	storeDir := flags.String("store", defaultStoreDir(), "source snapshot and execution bundle store directory")
@@ -148,6 +150,16 @@ func runServer(args []string, mode string) int {
 	publicAPIBurst := flags.Int("public-api-burst", 100, "maximum public API request burst per instance")
 	webhookDispatcherFlags := bindWebhookDispatcherFlags(flags, "webhook-")
 	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	resolvedUIMode, err := server.ParseUIMode(*uiMode)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s: --ui-mode %s\n", mode, err)
+		return 2
+	}
+	resolvedWorkerGroupOperator, err := server.ParseWorkerGroupOperator(*workerGroupOperator)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s: --worker-group-operator %s\n", mode, err)
 		return 2
 	}
 	if *drainTimeout <= 0 {
@@ -302,6 +314,8 @@ func runServer(args []string, mode string) int {
 		UIHostURL:             *uiHostURL,
 		UIHostLabel:           *uiHostLabel,
 		UIHostAccountEndpoint: *uiHostAccountEndpoint,
+		UIMode:                resolvedUIMode,
+		WorkerGroupOperator:   resolvedWorkerGroupOperator,
 		HTTPRouteProvider:     *httpRouteProvider,
 		Admission:             admission,
 		TriggerManager:        triggerManager,
@@ -952,8 +966,8 @@ func defaultStatePath() string {
 func printUsage(file io.Writer) {
 	fmt.Fprintln(file, "usage:")
 	fmt.Fprintln(file, "  windforce-core version")
-	fmt.Fprintln(file, "  windforce-core server [--addr :8080] [--state-backend local|postgres] [--git-sources <path>] [--provision-dir <path>]")
+	fmt.Fprintln(file, "  windforce-core server [--addr :8080] [--state-backend local|postgres] [--ui-mode embedded|disabled] [--worker-group-operator self-managed|external] [--git-sources <path>] [--provision-dir <path>]")
 	fmt.Fprintln(file, "  windforce-core worker [--api-url <url> --worker-token-env <name>] [--state-backend local|postgres] [--worker-group default] [--labels <csv>] [--egress-proxy host:port] [--auth-session-url <url>] [--bun-path <path>] [--python-path <path>] [--go-path <path>] [--prepare-timeout 5m] [--once]")
-	fmt.Fprintln(file, "  windforce-core standalone [--addr :8080] [--state-backend local|postgres] [--worker-group default] [--egress-proxy host:port] [--auth-session-url <url>] [--git-sources <path>] [--provision-dir <path>] [--bun-path <path>] [--python-path <path>] [--go-path <path>] [--prepare-timeout 5m]")
+	fmt.Fprintln(file, "  windforce-core standalone [--addr :8080] [--state-backend local|postgres] [--ui-mode embedded|disabled] [--worker-group-operator self-managed|external] [--worker-group default] [--egress-proxy host:port] [--auth-session-url <url>] [--git-sources <path>] [--provision-dir <path>] [--bun-path <path>] [--python-path <path>] [--go-path <path>] [--prepare-timeout 5m]")
 	fmt.Fprintln(file, "  windforce-core run-json [flags] -- <command> [args...]")
 }

@@ -54,7 +54,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       })
       .catch(() => {
         if (active) {
-          setRuntimeConfig({ hostConsole: null, hostAccount: null, authMode: "disabled" });
+          setRuntimeConfig({
+            hostConsole: null,
+            hostAccount: null,
+            authMode: "disabled",
+            uiMode: "embedded",
+            workerGroupOperator: "self-managed",
+          });
         }
       });
     return () => {

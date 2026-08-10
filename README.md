@@ -130,6 +130,22 @@ logout actions). Windforce Core never receives the host's Identity token or
 owns provider-specific account logic. Without this contract the Web UI labels
 its browser-local API token and audit actor as `Local access`.
 
+Worker Group ownership and Web UI exposure are independent runtime choices:
+
+| Concern | Values | Default |
+| --- | --- | --- |
+| `--worker-group-operator` / `WINDFORCE_WORKER_GROUP_OPERATOR` | `self-managed`, `external` | `self-managed` |
+| `--ui-mode` / `WINDFORCE_UI_MODE` | `embedded`, `disabled` | `embedded` |
+
+`self-managed` means the deployment owner operates Worker Groups through Core
+APIs and deployment tooling. `external` tells the embedded UI that a separate
+control plane owns creation, credentials, placement, capacity, and rollout; use
+the neutral host URL and label above to link to that surface. `disabled` returns
+404 for `/`, `/ui`, and `/ui/*`, while all Core HTTP APIs remain available.
+These settings are presentation and ownership metadata, not authorization
+switches, and Core never provisions Kubernetes or autoscaling resources in any
+combination.
+
 Repository sources, external client identifiers, variables, and input settings
 can also be bootstrapped from JSON/YAML provisioning files. See
 [Provisioning](docs/concepts/provisioning.md) and

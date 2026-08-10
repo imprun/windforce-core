@@ -43,11 +43,19 @@ describe("parseRuntimeConfig", () => {
   test("rejects cross-origin and protocol-relative hosted account endpoints", () => {
     expect(
       parseRuntimeConfig({ host_account: { endpoint: "https://portal.example.test/me" } }),
-    ).toEqual({ hostConsole: null, hostAccount: null, authMode: "disabled" });
+    ).toEqual({
+      hostConsole: null,
+      hostAccount: null,
+      authMode: "disabled",
+      uiMode: "embedded",
+      workerGroupOperator: "self-managed",
+    });
     expect(parseRuntimeConfig({ host_account: { endpoint: "//portal.example.test/me" } })).toEqual({
       hostConsole: null,
       hostAccount: null,
       authMode: "disabled",
+      uiMode: "embedded",
+      workerGroupOperator: "self-managed",
     });
   });
 
@@ -64,5 +72,20 @@ describe("parseRuntimeConfig", () => {
         host_account: { endpoint: "/_host/account" },
       }).authMode,
     ).toBe("host_managed");
+  });
+
+  test("keeps UI presentation and Worker Group ownership independent", () => {
+    expect(
+      parseRuntimeConfig({
+        ui_mode: "disabled",
+        worker_group_operator: "external",
+      }),
+    ).toMatchObject({ uiMode: "disabled", workerGroupOperator: "external" });
+    expect(
+      parseRuntimeConfig({
+        ui_mode: "hosted",
+        worker_group_operator: "core",
+      }),
+    ).toMatchObject({ uiMode: "embedded", workerGroupOperator: "self-managed" });
   });
 });

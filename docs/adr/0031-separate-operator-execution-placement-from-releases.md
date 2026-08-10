@@ -66,11 +66,18 @@ the Git source and applies when the first Release is published.
 - The Console can warn when no live worker matches without blocking policy
   storage.
 - The Web Console is optional. Headless installations may reconcile the same
-  policy through the canonical API and keep `/ui` outside their ingress.
+  policy through the canonical API and set `ui-mode=disabled`; Core then
+  returns 404 for `/ui` without disabling its HTTP APIs.
 - Hosted portals or self-hosted deployment automation own WorkerGroup creation,
   credentials, scaling, and selector vocabulary. Core exposes neutral worker
   management, observation, and placement APIs without duplicating that control
   plane in its Console.
+- WorkerGroup lifecycle ownership and Web Console exposure are independent.
+  `worker-group-operator=self-managed|external` is operator guidance and
+  runtime metadata; `ui-mode=embedded|disabled` controls only Web UI serving.
+  Neither setting changes Worker API authorization or availability. An
+  external operator may provide the existing neutral host URL and label so the
+  embedded Console opens the correct management surface.
 - Local JSON state and PostgreSQL use the same policy semantics. PostgreSQL adds
   a dedicated `control_routing_policy` table.
 - A separately generated canonical manifest remains a release input; Core does

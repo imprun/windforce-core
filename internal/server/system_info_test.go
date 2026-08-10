@@ -14,14 +14,16 @@ import (
 func TestSystemInfoExposesSafeServiceConfiguration(t *testing.T) {
 	store := state.NewLocalStore(filepath.Join(t.TempDir(), "state.json"))
 	server := httptest.NewServer(New(Config{
-		Store:             store,
-		AdminToken:        "secret-admin-token",
-		WorkerToken:       "secret-worker-token",
-		JobTokenSecret:    "secret-job-token",
-		SecretKey:         "secret-key-value",
-		Wait:              250 * time.Millisecond,
-		ManagedWorkspaces: true,
-		HTTPRouteProvider: "kubernetes-gateway-api",
+		Store:               store,
+		AdminToken:          "secret-admin-token",
+		WorkerToken:         "secret-worker-token",
+		JobTokenSecret:      "secret-job-token",
+		SecretKey:           "secret-key-value",
+		Wait:                250 * time.Millisecond,
+		ManagedWorkspaces:   true,
+		HTTPRouteProvider:   "kubernetes-gateway-api",
+		UIMode:              UIModeDisabled,
+		WorkerGroupOperator: WorkerGroupOperatorExternal,
 	}))
 	defer server.Close()
 
@@ -46,9 +48,11 @@ func TestSystemInfoExposesSafeServiceConfiguration(t *testing.T) {
 		Backends      map[string]bool `json:"backends"`
 		Auth          map[string]bool `json:"auth"`
 		RuntimeConfig struct {
-			WaitMS            float64 `json:"wait_ms"`
-			ManagedWorkspaces bool    `json:"managed_workspaces"`
-			HTTPRouteProvider string  `json:"http_route_provider"`
+			WaitMS              float64 `json:"wait_ms"`
+			ManagedWorkspaces   bool    `json:"managed_workspaces"`
+			HTTPRouteProvider   string  `json:"http_route_provider"`
+			UIMode              string  `json:"ui_mode"`
+			WorkerGroupOperator string  `json:"worker_group_operator"`
 		} `json:"runtime_config"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
@@ -57,7 +61,7 @@ func TestSystemInfoExposesSafeServiceConfiguration(t *testing.T) {
 	if body.Service != "windforce-lite" || body.Workspace != "default" || !body.Ready {
 		t.Fatalf("body identity = %#v", body)
 	}
-	if !body.Planes["control_api"] || !body.Planes["invocation_api"] || !body.Planes["worker_api"] || !body.Planes["web_ui"] ||
+	if !body.Planes["control_api"] || !body.Planes["invocation_api"] || !body.Planes["worker_api"] || body.Planes["web_ui"] ||
 		!body.Planes["http_routes"] || body.Planes["execution_api"] || body.Planes["public_api"] {
 		t.Fatalf("planes = %#v", body.Planes)
 	}
@@ -75,5 +79,8 @@ func TestSystemInfoExposesSafeServiceConfiguration(t *testing.T) {
 	}
 	if body.RuntimeConfig.HTTPRouteProvider != "kubernetes-gateway-api" {
 		t.Fatalf("http_route_provider = %q", body.RuntimeConfig.HTTPRouteProvider)
+	}
+	if body.RuntimeConfig.UIMode != UIModeDisabled || body.RuntimeConfig.WorkerGroupOperator != WorkerGroupOperatorExternal {
+		t.Fatalf("presentation runtime config = UI %q, operator %q", body.RuntimeConfig.UIMode, body.RuntimeConfig.WorkerGroupOperator)
 	}
 }

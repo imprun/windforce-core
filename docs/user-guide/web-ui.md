@@ -574,6 +574,17 @@ A hosted or self-managed portal can configure one explicit management-plane acti
 2. Use the configured host action on the right side of the top bar.
 3. The destination label makes the management-plane boundary explicit.
 
+## Confirm who operates Worker Groups
+
+The System settings page reports Worker Group ownership independently from Web UI exposure.
+
+1. Open Settings and choose System.
+2. Read Worker Group operator: Deployment owner means this installation is self-managed; External control plane means the host owns lifecycle and capacity.
+3. For an external operator, use the host-provided action to open the correct control surface.
+4. Treat this value as operator guidance. Core Worker APIs remain available in every mode, and Core does not create Kubernetes or autoscaling resources.
+
+For API-only deployments, start Core with `--ui-mode disabled`. Requests to `/`, `/ui`, and `/ui/*` then return 404 without disabling Control, Invocation, Worker, Trigger, or metrics APIs.
+
 ## Open host management on mobile
 
 The configured return action remains available as a compact control in the mobile top bar.

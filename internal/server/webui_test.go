@@ -65,6 +65,24 @@ func TestWebUIServedWithoutAPIAuth(t *testing.T) {
 	}
 }
 
+func TestDisabledWebUIReturnsNotFoundWithoutDisablingAPIs(t *testing.T) {
+	handler := New(Config{AdminToken: "secret", UIMode: UIModeDisabled})
+
+	for _, target := range []string{"/", "/ui", "/ui/", "/ui/config.json"} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, target, nil))
+		if response.Code != http.StatusNotFound {
+			t.Fatalf("%s status = %d, want %d", target, response.Code, http.StatusNotFound)
+		}
+	}
+
+	api := httptest.NewRecorder()
+	handler.ServeHTTP(api, httptest.NewRequest(http.MethodGet, "/api/w/default/apps", nil))
+	if api.Code != http.StatusUnauthorized {
+		t.Fatalf("API status = %d, want %d", api.Code, http.StatusUnauthorized)
+	}
+}
+
 func TestWebUIExposesValidatedHostConsoleConfig(t *testing.T) {
 	if _, label := normalizeUIHost("https://portal.example.test/console", ""); label != "Open host console" {
 		t.Fatalf("default host console label = %q, want %q", label, "Open host console")
@@ -74,6 +92,7 @@ func TestWebUIExposesValidatedHostConsoleConfig(t *testing.T) {
 		UIHostURL:             "https://portal.example.test/console",
 		UIHostLabel:           "Back to operations portal",
 		UIHostAccountEndpoint: "/_host/account",
+		WorkerGroupOperator:   WorkerGroupOperatorExternal,
 	})
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(
@@ -87,8 +106,10 @@ func TestWebUIExposesValidatedHostConsoleConfig(t *testing.T) {
 		t.Fatalf("cache control = %q, want no-store", got)
 	}
 	var config struct {
-		AuthMode    string `json:"auth_mode"`
-		HostConsole *struct {
+		AuthMode            string `json:"auth_mode"`
+		UIMode              string `json:"ui_mode"`
+		WorkerGroupOperator string `json:"worker_group_operator"`
+		HostConsole         *struct {
 			URL   string `json:"url"`
 			Label string `json:"label"`
 		} `json:"host_console"`
@@ -110,6 +131,9 @@ func TestWebUIExposesValidatedHostConsoleConfig(t *testing.T) {
 	if config.AuthMode != "host_managed" {
 		t.Fatalf("auth mode = %q, want %q", config.AuthMode, "host_managed")
 	}
+	if config.UIMode != UIModeEmbedded || config.WorkerGroupOperator != WorkerGroupOperatorExternal {
+		t.Fatalf("presentation config = UI %q, operator %q", config.UIMode, config.WorkerGroupOperator)
+	}
 
 	invalid := New(Config{
 		UIHostURL:             "javascript:alert(1)",
@@ -121,8 +145,10 @@ func TestWebUIExposesValidatedHostConsoleConfig(t *testing.T) {
 		httptest.NewRequest(http.MethodGet, "/ui/config.json", nil),
 	)
 	config = struct {
-		AuthMode    string `json:"auth_mode"`
-		HostConsole *struct {
+		AuthMode            string `json:"auth_mode"`
+		UIMode              string `json:"ui_mode"`
+		WorkerGroupOperator string `json:"worker_group_operator"`
+		HostConsole         *struct {
 			URL   string `json:"url"`
 			Label string `json:"label"`
 		} `json:"host_console"`
@@ -141,6 +167,9 @@ func TestWebUIExposesValidatedHostConsoleConfig(t *testing.T) {
 	}
 	if config.AuthMode != "disabled" {
 		t.Fatalf("invalid host auth mode = %q, want %q", config.AuthMode, "disabled")
+	}
+	if config.UIMode != UIModeEmbedded || config.WorkerGroupOperator != WorkerGroupOperatorSelfManaged {
+		t.Fatalf("default presentation config = UI %q, operator %q", config.UIMode, config.WorkerGroupOperator)
 	}
 }
 

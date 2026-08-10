@@ -8,11 +8,15 @@ export interface HostAccountConfig {
 }
 
 export type AuthMode = "disabled" | "browser_token" | "host_managed";
+export type UIMode = "embedded" | "disabled";
+export type WorkerGroupOperator = "self-managed" | "external";
 
 export interface RuntimeConfig {
   hostConsole: HostConsoleConfig | null;
   hostAccount: HostAccountConfig | null;
   authMode: AuthMode;
+  uiMode: UIMode;
+  workerGroupOperator: WorkerGroupOperator;
 }
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -60,6 +64,8 @@ export function parseRuntimeConfig(value: unknown): RuntimeConfig {
         : config?.auth_mode === "browser_token"
           ? "browser_token"
           : "disabled",
+    uiMode: config?.ui_mode === "disabled" ? "disabled" : "embedded",
+    workerGroupOperator: config?.worker_group_operator === "external" ? "external" : "self-managed",
   };
 }
 
@@ -72,7 +78,15 @@ export async function loadRuntimeConfig(): Promise<RuntimeConfig> {
     credentials: "same-origin",
     headers: { Accept: "application/json" },
   });
-  if (!response.ok) return { hostConsole: null, hostAccount: null, authMode: "disabled" };
+  if (!response.ok) {
+    return {
+      hostConsole: null,
+      hostAccount: null,
+      authMode: "disabled",
+      uiMode: "embedded",
+      workerGroupOperator: "self-managed",
+    };
+  }
   return parseRuntimeConfig(await response.json());
 }
 
