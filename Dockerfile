@@ -11,13 +11,16 @@ FROM golang:1.26.5-bookworm AS go-toolchain
 FROM go-toolchain AS build
 
 WORKDIR /src
+ARG VERSION=dev
 COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
 RUN rm -rf internal/webui/assets
 COPY --from=web-build /src/web/dist ./internal/webui/assets
-RUN CGO_ENABLED=0 GOOS=linux go build -o /out/windforce-core ./cmd/windforce-core
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -ldflags "-s -w -X main.version=${VERSION}" \
+    -o /out/windforce-core ./cmd/windforce-core
 
 FROM python:3.14.6-slim-bookworm AS runtime
 
