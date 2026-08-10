@@ -105,7 +105,7 @@ jobs:
           sbom: false
           tags: windforce-core-test:${{ matrix.image.name }}-${{ matrix.platform.arch }}
           cache-from: type=gha,scope=${{ matrix.image.name }}-${{ matrix.platform.arch }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.image.name }}-${{ matrix.platform.arch }}
+          cache-to: type=gha,mode=min,ignore-error=true,scope=${{ matrix.image.name }}-${{ matrix.platform.arch }}
       - name: Smoke-test pull request image
         if: github.event_name == 'pull_request'
         shell: bash
@@ -123,8 +123,9 @@ jobs:
           outputs: type=image,name=${{ matrix.image.repository }},push-by-digest=true,name-canonical=true,push=true
           provenance: mode=max
           sbom: true
+          # Tag-scoped GHA cache exports accumulate once per release. A release may
+          # restore an accessible cache, but it must not create another tag cache.
           cache-from: type=gha,scope=${{ matrix.image.name }}-${{ matrix.platform.arch }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.image.name }}-${{ matrix.platform.arch }}
       - name: Export release digest
         if: needs.validate.outputs.publish == 'true'
         shell: bash
