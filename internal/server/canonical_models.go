@@ -235,6 +235,7 @@ type canonicalAppModel struct {
 	RequiredLabels         []string                  `json:"required_labels"`
 	RequiredLabelsOverride *[]string                 `json:"required_labels_override,omitempty"`
 	MaxConcurrent          *int32                    `json:"max_concurrent,omitempty"`
+	ExecutionLimits        canonicalExecutionLimits  `json:"execution_limits,omitempty,omitzero"`
 	UpdatedAt              time.Time                 `json:"updated_at"`
 }
 
@@ -265,21 +266,44 @@ type canonicalAppHistoryItem struct {
 }
 
 type canonicalActionModel struct {
-	ID                     string                 `json:"id"`
-	WorkspaceID            string                 `json:"workspace_id"`
-	AppKey                 string                 `json:"app_key"`
-	ActionKey              string                 `json:"action_key"`
-	DisplayName            string                 `json:"display_name,omitempty"`
-	InputSchema            []byte                 `json:"input_schema"`
-	OutputSchema           []byte                 `json:"output_schema"`
-	Tag                    *string                `json:"tag,omitempty"`
-	TagOverride            *string                `json:"tag_override,omitempty"`
-	TimeoutS               *int32                 `json:"timeout_s,omitempty"`
-	RequiredCapabilities   []string               `json:"required_capabilities,omitempty"`
-	RequiredLabels         []string               `json:"required_labels"`
-	RequiredLabelsOverride *[]string              `json:"required_labels_override,omitempty"`
-	RuntimeAccess          contract.RuntimeAccess `json:"runtime_access"`
-	UpdatedAt              time.Time              `json:"updated_at"`
+	ID                     string                   `json:"id"`
+	WorkspaceID            string                   `json:"workspace_id"`
+	AppKey                 string                   `json:"app_key"`
+	ActionKey              string                   `json:"action_key"`
+	DisplayName            string                   `json:"display_name,omitempty"`
+	InputSchema            []byte                   `json:"input_schema"`
+	OutputSchema           []byte                   `json:"output_schema"`
+	Tag                    *string                  `json:"tag,omitempty"`
+	TagOverride            *string                  `json:"tag_override,omitempty"`
+	TimeoutS               *int32                   `json:"timeout_s,omitempty"`
+	RequiredCapabilities   []string                 `json:"required_capabilities,omitempty"`
+	RequiredLabels         []string                 `json:"required_labels"`
+	RequiredLabelsOverride *[]string                `json:"required_labels_override,omitempty"`
+	RuntimeAccess          contract.RuntimeAccess   `json:"runtime_access"`
+	ExecutionLimits        canonicalExecutionLimits `json:"execution_limits,omitempty,omitzero"`
+	UpdatedAt              time.Time                `json:"updated_at"`
+}
+
+type canonicalExecutionLimits struct {
+	Concurrency []canonicalKeyedConcurrencyLimit `json:"concurrency,omitempty"`
+}
+
+type canonicalKeyedConcurrencyLimit struct {
+	ID            string   `json:"id"`
+	MaxConcurrent int32    `json:"max_concurrent"`
+	InputPointers []string `json:"input_pointers"`
+}
+
+type canonicalExecutionLimitPins struct {
+	Concurrency []canonicalKeyedConcurrencyLimitPin `json:"concurrency,omitempty"`
+}
+
+type canonicalKeyedConcurrencyLimitPin struct {
+	PolicyID       string `json:"policy_id"`
+	PolicyRevision string `json:"policy_revision"`
+	Scope          string `json:"scope"`
+	KeyDigest      string `json:"key_digest"`
+	MaxConcurrent  int32  `json:"max_concurrent"`
 }
 
 type canonicalActionSchemaView struct {
@@ -411,6 +435,7 @@ func newCanonicalAppModel(deployment contract.Deployment) canonicalAppModel {
 		RequiredLabels:         canonicalAppManifestLabels(deployment),
 		RequiredLabelsOverride: cloneStringSlicePointer(deployment.RequiredLabelsOverride),
 		MaxConcurrent:          cloneInt32Ptr(deployment.MaxConcurrent),
+		ExecutionLimits:        newCanonicalExecutionLimits(deployment.ExecutionLimits),
 		UpdatedAt:              canonicalDeploymentUpdatedAt(deployment),
 	}
 }
@@ -470,8 +495,41 @@ func (h *Handler) newCanonicalActionModel(schemaReader *canonicalSchemaReader, d
 			Variables: append([]string{}, action.RuntimeAccess.Variables...),
 			Resources: append([]string{}, action.RuntimeAccess.Resources...),
 		},
-		UpdatedAt: canonicalActionUpdatedAt(deployment, action),
+		ExecutionLimits: newCanonicalExecutionLimits(action.ExecutionLimits),
+		UpdatedAt:       canonicalActionUpdatedAt(deployment, action),
 	}, nil
+}
+
+func newCanonicalExecutionLimits(limits contract.ExecutionLimits) canonicalExecutionLimits {
+	view := canonicalExecutionLimits{Concurrency: make([]canonicalKeyedConcurrencyLimit, 0, len(limits.Concurrency))}
+	for _, limit := range limits.Concurrency {
+		view.Concurrency = append(view.Concurrency, canonicalKeyedConcurrencyLimit{
+			ID:            limit.ID,
+			MaxConcurrent: limit.MaxConcurrent,
+			InputPointers: append([]string(nil), limit.InputPointers...),
+		})
+	}
+	if len(view.Concurrency) == 0 {
+		view.Concurrency = nil
+	}
+	return view
+}
+
+func newCanonicalExecutionLimitPins(pins state.ExecutionLimitPins) canonicalExecutionLimitPins {
+	view := canonicalExecutionLimitPins{Concurrency: make([]canonicalKeyedConcurrencyLimitPin, 0, len(pins.Concurrency))}
+	for _, pin := range pins.Concurrency {
+		view.Concurrency = append(view.Concurrency, canonicalKeyedConcurrencyLimitPin{
+			PolicyID:       pin.PolicyID,
+			PolicyRevision: pin.PolicyRevision,
+			Scope:          pin.Scope,
+			KeyDigest:      pin.KeyDigest,
+			MaxConcurrent:  pin.MaxConcurrent,
+		})
+	}
+	if len(view.Concurrency) == 0 {
+		view.Concurrency = nil
+	}
+	return view
 }
 
 // canonicalActionDisplayName projects JSON Schema's standard top-level title

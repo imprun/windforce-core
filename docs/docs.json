@@ -23,6 +23,7 @@
           "concepts/app-runtime-interface",
           "concepts/human-task-hold",
           "concepts/run-admission",
+          "concepts/execution-limits",
           "concepts/runtime-configuration",
           "guides/runtime-secrets-typescript",
           "concepts/provisioning",
@@ -38,6 +39,7 @@
           "ko/concepts/app-runtime-interface",
           "ko/concepts/human-task-hold",
           "ko/concepts/run-admission",
+          "ko/concepts/execution-limits",
           "ko/concepts/runtime-configuration",
           "ko/guides/runtime-secrets-typescript"
         ]

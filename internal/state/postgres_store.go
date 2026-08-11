@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -22,7 +23,7 @@ const runColumns = `
 	id, adapter, app, action, state, deployment, input, output, result, error,
 	task_id, correlation_id, env, client_id, principal_kind, principal_id,
 	idempotency_hash, request_fingerprint, created_by, permissioned_as,
-	created_at, updated_at, expires_at, trace_context
+	created_at, updated_at, expires_at, trace_context, execution_limits
 `
 
 const jobColumns = `
@@ -353,18 +354,18 @@ INSERT INTO runs (
 	id, adapter, app, action, state, deployment, input, output, result, error,
 	task_id, correlation_id, env, client_id, principal_kind, principal_id,
 	idempotency_hash, request_fingerprint, created_by, permissioned_as,
-	created_at, updated_at, expires_at, trace_context
+	created_at, updated_at, expires_at, trace_context, execution_limits
 ) VALUES (
 	$1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
 	$11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-	$21, $22, $23, $24
+	$21, $22, $23, $24, $25
 )
 `, run.ID, run.Adapter, run.App, run.Action, string(run.State), mustRaw(run.Deployment), requiredRaw(run.Input),
 			nullableRaw(run.Output), nullableResult(run.Result), nullableRaw(run.Error), nullableString(run.TaskID),
 			nullableString(run.CorrelationID), nullableStrings(run.Env), nullableString(run.ClientID),
 			nullableString(run.PrincipalKind), nullableString(run.PrincipalID), nullableString(run.IdempotencyHash),
 			nullableString(run.RequestFingerprint), run.CreatedBy, run.PermissionedAs,
-			run.CreatedAt, run.UpdatedAt, run.ExpiresAt, nullableTraceContext(run.TraceContext)); err != nil {
+			run.CreatedAt, run.UpdatedAt, run.ExpiresAt, nullableTraceContext(run.TraceContext), mustRaw(run.ExecutionLimits)); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `
@@ -574,6 +575,27 @@ WHERE candidate.state=$1
         AND COALESCE(NULLIF(running.payload->>'app', ''), NULLIF(running.payload->'deployment'->>'app', ''), '') = claim.app_key
     ) < claim.max_concurrent
   )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM jsonb_array_elements(COALESCE(candidate.payload->'executionLimits'->'concurrency', '[]'::jsonb)) AS limit_pin
+    WHERE
+      COALESCE(NULLIF(limit_pin->>'maxConcurrent', '')::integer, 0) <= 0
+      OR NULLIF(limit_pin->>'policyId', '') IS NULL
+      OR NULLIF(limit_pin->>'scope', '') IS NULL
+      OR NULLIF(limit_pin->>'keyDigest', '') IS NULL
+      OR (
+        SELECT count(*)
+        FROM jobs AS running
+        WHERE running.state='running'
+          AND COALESCE(NULLIF(running.payload->>'workspace', ''), NULLIF(running.payload->'deployment'->>'workspace', ''), 'default') = claim.workspace_id
+          AND COALESCE(running.payload->'executionLimits'->'concurrency', '[]'::jsonb) @>
+            jsonb_build_array(jsonb_build_object(
+              'policyId', limit_pin->>'policyId',
+              'scope', limit_pin->>'scope',
+              'keyDigest', limit_pin->>'keyDigest'
+            ))
+      ) >= (limit_pin->>'maxConcurrent')::integer
+  )
 ORDER BY candidate.priority ASC, candidate.created_at ASC, candidate.id ASC
 LIMIT $5
 FOR UPDATE OF candidate SKIP LOCKED
@@ -644,23 +666,66 @@ RETURNING canceled_by, canceled_reason
 }
 
 func postgresMaxConcurrentReached(ctx context.Context, tx pgx.Tx, candidate Job) (bool, error) {
-	limit, ok := jobMaxConcurrent(candidate)
-	if !ok {
-		return false, nil
-	}
 	workspaceID := normalizedJobWorkspace("", candidate)
 	appKey := jobAppKey(candidate)
-	if appKey == "" {
-		return false, nil
+	appLimit, appLimited := jobMaxConcurrent(candidate)
+	lockKeys := make([]string, 0, len(candidate.Payload.ExecutionLimits.Concurrency)+1)
+	if appLimited && appKey != "" {
+		// Preserve the legacy maxConcurrent advisory-lock identity so mixed
+		// Core versions remain coordinated during a rolling upgrade.
+		lockKeys = append(lockKeys, appKey)
 	}
-	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))`, workspaceID, appKey); err != nil {
-		return false, err
+	for _, limit := range candidate.Payload.ExecutionLimits.Concurrency {
+		if !validKeyedConcurrencyPin(limit) {
+			return true, nil
+		}
+		lockKeys = append(lockKeys, "keyed:"+limit.Scope+":"+limit.PolicyID+":"+limit.KeyDigest)
 	}
-	running, err := postgresRunningJobsForApp(ctx, tx, workspaceID, appKey)
+	sort.Strings(lockKeys)
+	for _, lockKey := range lockKeys {
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))`, workspaceID, lockKey); err != nil {
+			return false, err
+		}
+	}
+	if appLimited && appKey != "" {
+		running, err := postgresRunningJobsForApp(ctx, tx, workspaceID, appKey)
+		if err != nil {
+			return false, err
+		}
+		if running >= appLimit {
+			return true, nil
+		}
+	}
+	for _, limit := range candidate.Payload.ExecutionLimits.Concurrency {
+		running, err := postgresRunningJobsForKeyedConcurrency(ctx, tx, workspaceID, limit)
+		if err != nil {
+			return false, err
+		}
+		if running >= int(limit.MaxConcurrent) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func postgresRunningJobsForKeyedConcurrency(ctx context.Context, tx pgx.Tx, workspaceID string, limit KeyedConcurrencyLimitPin) (int, error) {
+	match, err := json.Marshal([]map[string]string{{
+		"policyId":  limit.PolicyID,
+		"scope":     limit.Scope,
+		"keyDigest": limit.KeyDigest,
+	}})
 	if err != nil {
-		return false, err
+		return 0, err
 	}
-	return running >= limit, nil
+	var running int
+	err = tx.QueryRow(ctx, `
+SELECT COUNT(*)
+FROM jobs
+WHERE state=$1
+  AND COALESCE(NULLIF(payload->>'workspace', ''), NULLIF(payload->'deployment'->>'workspace', ''), 'default')=$2
+  AND COALESCE(payload->'executionLimits'->'concurrency', '[]'::jsonb) @> $3::jsonb
+`, string(JobRunning), workspaceID, match).Scan(&running)
+	return running, err
 }
 
 func postgresRunningJobsForApp(ctx context.Context, tx pgx.Tx, workspaceID string, appKey string) (int, error) {

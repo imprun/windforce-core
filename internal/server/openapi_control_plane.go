@@ -1,5 +1,7 @@
 package server
 
+import "github.com/imprun/windforce-core/internal/contract"
+
 func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any {
 	paths := map[string]any{
 		"/api/queue-demand-snapshots": map[string]any{
@@ -904,6 +906,7 @@ func controlPlaneSchemas() map[string]any {
 	nullableString := map[string]any{"type": []any{"string", "null"}}
 	nullableInteger := map[string]any{"type": []any{"integer", "null"}}
 	nullableDateTime := map[string]any{"type": []any{"string", "null"}, "format": "date-time"}
+	executionLimits := oapiSchemaRef("ExecutionLimits")
 	appProperties := map[string]any{
 		"id":                       oapiStringSchema(),
 		"workspace_id":             oapiStringSchema(),
@@ -922,6 +925,7 @@ func controlPlaneSchemas() map[string]any {
 		"required_labels":          stringArray,
 		"required_labels_override": nullableStringArray,
 		"max_concurrent":           nullableInteger,
+		"execution_limits":         executionLimits,
 		"updated_at":               oapiDateTimeSchema(),
 	}
 	appViewProperties := cloneSchemaProperties(appProperties)
@@ -942,6 +946,7 @@ func controlPlaneSchemas() map[string]any {
 		"required_labels":          stringArray,
 		"required_labels_override": nullableStringArray,
 		"runtime_access":           oapiSchemaRef("RuntimeAccess"),
+		"execution_limits":         executionLimits,
 		"updated_at":               oapiDateTimeSchema(),
 	}
 	appActionProperties := cloneSchemaProperties(actionProperties)
@@ -950,6 +955,42 @@ func controlPlaneSchemas() map[string]any {
 	appActionProperties["effective_required_labels"] = stringArray
 
 	return map[string]any{
+		"KeyedConcurrencyLimit": map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"properties": map[string]any{
+				"id":             oapiStringSchema(),
+				"max_concurrent": map[string]any{"type": "integer", "minimum": 1},
+				"input_pointers": map[string]any{"type": "array", "minItems": 1, "maxItems": contract.MaxConcurrencyInputPointers, "items": oapiStringSchema()},
+			},
+			"required": []any{"id", "max_concurrent", "input_pointers"},
+		},
+		"ExecutionLimits": map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"properties": map[string]any{
+				"concurrency": map[string]any{"type": "array", "maxItems": contract.MaxKeyedConcurrencyLimits, "items": oapiSchemaRef("KeyedConcurrencyLimit")},
+			},
+		},
+		"PinnedKeyedConcurrencyLimit": map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"properties": map[string]any{
+				"policy_id":       oapiStringSchema(),
+				"policy_revision": oapiStringSchema(),
+				"scope":           oapiStringEnumSchema("app", "action"),
+				"key_digest":      oapiStringSchema(),
+				"max_concurrent":  map[string]any{"type": "integer", "minimum": 1},
+			},
+			"required": []any{"policy_id", "policy_revision", "scope", "key_digest", "max_concurrent"},
+		},
+		"ExecutionLimitPins": map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"properties": map[string]any{
+				"concurrency": map[string]any{"type": "array", "items": oapiSchemaRef("PinnedKeyedConcurrencyLimit")},
+			},
+		},
 		"RuntimeAccess": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -1525,6 +1566,7 @@ func controlPlaneSchemas() map[string]any {
 				"required_labels":           stringArray,
 				"required_labels_override":  nullableStringArray,
 				"max_concurrent":            nullableInteger,
+				"execution_limits":          executionLimits,
 				"updated_at":                oapiDateTimeSchema(),
 				"effective_route_tag":       oapiStringSchema(),
 				"effective_required_labels": stringArray,
@@ -1757,34 +1799,35 @@ func controlPlaneSchemas() map[string]any {
 		"JobStatus": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"id":              oapiStringSchema(),
-				"workspace_id":    oapiStringSchema(),
-				"state":           oapiStringSchema(),
-				"status":          nullableString,
-				"worker":          nullableString,
-				"app_key":         nullableString,
-				"action_key":      nullableString,
-				"trigger_kind":    nullableString,
-				"kind":            nullableString,
-				"git_source_id":   nullableInteger,
-				"commit_sha":      nullableString,
-				"entrypoint":      nullableString,
-				"input_schema":    jsonSchema,
-				"output_schema":   jsonSchema,
-				"input":           oapiSchemaRef("JSONValue"),
-				"tag":             oapiStringSchema(),
-				"timeout_s":       oapiIntegerSchema(),
-				"created_by":      oapiStringSchema(),
-				"permissioned_as": oapiStringSchema(),
-				"created_at":      nullableDateTime,
-				"started_at":      nullableDateTime,
-				"completed_at":    nullableDateTime,
-				"duration_ms":     oapiIntegerSchema(),
-				"canceled_by":     nullableString,
-				"canceled_reason": nullableString,
-				"flow_run_id":     nullableString,
-				"flow_key":        nullableString,
-				"flow_step_key":   nullableString,
+				"id":               oapiStringSchema(),
+				"workspace_id":     oapiStringSchema(),
+				"state":            oapiStringSchema(),
+				"status":           nullableString,
+				"worker":           nullableString,
+				"app_key":          nullableString,
+				"action_key":       nullableString,
+				"trigger_kind":     nullableString,
+				"kind":             nullableString,
+				"git_source_id":    nullableInteger,
+				"commit_sha":       nullableString,
+				"entrypoint":       nullableString,
+				"input_schema":     jsonSchema,
+				"output_schema":    jsonSchema,
+				"input":            oapiSchemaRef("JSONValue"),
+				"tag":              oapiStringSchema(),
+				"timeout_s":        oapiIntegerSchema(),
+				"execution_limits": oapiSchemaRef("ExecutionLimitPins"),
+				"created_by":       oapiStringSchema(),
+				"permissioned_as":  oapiStringSchema(),
+				"created_at":       nullableDateTime,
+				"started_at":       nullableDateTime,
+				"completed_at":     nullableDateTime,
+				"duration_ms":      oapiIntegerSchema(),
+				"canceled_by":      nullableString,
+				"canceled_reason":  nullableString,
+				"flow_run_id":      nullableString,
+				"flow_key":         nullableString,
+				"flow_step_key":    nullableString,
 			},
 			"required": []any{"id", "workspace_id", "state"},
 		},

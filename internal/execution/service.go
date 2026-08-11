@@ -298,9 +298,18 @@ func (s *AdmissionService) CreateRun(ctx context.Context, request CreateRunReque
 		}
 		return Admission{}, &Fault{Kind: FaultInternal, Message: fmt.Sprintf("input schema for %s/%s could not be evaluated", request.App, request.Action), Err: err}
 	}
+	executionLimits, err := resolveExecutionLimitPins(ctx, s.store, request.Workspace, request.App, request.Action, deployment, actionSpec, resolvedInput)
+	if err != nil {
+		var inputError *executionLimitInputError
+		if errors.As(err, &inputError) {
+			return Admission{}, &Fault{Kind: FaultInvalidRequest, Message: inputError.Error(), Err: err}
+		}
+		return Admission{}, &Fault{Kind: FaultInternal, Message: "could not resolve execution limits", Err: err}
+	}
 
 	run := state.NewRun(adapter, runID, request.App, request.Action, deployment, cloneRaw(resolvedInput))
 	run.InputConfigResolved = true
+	run.ExecutionLimits = executionLimits
 	run.CorrelationID = state.CleanID(request.CorrelationID)
 	run.Env = cloneStrings(request.Env)
 	run.CreatedBy = strings.TrimSpace(request.CreatedBy)

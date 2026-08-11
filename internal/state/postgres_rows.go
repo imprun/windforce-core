@@ -34,11 +34,12 @@ func scanRun(row rowScanner) (Run, error) {
 	var expiresAt sql.NullTime
 	var env json.RawMessage
 	var traceContext json.RawMessage
+	var executionLimits json.RawMessage
 	if err := row.Scan(
 		&run.ID, &run.Adapter, &run.App, &run.Action, &stateValue, &deployment, &run.Input,
 		&run.Output, &result, &run.Error, &taskID, &correlationID, &env, &clientID,
 		&principalKind, &principalID, &idempotencyHash, &requestFingerprint, &run.CreatedBy, &run.PermissionedAs,
-		&run.CreatedAt, &run.UpdatedAt, &expiresAt, &traceContext,
+		&run.CreatedAt, &run.UpdatedAt, &expiresAt, &traceContext, &executionLimits,
 	); err != nil {
 		return Run{}, err
 	}
@@ -82,6 +83,11 @@ func scanRun(row rowScanner) (Run, error) {
 	}
 	if len(traceContext) > 0 {
 		if err := json.Unmarshal(traceContext, &run.TraceContext); err != nil {
+			return Run{}, err
+		}
+	}
+	if len(executionLimits) > 0 {
+		if err := json.Unmarshal(executionLimits, &run.ExecutionLimits); err != nil {
 			return Run{}, err
 		}
 	}

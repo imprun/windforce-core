@@ -26,6 +26,10 @@ const (
 	ActionAdapterCommand  = "command"
 
 	CapabilityBrowser = "browser"
+
+	MaxKeyedConcurrencyLimits   = 8
+	MaxConcurrencyInputPointers = 8
+	MaxConcurrencyPointerBytes  = 256
 )
 
 // NormalizeScriptLanguage applies the backwards-compatible TypeScript default
@@ -108,8 +112,9 @@ type App struct {
 	TimeoutS   int32  `json:"timeout,omitempty"`
 	Tag        string `json:"tag,omitempty"`
 	// MaxConcurrent caps concurrently running jobs for this app. Nil means unlimited.
-	MaxConcurrent *int32   `json:"maxConcurrent,omitempty"`
-	Capabilities  []string `json:"capabilities,omitempty"`
+	MaxConcurrent   *int32          `json:"maxConcurrent,omitempty"`
+	ExecutionLimits ExecutionLimits `json:"executionLimits,omitempty,omitzero"`
+	Capabilities    []string        `json:"capabilities,omitempty"`
 	// RunsOn is the required worker label set (ADR 0009); capabilities
 	// merge into it as an alias during manifest parsing.
 	RunsOn  []string          `json:"runsOn,omitempty"`
@@ -140,7 +145,90 @@ type Action struct {
 	Capabilities               *[]string       `json:"capabilities,omitempty"`
 	RunsOn                     *[]string       `json:"runsOn,omitempty"`
 	RuntimeAccess              RuntimeAccess   `json:"runtimeAccess,omitempty"`
+	ExecutionLimits            ExecutionLimits `json:"executionLimits,omitempty,omitzero"`
 	UpdatedAt                  *time.Time      `json:"updatedAt,omitempty"`
+}
+
+// ExecutionLimits contains release-owned, domain-neutral execution limits.
+// Admission resolves each declaration to opaque pins before a Job is stored.
+type ExecutionLimits struct {
+	Concurrency []KeyedConcurrencyLimit `json:"concurrency,omitempty"`
+}
+
+// KeyedConcurrencyLimit caps leased Jobs that resolve to the same opaque key.
+// InputPointers are RFC 6901 JSON Pointers evaluated against resolved input.
+type KeyedConcurrencyLimit struct {
+	ID            string   `json:"id"`
+	MaxConcurrent int32    `json:"maxConcurrent"`
+	InputPointers []string `json:"inputPointers"`
+}
+
+// NormalizeExecutionLimits validates and defensively copies release-owned
+// execution-limit declarations. Pointer syntax is checked here; values are
+// resolved only after Admission has produced the effective input.
+func NormalizeExecutionLimits(limits ExecutionLimits) (ExecutionLimits, error) {
+	if len(limits.Concurrency) > MaxKeyedConcurrencyLimits {
+		return ExecutionLimits{}, fmt.Errorf("concurrency declares %d limits; maximum is %d", len(limits.Concurrency), MaxKeyedConcurrencyLimits)
+	}
+	normalized := ExecutionLimits{Concurrency: make([]KeyedConcurrencyLimit, 0, len(limits.Concurrency))}
+	ids := make(map[string]struct{}, len(limits.Concurrency))
+	for _, item := range limits.Concurrency {
+		item.ID = strings.TrimSpace(item.ID)
+		if !labelPattern.MatchString(item.ID) {
+			return ExecutionLimits{}, fmt.Errorf("concurrency limit id %q is invalid", item.ID)
+		}
+		if _, exists := ids[item.ID]; exists {
+			return ExecutionLimits{}, fmt.Errorf("concurrency limit id %q is duplicated", item.ID)
+		}
+		ids[item.ID] = struct{}{}
+		if item.MaxConcurrent <= 0 {
+			return ExecutionLimits{}, fmt.Errorf("concurrency limit %q maxConcurrent must be positive", item.ID)
+		}
+		if len(item.InputPointers) == 0 || len(item.InputPointers) > MaxConcurrencyInputPointers {
+			return ExecutionLimits{}, fmt.Errorf("concurrency limit %q inputPointers must contain between 1 and %d entries", item.ID, MaxConcurrencyInputPointers)
+		}
+		pointers := make([]string, 0, len(item.InputPointers))
+		seenPointers := make(map[string]struct{}, len(item.InputPointers))
+		for _, pointer := range item.InputPointers {
+			if err := ValidateInputJSONPointer(pointer); err != nil {
+				return ExecutionLimits{}, fmt.Errorf("concurrency limit %q input pointer: %w", item.ID, err)
+			}
+			if _, exists := seenPointers[pointer]; exists {
+				return ExecutionLimits{}, fmt.Errorf("concurrency limit %q input pointer %q is duplicated", item.ID, pointer)
+			}
+			seenPointers[pointer] = struct{}{}
+			pointers = append(pointers, pointer)
+		}
+		item.InputPointers = pointers
+		normalized.Concurrency = append(normalized.Concurrency, item)
+	}
+	if len(normalized.Concurrency) == 0 {
+		normalized.Concurrency = nil
+	}
+	return normalized, nil
+}
+
+// ValidateInputJSONPointer validates the bounded RFC 6901 subset accepted by
+// execution limits. Resolution supports object members and array indices.
+func ValidateInputJSONPointer(pointer string) error {
+	if pointer == "" || !strings.HasPrefix(pointer, "/") {
+		return fmt.Errorf("%q must be a non-empty RFC 6901 pointer", pointer)
+	}
+	if len(pointer) > MaxConcurrencyPointerBytes || !utf8.ValidString(pointer) {
+		return fmt.Errorf("%q exceeds the UTF-8 pointer limit", pointer)
+	}
+	for _, token := range strings.Split(pointer[1:], "/") {
+		for index := 0; index < len(token); index++ {
+			if token[index] != '~' {
+				continue
+			}
+			if index+1 >= len(token) || (token[index+1] != '0' && token[index+1] != '1') {
+				return fmt.Errorf("%q contains an invalid escape", pointer)
+			}
+			index++
+		}
+	}
+	return nil
 }
 
 // RuntimeAccess is the release-owned allowlist for Action SDK lookups.
@@ -228,6 +316,7 @@ type Deployment struct {
 	ScriptLang             string            `json:"scriptLang,omitempty"`
 	TimeoutS               int32             `json:"timeout,omitempty"`
 	MaxConcurrent          *int32            `json:"maxConcurrent,omitempty"`
+	ExecutionLimits        ExecutionLimits   `json:"executionLimits,omitempty,omitzero"`
 	RequiredCapabilities   []string          `json:"requiredCapabilities,omitempty"`
 	RequiredLabels         []string          `json:"requiredLabels,omitempty"`
 	Commit                 string            `json:"commit"`
@@ -247,6 +336,7 @@ type Deployment struct {
 // release coordinates and defaults required to retry the same execution.
 func PinExecutionDeployment(deployment Deployment, actionKey string) Deployment {
 	pinned := deployment
+	pinned.ExecutionLimits = cloneExecutionLimits(deployment.ExecutionLimits)
 	pinned.RequiredCapabilities = append([]string(nil), deployment.RequiredCapabilities...)
 	pinned.RequiredLabels = append([]string(nil), deployment.RequiredLabels...)
 	if deployment.RequiredLabelsOverride != nil {
@@ -261,6 +351,7 @@ func PinExecutionDeployment(deployment Deployment, actionKey string) Deployment 
 		action.InputSchemaBody = append(json.RawMessage(nil), action.InputSchemaBody...)
 		action.OutputSchemaBody = append(json.RawMessage(nil), action.OutputSchemaBody...)
 		action.OperatorSettingsSchemaBody = append(json.RawMessage(nil), action.OperatorSettingsSchemaBody...)
+		action.ExecutionLimits = cloneExecutionLimits(action.ExecutionLimits)
 		if action.RequiredLabelsOverride != nil {
 			cloned := append([]string{}, (*action.RequiredLabelsOverride)...)
 			action.RequiredLabelsOverride = &cloned
@@ -268,6 +359,18 @@ func PinExecutionDeployment(deployment Deployment, actionKey string) Deployment 
 		pinned.Actions[actionKey] = action
 	}
 	return pinned
+}
+
+func cloneExecutionLimits(limits ExecutionLimits) ExecutionLimits {
+	cloned := ExecutionLimits{Concurrency: make([]KeyedConcurrencyLimit, len(limits.Concurrency))}
+	for index, limit := range limits.Concurrency {
+		cloned.Concurrency[index] = limit
+		cloned.Concurrency[index].InputPointers = append([]string(nil), limit.InputPointers...)
+	}
+	if len(cloned.Concurrency) == 0 {
+		cloned.Concurrency = nil
+	}
+	return cloned
 }
 
 // JobRequest is the runtime request passed into windforce-core.

@@ -156,6 +156,11 @@ After the active Job has completed or been canceled, the worker deregisters. `of
 
 The worker resolves the effective input before launch. Depending on its backend, resolution may be performed by the in-process store or returned as a prepared claim by the Worker Plane. Runtime Variables, Resources, InputConfig values, and Secret references become the effective input used for the Job, while secret values are registered for log and result masking.
 
+Admission also resolves release-declared opaque-key concurrency against this
+effective input and pins only safe HMAC digests on the Run and Job. Claim checks
+those pins before granting a lease; the Worker and launcher never derive or
+enforce them. See [Execution limits](execution-limits.md).
+
 This input preparation does not change the bundle identity. The same pinned bundle can execute different Job inputs. `input.json` is never a source-distribution mechanism and must not contain repository credentials or an alternate application revision.
 
 ## Completion and failure semantics
@@ -194,6 +199,9 @@ Before accepting a worker or runtime change, verify all of the following:
 - Log appends remain ordered and reconnectable by byte offset without mixing
   application logs, terminal results, service logs, or binary artifacts.
 - HumanTask hold keeps the original process, lease, and worker slot alive; terminal interruption causes cancel the pending task without creating another Job.
+- Keyed concurrency remains an Admission-and-claim responsibility: raw key
+  components never enter limiter pins, Local and PostgreSQL claim behavior stays
+  equivalent, and held leases continue to consume capacity.
 - Tests cover bundle publication/fetch, cache behavior, remote extraction, runtime execution, static TypeScript `main` validation, graceful and timed-out drain, and Job failure on bundle errors.
 
 The primary implementation areas are `internal/worker`, `internal/runtime`, `internal/executor`, `internal/executionbundle`, `internal/remoteworker`, and `internal/server/worker_plane.go`. Execution-semantic changes require an ADR in addition to updating this current-state document. Execution-profile placement is defined in [ADR 0030](../adr/0030-release-execution-profiles.md). Optional trace propagation and independent root creation are defined in [ADR 0029](../adr/0029-optional-trace-context-continuity.md).
