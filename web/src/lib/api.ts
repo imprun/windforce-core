@@ -193,6 +193,7 @@ export type AppSummary = {
   required_labels_override?: string[];
   effective_required_labels?: string[];
   max_concurrent?: number | null;
+  execution_limits?: ExecutionLimits;
   updated_at: string;
   effective_route_tag: string;
   actions_count: number;
@@ -217,9 +218,32 @@ export type ActionView = {
     variables?: string[];
     resources?: string[];
   };
+  execution_limits?: ExecutionLimits;
   updated_at: string;
   effective_capabilities?: string[];
   effective_route_tag?: string;
+};
+
+export type KeyedConcurrencyLimit = {
+  id: string;
+  max_concurrent: number;
+  input_pointers: string[];
+};
+
+export type ExecutionLimits = {
+  concurrency?: KeyedConcurrencyLimit[];
+};
+
+export type KeyedConcurrencyLimitPin = {
+  policy_id: string;
+  policy_revision: string;
+  scope: string;
+  key_digest: string;
+  max_concurrent: number;
+};
+
+export type ExecutionLimitPins = {
+  concurrency?: KeyedConcurrencyLimitPin[];
 };
 
 export type AppDetail = {
@@ -315,6 +339,7 @@ export type JobStatus = {
   started_at?: string;
   completed_at?: string;
   duration_ms?: number;
+  execution_limits?: ExecutionLimitPins;
 };
 
 export type JobLogStreamEvent = {

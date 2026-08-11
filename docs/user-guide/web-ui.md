@@ -60,6 +60,37 @@ The app detail Overview keeps immutable release defaults separate from effective
 4. Follow the effective worker tag to the separate Placement tab when you need to inspect or edit worker selection.
 5. Use the tabs for repository settings, release history, and action schemas.
 
+## Review release execution limits
+
+The Execution limits tab shows immutable App and Action keyed-concurrency policies from the active release.
+
+![Review release execution limits](../assets/ui/execution-limits.png)
+
+1. Open an App and choose Execution limits.
+2. Review App-scoped policies shared by every Action.
+3. Review Action-scoped policies, capacities, and JSON Pointer key inputs.
+4. Edit the source manifest and publish a new release when the policy must change.
+
+## Review execution limits in dark mode
+
+Dark mode preserves policy hierarchy, identifiers, and diagnostic boundaries without introducing a separate palette.
+
+![Review execution limits in dark mode](../assets/ui/execution-limits-dark.png)
+
+1. Open an App and choose Execution limits.
+2. Switch the Core console to dark mode.
+3. Confirm policy IDs, capacities, JSON Pointers, and release guidance remain legible.
+
+## Review execution limits on a narrow screen
+
+Policy tables become labelled records on a narrow screen so scope, capacity, and key inputs remain comparable.
+
+![Review execution limits on a narrow screen](../assets/ui/execution-limits-mobile.png)
+
+1. Open an App and choose 실행 제한 on a narrow screen.
+2. Review the App policy as a labelled record.
+3. Continue to Action policies without horizontal table scrolling.
+
 ## Configure execution placement
 
 Execution placement is operator-owned configuration that selects eligible workers and survives releases and rollbacks without changing the release manifest.
@@ -300,6 +331,7 @@ The focused inspector follows masked stdout and stderr for a known Job ID while 
 2. Paste the Job ID obtained from an invocation response, alert, or CLI query.
 3. Connect to replay retained bytes and continue following from the latest byte offset.
 4. Use status, App/Action, Worker, attempt, release commit, and start time to anchor the diagnosis.
+5. Review the policy ID, scope, capacity, revision, and opaque key digest pinned at admission.
 
 ## Add an inbound Trigger
 
@@ -573,17 +605,6 @@ A hosted or self-managed portal can configure one explicit management-plane acti
 1. Open the embedded Web UI from the configured host portal.
 2. Use the configured host action on the right side of the top bar.
 3. The destination label makes the management-plane boundary explicit.
-
-## Confirm who operates Worker Groups
-
-The System settings page reports Worker Group ownership independently from Web UI exposure.
-
-1. Open Settings and choose System.
-2. Read Worker Group operator: Deployment owner means this installation is self-managed; External control plane means the host owns lifecycle and capacity.
-3. For an external operator, use the host-provided action to open the correct control surface.
-4. Treat this value as operator guidance. Core Worker APIs remain available in every mode, and Core does not create Kubernetes or autoscaling resources.
-
-For API-only deployments, start Core with `--ui-mode disabled`. Requests to `/`, `/ui`, and `/ui/*` then return 404 without disabling Control, Invocation, Worker, Trigger, or metrics APIs.
 
 ## Open host management on mobile
 

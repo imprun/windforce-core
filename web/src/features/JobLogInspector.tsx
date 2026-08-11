@@ -202,6 +202,57 @@ export function JobLogInspector({
           />
         ) : null}
 
+        {job?.execution_limits?.concurrency?.length ? (
+          <section className="jobExecutionLimits" aria-labelledby="jobExecutionLimitsTitle">
+            <div className="jobLogSectionHeading">
+              <div>
+                <h3 id="jobExecutionLimitsTitle">
+                  {translate("monitoring.logInspector.executionLimits")}
+                </h3>
+                <p>{translate("monitoring.logInspector.executionLimitsHint")}</p>
+              </div>
+              <span className="badge badge-neutral">
+                {translate("executionLimits.policyCount", {
+                  count: job.execution_limits.concurrency.length,
+                })}
+              </span>
+            </div>
+            <div className="jobExecutionLimitList">
+              {job.execution_limits.concurrency.map((limit) => (
+                <article
+                  className="jobExecutionLimit"
+                  key={`${limit.scope}:${limit.policy_id}:${limit.key_digest}`}
+                >
+                  <div className="jobExecutionLimitIdentity">
+                    <strong className="mono">{limit.policy_id}</strong>
+                    <span className="badge badge-neutral">
+                      {executionLimitScopeLabel(limit.scope)}
+                    </span>
+                  </div>
+                  <dl>
+                    <div>
+                      <dt>{translate("executionLimits.capacity")}</dt>
+                      <dd className="mono">{limit.max_concurrent}</dd>
+                    </div>
+                    <div>
+                      <dt>{translate("executionLimits.revision")}</dt>
+                      <dd className="mono" title={limit.policy_revision}>
+                        {shortOpaqueDigest(limit.policy_revision)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>{translate("executionLimits.keyDigest")}</dt>
+                      <dd className="mono" title={limit.key_digest}>
+                        {shortOpaqueDigest(limit.key_digest)}
+                      </dd>
+                    </div>
+                  </dl>
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
         <section className="jobLogSection" aria-labelledby="jobLogOutputTitle">
           <div className="jobLogSectionHeading">
             <div>
@@ -225,6 +276,18 @@ export function JobLogInspector({
       </div>
     </Sheet>
   );
+}
+
+function executionLimitScopeLabel(scope: string): string {
+  return scope === "action"
+    ? translate("executionLimits.scope.action")
+    : translate("executionLimits.scope.app");
+}
+
+export function shortOpaqueDigest(value: string, length = 12): string {
+  const separator = value.indexOf(":");
+  if (separator < 0) return shortSHA(value, length);
+  return `${value.slice(0, separator + 1)}${value.slice(separator + 1, separator + 1 + length)}`;
 }
 
 function JobLogStatus({ status }: { status: string }) {
