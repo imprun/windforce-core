@@ -15,6 +15,7 @@ import {
 import { AppInputSettings } from "../features/AppInputSettings";
 import { AppTriggers } from "../features/AppTriggers";
 import { AuditEventTable } from "../features/AuditEventTable";
+import { ExecutionLimitsPanel } from "../features/ExecutionLimitsPanel";
 import { ExecutionPlacementPanel } from "../features/ExecutionPlacementPanel";
 import { PublishReleaseDialog } from "../features/PublishReleaseDialog";
 import { RepositorySettings } from "../features/RepositorySettings";
@@ -44,6 +45,7 @@ const tabs = [
   { key: "triggers", labelKey: "trigger.title" as TranslationKey },
   { key: "input-settings", labelKey: "audit.inputSettings" as TranslationKey },
   { key: "placement", labelKey: "appDetail.tab.placement" as TranslationKey },
+  { key: "execution-limits", labelKey: "appDetail.tab.executionLimits" as TranslationKey },
   { key: "monitoring", labelKey: "navigation.monitoring" as TranslationKey },
   { key: "repository", labelKey: "audit.repository" as TranslationKey },
   { key: "releases", labelKey: "appDetail.tab.releases" as TranslationKey },
@@ -199,6 +201,7 @@ export function AppDetailPage({
         />
       ) : null}
       {activeTab === "placement" ? <PlacementTab detail={detail} onUpdated={state.reload} /> : null}
+      {activeTab === "execution-limits" ? <ExecutionLimitsTab detail={detail} /> : null}
       {activeTab === "monitoring" ? <MonitoringTab app={app} /> : null}
       {activeTab === "repository" && source ? (
         <RepositorySettings source={source} onChanged={state.reload} />
@@ -383,6 +386,22 @@ function PlacementTab({ detail, onUpdated }: { detail: AppDetail | null; onUpdat
     );
   }
   return <ExecutionPlacementPanel detail={detail} onUpdated={onUpdated} />;
+}
+
+function ExecutionLimitsTab({ detail }: { detail: AppDetail | null }) {
+  if (!detail) {
+    return (
+      <Panel
+        title={translate("executionLimits.title")}
+        subtitle={translate("executionLimits.subtitle")}
+      >
+        <EmptyState title={translate("appDetail.noRelease")}>
+          <p>{translate("executionLimits.needsRelease")}</p>
+        </EmptyState>
+      </Panel>
+    );
+  }
+  return <ExecutionLimitsPanel detail={detail} />;
 }
 
 function ReleasesTab({

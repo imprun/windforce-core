@@ -2652,6 +2652,133 @@ textarea {
   margin-top: 7px;
 }
 
+/* ---------- release-owned execution limits ---------- */
+
+.executionLimitsIntro {
+  display: grid;
+  gap: var(--space-2);
+  margin-bottom: var(--space-6);
+  padding: var(--space-4);
+  border-left: 3px solid var(--primary);
+  background: var(--surface-2);
+}
+
+.executionLimitsIntro > div {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.executionLimitsIntro p {
+  margin: 0;
+}
+
+.executionLimitSection {
+  display: grid;
+  gap: var(--space-4);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border);
+}
+
+.executionLimitSection + .executionLimitSection {
+  margin-top: var(--space-6);
+}
+
+.executionLimitSectionHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.executionLimitSectionHeader h3 {
+  font-size: 1rem;
+}
+
+.executionLimitSectionHeader p {
+  margin-top: var(--space-1);
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+}
+
+.executionLimitTable {
+  margin: 0;
+}
+
+.executionLimitCapacity {
+  display: block;
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.executionLimitAction,
+.executionLimitCapacityValue {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.executionLimitPointers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.executionLimitsEmpty {
+  margin: 0;
+  padding: var(--space-4);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-small);
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+}
+
+@media (max-width: 700px) {
+  .executionLimitsIntro > div,
+  .executionLimitSectionHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .executionLimitTable thead {
+    display: none;
+  }
+
+  .executionLimitTable,
+  .executionLimitTable tbody,
+  .executionLimitTable tr,
+  .executionLimitTable td {
+    display: block;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .executionLimitTable tr {
+    padding: var(--space-3) 0;
+  }
+
+  .executionLimitTable td {
+    display: grid;
+    grid-template-columns: minmax(7.5rem, 0.45fr) minmax(0, 1fr);
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    border: 0;
+  }
+
+  .executionLimitTable td::before {
+    content: attr(data-label);
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    font-weight: 620;
+  }
+
+  .executionLimitTable td > *,
+  .executionLimitTable code {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+}
+
 @media (max-width: 640px) {
   .runtimeAccessSummaryHeader {
     align-items: stretch;
@@ -4365,6 +4492,58 @@ textarea {
   border: 1px solid var(--border);
   border-radius: var(--radius-small);
   background: var(--surface-2);
+}
+
+.jobExecutionLimits {
+  display: grid;
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+.jobExecutionLimitList {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.jobExecutionLimit {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--surface-2);
+}
+
+.jobExecutionLimitIdentity {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.jobExecutionLimit dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.jobExecutionLimit dt {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.jobExecutionLimit dd {
+  margin: var(--space-1) 0 0;
+  overflow-wrap: anywhere;
+  font-size: 0.8125rem;
+}
+
+@media (max-width: 640px) {
+  .jobExecutionLimit dl {
+    grid-template-columns: 1fr;
+  }
 }
 
 .jobLogSection {

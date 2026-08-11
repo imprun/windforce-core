@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { createHmac } from "node:crypto";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer as createHttpServer } from "node:http";
 import path from "node:path";
 
@@ -118,6 +118,7 @@ export default {
       method: "POST",
       body: { app_key: "echo" },
     });
+    await configureSampleExecutionLimits(exec);
     const sources = await api("/git_sources");
     const sample = sources.find((source) => source.name === "echo");
     let webhook = null;
@@ -127,6 +128,10 @@ export default {
         method: "PATCH",
         headers: { "x-windforce-actor": "ui-guide@example.test" },
         body: { name: "echo-service" },
+      });
+      await api(`/git_sources/${sample.id}/sync`, {
+        method: "POST",
+        headers: { "x-windforce-actor": "ui-guide@example.test" },
       });
       webhook = await api("/webhooks", {
         method: "POST",
@@ -337,6 +342,28 @@ async function advanceSampleRepository(exec) {
   const worktree = path.join(sampleBase, "work");
   const remote = path.join(sampleBase, "remote.git");
   await exec("git", ["-C", worktree, "commit", "--allow-empty", "-m", "Prepare next sample release"]);
+  await exec("git", ["-C", worktree, "push", remote, "HEAD:refs/heads/main"]);
+}
+
+async function configureSampleExecutionLimits(exec) {
+  const sampleBase = path.join(baseDir, ".data", "sample-repos", "default", "echo");
+  const worktree = path.join(sampleBase, "work");
+  const remote = path.join(sampleBase, "remote.git");
+  const manifestPath = path.join(worktree, "windforce.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  manifest.executionLimits = {
+    concurrency: [
+      { id: "message-group", maxConcurrent: 2, inputPointers: ["/message"] },
+    ],
+  };
+  manifest.actions.echo.executionLimits = {
+    concurrency: [
+      { id: "echo-message", maxConcurrent: 1, inputPointers: ["/message"] },
+    ],
+  };
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+  await exec("git", ["-C", worktree, "add", "windforce.json"]);
+  await exec("git", ["-C", worktree, "commit", "-m", "Add sample execution limits"]);
   await exec("git", ["-C", worktree, "push", remote, "HEAD:refs/heads/main"]);
 }
 
