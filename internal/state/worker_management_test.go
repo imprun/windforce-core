@@ -72,6 +72,17 @@ func exerciseWorkerControlStore(t *testing.T, store workerControlTestStore) {
 	}); !errors.Is(err, ErrInvalidState) {
 		t.Fatalf("unscoped credential err=%v, want ErrInvalidState", err)
 	}
+	emptyLabels, replayed, err := store.CreateWorkerCredential(ctx, CreateWorkerCredentialRequest{
+		Group: "group-empty", ExpectedGeneration: 0, WorkspaceIDs: []string{"workspace-a"},
+		TokenHash: HashBearerToken("wfr_empty-labels"), OperationID: "op-empty-labels",
+		RequestFingerprint: "empty-labels", Actor: "tester",
+	})
+	if err != nil || replayed {
+		t.Fatalf("empty-label credential = %#v, replayed=%v, err=%v", emptyLabels, replayed, err)
+	}
+	if emptyLabels.Labels == nil || len(emptyLabels.Labels) != 0 {
+		t.Fatalf("empty-label credential labels = %#v, want non-nil empty slice", emptyLabels.Labels)
+	}
 	created, replayed, err := store.CreateWorkerCredential(ctx, CreateWorkerCredentialRequest{
 		Group: "group-a", ExpectedGeneration: 0, WorkspaceIDs: []string{"workspace-a"}, Labels: []string{"linux", "arm64"},
 		ExpiresAt: &expiresAt, TokenHash: HashBearerToken("wfr_raw-secret"), OperationID: "op-create-1",

@@ -42,7 +42,7 @@ type workerGroupRunStateResponse struct {
 func projectWorkerCredential(credential state.WorkerCredential) workerCredentialResponse {
 	return workerCredentialResponse{
 		ID: credential.ID, Group: credential.Group, Generation: credential.Generation,
-		WorkspaceIDs: append([]string(nil), credential.WorkspaceIDs...), Labels: append([]string(nil), credential.Labels...),
+		WorkspaceIDs: append([]string(nil), credential.WorkspaceIDs...), Labels: append([]string{}, credential.Labels...),
 		Status: credential.Status, ExpiresAt: credential.ExpiresAt, RevokedAt: credential.RevokedAt,
 		DrainDeadlineAt: credential.DrainDeadlineAt, CreatedBy: credential.CreatedBy,
 		CreatedAt: credential.CreatedAt, UpdatedAt: credential.UpdatedAt,
