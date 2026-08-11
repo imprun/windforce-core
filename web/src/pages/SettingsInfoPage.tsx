@@ -33,14 +33,14 @@ const SYSTEM_INFO_LABELS: Record<string, TranslationKey> = {
   triggers_count: "info.label.triggersCount",
   wait_ms: "info.label.waitMs",
   web_ui: "info.label.webUI",
-  ui_mode: "info.label.uiMode",
-  worker_group_operator: "info.label.workerGroupOperator",
   worker_api: "info.label.workerAPI",
   worker_token_configured: "info.label.workerToken",
 };
 
+const HIDDEN_RUNTIME_CONFIG_KEYS = new Set(["ui_mode", "worker_group_operator"]);
+
 export function SettingsInfoPage() {
-  const { api, runtimeConfig } = useApp();
+  const { api } = useApp();
   const [info, setInfo] = useState<SystemInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -93,45 +93,6 @@ export function SettingsInfoPage() {
       }
     >
       <SettingsNav />
-      <Panel
-        title={translate("info.workerGroupOperations")}
-        subtitle={translate("info.workerGroupOperationsHint")}
-      >
-        <div className="flex flex-col gap-4">
-          <DefinitionList
-            items={[
-              [
-                translate("info.workerGroupOperator"),
-                runtimeConfig?.workerGroupOperator === "external"
-                  ? translate("info.workerGroupOperator.external")
-                  : translate("info.workerGroupOperator.selfManaged"),
-              ],
-              [translate("info.uiMode"), translate("info.uiMode.embedded")],
-            ]}
-          />
-          <p className="text-sm leading-6 text-muted-foreground">
-            {runtimeConfig?.workerGroupOperator === "external"
-              ? translate("info.workerGroupOperator.externalBody")
-              : translate("info.workerGroupOperator.selfManagedBody")}
-          </p>
-          {runtimeConfig?.workerGroupOperator === "external" ? (
-            runtimeConfig.hostConsole ? (
-              <div>
-                <a className="button primary no-underline" href={runtimeConfig.hostConsole.url}>
-                  {runtimeConfig.hostConsole.label}
-                </a>
-              </div>
-            ) : (
-              <span className="inlineNotice">
-                {translate("info.workerGroupOperator.hostUnavailable")}
-              </span>
-            )
-          ) : null}
-          <p className="text-xs leading-5 text-muted-foreground">
-            {translate("info.workerGroupOperator.metadataOnly")}
-          </p>
-        </div>
-      </Panel>
       {error ? <ErrorNotice message={error} onRetry={() => void loadInfo()} /> : null}
       {loading && !info ? <Loading label={translate("info.loading")} /> : null}
       {info ? (
@@ -189,7 +150,7 @@ export function SettingsInfoPage() {
               subtitle={translate("info.runtimeConfigHint")}
             >
               <DefinitionList
-                items={Object.entries(info.runtime_config).map(([key, value]) => [
+                items={visibleRuntimeConfigEntries(info.runtime_config).map(([key, value]) => [
                   systemInfoLabel(key),
                   formatSystemInfoValue(value),
                 ])}
@@ -229,6 +190,12 @@ function labelize(key: string): string {
 export function systemInfoLabel(key: string): string {
   const translationKey = SYSTEM_INFO_LABELS[key];
   return translationKey ? translate(translationKey) : labelize(key);
+}
+
+export function visibleRuntimeConfigEntries(
+  values: Record<string, unknown>,
+): Array<[string, unknown]> {
+  return Object.entries(values).filter(([key]) => !HIDDEN_RUNTIME_CONFIG_KEYS.has(key));
 }
 
 export function formatSystemInfoValue(value: unknown): string {

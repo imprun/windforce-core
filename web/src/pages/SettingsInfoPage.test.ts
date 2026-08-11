@@ -1,9 +1,10 @@
-import { readFile } from "node:fs/promises";
 import { beforeEach, describe, expect, test } from "vitest";
 import { setLocale } from "../shared/i18n";
-import { formatSystemInfoValue, systemInfoLabel } from "./SettingsInfoPage";
-
-const source = await readFile(new URL("./SettingsInfoPage.tsx", import.meta.url), "utf8");
+import {
+  formatSystemInfoValue,
+  systemInfoLabel,
+  visibleRuntimeConfigEntries,
+} from "./SettingsInfoPage";
 
 describe("formatSystemInfoValue", () => {
   beforeEach(() => setLocale("en"));
@@ -24,11 +25,18 @@ describe("formatSystemInfoValue", () => {
   });
 });
 
-describe("Worker Group operations guidance", () => {
-  test("routes externally operated groups to the configured neutral host console", () => {
-    expect(source).toContain('runtimeConfig?.workerGroupOperator === "external"');
-    expect(source).toContain("runtimeConfig.hostConsole.url");
-    expect(source).toContain("runtimeConfig.hostConsole.label");
-    expect(source).toContain('translate("info.workerGroupOperator.metadataOnly")');
+describe("visibleRuntimeConfigEntries", () => {
+  test("keeps presentation contracts out of the operator-facing settings list", () => {
+    expect(
+      visibleRuntimeConfigEntries({
+        ui_mode: "embedded",
+        worker_group_operator: "external",
+        wait_ms: 1500,
+        web_ui: true,
+      }),
+    ).toEqual([
+      ["wait_ms", 1500],
+      ["web_ui", true],
+    ]);
   });
 });
