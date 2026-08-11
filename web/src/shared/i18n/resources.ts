@@ -679,22 +679,6 @@ export const en = {
   "info.service": "Service",
   "info.serviceHint": "Backend service identity and readiness reported by the control plane.",
   "info.serviceID": "Service ID",
-  "info.workerGroupOperations": "Worker Group operations",
-  "info.workerGroupOperationsHint":
-    "Ownership of Worker Group lifecycle and capacity for this Core instance.",
-  "info.workerGroupOperator": "Worker Group operator",
-  "info.workerGroupOperator.external": "External control plane",
-  "info.workerGroupOperator.selfManaged": "Deployment owner",
-  "info.workerGroupOperator.externalBody":
-    "An external control plane owns Worker Group creation, credentials, placement, capacity, and rollout. Core remains the execution system of record.",
-  "info.workerGroupOperator.selfManagedBody":
-    "The deployment owner operates Worker Groups through Core APIs and deployment tooling. Core does not provision Kubernetes or autoscaling resources.",
-  "info.workerGroupOperator.hostUnavailable":
-    "The host did not provide a link to its Worker Group control surface.",
-  "info.workerGroupOperator.metadataOnly":
-    "This setting changes operator guidance only. Core Worker APIs remain available in every mode.",
-  "info.uiMode": "Web UI mode",
-  "info.uiMode.embedded": "Embedded",
   "info.controlPlaneStatus": "Control plane status",
   "info.ready": "Ready",
   "info.notReady": "Not ready",
@@ -740,8 +724,6 @@ export const en = {
   "info.label.triggersCount": "Trigger count",
   "info.label.waitMs": "Wait timeout (ms)",
   "info.label.webUI": "Web UI",
-  "info.label.uiMode": "Web UI mode",
-  "info.label.workerGroupOperator": "Worker Group operator",
   "info.label.workerAPI": "Worker API",
   "info.label.workerToken": "Worker token",
   "release.repairRequired": "repair required",
@@ -2160,22 +2142,6 @@ export const ko = {
   "info.service": "서비스",
   "info.serviceHint": "제어 플레인이 보고한 백엔드 서비스 ID와 준비 상태입니다.",
   "info.serviceID": "서비스 ID",
-  "info.workerGroupOperations": "워커 그룹 운영",
-  "info.workerGroupOperationsHint":
-    "이 Core 인스턴스의 워커 그룹 생명주기와 용량을 누가 운영하는지 보여줍니다.",
-  "info.workerGroupOperator": "워커 그룹 운영 주체",
-  "info.workerGroupOperator.external": "외부 제어 플레인",
-  "info.workerGroupOperator.selfManaged": "배포 소유자",
-  "info.workerGroupOperator.externalBody":
-    "외부 제어 플레인이 워커 그룹 생성, 자격 증명, 배치, 용량 및 롤아웃을 운영합니다. Core는 실행 상태의 단일 정본을 유지합니다.",
-  "info.workerGroupOperator.selfManagedBody":
-    "배포 소유자가 Core API와 배포 도구로 워커 그룹을 운영합니다. Core 자체는 Kubernetes 리소스나 오토스케일링 리소스를 프로비저닝하지 않습니다.",
-  "info.workerGroupOperator.hostUnavailable":
-    "호스트가 워커 그룹 운영 화면으로 이동할 링크를 제공하지 않았습니다.",
-  "info.workerGroupOperator.metadataOnly":
-    "이 설정은 운영 안내만 바꿉니다. Core 워커 API는 모든 모드에서 계속 사용할 수 있습니다.",
-  "info.uiMode": "Web UI 모드",
-  "info.uiMode.embedded": "내장",
   "info.controlPlaneStatus": "제어 플레인 상태",
   "info.ready": "준비됨",
   "info.notReady": "준비되지 않음",
@@ -2219,8 +2185,6 @@ export const ko = {
   "info.label.triggersCount": "트리거 수",
   "info.label.waitMs": "대기 제한 시간(ms)",
   "info.label.webUI": "Web UI",
-  "info.label.uiMode": "Web UI 모드",
-  "info.label.workerGroupOperator": "워커 그룹 운영 주체",
   "info.label.workerAPI": "워커 API",
   "info.label.workerToken": "워커 토큰",
   "release.repairRequired": "복구 필요",
