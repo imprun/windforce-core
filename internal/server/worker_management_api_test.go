@@ -235,6 +235,45 @@ func TestManagedWorkerCredentialAndDrainContract(t *testing.T) {
 	}
 }
 
+func TestManagedWorkerCredentialAllowsEmptyLabels(t *testing.T) {
+	server, _ := newWorkerPlaneServer(t)
+	for _, test := range []struct {
+		name  string
+		group string
+		body  string
+	}{
+		{name: "empty array", group: "group-empty", body: `{"operation_id":"op-empty-labels","expected_generation":0,"workspace_ids":["ws-a"],"labels":[]}`},
+		{name: "omitted", group: "group-omitted", body: `{"operation_id":"op-omitted-labels","expected_generation":0,"workspace_ids":["ws-a"]}`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			url := server.URL + "/api/worker-groups/" + test.group + "/credentials"
+			status, body := workerManagementRequest(t, http.MethodPost, url, "admin-secret", test.body)
+			if status != http.StatusCreated {
+				t.Fatalf("create empty-label credential = %d: %s", status, body)
+			}
+			var issued issuedWorkerCredential
+			if err := json.Unmarshal(body, &issued); err != nil {
+				t.Fatal(err)
+			}
+			if issued.Credential.Labels == nil || len(issued.Credential.Labels) != 0 {
+				t.Fatalf("created credential labels = %#v, want non-nil empty slice", issued.Credential.Labels)
+			}
+
+			status, body = workerManagementRequest(t, http.MethodGet, url, "admin-secret", "")
+			if status != http.StatusOK {
+				t.Fatalf("list empty-label credentials = %d: %s", status, body)
+			}
+			var listed []workerCredentialResponse
+			if err := json.Unmarshal(body, &listed); err != nil {
+				t.Fatal(err)
+			}
+			if len(listed) != 1 || listed[0].Labels == nil || len(listed[0].Labels) != 0 {
+				t.Fatalf("listed empty-label credentials = %#v", listed)
+			}
+		})
+	}
+}
+
 func TestManagedWorkerArtifactRequiresOwnedLease(t *testing.T) {
 	tempDir := t.TempDir()
 	store := state.NewLocalStore(filepath.Join(tempDir, "state.json"))

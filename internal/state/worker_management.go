@@ -147,6 +147,9 @@ func NormalizeWorkerCredentialScope(workspaceIDs []string, labels []string) ([]s
 	if err != nil {
 		return nil, nil, err
 	}
+	if normalizedLabels == nil {
+		normalizedLabels = []string{}
+	}
 	return workspaces, normalizedLabels, nil
 }
 
