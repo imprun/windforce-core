@@ -330,36 +330,37 @@ func parseLogStreamTTL(value string) (time.Duration, error) {
 }
 
 type jobStatusResponse struct {
-	ID               string          `json:"id"`
-	WorkspaceID      string          `json:"workspace_id"`
-	State            string          `json:"state"`
-	Status           *string         `json:"status,omitempty"`
-	SchedulingReason *string         `json:"scheduling_reason,omitempty"`
-	Worker           *string         `json:"worker,omitempty"`
-	TraceID          string          `json:"trace_id,omitempty"`
-	AppKey           *string         `json:"app_key,omitempty"`
-	ActionKey        *string         `json:"action_key,omitempty"`
-	TriggerKind      *string         `json:"trigger_kind,omitempty"`
-	Kind             *string         `json:"kind,omitempty"`
-	GitSourceID      *int64          `json:"git_source_id,omitempty"`
-	CommitSha        *string         `json:"commit_sha,omitempty"`
-	Entrypoint       *string         `json:"entrypoint,omitempty"`
-	InputSchema      json.RawMessage `json:"input_schema,omitempty"`
-	OutputSchema     json.RawMessage `json:"output_schema,omitempty"`
-	Tag              string          `json:"tag,omitempty"`
-	TimeoutS         int32           `json:"timeout_s,omitempty"`
-	CreatedBy        string          `json:"created_by,omitempty"`
-	PermissionedAs   string          `json:"permissioned_as,omitempty"`
-	Input            json.RawMessage `json:"input,omitempty"`
-	CreatedAt        *time.Time      `json:"created_at,omitempty"`
-	StartedAt        *time.Time      `json:"started_at,omitempty"`
-	CompletedAt      *time.Time      `json:"completed_at,omitempty"`
-	DurationMs       int64           `json:"duration_ms,omitempty"`
-	CanceledBy       *string         `json:"canceled_by,omitempty"`
-	CanceledReason   *string         `json:"canceled_reason,omitempty"`
-	FlowRunID        *string         `json:"flow_run_id,omitempty"`
-	FlowKey          *string         `json:"flow_key,omitempty"`
-	FlowStepKey      *string         `json:"flow_step_key,omitempty"`
+	ID               string                      `json:"id"`
+	WorkspaceID      string                      `json:"workspace_id"`
+	State            string                      `json:"state"`
+	Status           *string                     `json:"status,omitempty"`
+	SchedulingReason *string                     `json:"scheduling_reason,omitempty"`
+	Worker           *string                     `json:"worker,omitempty"`
+	TraceID          string                      `json:"trace_id,omitempty"`
+	AppKey           *string                     `json:"app_key,omitempty"`
+	ActionKey        *string                     `json:"action_key,omitempty"`
+	TriggerKind      *string                     `json:"trigger_kind,omitempty"`
+	Kind             *string                     `json:"kind,omitempty"`
+	GitSourceID      *int64                      `json:"git_source_id,omitempty"`
+	CommitSha        *string                     `json:"commit_sha,omitempty"`
+	Entrypoint       *string                     `json:"entrypoint,omitempty"`
+	InputSchema      json.RawMessage             `json:"input_schema,omitempty"`
+	OutputSchema     json.RawMessage             `json:"output_schema,omitempty"`
+	Tag              string                      `json:"tag,omitempty"`
+	TimeoutS         int32                       `json:"timeout_s,omitempty"`
+	ExecutionLimits  canonicalExecutionLimitPins `json:"execution_limits,omitempty,omitzero"`
+	CreatedBy        string                      `json:"created_by,omitempty"`
+	PermissionedAs   string                      `json:"permissioned_as,omitempty"`
+	Input            json.RawMessage             `json:"input,omitempty"`
+	CreatedAt        *time.Time                  `json:"created_at,omitempty"`
+	StartedAt        *time.Time                  `json:"started_at,omitempty"`
+	CompletedAt      *time.Time                  `json:"completed_at,omitempty"`
+	DurationMs       int64                       `json:"duration_ms,omitempty"`
+	CanceledBy       *string                     `json:"canceled_by,omitempty"`
+	CanceledReason   *string                     `json:"canceled_reason,omitempty"`
+	FlowRunID        *string                     `json:"flow_run_id,omitempty"`
+	FlowKey          *string                     `json:"flow_key,omitempty"`
+	FlowStepKey      *string                     `json:"flow_step_key,omitempty"`
 }
 
 func hasCompatibleExecutionWorker(job state.Job, workers []state.WorkerRecord, now time.Time) bool {
@@ -402,34 +403,35 @@ func newJobStatus(workspaceID string, job state.Job, run state.Run) jobStatusRes
 		tag = contract.EffectiveRouteTagForAction(job.Payload.PinnedDeployment(), job.Payload.ActionSpec)
 	}
 	response := jobStatusResponse{
-		ID:             job.ID,
-		WorkspaceID:    contract.NormalizeWorkspace(workspaceID),
-		State:          stateValue,
-		Status:         statusValue,
-		Worker:         worker,
-		TraceID:        firstNonEmpty(telemetry.TraceID(job.TraceContext), telemetry.TraceID(run.TraceContext)),
-		AppKey:         stringPtr(app),
-		ActionKey:      stringPtr(action),
-		TriggerKind:    stringPtr(jobStatusTriggerKind(job, run)),
-		Kind:           stringPtr(kind),
-		GitSourceID:    canonicalGitSourceIDPtr(job.Payload.GitSourceID),
-		CommitSha:      stringPtr(commit),
-		Entrypoint:     stringPtr(jobStatusEntrypoint(job)),
-		InputSchema:    cloneRaw(job.Payload.InputSchema),
-		OutputSchema:   cloneRaw(job.Payload.OutputSchema),
-		Tag:            tag,
-		TimeoutS:       timeoutSeconds(job.Payload.ActionSpec.TimeoutMs),
-		CreatedBy:      firstNonEmpty(strings.TrimSpace(job.Payload.CreatedBy), strings.TrimSpace(run.CreatedBy)),
-		PermissionedAs: firstNonEmpty(strings.TrimSpace(job.Payload.PermissionedAs), strings.TrimSpace(run.PermissionedAs), strings.TrimSpace(job.Payload.CreatedBy), strings.TrimSpace(run.CreatedBy)),
-		Input:          cloneRaw(job.Payload.Input),
-		CreatedAt:      &job.CreatedAt,
-		StartedAt:      startedAt,
-		CompletedAt:    completedAt,
-		CanceledBy:     firstPresentStringPtr(job.CanceledBy, jobStatusCanceledBy(run)),
-		CanceledReason: firstPresentStringPtr(job.CanceledReason, jobStatusCanceledReason(run)),
-		FlowRunID:      stringPtr(job.Payload.FlowRunID),
-		FlowKey:        stringPtr(job.Payload.FlowKey),
-		FlowStepKey:    stringPtr(job.Payload.FlowStepKey),
+		ID:              job.ID,
+		WorkspaceID:     contract.NormalizeWorkspace(workspaceID),
+		State:           stateValue,
+		Status:          statusValue,
+		Worker:          worker,
+		TraceID:         firstNonEmpty(telemetry.TraceID(job.TraceContext), telemetry.TraceID(run.TraceContext)),
+		AppKey:          stringPtr(app),
+		ActionKey:       stringPtr(action),
+		TriggerKind:     stringPtr(jobStatusTriggerKind(job, run)),
+		Kind:            stringPtr(kind),
+		GitSourceID:     canonicalGitSourceIDPtr(job.Payload.GitSourceID),
+		CommitSha:       stringPtr(commit),
+		Entrypoint:      stringPtr(jobStatusEntrypoint(job)),
+		InputSchema:     cloneRaw(job.Payload.InputSchema),
+		OutputSchema:    cloneRaw(job.Payload.OutputSchema),
+		Tag:             tag,
+		TimeoutS:        timeoutSeconds(job.Payload.ActionSpec.TimeoutMs),
+		ExecutionLimits: newCanonicalExecutionLimitPins(job.Payload.ExecutionLimits),
+		CreatedBy:       firstNonEmpty(strings.TrimSpace(job.Payload.CreatedBy), strings.TrimSpace(run.CreatedBy)),
+		PermissionedAs:  firstNonEmpty(strings.TrimSpace(job.Payload.PermissionedAs), strings.TrimSpace(run.PermissionedAs), strings.TrimSpace(job.Payload.CreatedBy), strings.TrimSpace(run.CreatedBy)),
+		Input:           cloneRaw(job.Payload.Input),
+		CreatedAt:       &job.CreatedAt,
+		StartedAt:       startedAt,
+		CompletedAt:     completedAt,
+		CanceledBy:      firstPresentStringPtr(job.CanceledBy, jobStatusCanceledBy(run)),
+		CanceledReason:  firstPresentStringPtr(job.CanceledReason, jobStatusCanceledReason(run)),
+		FlowRunID:       stringPtr(job.Payload.FlowRunID),
+		FlowKey:         stringPtr(job.Payload.FlowKey),
+		FlowStepKey:     stringPtr(job.Payload.FlowStepKey),
 	}
 	if run.Result != nil {
 		response.DurationMs = run.Result.DurationMs

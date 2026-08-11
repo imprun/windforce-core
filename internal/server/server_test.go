@@ -2836,6 +2836,7 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 		"scriptLang": "typescript",
 		"timeout": 120,
 		"maxConcurrent": 2,
+		"executionLimits": {"concurrency": [{"id": "message", "maxConcurrent": 1, "inputPointers": ["/message"]}]},
 		"capabilities": ["browser"],
 		"actions": {
 			"echo": {
@@ -2867,6 +2868,7 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 
 	fileCatalog := catalog.NewFileCatalog(filepath.Join(tempDir, "catalog.json"))
 	stateStore := state.NewLocalStore(filepath.Join(tempDir, "state.json"))
+	stateStore.ConfigureInputCrypto("canonical-control-plane-test-secret", "")
 	if _, err := stateStore.CreateWorkspace(context.Background(), "ws-a", "ws-a", "test"); err != nil {
 		t.Fatal(err)
 	}
@@ -3281,15 +3283,16 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 	}
 	var appBody struct {
 		App struct {
-			AppKey               string    `json:"app_key"`
-			GitSourceID          int64     `json:"git_source_id"`
-			Entrypoint           string    `json:"entrypoint"`
-			ScriptLang           string    `json:"script_lang"`
-			TimeoutS             int32     `json:"timeout_s"`
-			MaxConcurrent        *int32    `json:"max_concurrent"`
-			RequiredCapabilities []string  `json:"required_capabilities"`
-			EffectiveRouteTag    string    `json:"effective_route_tag"`
-			UpdatedAt            time.Time `json:"updated_at"`
+			AppKey               string                   `json:"app_key"`
+			GitSourceID          int64                    `json:"git_source_id"`
+			Entrypoint           string                   `json:"entrypoint"`
+			ScriptLang           string                   `json:"script_lang"`
+			TimeoutS             int32                    `json:"timeout_s"`
+			MaxConcurrent        *int32                   `json:"max_concurrent"`
+			ExecutionLimits      canonicalExecutionLimits `json:"execution_limits"`
+			RequiredCapabilities []string                 `json:"required_capabilities"`
+			EffectiveRouteTag    string                   `json:"effective_route_tag"`
+			UpdatedAt            time.Time                `json:"updated_at"`
 		} `json:"app"`
 		Actions []struct {
 			ActionKey             string          `json:"action_key"`
@@ -3305,6 +3308,7 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 	if appBody.App.AppKey != "echo" || appBody.App.GitSourceID != registered.ID ||
 		appBody.App.Entrypoint != "main.ts" || appBody.App.ScriptLang != "typescript" ||
 		appBody.App.TimeoutS != 120 || appBody.App.MaxConcurrent == nil || *appBody.App.MaxConcurrent != 2 ||
+		len(appBody.App.ExecutionLimits.Concurrency) != 1 || appBody.App.ExecutionLimits.Concurrency[0].ID != "message" ||
 		!reflect.DeepEqual(appBody.App.RequiredCapabilities, []string{"browser"}) || appBody.App.EffectiveRouteTag != "default" ||
 		appBody.App.UpdatedAt.IsZero() ||
 		len(appBody.Actions) != 1 || appBody.Actions[0].ActionKey != "echo" || appBody.Actions[0].DisplayName != "Echo message" ||
@@ -3344,6 +3348,9 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 
 	runBody := admitTestRun(t, stateStore, server.URL, "ws-a", "echo", "echo", `{"message":"hello"}`)
 	admittedJob := testJobForRun(t, stateStore, runBody.RunID)
+	if len(admittedJob.Payload.ExecutionLimits.Concurrency) != 1 || strings.Contains(string(mustRaw(admittedJob.Payload.ExecutionLimits)), "hello") {
+		t.Fatalf("admitted execution-limit pins = %#v", admittedJob.Payload.ExecutionLimits)
+	}
 	statusResp, err := http.Get(server.URL + "/api/w/ws-a/jobs/" + admittedJob.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -3353,14 +3360,15 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 		t.Fatalf("status status = %d, want %d", statusResp.StatusCode, http.StatusOK)
 	}
 	var statusBody struct {
-		InputSchema    json.RawMessage `json:"input_schema"`
-		OutputSchema   json.RawMessage `json:"output_schema"`
-		Input          json.RawMessage `json:"input"`
-		CommitSha      string          `json:"commit_sha"`
-		Entrypoint     string          `json:"entrypoint"`
-		Tag            string          `json:"tag"`
-		CreatedBy      string          `json:"created_by"`
-		PermissionedAs string          `json:"permissioned_as"`
+		InputSchema     json.RawMessage             `json:"input_schema"`
+		OutputSchema    json.RawMessage             `json:"output_schema"`
+		Input           json.RawMessage             `json:"input"`
+		CommitSha       string                      `json:"commit_sha"`
+		Entrypoint      string                      `json:"entrypoint"`
+		Tag             string                      `json:"tag"`
+		ExecutionLimits canonicalExecutionLimitPins `json:"execution_limits"`
+		CreatedBy       string                      `json:"created_by"`
+		PermissionedAs  string                      `json:"permissioned_as"`
 	}
 	if err := json.NewDecoder(statusResp.Body).Decode(&statusBody); err != nil {
 		t.Fatal(err)
@@ -3371,6 +3379,8 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 		statusBody.CommitSha != syncBody.Commit ||
 		statusBody.Entrypoint != "main.ts" ||
 		statusBody.Tag != "default" ||
+		len(statusBody.ExecutionLimits.Concurrency) != 1 ||
+		!strings.HasPrefix(statusBody.ExecutionLimits.Concurrency[0].KeyDigest, "hmac-sha256:") ||
 		statusBody.CreatedBy != "operator:admin" ||
 		statusBody.PermissionedAs != "operator:admin" {
 		t.Fatalf("status body = %#v input_schema:%s output_schema:%s input:%s", statusBody, statusBody.InputSchema, statusBody.OutputSchema, statusBody.Input)

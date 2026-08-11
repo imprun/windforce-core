@@ -1,6 +1,7 @@
 package state
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"sort"
 	"strconv"
@@ -278,6 +279,9 @@ func jobMaxConcurrent(job Job) (int, bool) {
 }
 
 func maxConcurrentReached(snapshot *Snapshot, candidate Job) bool {
+	if keyedConcurrencyReached(snapshot, candidate) {
+		return true
+	}
 	limit, ok := jobMaxConcurrent(candidate)
 	if !ok {
 		return false
@@ -297,6 +301,52 @@ func maxConcurrentReached(snapshot *Snapshot, candidate Job) bool {
 		}
 	}
 	return running >= limit
+}
+
+func keyedConcurrencyReached(snapshot *Snapshot, candidate Job) bool {
+	for _, limit := range candidate.Payload.ExecutionLimits.Concurrency {
+		if !validKeyedConcurrencyPin(limit) {
+			return true
+		}
+		running := 0
+		for _, job := range snapshot.Jobs {
+			if job.State != JobRunning || normalizedJobWorkspace("", job) != normalizedJobWorkspace("", candidate) {
+				continue
+			}
+			if jobHasKeyedConcurrencyPin(job, limit) {
+				running++
+			}
+		}
+		if running >= int(limit.MaxConcurrent) {
+			return true
+		}
+	}
+	return false
+}
+
+func validKeyedConcurrencyPin(limit KeyedConcurrencyLimitPin) bool {
+	return strings.TrimSpace(limit.PolicyID) != "" &&
+		validExecutionLimitDigest(limit.PolicyRevision, "sha256:") &&
+		(limit.Scope == ExecutionLimitScopeApp || limit.Scope == ExecutionLimitScopeAction) &&
+		validExecutionLimitDigest(limit.KeyDigest, "hmac-sha256:") &&
+		limit.MaxConcurrent > 0
+}
+
+func validExecutionLimitDigest(value string, prefix string) bool {
+	if !strings.HasPrefix(value, prefix) || len(value) != len(prefix)+64 {
+		return false
+	}
+	_, err := hex.DecodeString(value[len(prefix):])
+	return err == nil
+}
+
+func jobHasKeyedConcurrencyPin(job Job, candidate KeyedConcurrencyLimitPin) bool {
+	for _, running := range job.Payload.ExecutionLimits.Concurrency {
+		if running.PolicyID == candidate.PolicyID && running.Scope == candidate.Scope && running.KeyDigest == candidate.KeyDigest {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeClaimTags(tags []string) map[string]struct{} {

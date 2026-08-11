@@ -160,6 +160,7 @@ func (s *Syncer) inspect(ctx context.Context, src Source) (inspectedSource, erro
 		ScriptLang:           app.ScriptLang,
 		TimeoutS:             app.TimeoutS,
 		MaxConcurrent:        app.MaxConcurrent,
+		ExecutionLimits:      app.ExecutionLimits,
 		RequiredCapabilities: app.Capabilities,
 		RequiredLabels:       app.RunsOn,
 		Commit:               commit,

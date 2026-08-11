@@ -106,6 +106,7 @@ type Run struct {
 	Deployment          contract.Deployment      `json:"deployment"`
 	Input               json.RawMessage          `json:"input,omitempty"`
 	InputConfigResolved bool                     `json:"inputConfigResolved,omitempty"`
+	ExecutionLimits     ExecutionLimitPins       `json:"executionLimits,omitempty,omitzero"`
 	Output              json.RawMessage          `json:"output,omitempty"`
 	Result              *contract.JobResult      `json:"result,omitempty"`
 	Error               json.RawMessage          `json:"error,omitempty"`
@@ -140,6 +141,7 @@ type JobPayload struct {
 	ScriptLang            string                    `json:"scriptLang,omitempty"`
 	TimeoutS              int32                     `json:"timeout,omitempty"`
 	MaxConcurrent         *int32                    `json:"maxConcurrent,omitempty"`
+	ExecutionLimits       ExecutionLimitPins        `json:"executionLimits,omitempty,omitzero"`
 	RequiredCapabilities  []string                  `json:"requiredCapabilities,omitempty"`
 	RequiredLabels        []string                  `json:"requiredLabels,omitempty"`
 	DeploymentID          *string                   `json:"deploymentId,omitempty"`
@@ -169,6 +171,26 @@ type JobPayload struct {
 	FlowStepID     string               `json:"flowStepId,omitempty"`
 	FlowKey        string               `json:"flowKey,omitempty"`
 	FlowStepKey    string               `json:"flowStepKey,omitempty"`
+}
+
+// ExecutionLimitPins are the safe, immutable execution-limit decisions made
+// during Admission. Raw key components and JSON pointers are not stored here.
+type ExecutionLimitPins struct {
+	Concurrency []KeyedConcurrencyLimitPin `json:"concurrency,omitempty"`
+}
+
+const (
+	ExecutionLimitScopeApp    = "app"
+	ExecutionLimitScopeAction = "action"
+)
+
+// KeyedConcurrencyLimitPin is a per-Run opaque concurrency key.
+type KeyedConcurrencyLimitPin struct {
+	PolicyID       string `json:"policyId"`
+	PolicyRevision string `json:"policyRevision"`
+	Scope          string `json:"scope"`
+	KeyDigest      string `json:"keyDigest"`
+	MaxConcurrent  int32  `json:"maxConcurrent"`
 }
 
 type Job struct {
@@ -920,6 +942,7 @@ func NewActionJob(run Run, input json.RawMessage) Job {
 	actionSpec.InputSchemaBody = nil
 	actionSpec.OutputSchemaBody = nil
 	actionSpec.OperatorSettingsSchemaBody = nil
+	actionSpec.ExecutionLimits = contract.ExecutionLimits{}
 	now := time.Now().UTC()
 	return Job{
 		ID:           NewID("job"),
@@ -945,6 +968,7 @@ func NewActionJob(run Run, input json.RawMessage) Job {
 			ScriptLang:            run.Deployment.ScriptLang,
 			TimeoutS:              run.Deployment.TimeoutS,
 			MaxConcurrent:         cloneInt32Pointer(run.Deployment.MaxConcurrent),
+			ExecutionLimits:       cloneExecutionLimitPins(run.ExecutionLimits),
 			RequiredCapabilities:  append([]string(nil), run.Deployment.RequiredCapabilities...),
 			RequiredLabels:        contract.EffectiveRequiredLabels(run.Deployment, actionSpec),
 			DeploymentID:          cloneStringPointer(run.Deployment.DeploymentID),
@@ -970,6 +994,12 @@ func NewActionJob(run Run, input json.RawMessage) Job {
 			PrincipalKind:  run.PrincipalKind,
 			PrincipalID:    run.PrincipalID,
 		},
+	}
+}
+
+func cloneExecutionLimitPins(pins ExecutionLimitPins) ExecutionLimitPins {
+	return ExecutionLimitPins{
+		Concurrency: append([]KeyedConcurrencyLimitPin(nil), pins.Concurrency...),
 	}
 }
 

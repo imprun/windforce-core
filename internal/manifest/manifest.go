@@ -83,6 +83,10 @@ func parseNamed(data []byte, fileName string) (contract.App, error) {
 	if app.MaxConcurrent != nil && *app.MaxConcurrent <= 0 {
 		return contract.App{}, fmt.Errorf("app %s maxConcurrent must be positive in %s", app.App, fileName)
 	}
+	app.ExecutionLimits, err = contract.NormalizeExecutionLimits(app.ExecutionLimits)
+	if err != nil {
+		return contract.App{}, fmt.Errorf("app %s executionLimits: %w", app.App, err)
+	}
 	caps, err := contract.NormalizeCapabilities(app.Capabilities)
 	if err != nil {
 		return contract.App{}, fmt.Errorf("app %s capabilities: %w", app.App, err)
@@ -109,6 +113,10 @@ func parseNamed(data []byte, fileName string) (contract.App, error) {
 			return contract.App{}, fmt.Errorf("action %s.%s runtime is not supported in %s; set app scriptLang once for the Release", app.App, name, fileName)
 		}
 		clearRuntimeOwnedActionManifestFields(&action)
+		action.ExecutionLimits, err = contract.NormalizeExecutionLimits(action.ExecutionLimits)
+		if err != nil {
+			return contract.App{}, fmt.Errorf("action %s.%s executionLimits: %w", app.App, name, err)
+		}
 		if action.Capabilities != nil {
 			caps, err := contract.NormalizeCapabilities(*action.Capabilities)
 			if err != nil {

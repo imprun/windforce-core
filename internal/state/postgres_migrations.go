@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS runs (
     state TEXT NOT NULL,
     deployment JSONB NOT NULL,
     input JSONB NOT NULL,
+	execution_limits JSONB NOT NULL DEFAULT '{}'::jsonb,
     output JSONB,
     result JSONB,
     error JSONB,
@@ -589,6 +590,7 @@ ALTER TABLE runs ADD COLUMN IF NOT EXISTS request_fingerprint TEXT;
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS created_by TEXT NOT NULL DEFAULT 'system';
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS permissioned_as TEXT NOT NULL DEFAULT 'system';
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS trace_context JSONB;
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS execution_limits JSONB NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ;
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS canceled_by TEXT;
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS canceled_reason TEXT;
@@ -651,6 +653,10 @@ CREATE INDEX IF NOT EXISTS jobs_running_app_idx
         (COALESCE(NULLIF(payload->>'workspace', ''), NULLIF(payload->'deployment'->>'workspace', ''), 'default')),
         (COALESCE(NULLIF(payload->>'app', ''), NULLIF(payload->'deployment'->>'app', ''), ''))
     )
+    WHERE state = 'running';
+
+CREATE INDEX IF NOT EXISTS jobs_running_execution_limits_idx
+    ON jobs USING GIN ((payload->'executionLimits'->'concurrency') jsonb_path_ops)
     WHERE state = 'running';
 
 CREATE INDEX IF NOT EXISTS jobs_lease_idx

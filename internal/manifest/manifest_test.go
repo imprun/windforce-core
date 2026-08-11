@@ -320,6 +320,56 @@ func TestParseRejectsInvalidMaxConcurrent(t *testing.T) {
 	}
 }
 
+func TestParseNormalizesAppAndActionExecutionLimits(t *testing.T) {
+	app, err := Parse([]byte(`{
+		"app": "echo",
+		"entrypoint": "main.ts",
+		"executionLimits": {
+			"concurrency": [{
+				"id": "account",
+				"maxConcurrent": 2,
+				"inputPointers": ["/account/id"]
+			}]
+		},
+		"actions": {
+			"run": {
+				"executionLimits": {
+					"concurrency": [{
+						"id": "egress",
+						"maxConcurrent": 1,
+						"inputPointers": ["/egress~1name"]
+					}]
+				}
+			}
+		}
+	}`))
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	if got := app.ExecutionLimits.Concurrency; len(got) != 1 || got[0].ID != "account" || got[0].InputPointers[0] != "/account/id" {
+		t.Fatalf("app execution limits = %#v", got)
+	}
+	if got := app.Actions["run"].ExecutionLimits.Concurrency; len(got) != 1 || got[0].ID != "egress" || got[0].InputPointers[0] != "/egress~1name" {
+		t.Fatalf("action execution limits = %#v", got)
+	}
+}
+
+func TestParseRejectsInvalidExecutionLimits(t *testing.T) {
+	for name, limit := range map[string]string{
+		"missing pointers": `{"id":"account","maxConcurrent":1,"inputPointers":[]}`,
+		"invalid pointer":  `{"id":"account","maxConcurrent":1,"inputPointers":["account"]}`,
+		"invalid escape":   `{"id":"account","maxConcurrent":1,"inputPointers":["/account~2id"]}`,
+		"invalid max":      `{"id":"account","maxConcurrent":0,"inputPointers":["/account"]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := Parse([]byte(`{"app":"echo","entrypoint":"main.ts","executionLimits":{"concurrency":[` + limit + `]},"actions":{"run":{}}}`))
+			if err == nil || !strings.Contains(err.Error(), "executionLimits") {
+				t.Fatalf("Parse error = %v, want executionLimits validation", err)
+			}
+		})
+	}
+}
+
 func TestParseIgnoresActionNameFieldAndUsesMapKey(t *testing.T) {
 	app, err := Parse([]byte(`{
 		"app": "echo",

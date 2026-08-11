@@ -384,6 +384,30 @@ func TestPostgresStoreClaimJobEnforcesMaxConcurrent(t *testing.T) {
 	exerciseStoreMaxConcurrent(t, store)
 }
 
+func TestLocalStoreClaimJobEnforcesKeyedConcurrency(t *testing.T) {
+	store := NewLocalStore(t.TempDir() + "/state.json")
+	exerciseStoreKeyedConcurrency(t, store)
+}
+
+func TestPostgresStoreClaimJobEnforcesKeyedConcurrency(t *testing.T) {
+	dsn := postgresTestDSN()
+	if dsn == "" {
+		t.Skip("WINDFORCE_CORE_POSTGRES_TEST_DSN is not set")
+	}
+	store, err := OpenPostgresStore(context.Background(), dsn)
+	if err != nil {
+		t.Fatalf("OpenPostgresStore returned error: %v", err)
+	}
+	defer store.Close()
+	if err := store.Migrate(context.Background()); err != nil {
+		t.Fatalf("Migrate returned error: %v", err)
+	}
+	if _, err := store.pool.Exec(context.Background(), `TRUNCATE job_logs, run_events, human_tasks, jobs, runs RESTART IDENTITY CASCADE`); err != nil {
+		t.Fatalf("TRUNCATE returned error: %v", err)
+	}
+	exerciseStoreKeyedConcurrency(t, store)
+}
+
 func TestPostgresClaimCandidatesFilterBeforeLockingAndBoundEachBatch(t *testing.T) {
 	dsn := postgresTestDSN()
 	if dsn == "" {
@@ -420,6 +444,19 @@ func TestPostgresClaimCandidatesFilterBeforeLockingAndBoundEachBatch(t *testing.
 		job := NewActionJob(run, nil)
 		if err := store.CreateRunAndEnqueue(context.Background(), run, job); err != nil {
 			t.Fatalf("CreateRunAndEnqueue returned error: %v", err)
+		}
+		return job
+	}
+	enqueueKeyed := func(pin KeyedConcurrencyLimitPin) Job {
+		t.Helper()
+		deployment := maxConcurrentDeployment("echo", nil)
+		deployment.Tag = "gpu"
+		deployment.RequiredLabels = []string{"linux"}
+		run := NewRun("test", "", deployment.App, "echo", deployment, json.RawMessage(`{}`))
+		run.ExecutionLimits = ExecutionLimitPins{Concurrency: []KeyedConcurrencyLimitPin{pin}}
+		job := NewActionJob(run, nil)
+		if err := store.CreateRunAndEnqueue(context.Background(), run, job); err != nil {
+			t.Fatalf("CreateRunAndEnqueue keyed returned error: %v", err)
 		}
 		return job
 	}
@@ -515,6 +552,25 @@ func TestPostgresClaimCandidatesFilterBeforeLockingAndBoundEachBatch(t *testing.
 	}
 	if claimed.ID != wanted.ID {
 		t.Fatalf("claimed job behind saturated app = %q, want %q", claimed.ID, wanted.ID)
+	}
+
+	truncate()
+	shared := keyedConcurrencyPin("account", strings.Repeat("f", 64), 1)
+	other := keyedConcurrencyPin("account", strings.Repeat("0", 64), 1)
+	enqueueKeyed(shared)
+	if _, _, err := store.ClaimJobForWorker(context.Background(), "keyed-limited-worker", []string{"gpu"}, []string{"linux"}, time.Minute); err != nil {
+		t.Fatalf("claim keyed limited running job: %v", err)
+	}
+	for range postgresClaimCandidateBatchSize {
+		enqueueKeyed(shared)
+	}
+	wanted = enqueueKeyed(other)
+	claimed, _, err = store.ClaimJobForWorker(context.Background(), "keyed-available-worker", []string{"gpu"}, []string{"linux"}, time.Minute)
+	if err != nil {
+		t.Fatalf("claim behind saturated keyed limit: %v", err)
+	}
+	if claimed.ID != wanted.ID {
+		t.Fatalf("claimed job behind saturated keyed limit = %q, want %q", claimed.ID, wanted.ID)
 	}
 }
 
@@ -967,6 +1023,80 @@ func exerciseStoreMaxConcurrent(t *testing.T, store Store) {
 	}
 }
 
+func exerciseStoreKeyedConcurrency(t *testing.T, store Store) {
+	t.Helper()
+	ctx := context.Background()
+	base := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
+	shared := keyedConcurrencyPin("account", strings.Repeat("a", 64), 1)
+	other := keyedConcurrencyPin("account", strings.Repeat("b", 64), 1)
+	firstShared := enqueueKeyedConcurrencyJob(t, store, "run-keyed-1", shared, base)
+	secondShared := enqueueKeyedConcurrencyJob(t, store, "run-keyed-2", shared, base.Add(time.Second))
+	differentKey := enqueueKeyedConcurrencyJob(t, store, "run-keyed-3", other, base.Add(2*time.Second))
+
+	claimed, firstLease, err := store.ClaimJobForWorker(ctx, "worker-keyed-first", []string{"default"}, nil, time.Minute)
+	if err != nil {
+		t.Fatalf("first keyed claim returned error: %v", err)
+	}
+	if claimed.ID != firstShared.ID {
+		t.Fatalf("first keyed claim = %q, want %q", claimed.ID, firstShared.ID)
+	}
+	claimed, _, err = store.ClaimJobForWorker(ctx, "worker-keyed-other", []string{"default"}, nil, time.Minute)
+	if err != nil {
+		t.Fatalf("different-key claim returned error: %v", err)
+	}
+	if claimed.ID != differentKey.ID {
+		t.Fatalf("different-key claim = %q, want %q", claimed.ID, differentKey.ID)
+	}
+	if _, _, err := store.ClaimJobForWorker(ctx, "worker-keyed-blocked", []string{"default"}, nil, time.Minute); err != ErrNoQueuedJob {
+		t.Fatalf("blocked keyed claim error = %v, want %v", err, ErrNoQueuedJob)
+	}
+	if err := store.CompleteJobSucceeded(ctx, firstLease, contract.JobResult{
+		JobID: firstShared.ID, App: "echo", Action: "echo", Output: json.RawMessage(`{"ok":true}`),
+	}); err != nil {
+		t.Fatalf("complete keyed job: %v", err)
+	}
+	claimed, _, err = store.ClaimJobForWorker(ctx, "worker-keyed-next", []string{"default"}, nil, time.Minute)
+	if err != nil {
+		t.Fatalf("unblocked keyed claim returned error: %v", err)
+	}
+	if claimed.ID != secondShared.ID {
+		t.Fatalf("unblocked keyed claim = %q, want %q", claimed.ID, secondShared.ID)
+	}
+}
+
+func keyedConcurrencyPin(policyID string, digest string, maxConcurrent int32) KeyedConcurrencyLimitPin {
+	return KeyedConcurrencyLimitPin{
+		PolicyID:       policyID,
+		PolicyRevision: "sha256:" + strings.Repeat("c", 64),
+		Scope:          ExecutionLimitScopeApp,
+		KeyDigest:      "hmac-sha256:" + digest,
+		MaxConcurrent:  maxConcurrent,
+	}
+}
+
+func enqueueKeyedConcurrencyJob(t *testing.T, store Store, runID string, pin KeyedConcurrencyLimitPin, createdAt time.Time) Job {
+	t.Helper()
+	deployment := maxConcurrentDeployment("echo", nil)
+	run := NewRun("windforce", runID, "echo", "echo", deployment, json.RawMessage(`{}`))
+	run.ExecutionLimits = ExecutionLimitPins{Concurrency: []KeyedConcurrencyLimitPin{pin}}
+	job := NewActionJob(run, nil)
+	run.CreatedAt = createdAt
+	run.UpdatedAt = createdAt
+	job.CreatedAt = createdAt
+	job.UpdatedAt = createdAt
+	if err := store.CreateRunAndEnqueue(context.Background(), run, job); err != nil {
+		t.Fatalf("CreateRunAndEnqueue(%s): %v", runID, err)
+	}
+	storedJob, storedRun, found, err := store.GetJobByRunID(context.Background(), "ws-a", runID)
+	if err != nil || !found {
+		t.Fatalf("GetJobByRunID(%s) = found %v, err %v", runID, found, err)
+	}
+	if len(storedJob.Payload.ExecutionLimits.Concurrency) != 1 || len(storedRun.ExecutionLimits.Concurrency) != 1 {
+		t.Fatalf("execution-limit pins did not round-trip: job=%#v run=%#v", storedJob.Payload.ExecutionLimits, storedRun.ExecutionLimits)
+	}
+	return job
+}
+
 func maxConcurrentDeployment(app string, limit *int32) contract.Deployment {
 	gitSourceID := "1"
 	if app != "echo" {
@@ -1008,6 +1138,9 @@ func exerciseStoreLifecycle(t *testing.T, store Store) {
 		},
 	}
 	run := NewRun("windforce", "run-a", "echo", "echo", deployment, json.RawMessage(`{"message":"hello"}`))
+	run.ExecutionLimits = ExecutionLimitPins{Concurrency: []KeyedConcurrencyLimitPin{
+		keyedConcurrencyPin("account", strings.Repeat("1", 64), 1),
+	}}
 	run.CorrelationID = "task-a"
 	run.TraceContext, _ = telemetry.ParseCarrier("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01", "vendor=value", "http")
 	job := NewActionJob(run, nil)
@@ -1139,6 +1272,9 @@ func exerciseStoreLifecycle(t *testing.T, store Store) {
 	if !strings.Contains(input, `"$resume"`) || !strings.Contains(input, `"approved":true`) {
 		t.Fatalf("resume job input = %s", input)
 	}
+	if len(resumeJob.Payload.ExecutionLimits.Concurrency) != 1 || resumeJob.Payload.ExecutionLimits.Concurrency[0].KeyDigest != run.ExecutionLimits.Concurrency[0].KeyDigest {
+		t.Fatalf("resume execution limits = %#v", resumeJob.Payload.ExecutionLimits)
+	}
 
 	canceled, err := store.CancelRun(context.Background(), run.ID, "operator canceled")
 	if err != nil {
@@ -1159,6 +1295,9 @@ func exerciseStoreLifecycle(t *testing.T, store Store) {
 	}
 	if retried.TraceContext != run.TraceContext || retryJob.TraceContext != run.TraceContext {
 		t.Fatalf("retry trace context run=%#v job=%#v", retried.TraceContext, retryJob.TraceContext)
+	}
+	if len(retryJob.Payload.ExecutionLimits.Concurrency) != 1 || retryJob.Payload.ExecutionLimits.Concurrency[0].KeyDigest != run.ExecutionLimits.Concurrency[0].KeyDigest {
+		t.Fatalf("retry execution limits = %#v", retryJob.Payload.ExecutionLimits)
 	}
 	var retryInput struct {
 		Message string `json:"message"`

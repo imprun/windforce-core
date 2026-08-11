@@ -45,6 +45,7 @@ func buildQueueDemandSnapshot(storeEpoch string, revision int64, observedAt time
 	observedAt = observedAt.UTC()
 	items := make([]QueueDemand, 0, len(selectors))
 	baseRunning := activeRunningByApp(jobs, observedAt)
+	baseKeyedRunning := activeRunningByKeyedConcurrency(jobs, observedAt)
 
 	for _, rawSelector := range selectors {
 		selector := normalizeQueueDemandSelector(rawSelector)
@@ -82,13 +83,20 @@ func buildQueueDemandSnapshot(storeEpoch string, revision int64, observedAt time
 		})
 
 		running := cloneDemandCounts(baseRunning)
+		keyedRunning := cloneDemandCounts(baseKeyedRunning)
 		for _, candidate := range candidates {
 			appKey := demandAppKey(candidate)
 			if limit, limited := jobMaxConcurrent(candidate); limited && appKey != "" && running[appKey] >= limit {
 				continue
 			}
+			if demandKeyedConcurrencyReached(candidate, keyedRunning) {
+				continue
+			}
 			if appKey != "" {
 				running[appKey]++
+			}
+			for _, limit := range candidate.Payload.ExecutionLimits.Concurrency {
+				keyedRunning[keyedConcurrencyCountKey(candidate, limit)]++
 			}
 			item.Eligible++
 			if candidate.State == JobQueued {
@@ -111,6 +119,34 @@ func buildQueueDemandSnapshot(storeEpoch string, revision int64, observedAt time
 		ObservedAt:       observedAt,
 		Items:            items,
 	}
+}
+
+func activeRunningByKeyedConcurrency(jobs []Job, observedAt time.Time) map[string]int {
+	counts := map[string]int{}
+	for _, job := range jobs {
+		if !activeQueueLease(job, observedAt) {
+			continue
+		}
+		for _, limit := range job.Payload.ExecutionLimits.Concurrency {
+			if validKeyedConcurrencyPin(limit) {
+				counts[keyedConcurrencyCountKey(job, limit)]++
+			}
+		}
+	}
+	return counts
+}
+
+func demandKeyedConcurrencyReached(candidate Job, running map[string]int) bool {
+	for _, limit := range candidate.Payload.ExecutionLimits.Concurrency {
+		if !validKeyedConcurrencyPin(limit) || running[keyedConcurrencyCountKey(candidate, limit)] >= int(limit.MaxConcurrent) {
+			return true
+		}
+	}
+	return false
+}
+
+func keyedConcurrencyCountKey(job Job, limit KeyedConcurrencyLimitPin) string {
+	return normalizedJobWorkspace("", job) + "\x00" + limit.Scope + "\x00" + limit.PolicyID + "\x00" + limit.KeyDigest
 }
 
 func normalizeQueueDemandSelector(selector QueueDemandSelector) QueueDemandSelector {

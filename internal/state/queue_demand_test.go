@@ -2,6 +2,7 @@ package state
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 )
@@ -154,5 +155,33 @@ func claimQueueDemandJob(t *testing.T, store queueDemandContractStore, workerID 
 	}
 	if job.ID != expectedJobID {
 		t.Fatalf("claimed job = %q, want %q", job.ID, expectedJobID)
+	}
+}
+
+func TestQueueDemandExcludesJobsBlockedByKeyedConcurrency(t *testing.T) {
+	observedAt := time.Date(2026, 8, 11, 0, 0, 0, 0, time.UTC)
+	shared := keyedConcurrencyPin("account", strings.Repeat("d", 64), 1)
+	other := keyedConcurrencyPin("account", strings.Repeat("e", 64), 1)
+	job := func(id string, state JobState, pin KeyedConcurrencyLimitPin, createdAt time.Time) Job {
+		var leaseExpiresAt *time.Time
+		if state == JobRunning {
+			value := observedAt.Add(time.Minute)
+			leaseExpiresAt = &value
+		}
+		return Job{
+			ID: id, State: state, CreatedAt: createdAt, LeaseExpiresAt: leaseExpiresAt,
+			Payload: JobPayload{
+				Workspace: "ws-a", App: "echo", Action: "run", Tag: "default",
+				ExecutionLimits: ExecutionLimitPins{Concurrency: []KeyedConcurrencyLimitPin{pin}},
+			},
+		}
+	}
+	snapshot := buildQueueDemandSnapshot("epoch", 1, observedAt, []Job{
+		job("running-shared", JobRunning, shared, observedAt.Add(-time.Minute)),
+		job("queued-shared", JobQueued, shared, observedAt),
+		job("queued-other", JobQueued, other, observedAt.Add(time.Second)),
+	}, []QueueDemandSelector{{Key: "default", WorkspaceID: "ws-a", Tags: []string{"default"}}})
+	if len(snapshot.Items) != 1 || snapshot.Items[0].Eligible != 1 || snapshot.Items[0].Queued != 1 {
+		t.Fatalf("keyed queue demand = %#v, want only the different key eligible", snapshot.Items)
 	}
 }
