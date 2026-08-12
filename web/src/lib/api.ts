@@ -256,6 +256,17 @@ export type RoutingPolicyPatch = {
   required_labels_override?: string[] | null;
 };
 
+export type ExecutionProfileView = {
+  version: string;
+  key: string;
+  id?: string;
+  os: string;
+  arch: string;
+  runtime: string;
+  runtimeAbi: string;
+  libc: string;
+};
+
 export type WorkerView = {
   id: string;
   group?: string;
@@ -263,6 +274,7 @@ export type WorkerView = {
   build_revision?: string;
   tags: string[];
   labels: string[];
+  execution_profiles: ExecutionProfileView[];
   slots: number;
   live: boolean;
   started_at: string;

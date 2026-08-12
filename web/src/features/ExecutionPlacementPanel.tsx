@@ -371,6 +371,10 @@ export function countMatchingWorkers(
 ): number {
   return workers.filter((worker) => {
     if (!worker.live || (worker.tags.length > 0 && !worker.tags.includes(routeTag))) return false;
-    return labels.every((label) => worker.labels.includes(label));
+    const placementLabels = new Set(worker.labels);
+    for (const profile of worker.execution_profiles ?? []) {
+      placementLabels.add(`sys/execution-profile-${profile.key.slice(0, 24)}`);
+    }
+    return labels.every((label) => placementLabels.has(label));
   }).length;
 }
