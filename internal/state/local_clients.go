@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/imprun/windforce-core/internal/contract"
@@ -17,7 +18,7 @@ func (s *LocalStore) ListClients(ctx context.Context, workspaceID string) ([]Cli
 	workspaceID = contract.NormalizeWorkspace(workspaceID)
 	clients := make([]Client, 0, len(snapshot.Clients[workspaceID]))
 	for _, client := range snapshot.Clients[workspaceID] {
-		clients = append(clients, client)
+		clients = append(clients, cloneClient(client))
 	}
 	sort.Slice(clients, func(i, j int) bool {
 		if clients[i].Name != clients[j].Name {
@@ -37,7 +38,7 @@ func (s *LocalStore) GetClient(ctx context.Context, workspaceID string, id strin
 	if !ok {
 		return Client{}, ErrNotFound
 	}
-	return client, nil
+	return cloneClient(client), nil
 }
 
 func (s *LocalStore) GetClientByTokenHash(ctx context.Context, workspaceID string, tokenHash string) (Client, error) {
@@ -47,31 +48,42 @@ func (s *LocalStore) GetClientByTokenHash(ctx context.Context, workspaceID strin
 	}
 	for _, client := range snapshot.Clients[contract.NormalizeWorkspace(workspaceID)] {
 		if tokenHash != "" && client.TokenHash == tokenHash {
-			return client, nil
+			return cloneClient(client), nil
 		}
 	}
 	return Client{}, ErrNotFound
 }
 
 func (s *LocalStore) CreateClient(ctx context.Context, workspaceID string, name string, tokenHash string, actor string) (Client, error) {
-	workspaceID = contract.NormalizeWorkspace(workspaceID)
+	return s.CreateClientWithInvocationPolicy(ctx, CreateClientRequest{
+		WorkspaceID: workspaceID, Name: name, TokenHash: tokenHash, Actor: actor,
+	})
+}
+
+func (s *LocalStore) CreateClientWithInvocationPolicy(ctx context.Context, request CreateClientRequest) (Client, error) {
+	request.WorkspaceID = contract.NormalizeWorkspace(request.WorkspaceID)
+	policy, err := initialTargetPolicy(request.InvocationPolicy)
+	if err != nil {
+		return Client{}, ErrInvalidState
+	}
 	var created Client
-	err := s.update(ctx, func(snapshot *Snapshot, now time.Time) error {
-		if snapshot.Clients[workspaceID] == nil {
-			snapshot.Clients[workspaceID] = map[string]Client{}
+	err = s.update(ctx, func(snapshot *Snapshot, now time.Time) error {
+		if snapshot.Clients[request.WorkspaceID] == nil {
+			snapshot.Clients[request.WorkspaceID] = map[string]Client{}
 		}
-		if clientTokenHashExists(snapshot.Clients[workspaceID], tokenHash, "") {
+		if clientTokenHashExists(snapshot.Clients[request.WorkspaceID], request.TokenHash, "") {
 			return fmt.Errorf("%w: client token already exists", ErrConflict)
 		}
 		created = Client{
-			ID: NewID("client"), WorkspaceID: workspaceID, Name: name, TokenHash: tokenHash,
-			CreatedBy: actor, UpdatedBy: actor, CreatedAt: now, UpdatedAt: now,
+			ID: NewID("client"), WorkspaceID: request.WorkspaceID, Name: request.Name, TokenHash: request.TokenHash,
+			InvocationPolicy: policy,
+			CreatedBy:        request.Actor, UpdatedBy: request.Actor, CreatedAt: now, UpdatedAt: now,
 		}
-		snapshot.Clients[workspaceID][created.ID] = created
-		appendLocalClientAudit(snapshot, workspaceID, created.ID, "created", "", actor, now)
+		snapshot.Clients[request.WorkspaceID][created.ID] = created
+		appendLocalClientAudit(snapshot, request.WorkspaceID, created.ID, "created", clientInvocationPolicyDetail(created), request.Actor, now)
 		return nil
 	})
-	return created, err
+	return cloneClient(created), err
 }
 
 func (s *LocalStore) UpdateClient(ctx context.Context, workspaceID string, id string, name string, actor string) (Client, error) {
@@ -88,10 +100,53 @@ func (s *LocalStore) UpdateClient(ctx context.Context, workspaceID string, id st
 		current.UpdatedAt = now
 		snapshot.Clients[workspaceID][id] = current
 		appendLocalClientAudit(snapshot, workspaceID, id, "updated", detail, actor, now)
-		updated = current
+		updated = cloneClient(current)
 		return nil
 	})
 	return updated, err
+}
+
+func (s *LocalStore) UpdateClientInvocationPolicy(ctx context.Context, request UpdateClientInvocationPolicyRequest) (Client, bool, error) {
+	request.WorkspaceID = contract.NormalizeWorkspace(request.WorkspaceID)
+	request.ClientID = strings.TrimSpace(request.ClientID)
+	request.OperationID = strings.TrimSpace(request.OperationID)
+	request.RequestFingerprint = strings.TrimSpace(request.RequestFingerprint)
+	request.Actor = strings.TrimSpace(request.Actor)
+	policy, err := NormalizeTargetPolicy(request.Policy)
+	if err != nil || request.ClientID == "" || request.ExpectedRevision < 0 || request.OperationID == "" ||
+		len(request.OperationID) > 128 || CleanID(request.OperationID) != request.OperationID || request.RequestFingerprint == "" {
+		return Client{}, false, ErrInvalidState
+	}
+	var updated Client
+	replayed := false
+	err = s.update(ctx, func(snapshot *Snapshot, now time.Time) error {
+		current, ok := snapshot.Clients[request.WorkspaceID][request.ClientID]
+		if !ok {
+			return ErrNotFound
+		}
+		if current.InvocationPolicyOperationID == request.OperationID {
+			if current.InvocationPolicyRequestFingerprint != request.RequestFingerprint {
+				return ErrConflict
+			}
+			updated = cloneClient(current)
+			replayed = true
+			return nil
+		}
+		if current.InvocationPolicyRevision != request.ExpectedRevision {
+			return ErrConflict
+		}
+		current.InvocationPolicy = policy
+		current.InvocationPolicyRevision++
+		current.InvocationPolicyOperationID = request.OperationID
+		current.InvocationPolicyRequestFingerprint = request.RequestFingerprint
+		current.UpdatedBy = request.Actor
+		current.UpdatedAt = now
+		snapshot.Clients[request.WorkspaceID][request.ClientID] = current
+		appendLocalClientAudit(snapshot, request.WorkspaceID, request.ClientID, "invocation_policy_updated", clientInvocationPolicyDetail(current), request.Actor, now)
+		updated = cloneClient(current)
+		return nil
+	})
+	return updated, replayed, err
 }
 
 func (s *LocalStore) RotateClientToken(ctx context.Context, workspaceID string, id string, tokenHash string, actor string) (Client, error) {
@@ -113,7 +168,7 @@ func (s *LocalStore) RotateClientToken(ctx context.Context, workspaceID string, 
 		current.UpdatedAt = now
 		snapshot.Clients[workspaceID][id] = current
 		appendLocalClientAudit(snapshot, workspaceID, id, "token_rotated", "", actor, now)
-		updated = current
+		updated = cloneClient(current)
 		return nil
 	})
 	return updated, err
@@ -135,7 +190,7 @@ func (s *LocalStore) RevokeClientToken(ctx context.Context, workspaceID string, 
 		current.UpdatedAt = now
 		snapshot.Clients[workspaceID][id] = current
 		appendLocalClientAudit(snapshot, workspaceID, id, "token_revoked", "", actor, now)
-		updated = current
+		updated = cloneClient(current)
 		return nil
 	})
 	return updated, err
@@ -210,4 +265,10 @@ func clientChangeDetail(current Client, name string) string {
 		return "name changed"
 	}
 	return "no value change"
+}
+
+func cloneClient(client Client) Client {
+	client.InvocationPolicy = client.EffectiveInvocationPolicy()
+	client.InvocationPolicy.AllowedTargets = append([]string{}, client.InvocationPolicy.AllowedTargets...)
+	return client
 }

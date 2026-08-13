@@ -1,5 +1,8 @@
+import { readFile } from "node:fs/promises";
 import { describe, expect, test } from "vitest";
 import { formatInputSettingValue } from "./InputSettingScopeList";
+
+const source = await readFile(new URL("./AppInputSettings.tsx", import.meta.url), "utf8");
 
 describe("formatInputSettingValue", () => {
   test("preserves JSON scalar types", () => {
@@ -14,5 +17,12 @@ describe("formatInputSettingValue", () => {
   "region": "kr",
   "retries": 2
 }`);
+  });
+});
+
+describe("app-caller input-setting navigation", () => {
+  test("keeps editing in app detail and links caller identity to its access overview", () => {
+    expect(source).toMatch(/<Link to=\{`\/clients\/\$\{selectedClient\.id\}`\}>/);
+    expect(source).not.toMatch(/\/clients\/\$\{selectedClient\.id\}\/input-settings/);
   });
 });

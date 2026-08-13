@@ -34,12 +34,13 @@ type Metadata struct {
 }
 
 type Spec struct {
-	Name        string      `json:"name,omitempty" yaml:"name,omitempty"`
-	AppKey      string      `json:"appKey,omitempty" yaml:"appKey,omitempty"`
-	ActionKey   string      `json:"actionKey,omitempty" yaml:"actionKey,omitempty"`
-	ClientRef   string      `json:"clientRef,omitempty" yaml:"clientRef,omitempty"`
-	ClientKey   ValueSource `json:"clientKey,omitempty" yaml:"clientKey,omitempty"`
-	ExternalKey ValueSource `json:"externalKey,omitempty" yaml:"externalKey,omitempty"`
+	Name             string                `json:"name,omitempty" yaml:"name,omitempty"`
+	AppKey           string                `json:"appKey,omitempty" yaml:"appKey,omitempty"`
+	ActionKey        string                `json:"actionKey,omitempty" yaml:"actionKey,omitempty"`
+	ClientRef        string                `json:"clientRef,omitempty" yaml:"clientRef,omitempty"`
+	ClientKey        ValueSource           `json:"clientKey,omitempty" yaml:"clientKey,omitempty"`
+	ExternalKey      ValueSource           `json:"externalKey,omitempty" yaml:"externalKey,omitempty"`
+	InvocationPolicy *InvocationPolicySpec `json:"invocationPolicy,omitempty" yaml:"invocationPolicy,omitempty"`
 
 	Method     string      `json:"method,omitempty" yaml:"method,omitempty"`
 	StorageRef string      `json:"storageRef,omitempty" yaml:"storageRef,omitempty"`
@@ -56,6 +57,11 @@ type Spec struct {
 	Repository Repository     `json:"repository,omitempty" yaml:"repository,omitempty"`
 	Config     map[string]any `json:"config,omitempty" yaml:"config,omitempty"`
 	LockedKeys []string       `json:"lockedKeys,omitempty" yaml:"lockedKeys,omitempty"`
+}
+
+type InvocationPolicySpec struct {
+	Mode           string   `json:"mode" yaml:"mode"`
+	AllowedTargets []string `json:"allowedTargets" yaml:"allowedTargets"`
 }
 
 type Repository struct {
@@ -292,11 +298,17 @@ func (s Service) Export(ctx context.Context, workspace string, includeValues boo
 		return nil, err
 	}
 	for _, client := range clients {
+		policy := client.EffectiveInvocationPolicy()
 		docs = append(docs, Document{
 			APIVersion: APIVersion,
 			Kind:       "Client",
 			Metadata:   Metadata{Name: client.Name},
-			Spec:       Spec{Name: client.Name},
+			Spec: Spec{
+				Name: client.Name,
+				InvocationPolicy: &InvocationPolicySpec{
+					Mode: policy.Mode, AllowedTargets: append([]string{}, policy.AllowedTargets...),
+				},
+			},
 		})
 	}
 	variables, err := s.Store.ListVariables(ctx, workspace)
@@ -411,18 +423,89 @@ func (s Service) applyClient(ctx context.Context, doc Document, options Options)
 	if valueSourceHasCredential(doc.Spec.ExternalKey) || valueSourceHasCredential(doc.Spec.ClientKey) {
 		return state.Client{}, "", errors.New("client credentials are issued and rotated through the control plane API")
 	}
+	desiredPolicy, hasDesiredPolicy, err := provisioningTargetPolicy(doc.Spec.InvocationPolicy)
+	if err != nil {
+		return state.Client{}, "", err
+	}
 	client, err := s.clientByName(ctx, options.Workspace, name)
 	if err == nil {
-		return client, "unchanged", nil
+		updated, changed, err := s.applyClientInvocationPolicy(ctx, client, desiredPolicy, hasDesiredPolicy, options)
+		if err != nil {
+			return state.Client{}, "", err
+		}
+		if changed {
+			return updated, dryRunAction(options, "updated"), nil
+		}
+		return updated, "unchanged", nil
 	}
 	if !errors.Is(err, state.ErrNotFound) {
 		return state.Client{}, "", err
 	}
 	if options.DryRun {
-		return state.Client{ID: stableID("client", name), Name: name}, "validated", nil
+		client = state.Client{ID: stableID("client", name), WorkspaceID: options.Workspace, Name: name}
+		if hasDesiredPolicy {
+			client.InvocationPolicy = desiredPolicy
+		}
+		return client, "validated", nil
 	}
-	created, err := s.Store.CreateClient(ctx, options.Workspace, name, "", options.Actor)
+	var initialPolicy *state.TargetPolicy
+	if hasDesiredPolicy {
+		initialPolicy = &desiredPolicy
+	}
+	created, err := s.Store.CreateClientWithInvocationPolicy(ctx, state.CreateClientRequest{
+		WorkspaceID: options.Workspace, Name: name, InvocationPolicy: initialPolicy, Actor: options.Actor,
+	})
 	return created, "created", err
+}
+
+func provisioningTargetPolicy(spec *InvocationPolicySpec) (state.TargetPolicy, bool, error) {
+	if spec == nil {
+		return state.TargetPolicy{}, false, nil
+	}
+	policy, err := state.NormalizeTargetPolicy(state.TargetPolicy{
+		Mode: spec.Mode, AllowedTargets: spec.AllowedTargets,
+	})
+	if err != nil {
+		return state.TargetPolicy{}, false, fmt.Errorf("invalid invocationPolicy: %w", err)
+	}
+	return policy, true, nil
+}
+
+func (s Service) applyClientInvocationPolicy(ctx context.Context, client state.Client, desired state.TargetPolicy, present bool, options Options) (state.Client, bool, error) {
+	if !present || sameTargetPolicy(client.EffectiveInvocationPolicy(), desired) {
+		return client, false, nil
+	}
+	if options.DryRun {
+		client.InvocationPolicy = desired
+		client.InvocationPolicyRevision++
+		return client, true, nil
+	}
+	requestSeed, _ := json.Marshal(struct {
+		ClientID         string             `json:"client_id"`
+		ExpectedRevision int64              `json:"expected_revision"`
+		Policy           state.TargetPolicy `json:"policy"`
+	}{client.ID, client.InvocationPolicyRevision, desired})
+	operationID := stableID("provision_policy", string(requestSeed))
+	updated, _, err := s.Store.UpdateClientInvocationPolicy(ctx, state.UpdateClientInvocationPolicyRequest{
+		WorkspaceID: options.Workspace, ClientID: client.ID, Policy: desired,
+		OperationID: operationID, ExpectedRevision: client.InvocationPolicyRevision,
+		RequestFingerprint: stableID("request", string(requestSeed)), Actor: options.Actor,
+	})
+	return updated, true, err
+}
+
+func sameTargetPolicy(left state.TargetPolicy, right state.TargetPolicy) bool {
+	left = state.EffectiveTargetPolicy(left)
+	right = state.EffectiveTargetPolicy(right)
+	if left.Mode != right.Mode || len(left.AllowedTargets) != len(right.AllowedTargets) {
+		return false
+	}
+	for index := range left.AllowedTargets {
+		if left.AllowedTargets[index] != right.AllowedTargets[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func (s Service) applyVariable(ctx context.Context, doc Document, options Options) (string, string, error) {

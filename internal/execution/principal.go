@@ -47,6 +47,7 @@ type Principal struct {
 	Subject        string
 	Scopes         []Scope
 	AllowedTargets []string
+	TargetPolicy   state.TargetPolicy
 }
 
 func (p Principal) Normalized() Principal {
@@ -80,6 +81,9 @@ func (p Principal) Normalized() Principal {
 		targets = append(targets, target)
 	}
 	p.AllowedTargets = targets
+	if p.Kind == PrincipalClient {
+		p.TargetPolicy = state.EffectiveTargetPolicy(p.TargetPolicy)
+	}
 	return p
 }
 
@@ -96,7 +100,13 @@ func (p Principal) HasScope(scope Scope) bool {
 }
 
 func (p Principal) AllowsTarget(app string, action string) bool {
-	if p.Kind == PrincipalOperator || len(p.AllowedTargets) == 0 {
+	if p.Kind == PrincipalOperator {
+		return true
+	}
+	if p.Kind == PrincipalClient {
+		return p.TargetPolicy.Allows(app, action)
+	}
+	if len(p.AllowedTargets) == 0 {
 		return true
 	}
 	target := strings.TrimSpace(app) + "/" + strings.TrimSpace(action)
@@ -134,6 +144,7 @@ func DefaultClientPrincipal(workspace string, client state.Client) Principal {
 			ScopeRunsCancelOwn,
 			ScopeAppsRead,
 		},
+		TargetPolicy: client.EffectiveInvocationPolicy(),
 	}.Normalized()
 }
 

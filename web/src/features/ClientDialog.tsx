@@ -1,9 +1,10 @@
 import { Check, Copy } from "lucide-react";
 import { useState } from "react";
-import { ConfirmDialog, Field, Modal } from "../components/ui";
+import { ConfirmDialog, Field, Modal, SelectControl } from "../components/ui";
 import { type Client, errorMessage } from "../lib/api";
 import { useApp } from "../lib/app-context";
 import { translate } from "../shared/i18n";
+import { normalizeAllowedTargets } from "./ClientInvocationPolicy";
 
 type ConfirmationKind = "close" | "rotate" | "revoke" | "delete";
 
@@ -20,6 +21,8 @@ export function ClientDialog({
 }) {
   const { api, notify } = useApp();
   const [name, setName] = useState(client?.name || "");
+  const [initialPolicyMode, setInitialPolicyMode] = useState<"all" | "restricted">("restricted");
+  const [initialTargetText, setInitialTargetText] = useState("");
   const [hasToken, setHasToken] = useState(client?.has_token || false);
   const [issuedToken, setIssuedToken] = useState("");
   const [tokenCopied, setTokenCopied] = useState(false);
@@ -28,6 +31,7 @@ export function ClientDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const normalizedName = name.trim();
+  const initialTargets = normalizeAllowedTargets(initialTargetText);
   const dirty = !client || normalizedName !== client.name;
 
   function finish() {
@@ -56,7 +60,13 @@ export function ClientDialog({
         notify("ok", translate("clients.updated", { name: normalizedName }));
         onSaved();
       } else {
-        const result = await api.createClient({ name: normalizedName });
+        const result = await api.createClient({
+          name: normalizedName,
+          invocation_policy: {
+            mode: initialPolicyMode,
+            allowed_targets: initialPolicyMode === "all" ? [] : initialTargets,
+          },
+        });
         setIssuedToken(result.api_token);
         setTokenCopied(false);
         setHasToken(result.client.has_token);
@@ -221,6 +231,7 @@ export function ClientDialog({
         title={client ? translate("clients.edit") : translate("clients.register")}
         subtitle={client ? translate("clients.editHint") : translate("clients.registrationHint")}
         onClose={requestClose}
+        wide={!client}
       >
         <div className="clientDialogForm">
           <Field label={translate("common.name")}>
@@ -287,7 +298,46 @@ export function ClientDialog({
               </section>
             </>
           ) : (
-            <div className="inlineNotice">{translate("clients.registrationTokenHint")}</div>
+            <>
+              <Field label={translate("clients.policy.mode")}>
+                <SelectControl
+                  value={initialPolicyMode}
+                  onChange={(value) => setInitialPolicyMode(value as "all" | "restricted")}
+                  ariaLabel={translate("clients.policy.mode")}
+                  options={[
+                    {
+                      value: "restricted",
+                      label: translate("clients.policy.modeRestricted"),
+                      description: translate("clients.policy.modeRestrictedHint"),
+                    },
+                    {
+                      value: "all",
+                      label: translate("clients.policy.modeAll"),
+                      description: translate("clients.policy.modeAllHint"),
+                    },
+                  ]}
+                />
+              </Field>
+              {initialPolicyMode === "restricted" ? (
+                <Field
+                  label={translate("clients.policy.allowedTargets")}
+                  hint={translate("clients.policy.targetsHint")}
+                >
+                  <textarea
+                    rows={6}
+                    spellCheck={false}
+                    autoCapitalize="none"
+                    value={initialTargetText}
+                    placeholder={"orders\norders/create"}
+                    onChange={(event) => setInitialTargetText(event.target.value)}
+                  />
+                </Field>
+              ) : null}
+              {initialPolicyMode === "restricted" && initialTargets.length === 0 ? (
+                <div className="inlineNotice">{translate("clients.policy.denyAllHint")}</div>
+              ) : null}
+              <div className="inlineNotice">{translate("clients.registrationTokenHint")}</div>
+            </>
           )}
         </div>
         {error ? <div className="inlineNotice error">{error}</div> : null}

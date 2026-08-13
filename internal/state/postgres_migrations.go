@@ -269,12 +269,39 @@ CREATE TABLE IF NOT EXISTS client_registry (
     id TEXT NOT NULL,
     name TEXT NOT NULL,
     token_hash TEXT NOT NULL DEFAULT '',
+    invocation_policy_mode TEXT NOT NULL DEFAULT 'all',
+    invocation_allowed_targets TEXT[] NOT NULL DEFAULT '{}',
+    invocation_policy_revision BIGINT NOT NULL DEFAULT 0,
+    invocation_policy_operation_id TEXT NOT NULL DEFAULT '',
+    invocation_policy_request_fingerprint TEXT NOT NULL DEFAULT '',
     created_by TEXT NOT NULL,
     updated_by TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (workspace_id, id)
 );
+
+ALTER TABLE client_registry ADD COLUMN IF NOT EXISTS invocation_policy_mode TEXT NOT NULL DEFAULT 'all';
+ALTER TABLE client_registry ADD COLUMN IF NOT EXISTS invocation_allowed_targets TEXT[] NOT NULL DEFAULT '{}';
+ALTER TABLE client_registry ADD COLUMN IF NOT EXISTS invocation_policy_revision BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE client_registry ADD COLUMN IF NOT EXISTS invocation_policy_operation_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE client_registry ADD COLUMN IF NOT EXISTS invocation_policy_request_fingerprint TEXT NOT NULL DEFAULT '';
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'client_registry_invocation_policy_mode_check' AND conrelid = 'client_registry'::regclass) THEN
+        ALTER TABLE client_registry ADD CONSTRAINT client_registry_invocation_policy_mode_check
+            CHECK (invocation_policy_mode IN ('all', 'restricted'));
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'client_registry_invocation_policy_revision_check' AND conrelid = 'client_registry'::regclass) THEN
+        ALTER TABLE client_registry ADD CONSTRAINT client_registry_invocation_policy_revision_check
+            CHECK (invocation_policy_revision >= 0);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'client_registry_invocation_policy_targets_check' AND conrelid = 'client_registry'::regclass) THEN
+        ALTER TABLE client_registry ADD CONSTRAINT client_registry_invocation_policy_targets_check
+            CHECK (invocation_policy_mode <> 'all' OR cardinality(invocation_allowed_targets) = 0);
+    END IF;
+END $$;
 
 ALTER TABLE client_registry DROP CONSTRAINT IF EXISTS client_registry_workspace_id_external_key_key;
 ALTER TABLE client_registry DROP CONSTRAINT IF EXISTS client_registry_workspace_id_client_key_key;

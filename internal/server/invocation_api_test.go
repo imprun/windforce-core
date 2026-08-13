@@ -40,6 +40,12 @@ func TestInvocationAPIPrincipalAuthorizationAndIdempotency(t *testing.T) {
 				InputSchemaBody:  json.RawMessage(`{"type":"object","required":["message"]}`),
 				OutputSchemaBody: json.RawMessage(`{"type":"object","required":["echo"]}`),
 			},
+			"hidden": {
+				Action:           "hidden",
+				Entrypoint:       "hidden.py",
+				InputSchemaBody:  json.RawMessage(`{"type":"object","description":"hidden-action-marker"}`),
+				OutputSchemaBody: json.RawMessage(`{"type":"object"}`),
+			},
 		},
 	}
 	if _, err := store.PublishRelease(ctx, deployment, time.Now().UTC()); err != nil {
@@ -71,6 +77,12 @@ func TestInvocationAPIPrincipalAuthorizationAndIdempotency(t *testing.T) {
 	clientToken := contract.ClientTokenPrefix + "client"
 	client, err := store.CreateClient(ctx, "ws-a", "client", state.HashClientToken(clientToken), "admin")
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SetInputConfig(ctx, state.InputConfig{
+		WorkspaceID: "ws-a", AppKey: "echo", ActionKey: "run", ClientID: client.ID,
+		Config: json.RawMessage(`{"message":"client-only"}`), LockedKeys: []string{"message"},
+	}, "admin"); err != nil {
 		t.Fatal(err)
 	}
 	devRequest := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/ws-a/runs", nil)
@@ -146,6 +158,10 @@ func TestInvocationAPIPrincipalAuthorizationAndIdempotency(t *testing.T) {
 	if err != nil || !found || createdJob.TraceContext != run.TraceContext {
 		t.Fatalf("job creation trace = %#v, found=%v err=%v", createdJob.TraceContext, found, err)
 	}
+	var serviceInput map[string]any
+	if err := json.Unmarshal(createdJob.Payload.Input, &serviceInput); err != nil || serviceInput["message"] != "hello" {
+		t.Fatalf("service principal unexpectedly resolved client input settings: %s err=%v", createdJob.Payload.Input, err)
+	}
 
 	currentTraceParent = "00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01"
 	replay, replayBody := call(http.MethodPost, "/api/v1/workspaces/ws-a/runs", firstToken, "request-1", createBody)
@@ -180,8 +196,9 @@ func TestInvocationAPIPrincipalAuthorizationAndIdempotency(t *testing.T) {
 	if operatorCreated.RunID == created.RunID {
 		t.Fatal("idempotency key was not scoped to the authenticated principal")
 	}
+	clientRequestBody := `{"app":"echo","action":"run","input":{},"correlation_id":"request-a"}`
 	clientCreate, clientCreateBody := call(
-		http.MethodPost, "/api/v1/workspaces/ws-a/runs", clientToken, "request-1", createBody,
+		http.MethodPost, "/api/v1/workspaces/ws-a/runs", clientToken, "request-1", clientRequestBody,
 	)
 	if clientCreate.StatusCode != http.StatusCreated {
 		t.Fatalf("client create status = %d: %s", clientCreate.StatusCode, clientCreateBody)
@@ -197,6 +214,87 @@ func TestInvocationAPIPrincipalAuthorizationAndIdempotency(t *testing.T) {
 	if clientRun.PrincipalKind != string(executionpkg.PrincipalClient) ||
 		clientRun.PrincipalID != client.ID || clientRun.ClientID != client.ID {
 		t.Fatalf("persisted client principal = %#v", clientRun)
+	}
+	clientJob, _, found, err := store.GetJobByRunID(ctx, "ws-a", clientCreated.RunID)
+	var clientInput map[string]any
+	inputErr := json.Unmarshal(clientJob.Payload.Input, &clientInput)
+	if err != nil || !found || inputErr != nil || clientInput["message"] != "client-only" {
+		t.Fatalf("client input settings were not resolved: found=%v err=%v inputErr=%v input=%s", found, err, inputErr, clientJob.Payload.Input)
+	}
+	jobsBeforePolicy, err := store.ListJobs(ctx, state.JobListQuery{WorkspaceID: "ws-a", Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, replayed, err := store.UpdateClientInvocationPolicy(ctx, state.UpdateClientInvocationPolicyRequest{
+		WorkspaceID: "ws-a", ClientID: client.ID,
+		Policy:      state.TargetPolicy{Mode: state.TargetPolicyModeRestricted, AllowedTargets: []string{"echo/run"}},
+		OperationID: "restrict-client", ExpectedRevision: 0, RequestFingerprint: "restrict-client-v1", Actor: "admin",
+	}); err != nil || replayed {
+		t.Fatalf("restrict client policy: replayed=%v err=%v", replayed, err)
+	}
+	clientReplay, clientReplayBody := call(
+		http.MethodPost, "/api/v1/workspaces/ws-a/runs", clientToken, "request-1", clientRequestBody,
+	)
+	if clientReplay.StatusCode != http.StatusOK {
+		t.Fatalf("client replay after policy reduction status = %d: %s", clientReplay.StatusCode, clientReplayBody)
+	}
+	var replayedClientRun invocationRunView
+	if err := json.Unmarshal(clientReplayBody, &replayedClientRun); err != nil {
+		t.Fatal(err)
+	}
+	if replayedClientRun.RunID != clientCreated.RunID || !replayedClientRun.Replayed {
+		t.Fatalf("client replay after policy reduction = %#v", replayedClientRun)
+	}
+	clientReplayMismatch, clientReplayMismatchBody := call(
+		http.MethodPost, "/api/v1/workspaces/ws-a/runs", clientToken, "request-1",
+		`{"app":"echo","action":"hidden","input":{}}`,
+	)
+	if clientReplayMismatch.StatusCode != http.StatusConflict {
+		t.Fatalf("client mismatched replay status = %d: %s", clientReplayMismatch.StatusCode, clientReplayMismatchBody)
+	}
+	clientForbidden, clientForbiddenBody := call(
+		http.MethodPost, "/api/v1/workspaces/ws-a/runs", clientToken, "request-2",
+		`{"app":"echo","action":"hidden","input":{}}`,
+	)
+	if clientForbidden.StatusCode != http.StatusForbidden {
+		t.Fatalf("client new forbidden target status = %d: %s", clientForbidden.StatusCode, clientForbiddenBody)
+	}
+	jobsAfterPolicy, err := store.ListJobs(ctx, state.JobListQuery{WorkspaceID: "ws-a", Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(jobsAfterPolicy) != len(jobsBeforePolicy) {
+		t.Fatalf("policy replay/denial created work: before=%d after=%d", len(jobsBeforePolicy), len(jobsAfterPolicy))
+	}
+	clientApp, clientAppBody := call(http.MethodGet, "/api/v1/workspaces/ws-a/apps/echo", clientToken, "", "")
+	if clientApp.StatusCode != http.StatusOK || !bytes.Contains(clientAppBody, []byte(`"run"`)) ||
+		bytes.Contains(clientAppBody, []byte(`"hidden"`)) || bytes.Contains(clientAppBody, []byte("hidden-action-marker")) {
+		t.Fatalf("client action-filtered discovery status = %d: %s", clientApp.StatusCode, clientAppBody)
+	}
+	if _, replayed, err := store.UpdateClientInvocationPolicy(ctx, state.UpdateClientInvocationPolicyRequest{
+		WorkspaceID: "ws-a", ClientID: client.ID,
+		Policy:      state.TargetPolicy{Mode: state.TargetPolicyModeRestricted, AllowedTargets: []string{"echo"}},
+		OperationID: "allow-client-app", ExpectedRevision: 1, RequestFingerprint: "allow-client-app-v2", Actor: "admin",
+	}); err != nil || replayed {
+		t.Fatalf("allow client app policy: replayed=%v err=%v", replayed, err)
+	}
+	clientFullApp, clientFullAppBody := call(http.MethodGet, "/api/v1/workspaces/ws-a/apps/echo", clientToken, "", "")
+	if clientFullApp.StatusCode != http.StatusOK || !bytes.Contains(clientFullAppBody, []byte(`"run"`)) ||
+		!bytes.Contains(clientFullAppBody, []byte(`"hidden"`)) || !bytes.Contains(clientFullAppBody, []byte("hidden-action-marker")) {
+		t.Fatalf("client app-wide discovery status = %d: %s", clientFullApp.StatusCode, clientFullAppBody)
+	}
+	if _, replayed, err := store.UpdateClientInvocationPolicy(ctx, state.UpdateClientInvocationPolicyRequest{
+		WorkspaceID: "ws-a", ClientID: client.ID,
+		Policy:      state.TargetPolicy{Mode: state.TargetPolicyModeRestricted, AllowedTargets: []string{}},
+		OperationID: "deny-client-all", ExpectedRevision: 2, RequestFingerprint: "deny-client-all-v3", Actor: "admin",
+	}); err != nil || replayed {
+		t.Fatalf("deny client policy: replayed=%v err=%v", replayed, err)
+	}
+	clientDenyAll, clientDenyAllBody := call(
+		http.MethodPost, "/api/v1/workspaces/ws-a/runs", clientToken, "request-3", clientRequestBody,
+	)
+	if clientDenyAll.StatusCode != http.StatusForbidden {
+		t.Fatalf("client deny-all status = %d: %s", clientDenyAll.StatusCode, clientDenyAllBody)
 	}
 	clientRead, clientReadBody := call(
 		http.MethodGet, "/api/v1/workspaces/ws-a/runs/"+clientCreated.RunID, clientToken, "", "",

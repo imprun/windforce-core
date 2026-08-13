@@ -39,6 +39,13 @@ resources:
   - kind: Client
     metadata:
       name: Client A
+    spec:
+      invocationPolicy:
+        mode: restricted
+        allowedTargets:
+          - APP/1000
+          - APP
+          - APP/1000
   - kind: InputSettings
     metadata:
       name: app-default
@@ -91,6 +98,14 @@ resources:
 	}
 	if len(clients) != 1 || clients[0].TokenHash != "" {
 		t.Fatalf("clients = %#v", clients)
+	}
+	policy := clients[0].EffectiveInvocationPolicy()
+	if policy.Mode != state.TargetPolicyModeRestricted || strings.Join(policy.AllowedTargets, ",") != "APP,APP/1000" || clients[0].InvocationPolicyRevision != 0 {
+		t.Fatalf("client invocation policy = %#v revision=%d", policy, clients[0].InvocationPolicyRevision)
+	}
+	audits, err := store.ListClientAudit(context.Background(), "default", clients[0].ID)
+	if err != nil || len(audits) != 1 || audits[0].Kind != "created" || !strings.Contains(audits[0].Detail, `"mode":"restricted"`) {
+		t.Fatalf("atomic provisioning audit = %#v err=%v", audits, err)
 	}
 	configs, err := store.ListInputConfigsForClient(context.Background(), "default", clients[0].ID)
 	if err != nil {
@@ -155,6 +170,14 @@ func TestExportedRedactedProvisioningCanRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateClient: %v", err)
 	}
+	client, _, err = store.UpdateClientInvocationPolicy(ctx, state.UpdateClientInvocationPolicyRequest{
+		WorkspaceID: "default", ClientID: client.ID,
+		Policy:      state.TargetPolicy{Mode: state.TargetPolicyModeRestricted, AllowedTargets: []string{"APP/1000"}},
+		OperationID: "test-policy", ExpectedRevision: 0, RequestFingerprint: "test-policy-v1", Actor: "tester",
+	})
+	if err != nil {
+		t.Fatalf("UpdateClientInvocationPolicy: %v", err)
+	}
 	configJSON := json.RawMessage(`{"CACHE":{"TEST":"123"},"PLAIN":"visible"}`)
 	if _, err := store.SetInputConfig(ctx, state.InputConfig{
 		WorkspaceID: "default",
@@ -184,6 +207,9 @@ func TestExportedRedactedProvisioningCanRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EncodeYAML returned error: %v", err)
 	}
+	if !strings.Contains(string(data), "invocationPolicy:") || !strings.Contains(string(data), "APP/1000") {
+		t.Fatalf("export omitted client invocation policy:\n%s", data)
+	}
 	imported, err := Decode(data, ".yaml")
 	if err != nil {
 		t.Fatalf("Decode exported YAML returned error: %v", err)
@@ -193,6 +219,13 @@ func TestExportedRedactedProvisioningCanRoundTrip(t *testing.T) {
 	}
 	if _, err := service.Apply(ctx, imported, Options{Workspace: "default", Actor: "tester"}); err != nil {
 		t.Fatalf("apply of exported redacted provisioning failed: %v\n%s", err, data)
+	}
+	preservedClient, err := store.GetClient(ctx, "default", client.ID)
+	if err != nil {
+		t.Fatalf("GetClient after apply: %v", err)
+	}
+	if preservedClient.InvocationPolicyRevision != 1 || !sameTargetPolicy(preservedClient.EffectiveInvocationPolicy(), client.EffectiveInvocationPolicy()) {
+		t.Fatalf("client invocation policy changed on round trip: %#v", preservedClient)
 	}
 	variable, found, err := store.GetVariableExact(ctx, "default", "", "git/app/credential")
 	if err != nil || !found {

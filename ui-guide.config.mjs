@@ -159,7 +159,13 @@ export default {
     const clientToken = await api("/clients", {
       method: "POST",
       headers: { "x-windforce-actor": "ui-guide@example.test" },
-      body: { name: "Example Retailer" },
+      body: {
+        name: "Example Retailer",
+        invocation_policy: {
+          mode: "restricted",
+          allowed_targets: ["echo/echo"],
+        },
+      },
     });
     await api("/apps/echo/input-configs", {
       method: "PUT",

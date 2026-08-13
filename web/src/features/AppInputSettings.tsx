@@ -227,9 +227,7 @@ export function AppInputSettings({
                   config,
                   primaryLabel: translate("inputSettings.clientScope"),
                   primaryValue: selectedClient ? (
-                    <Link to={`/clients/${selectedClient.id}/input-settings/${detail.app.app_key}`}>
-                      {selectedClient.name}
-                    </Link>
+                    <Link to={`/clients/${selectedClient.id}`}>{selectedClient.name}</Link>
                   ) : (
                     translate("inputSettings.allClients")
                   ),

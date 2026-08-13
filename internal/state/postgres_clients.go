@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -11,10 +12,15 @@ import (
 	"github.com/imprun/windforce-core/internal/contract"
 )
 
+const clientColumns = `id, workspace_id, name, token_hash,
+invocation_policy_mode, invocation_allowed_targets, invocation_policy_revision,
+invocation_policy_operation_id, invocation_policy_request_fingerprint,
+created_by, updated_by, created_at, updated_at`
+
 func (s *PostgresStore) ListClients(ctx context.Context, workspaceID string) ([]Client, error) {
 	workspaceID = contract.NormalizeWorkspace(workspaceID)
 	rows, err := s.pool.Query(ctx, `
-SELECT id, workspace_id, name, token_hash, created_by, updated_by, created_at, updated_at
+SELECT `+clientColumns+`
 FROM client_registry WHERE workspace_id=$1 ORDER BY name, id
 `, workspaceID)
 	if err != nil {
@@ -35,7 +41,7 @@ FROM client_registry WHERE workspace_id=$1 ORDER BY name, id
 func (s *PostgresStore) GetClient(ctx context.Context, workspaceID string, id string) (Client, error) {
 	workspaceID = contract.NormalizeWorkspace(workspaceID)
 	client, err := scanClient(s.pool.QueryRow(ctx, `
-SELECT id, workspace_id, name, token_hash, created_by, updated_by, created_at, updated_at
+SELECT `+clientColumns+`
 FROM client_registry WHERE workspace_id=$1 AND id=$2
 `, workspaceID, id))
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -46,7 +52,7 @@ FROM client_registry WHERE workspace_id=$1 AND id=$2
 
 func (s *PostgresStore) GetClientByTokenHash(ctx context.Context, workspaceID string, tokenHash string) (Client, error) {
 	client, err := scanClient(s.pool.QueryRow(ctx, `
-SELECT id, workspace_id, name, token_hash, created_by, updated_by, created_at, updated_at
+SELECT `+clientColumns+`
 FROM client_registry
 WHERE workspace_id=$1 AND token_hash=$2 AND token_hash <> ''
 `, contract.NormalizeWorkspace(workspaceID), tokenHash))
@@ -57,20 +63,34 @@ WHERE workspace_id=$1 AND token_hash=$2 AND token_hash <> ''
 }
 
 func (s *PostgresStore) CreateClient(ctx context.Context, workspaceID string, name string, tokenHash string, actor string) (Client, error) {
-	workspaceID = contract.NormalizeWorkspace(workspaceID)
+	return s.CreateClientWithInvocationPolicy(ctx, CreateClientRequest{
+		WorkspaceID: workspaceID, Name: name, TokenHash: tokenHash, Actor: actor,
+	})
+}
+
+func (s *PostgresStore) CreateClientWithInvocationPolicy(ctx context.Context, request CreateClientRequest) (Client, error) {
+	request.WorkspaceID = contract.NormalizeWorkspace(request.WorkspaceID)
+	policy, err := initialTargetPolicy(request.InvocationPolicy)
+	if err != nil {
+		return Client{}, ErrInvalidState
+	}
 	id := NewID("client")
 	var created Client
-	err := s.withTx(ctx, func(tx pgx.Tx) error {
+	err = s.withTx(ctx, func(tx pgx.Tx) error {
 		var err error
 		created, err = scanClient(tx.QueryRow(ctx, `
-INSERT INTO client_registry (workspace_id, id, name, token_hash, created_by, updated_by)
-VALUES ($1, $2, $3, $4, $5, $5)
-RETURNING id, workspace_id, name, token_hash, created_by, updated_by, created_at, updated_at
-`, workspaceID, id, name, tokenHash, actor))
+INSERT INTO client_registry (
+    workspace_id, id, name, token_hash,
+    invocation_policy_mode, invocation_allowed_targets,
+    created_by, updated_by
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
+RETURNING `+clientColumns+`
+`, request.WorkspaceID, id, request.Name, request.TokenHash, policy.Mode, policy.AllowedTargets, request.Actor))
 		if err != nil {
 			return clientPostgresError(err)
 		}
-		return insertClientAudit(ctx, tx, workspaceID, id, "created", "", actor)
+		return insertClientAudit(ctx, tx, request.WorkspaceID, id, "created", clientInvocationPolicyDetail(created), request.Actor)
 	})
 	return created, err
 }
@@ -80,7 +100,7 @@ func (s *PostgresStore) UpdateClient(ctx context.Context, workspaceID string, id
 	var updated Client
 	err := s.withTx(ctx, func(tx pgx.Tx) error {
 		current, err := scanClient(tx.QueryRow(ctx, `
-SELECT id, workspace_id, name, token_hash, created_by, updated_by, created_at, updated_at
+SELECT `+clientColumns+`
 FROM client_registry WHERE workspace_id=$1 AND id=$2 FOR UPDATE
 `, workspaceID, id))
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -92,7 +112,7 @@ FROM client_registry WHERE workspace_id=$1 AND id=$2 FOR UPDATE
 		updated, err = scanClient(tx.QueryRow(ctx, `
 UPDATE client_registry SET name=$3, updated_by=$4, updated_at=now()
 WHERE workspace_id=$1 AND id=$2
-RETURNING id, workspace_id, name, token_hash, created_by, updated_by, created_at, updated_at
+RETURNING `+clientColumns+`
 `, workspaceID, id, name, actor))
 		if err != nil {
 			return clientPostgresError(err)
@@ -100,6 +120,59 @@ RETURNING id, workspace_id, name, token_hash, created_by, updated_by, created_at
 		return insertClientAudit(ctx, tx, workspaceID, id, "updated", clientChangeDetail(current, name), actor)
 	})
 	return updated, err
+}
+
+func (s *PostgresStore) UpdateClientInvocationPolicy(ctx context.Context, request UpdateClientInvocationPolicyRequest) (Client, bool, error) {
+	request.WorkspaceID = contract.NormalizeWorkspace(request.WorkspaceID)
+	request.ClientID = strings.TrimSpace(request.ClientID)
+	request.OperationID = strings.TrimSpace(request.OperationID)
+	request.RequestFingerprint = strings.TrimSpace(request.RequestFingerprint)
+	request.Actor = strings.TrimSpace(request.Actor)
+	policy, err := NormalizeTargetPolicy(request.Policy)
+	if err != nil || request.ClientID == "" || request.ExpectedRevision < 0 || request.OperationID == "" ||
+		len(request.OperationID) > 128 || CleanID(request.OperationID) != request.OperationID || request.RequestFingerprint == "" {
+		return Client{}, false, ErrInvalidState
+	}
+	var updated Client
+	replayed := false
+	err = s.withTx(ctx, func(tx pgx.Tx) error {
+		current, getErr := scanClient(tx.QueryRow(ctx, `
+SELECT `+clientColumns+`
+FROM client_registry WHERE workspace_id=$1 AND id=$2 FOR UPDATE
+`, request.WorkspaceID, request.ClientID))
+		if errors.Is(getErr, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		if getErr != nil {
+			return getErr
+		}
+		if current.InvocationPolicyOperationID == request.OperationID {
+			if current.InvocationPolicyRequestFingerprint != request.RequestFingerprint {
+				return ErrConflict
+			}
+			updated = current
+			replayed = true
+			return nil
+		}
+		if current.InvocationPolicyRevision != request.ExpectedRevision {
+			return ErrConflict
+		}
+		var updateErr error
+		updated, updateErr = scanClient(tx.QueryRow(ctx, `
+UPDATE client_registry
+SET invocation_policy_mode=$3, invocation_allowed_targets=$4,
+    invocation_policy_revision=invocation_policy_revision+1,
+    invocation_policy_operation_id=$5, invocation_policy_request_fingerprint=$6,
+    updated_by=$7, updated_at=now()
+WHERE workspace_id=$1 AND id=$2
+RETURNING `+clientColumns+`
+`, request.WorkspaceID, request.ClientID, policy.Mode, policy.AllowedTargets, request.OperationID, request.RequestFingerprint, request.Actor))
+		if updateErr != nil {
+			return clientPostgresError(updateErr)
+		}
+		return insertClientAudit(ctx, tx, request.WorkspaceID, request.ClientID, "invocation_policy_updated", clientInvocationPolicyDetail(updated), request.Actor)
+	})
+	return updated, replayed, err
 }
 
 func (s *PostgresStore) RotateClientToken(ctx context.Context, workspaceID string, id string, tokenHash string, actor string) (Client, error) {
@@ -113,7 +186,7 @@ func (s *PostgresStore) RotateClientToken(ctx context.Context, workspaceID strin
 		updated, err = scanClient(tx.QueryRow(ctx, `
 UPDATE client_registry SET token_hash=$3, updated_by=$4, updated_at=now()
 WHERE workspace_id=$1 AND id=$2
-RETURNING id, workspace_id, name, token_hash, created_by, updated_by, created_at, updated_at
+RETURNING `+clientColumns+`
 `, workspaceID, id, tokenHash, actor))
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrNotFound
@@ -134,7 +207,7 @@ func (s *PostgresStore) RevokeClientToken(ctx context.Context, workspaceID strin
 		updated, err = scanClient(tx.QueryRow(ctx, `
 UPDATE client_registry SET token_hash='', updated_by=$3, updated_at=now()
 WHERE workspace_id=$1 AND id=$2 AND token_hash <> ''
-RETURNING id, workspace_id, name, token_hash, created_by, updated_by, created_at, updated_at
+RETURNING `+clientColumns+`
 `, workspaceID, id, actor))
 		if errors.Is(err, pgx.ErrNoRows) {
 			var currentHash string
@@ -214,8 +287,22 @@ type clientScanner interface {
 
 func scanClient(row clientScanner) (Client, error) {
 	var client Client
-	err := row.Scan(&client.ID, &client.WorkspaceID, &client.Name, &client.TokenHash, &client.CreatedBy, &client.UpdatedBy, &client.CreatedAt, &client.UpdatedAt)
-	return client, err
+	err := row.Scan(
+		&client.ID,
+		&client.WorkspaceID,
+		&client.Name,
+		&client.TokenHash,
+		&client.InvocationPolicy.Mode,
+		&client.InvocationPolicy.AllowedTargets,
+		&client.InvocationPolicyRevision,
+		&client.InvocationPolicyOperationID,
+		&client.InvocationPolicyRequestFingerprint,
+		&client.CreatedBy,
+		&client.UpdatedBy,
+		&client.CreatedAt,
+		&client.UpdatedAt,
+	)
+	return cloneClient(client), err
 }
 
 func insertClientAudit(ctx context.Context, tx pgx.Tx, workspaceID string, id string, kind string, detail string, actor string) error {

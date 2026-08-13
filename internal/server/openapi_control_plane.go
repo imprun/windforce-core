@@ -303,6 +303,17 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 				}, "401", "403", "404", "409"),
 			},
 		},
+		"/api/w/{workspace}/clients/{client_id}/invocation-policy": map[string]any{
+			"put": map[string]any{
+				"operationId": "updateClientInvocationPolicy",
+				"summary":     "Replace a client's invocation target policy",
+				"parameters":  []any{oapiWorkspaceParam(workspaceID), oapiPathParam("client_id", "Client id.")},
+				"requestBody": oapiJSONBody(oapiSchemaRef("UpdateClientInvocationPolicyRequest"), true),
+				"responses": withErrors(map[string]any{
+					"200": oapiResponse("Updated client invocation policy or an exact operation replay.", oapiSchemaRef("ClientInvocationPolicyResult")),
+				}, "400", "401", "403", "404", "409"),
+			},
+		},
 		"/api/w/{workspace}/clients/{client_id}/audit": map[string]any{
 			"get": map[string]any{
 				"operationId": "listClientAudit",
@@ -1190,6 +1201,14 @@ func controlPlaneSchemas() map[string]any {
 				},
 			},
 		},
+		"ProvisioningInvocationPolicy": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"mode":           map[string]any{"type": "string", "enum": []any{"all", "restricted"}},
+				"allowedTargets": map[string]any{"type": "array", "items": oapiStringSchema()},
+			},
+			"required": []any{"mode", "allowedTargets"},
+		},
 		"ProvisioningResource": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -1204,20 +1223,21 @@ func controlPlaneSchemas() map[string]any {
 					"type":                 "object",
 					"additionalProperties": true,
 					"properties": map[string]any{
-						"name":        oapiStringSchema(),
-						"appKey":      oapiStringSchema(),
-						"actionKey":   oapiStringSchema(),
-						"clientRef":   oapiStringSchema(),
-						"method":      oapiStringEnumSchema("none", "pat", "basic"),
-						"storageRef":  oapiStringSchema(),
-						"username":    oapiSchemaRef("ProvisioningValueSource"),
-						"password":    oapiSchemaRef("ProvisioningValueSource"),
-						"token":       oapiSchemaRef("ProvisioningValueSource"),
-						"path":        oapiStringSchema(),
-						"appScope":    oapiStringSchema(),
-						"value":       oapiSchemaRef("ProvisioningValueSource"),
-						"secret":      oapiBooleanSchema(),
-						"description": oapiStringSchema(),
+						"name":             oapiStringSchema(),
+						"appKey":           oapiStringSchema(),
+						"actionKey":        oapiStringSchema(),
+						"clientRef":        oapiStringSchema(),
+						"invocationPolicy": oapiSchemaRef("ProvisioningInvocationPolicy"),
+						"method":           oapiStringEnumSchema("none", "pat", "basic"),
+						"storageRef":       oapiStringSchema(),
+						"username":         oapiSchemaRef("ProvisioningValueSource"),
+						"password":         oapiSchemaRef("ProvisioningValueSource"),
+						"token":            oapiSchemaRef("ProvisioningValueSource"),
+						"path":             oapiStringSchema(),
+						"appScope":         oapiStringSchema(),
+						"value":            oapiSchemaRef("ProvisioningValueSource"),
+						"secret":           oapiBooleanSchema(),
+						"description":      oapiStringSchema(),
 						"repository": map[string]any{
 							"type": "object",
 							"properties": map[string]any{
@@ -1270,21 +1290,61 @@ func controlPlaneSchemas() map[string]any {
 		"Client": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"id":           oapiStringSchema(),
-				"workspace_id": oapiStringSchema(),
-				"name":         oapiStringSchema(),
-				"has_token":    map[string]any{"type": "boolean"},
-				"created_by":   oapiStringSchema(),
-				"updated_by":   oapiStringSchema(),
-				"created_at":   oapiDateTimeSchema(),
-				"updated_at":   oapiDateTimeSchema(),
+				"id":                oapiStringSchema(),
+				"workspace_id":      oapiStringSchema(),
+				"name":              oapiStringSchema(),
+				"has_token":         map[string]any{"type": "boolean"},
+				"invocation_policy": oapiSchemaRef("ClientInvocationPolicy"),
+				"created_by":        oapiStringSchema(),
+				"updated_by":        oapiStringSchema(),
+				"created_at":        oapiDateTimeSchema(),
+				"updated_at":        oapiDateTimeSchema(),
 			},
-			"required": []any{"id", "workspace_id", "name", "has_token", "created_by", "updated_by", "created_at", "updated_at"},
+			"required": []any{"id", "workspace_id", "name", "has_token", "invocation_policy", "created_by", "updated_by", "created_at", "updated_at"},
+		},
+		"ClientInvocationPolicy": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"mode":            map[string]any{"type": "string", "enum": []any{"all", "restricted"}},
+				"allowed_targets": map[string]any{"type": "array", "items": oapiStringSchema()},
+				"revision":        oapiIntegerSchema(),
+			},
+			"required": []any{"mode", "allowed_targets", "revision"},
+		},
+		"ClientInvocationPolicyInput": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"mode":            map[string]any{"type": "string", "enum": []any{"all", "restricted"}},
+				"allowed_targets": map[string]any{"type": "array", "items": oapiStringSchema()},
+			},
+			"required": []any{"mode", "allowed_targets"},
+		},
+		"UpdateClientInvocationPolicyRequest": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"operation_id":      oapiStringSchema(),
+				"expected_revision": oapiIntegerSchema(),
+				"mode":              map[string]any{"type": "string", "enum": []any{"all", "restricted"}},
+				"allowed_targets":   map[string]any{"type": "array", "items": oapiStringSchema()},
+			},
+			"required": []any{"operation_id", "expected_revision", "mode", "allowed_targets"},
+		},
+		"ClientInvocationPolicyResult": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"invocation_policy": oapiSchemaRef("ClientInvocationPolicy"),
+				"replayed":          map[string]any{"type": "boolean"},
+			},
+			"required": []any{"invocation_policy", "replayed"},
 		},
 		"CreateClientRequest": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"name": oapiStringSchema(),
+				"invocation_policy": map[string]any{
+					"allOf":       []any{oapiSchemaRef("ClientInvocationPolicyInput")},
+					"description": "Optional initial policy committed atomically with the Client. Omission preserves legacy all-target behavior.",
+				},
 			},
 			"required": []any{"name"},
 		},

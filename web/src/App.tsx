@@ -40,15 +40,13 @@ export function App() {
   if (matchRoute("/monitoring", path)) return <MonitoringPage />;
   if (matchRoute("/human-tasks", path)) return <HumanTasksPage />;
   if (matchRoute("/audit", path)) return <AuditPage />;
-  const clientDetail = matchRoute("/clients/:id/:tab?/:appKey?", path);
+  const legacyClientInputSettings = matchRoute("/clients/:id/input-settings/:appKey?", path);
+  if (legacyClientInputSettings?.id) {
+    return <RouteRedirect to={`/clients/${encodeURIComponent(legacyClientInputSettings.id)}`} />;
+  }
+  const clientDetail = matchRoute("/clients/:id/:tab?", path);
   if (clientDetail?.id) {
-    return (
-      <ClientDetailPage
-        clientID={clientDetail.id}
-        tab={clientDetail.tab || "overview"}
-        appKey={clientDetail.appKey}
-      />
-    );
+    return <ClientDetailPage clientID={clientDetail.id} tab={clientDetail.tab || "overview"} />;
   }
   if (matchRoute("/clients", path)) return <ClientRegistryPage />;
   const workspaceDetail = matchRoute("/workspaces/:id/:tab?", path);

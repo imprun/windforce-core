@@ -144,6 +144,16 @@ Sync source fetches the tracked branch, validates the source contract, and store
 2. Click Sync source.
 3. Confirm that Sync source changes to Source current and Publish Release becomes available when the commit changed.
 
+## Manage app-caller input settings from an app
+
+App and action schemas stay in context while an operator reviews values for one app caller.
+
+![Manage app-caller input settings from an app](../assets/ui/app-input-settings.png)
+
+1. Open an app and choose Input Settings.
+2. Select an app-caller scope.
+3. Open a settings row to review its JSON values and locked keys.
+
 ## Publish a release
 
 Publish Release prepares the latest synchronized source and publishes it as the worker-visible contract, recorded with the audit actor.
@@ -186,74 +196,74 @@ The app detail Monitoring tab narrows the workspace job aggregates to a single a
 3. Switch the window between 1h, 24h, and 7d.
 4. Watch the failure rate; the workspace-wide picture lives on the Monitoring page.
 
-## Manage external clients
+## Manage app access
 
-The client registry keeps credential state and the latest change compact while preserving direct access to each client.
+The app-access registry keeps credential state and the latest change compact while preserving direct access to each app caller.
 
-![Manage external clients](../assets/ui/client-registry.png)
+![Manage app access](../assets/ui/client-registry.png)
 
-1. Open Client Registry.
-2. Scan the client name, Invocation API token state, and latest change.
-3. Open a client name for input settings or choose Edit for identity and token management.
+1. Open App access.
+2. Scan the app caller name, API credential state, and latest change.
+3. Open an app caller name for identity and app access, or choose Edit for credential management.
 
-## Review clients on a narrow screen
+## Review app access on a narrow screen
 
-The compact client table keeps its information hierarchy and remains horizontally scrollable on narrow screens.
+The compact app-caller table keeps its information hierarchy and remains horizontally scrollable on narrow screens.
 
-![Review clients on a narrow screen](../assets/ui/client-registry-mobile.png)
+![Review app access on a narrow screen](../assets/ui/client-registry-mobile.png)
 
-1. Open Client Registry on a narrow screen.
-2. Review the client identity and credential status first.
+1. Open App access on a narrow screen.
+2. Review the app-caller identity and credential status first.
 3. Scroll the table horizontally when the latest change or edit action is needed.
 
-## Register an external client
+## Register an app caller with app access
 
-Client registration presents one primary identity field and explains the one-time token before creation.
+App-caller registration commits the initial app access and API credential together.
 
-![Register an external client](../assets/ui/client-register.png)
+![Register an app caller with app access](../assets/ui/client-register.png)
 
-1. Open Client Registry and choose Register Client.
-2. Enter the external client name.
-3. Create the client to receive its one-time Invocation API token.
+1. Open App access and choose Register app caller.
+2. Enter the app caller name and choose initial app access.
+3. Create the app caller to receive its one-time API credential.
 
-## Edit a client and its token
+## Edit an app caller and its API credential
 
-Client identity, token lifecycle, and deletion are separated into clear sections with one primary save action.
+App-caller identity, API credential lifecycle, and deletion are separated into clear sections with one primary save action.
 
-![Edit a client and its token](../assets/ui/client-edit.png)
+![Edit an app caller and its API credential](../assets/ui/client-edit.png)
 
-1. Open Client Registry and choose Edit.
-2. Update the client name or manage its Invocation API token.
-3. Revoke the active token before deleting the client.
+1. Open App access and choose Edit.
+2. Update the app caller name or manage its API credential.
+3. Revoke the active credential before deleting the app caller.
 
-## Edit a client in Korean
+## Edit an app caller in Korean
 
-The client identity, token lifecycle, and danger zone preserve their hierarchy with Korean labels.
+App-caller identity, API credential lifecycle, and the danger zone preserve their hierarchy with Korean labels.
 
-![Edit a client in Korean](../assets/ui/client-edit-korean.png)
+![Edit an app caller in Korean](../assets/ui/client-edit-korean.png)
 
-1. Switch the console to Korean and open API clients.
-2. Choose Edit for a client.
-3. Confirm the token status, actions, and deletion guidance remain readable without crowding.
+1. Switch the console to Korean and open App access.
+2. Choose Edit for an app caller.
+3. Confirm the credential status, actions, and deletion guidance remain readable without crowding.
 
-## Confirm an irreversible token action
+## Confirm an irreversible credential action
 
-Token rotation uses the shared in-product confirmation dialog instead of a browser-native prompt.
+API credential rotation uses the shared in-product confirmation dialog instead of a browser-native prompt.
 
-![Confirm an irreversible token action](../assets/ui/client-token-confirmation.png)
+![Confirm an irreversible credential action](../assets/ui/client-token-confirmation.png)
 
-1. Open a client for editing.
-2. Choose Rotate token.
+1. Open an app caller for editing.
+2. Choose Rotate credential.
 3. Review the immediate invalidation warning before confirming or canceling.
 
-## Copy a newly issued client token
+## Copy a newly issued app-caller API credential
 
-The one-time token stays in a stable copy row and the copy button itself confirms success.
+The one-time credential stays in a stable copy row and the copy button itself confirms success.
 
-![Copy a newly issued client token](../assets/ui/client-token-copy.png)
+![Copy a newly issued app-caller API credential](../assets/ui/client-token-copy.png)
 
-1. Register a client to issue its one-time token.
-2. Copy the token into the calling system.
+1. Register an app caller to issue its one-time API credential.
+2. Copy the credential into the calling system.
 3. Confirm the button changes to Copied before closing the dialog.
 
 ## Manage App Triggers
@@ -586,15 +596,15 @@ The webhook list remains usable on narrow screens through a stable navigation ra
 2. Scroll the table horizontally when all operational columns are needed.
 3. Open the webhook name to continue into its full detail page.
 
-## Manage client input settings
+## Set app-caller access
 
-Review app- and action-specific values applied for one external client.
+Core operators can grant every app and action or an exact selected list for each app caller.
 
-![Manage client input settings](../assets/ui/client-input-settings.png)
+![Set app-caller access](../assets/ui/client-invocation-policy.png)
 
-1. Open Client Registry.
-2. Select an external client.
-3. Open a settings row to review its JSON values and locked keys.
+1. Open App access and select an app caller.
+2. Review the effective app access, allowed identifiers, and revision.
+3. Choose Edit app access to replace the access used for new Runs.
 
 ## Open host management
 
