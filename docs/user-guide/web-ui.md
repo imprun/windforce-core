@@ -186,54 +186,54 @@ The app detail Monitoring tab narrows the workspace job aggregates to a single a
 3. Switch the window between 1h, 24h, and 7d.
 4. Watch the failure rate; the workspace-wide picture lives on the Monitoring page.
 
-## Manage customers
+## Manage app access
 
-The customer registry keeps credential state and the latest change compact while preserving direct access to each customer.
+The app-access registry keeps credential state and the latest change compact while preserving direct access to each app caller.
 
-![Manage customers](../assets/ui/client-registry.png)
+![Manage app access](../assets/ui/client-registry.png)
 
-1. Open Customers.
-2. Scan the customer name, API credential state, and latest change.
-3. Open a customer name for app access and input settings, or choose Edit for credential management.
+1. Open App access.
+2. Scan the app caller name, API credential state, and latest change.
+3. Open an app caller name for app access and input settings, or choose Edit for credential management.
 
-## Review customers on a narrow screen
+## Review app access on a narrow screen
 
-The compact customer table keeps its information hierarchy and remains horizontally scrollable on narrow screens.
+The compact app-caller table keeps its information hierarchy and remains horizontally scrollable on narrow screens.
 
-![Review customers on a narrow screen](../assets/ui/client-registry-mobile.png)
+![Review app access on a narrow screen](../assets/ui/client-registry-mobile.png)
 
-1. Open Customers on a narrow screen.
-2. Review the customer identity and credential status first.
+1. Open App access on a narrow screen.
+2. Review the app-caller identity and credential status first.
 3. Scroll the table horizontally when the latest change or edit action is needed.
 
-## Register a customer with app access
+## Register an app caller with app access
 
-Customer registration commits the initial app access and API credential together.
+App-caller registration commits the initial app access and API credential together.
 
-![Register a customer with app access](../assets/ui/client-register.png)
+![Register an app caller with app access](../assets/ui/client-register.png)
 
-1. Open Customers and choose Register Customer.
-2. Enter the customer name and choose initial app access.
-3. Create the customer to receive its one-time API credential.
+1. Open App access and choose Register app caller.
+2. Enter the app caller name and choose initial app access.
+3. Create the app caller to receive its one-time API credential.
 
-## Edit a customer and its API credential
+## Edit an app caller and its API credential
 
-Customer identity, API credential lifecycle, and deletion are separated into clear sections with one primary save action.
+App-caller identity, API credential lifecycle, and deletion are separated into clear sections with one primary save action.
 
-![Edit a customer and its API credential](../assets/ui/client-edit.png)
+![Edit an app caller and its API credential](../assets/ui/client-edit.png)
 
-1. Open Customers and choose Edit.
-2. Update the customer name or manage its API credential.
-3. Revoke the active credential before deleting the customer.
+1. Open App access and choose Edit.
+2. Update the app caller name or manage its API credential.
+3. Revoke the active credential before deleting the app caller.
 
-## Edit a customer in Korean
+## Edit an app caller in Korean
 
-Customer identity, API credential lifecycle, and the danger zone preserve their hierarchy with Korean labels.
+App-caller identity, API credential lifecycle, and the danger zone preserve their hierarchy with Korean labels.
 
-![Edit a customer in Korean](../assets/ui/client-edit-korean.png)
+![Edit an app caller in Korean](../assets/ui/client-edit-korean.png)
 
-1. Switch the console to Korean and open Customers.
-2. Choose Edit for a customer.
+1. Switch the console to Korean and open App access.
+2. Choose Edit for an app caller.
 3. Confirm the credential status, actions, and deletion guidance remain readable without crowding.
 
 ## Confirm an irreversible credential action
@@ -242,17 +242,17 @@ API credential rotation uses the shared in-product confirmation dialog instead o
 
 ![Confirm an irreversible credential action](../assets/ui/client-token-confirmation.png)
 
-1. Open a customer for editing.
+1. Open an app caller for editing.
 2. Choose Rotate credential.
 3. Review the immediate invalidation warning before confirming or canceling.
 
-## Copy a newly issued customer API credential
+## Copy a newly issued app-caller API credential
 
 The one-time credential stays in a stable copy row and the copy button itself confirms success.
 
-![Copy a newly issued customer API credential](../assets/ui/client-token-copy.png)
+![Copy a newly issued app-caller API credential](../assets/ui/client-token-copy.png)
 
-1. Register a customer to issue its one-time API credential.
+1. Register an app caller to issue its one-time API credential.
 2. Copy the credential into the calling system.
 3. Confirm the button changes to Copied before closing the dialog.
 
@@ -586,23 +586,23 @@ The webhook list remains usable on narrow screens through a stable navigation ra
 2. Scroll the table horizontally when all operational columns are needed.
 3. Open the webhook name to continue into its full detail page.
 
-## Manage customer input settings
+## Manage app-caller input settings
 
-Review app- and action-specific values applied for one customer.
+Review app- and action-specific values applied for one app caller.
 
-![Manage customer input settings](../assets/ui/client-input-settings.png)
+![Manage app-caller input settings](../assets/ui/client-input-settings.png)
 
-1. Open Customers.
-2. Select a customer.
+1. Open App access.
+2. Select an app caller.
 3. Open a settings row to review its JSON values and locked keys.
 
-## Set customer app access
+## Set app-caller access
 
-Core operators can grant every app and action or an exact selected list for each customer.
+Core operators can grant every app and action or an exact selected list for each app caller.
 
-![Set customer app access](../assets/ui/client-invocation-policy.png)
+![Set app-caller access](../assets/ui/client-invocation-policy.png)
 
-1. Open Customers and select a customer.
+1. Open App access and select an app caller.
 2. Review the effective app access, allowed identifiers, and revision.
 3. Choose Edit app access to replace the access used for new Runs.
 

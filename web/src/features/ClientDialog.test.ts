@@ -18,7 +18,7 @@ describe("client dialog", () => {
     expect(dialogSource).not.toContain('notify("ok", translate("clients.tokenCopied"))');
   });
 
-  test("creates a customer and initial app access in one request", () => {
+  test("creates an app caller and initial app access in one request", () => {
     expect(dialogSource).toContain("invocation_policy:");
     expect(dialogSource).toContain('useState<"all" | "restricted">');
     expect(dialogSource).toContain('"restricted",');

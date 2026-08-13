@@ -6,7 +6,7 @@ export default {
     "API credential rotation uses the shared in-product confirmation dialog instead of a browser-native prompt.",
   screenshot: "docs/assets/ui/client-token-confirmation.png",
   guide: [
-    "Open a customer for editing.",
+    "Open an app caller for editing.",
     "Choose Rotate credential.",
     "Review the immediate invalidation warning before confirming or canceling.",
   ],
@@ -14,7 +14,7 @@ export default {
     await page.goto();
     await page.evaluate(() => localStorage.setItem("wf.locale", "en"));
     await page.goto();
-    await page.clickText("Customers");
+    await page.clickText("App access");
     await page.waitForSelector("#clientList tbody tr");
     await page.click("#clientList tbody .rowActions .button");
     await page.waitForSelector("#client-edit-dialog");

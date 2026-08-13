@@ -1,10 +1,10 @@
 export default {
   id: "client-invocation-policy",
-  title: "Set customer app access",
+  title: "Set app-caller access",
   description:
-    "Core operators can grant every app and action or an exact selected list for each customer.",
+    "Core operators can grant every app and action or an exact selected list for each app caller.",
   guide: [
-    "Open Customers and select a customer.",
+    "Open App access and select an app caller.",
     "Review the effective app access, allowed identifiers, and revision.",
     "Choose Edit app access to replace the access used for new Runs.",
   ],
@@ -13,7 +13,7 @@ export default {
     await page.goto();
     await page.evaluate(() => localStorage.setItem("wf.locale", "en"));
     await page.goto();
-    await page.clickText("Customers");
+    await page.clickText("App access");
     await page.waitForSelector("#clientList tbody tr");
     await page.click("#clientList tbody .cellTitle");
     await page.waitForSelector('[data-ui-guide="edit-client-invocation-policy"]');

@@ -45,7 +45,7 @@ Content-Type: application/json
 
 The request requires a valid operation ID, a non-negative expected revision, an explicit mode, and a normalized policy. The resulting policy, monotonic revision, latest operation replay metadata, Client audit record, actor, and update timestamp commit atomically. An exact retry of the latest operation returns the same revision without another audit record. Reusing the operation ID with a different fingerprint or using a stale revision with a different operation returns conflict.
 
-Client creation accepts an optional initial `invocation_policy` without revision or operation metadata. The Client, issued token hash, initial policy at revision zero, and creation audit record commit in one store transaction. Omission preserves the existing `all` default for backward-compatible Core-only callers. Hosted control planes and customer-registration automation must send the intended policy during creation rather than create `all` and narrow it afterward. Name updates preserve the current policy. Policy-aware Client responses always return an explicit normalized policy and revision.
+Client creation accepts an optional initial `invocation_policy` without revision or operation metadata. The Client, issued token hash, initial policy at revision zero, and creation audit record commit in one store transaction. Omission preserves the existing `all` default for backward-compatible Core-only callers. Hosted control planes and app-caller provisioning automation must send the intended policy during creation rather than create `all` and narrow it afterward. Name updates preserve the current policy. Policy-aware Client responses always return an explicit normalized policy and revision.
 
 ### Admission and idempotency ordering
 
@@ -63,9 +63,14 @@ Operators retain unrestricted access. Existing Service Principal target semantic
 
 Core owns Client identity, `wfk_` authentication, Client-specific InputConfig resolution, policy persistence, discovery projection, and final execution enforcement. A hosted control plane may own Tenant or product entitlement and reconcile a restricted policy, but tenant state, commercial entitlement, sync status, gateway credential exposure, NetworkPolicy, and short-lived delegated credentials do not become Core concepts.
 
+`Client` remains the product-neutral API, database, and provisioning name. It is not a synonym for a hosted Customer or Tenant. The Web UI presents this area as **App access** and presents each Client as an **app caller**: a machine, person, partner, downstream customer, or internal integration that calls workspace Apps. A hosted Customer or Tenant does not automatically map one-to-one to a Core Client.
+
+Core-only installations may create, rotate, revoke, and delete app-caller credentials and manage app access directly in the Core UI. Embedded UI mode changes host presentation and return navigation only; it does not transfer Client ownership, add a Tenant concept, or change Core enforcement. Until a separate product-neutral host-capability contract exists, the embedded Core UI continues to expose Core-local Client management. A managed host that requires exclusive credential custody must enforce that product policy in its own control plane and embedding boundary while using the neutral Control API to provision the intended Core policy atomically.
+
 ## Consequences
 
 - Core-only installations keep the existing allow-all creation experience and can opt into least privilege per Client.
+- Core UI terminology distinguishes app callers and app access from hosted Customers, Tenants, products, and commercial entitlements.
 - Hosted products can maintain their own grant model while Core independently prevents a broader downstream invocation.
 - A hosted control plane must fail closed at its own gateway when desired policy synchronization is unknown or failed; Core continues to enforce the last policy committed successfully.
 - Local JSON and PostgreSQL stores must preserve identical policy, OCC, replay, audit, and migration behavior.

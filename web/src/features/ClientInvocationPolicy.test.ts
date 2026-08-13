@@ -15,8 +15,10 @@ describe("client invocation policy", () => {
     expect(normalizeAllowedTargets(" \n, ")).toEqual([]);
   });
 
-  test("uses customer-facing app access language in English and Korean", async () => {
+  test("uses product-neutral app access language in English and Korean", async () => {
     await setLocale("en");
+    expect(translate("navigation.clientRegistry")).toBe("App access");
+    expect(translate("clients.identity")).toBe("App caller");
     expect(translate("clients.policy.title")).toBe("App access");
     expect(translate("clients.policy.modeAll")).toBe("All apps and actions");
     expect(translate("clients.policy.modeRestricted")).toBe("Selected apps and actions");
@@ -24,7 +26,8 @@ describe("client invocation policy", () => {
 
     await setLocale("ko");
     try {
-      expect(translate("navigation.clientRegistry")).toBe("고객");
+      expect(translate("navigation.clientRegistry")).toBe("앱 이용 권한");
+      expect(translate("clients.identity")).toBe("이용 주체");
       expect(translate("clients.policy.title")).toBe("앱 이용 권한");
       expect(translate("clients.policy.modeAll")).toBe("모든 앱과 액션");
       expect(translate("clients.policy.modeRestricted")).toBe("선택한 앱과 액션");
