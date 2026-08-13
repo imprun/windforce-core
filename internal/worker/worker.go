@@ -197,7 +197,17 @@ func (p *Processor) processOne(claimCtx context.Context, executionCtx context.Co
 	}
 	logJobInput(p.LogJobPayloads, job.ID, job.Payload.App, job.Payload.Action, input, secretValues)
 	input = state.StripReservedRuntimeInput(input)
-	input, err = p.RuntimeBindings.Apply(input)
+	deployment := job.Payload.PinnedDeployment()
+	actionSpec := job.Payload.ActionSpec
+	if actionSpec.Action == "" && deployment.Actions != nil {
+		actionSpec = deployment.Actions[job.Payload.Action]
+	}
+	bindingResult, err := p.RuntimeBindings.Bind(
+		runCtx,
+		input,
+		contract.EffectiveRequiredLabels(deployment, actionSpec),
+		capabilityRunTTL(deployment, actionSpec),
+	)
 	if err != nil {
 		outcome = "failed"
 		jobError = "could not apply runtime bindings"
@@ -211,6 +221,19 @@ func (p *Processor) processOne(claimCtx context.Context, executionCtx context.Co
 		}
 		return completeProcessed(p.Store.CompleteJobFailed(completeCtx, lease, result))
 	}
+	input = bindingResult.Input
+	secretValues = append(secretValues, bindingResult.SecretValues...)
+	defer func() {
+		cleanupTimeout := p.RuntimeBindings.CapabilityGateway.Timeout
+		if cleanupTimeout <= 0 || cleanupTimeout > 5*time.Second {
+			cleanupTimeout = 5 * time.Second
+		}
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(executionCtx), cleanupTimeout)
+		defer cleanupCancel()
+		if closeErr := bindingResult.Close(cleanupCtx); closeErr != nil {
+			log.Printf("worker capability gateway cleanup failed job=%s", job.ID)
+		}
+	}()
 	jobToken := ""
 	if provider, ok := p.Store.(JobTokenProvider); ok {
 		jobToken = provider.JobTokenFor(job.ID)
@@ -304,6 +327,19 @@ func (p *Processor) processOne(claimCtx context.Context, executionCtx context.Co
 	}
 	outcome = "succeeded"
 	return completeProcessed(p.Store.CompleteJobSucceeded(completeCtx, lease, result))
+}
+
+func capabilityRunTTL(deployment contract.Deployment, action contract.Action) time.Duration {
+	if action.TimeoutS != nil && *action.TimeoutS > 0 {
+		return time.Duration(*action.TimeoutS) * time.Second
+	}
+	if action.TimeoutMs > 0 {
+		return time.Duration(action.TimeoutMs) * time.Millisecond
+	}
+	if deployment.TimeoutS > 0 {
+		return time.Duration(deployment.TimeoutS) * time.Second
+	}
+	return 0
 }
 
 func attemptPropagationReason(attempt int) string {

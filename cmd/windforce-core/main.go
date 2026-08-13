@@ -135,6 +135,11 @@ func runServer(args []string, mode string) int {
 	authSessionTokenEnv := flags.String("auth-session-token-env", "WINDFORCE_AUTH_SESSION_TOKEN", "environment variable that contains the auth-session worker token")
 	authSessionTokenFile := flags.String("auth-session-token-file", strings.TrimSpace(os.Getenv("WINDFORCE_AUTH_SESSION_TOKEN_FILE")), "file containing the auth-session worker token")
 	authSessionTimeout := flags.Duration("auth-session-timeout", envDuration("WINDFORCE_AUTH_SESSION_TIMEOUT_MS", time.Millisecond, 15*time.Second), "auth-session request timeout injected into action runtime context")
+	capabilityGatewayURL := flags.String("capability-gateway-url", strings.TrimSpace(os.Getenv("WINDFORCE_CAPABILITY_GATEWAY_URL")), "worker-local capability gateway URL")
+	capabilityGatewayTokenEnv := flags.String("capability-gateway-token-env", "WINDFORCE_CAPABILITY_GATEWAY_TOKEN", "environment variable that contains the capability gateway worker token")
+	capabilityGatewayTokenFile := flags.String("capability-gateway-token-file", strings.TrimSpace(os.Getenv("WINDFORCE_CAPABILITY_GATEWAY_TOKEN_FILE")), "file containing the capability gateway worker token")
+	capabilityGatewayTimeout := flags.Duration("capability-gateway-timeout", envDuration("WINDFORCE_CAPABILITY_GATEWAY_TIMEOUT_MS", time.Millisecond, 15*time.Second), "worker-local capability gateway request timeout")
+	capabilityGatewayLabels := flags.String("capability-gateway-labels", strings.TrimSpace(os.Getenv("WINDFORCE_CAPABILITY_GATEWAY_LABELS")), "comma-separated placement labels backed by the capability gateway")
 	workerTags := flags.String("tags", "", "comma-separated route tags this worker claims")
 	workerLabels := flags.String("labels", "", "comma-separated capability labels this worker offers; sys/ labels are operator-granted")
 	jobSuccessRetention := flags.Duration("job-success-retention", envDays("WINDFORCE_CORE_JOB_SUCCESS_RETENTION_DAYS", defaultJobSuccessRetention), "how long succeeded job records are kept; 0 keeps them forever")
@@ -351,6 +356,18 @@ func runServer(args []string, mode string) int {
 			fmt.Fprintf(os.Stderr, "standalone runtime bindings: %v\n", err)
 			return 1
 		}
+		capabilityGateway, err := worker.NewCapabilityGatewayBinding(
+			*capabilityGatewayURL,
+			*capabilityGatewayTokenEnv,
+			*capabilityGatewayTokenFile,
+			*capabilityGatewayTimeout,
+			parseLabels(*capabilityGatewayLabels),
+		)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "standalone capability gateway: %v\n", err)
+			return 1
+		}
+		runtimeBindings.CapabilityGateway = capabilityGateway
 		processor := worker.Processor{
 			Store:             stateStore,
 			Runner:            runtimeRunner,
@@ -359,7 +376,7 @@ func runServer(args []string, mode string) int {
 			EngineVersion:     version,
 			BuildRevision:     revision,
 			Tags:              parseTags(*workerTags),
-			Labels:            parseLabels(*workerLabels),
+			Labels:            append(parseLabels(*workerLabels), capabilityGateway.Labels...),
 			ExecutionProfiles: executionProfiles,
 			EgressProxyAddr:   strings.TrimSpace(*egressProxy),
 			LeaseTTL:          *leaseTTL,
@@ -482,6 +499,11 @@ func runWorker(args []string) int {
 	authSessionTokenEnv := flags.String("auth-session-token-env", "WINDFORCE_AUTH_SESSION_TOKEN", "environment variable that contains the auth-session worker token")
 	authSessionTokenFile := flags.String("auth-session-token-file", strings.TrimSpace(os.Getenv("WINDFORCE_AUTH_SESSION_TOKEN_FILE")), "file containing the auth-session worker token")
 	authSessionTimeout := flags.Duration("auth-session-timeout", envDuration("WINDFORCE_AUTH_SESSION_TIMEOUT_MS", time.Millisecond, 15*time.Second), "auth-session request timeout injected into action runtime context")
+	capabilityGatewayURL := flags.String("capability-gateway-url", strings.TrimSpace(os.Getenv("WINDFORCE_CAPABILITY_GATEWAY_URL")), "worker-local capability gateway URL")
+	capabilityGatewayTokenEnv := flags.String("capability-gateway-token-env", "WINDFORCE_CAPABILITY_GATEWAY_TOKEN", "environment variable that contains the capability gateway worker token")
+	capabilityGatewayTokenFile := flags.String("capability-gateway-token-file", strings.TrimSpace(os.Getenv("WINDFORCE_CAPABILITY_GATEWAY_TOKEN_FILE")), "file containing the capability gateway worker token")
+	capabilityGatewayTimeout := flags.Duration("capability-gateway-timeout", envDuration("WINDFORCE_CAPABILITY_GATEWAY_TIMEOUT_MS", time.Millisecond, 15*time.Second), "worker-local capability gateway request timeout")
+	capabilityGatewayLabels := flags.String("capability-gateway-labels", strings.TrimSpace(os.Getenv("WINDFORCE_CAPABILITY_GATEWAY_LABELS")), "comma-separated placement labels backed by the capability gateway")
 	workerTags := flags.String("tags", "", "comma-separated route tags this worker claims")
 	workerLabels := flags.String("labels", "", "comma-separated capability labels this worker offers; sys/ labels are operator-granted")
 	once := flags.Bool("once", false, "process at most one queued job and exit")
@@ -510,6 +532,19 @@ func runWorker(args []string) int {
 		fmt.Fprintf(os.Stderr, "worker runtime bindings: %v\n", err)
 		return 1
 	}
+	capabilityGateway, err := worker.NewCapabilityGatewayBinding(
+		*capabilityGatewayURL,
+		*capabilityGatewayTokenEnv,
+		*capabilityGatewayTokenFile,
+		*capabilityGatewayTimeout,
+		parseLabels(*capabilityGatewayLabels),
+	)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "worker capability gateway: %v\n", err)
+		return 1
+	}
+	runtimeBindings.CapabilityGateway = capabilityGateway
+	advertisedLabels := append(parseLabels(*workerLabels), capabilityGateway.Labels...)
 
 	stateStore, closeState, err := openStateStore(runCtx, *stateBackend, *statePath, *databaseURL, *migrate)
 	if err != nil {
@@ -548,7 +583,7 @@ func runWorker(args []string) int {
 			EngineVersion:     version,
 			BuildRevision:     revision,
 			Tags:              parseTags(*workerTags),
-			Labels:            parseLabels(*workerLabels),
+			Labels:            advertisedLabels,
 			ExecutionProfiles: executionProfiles,
 			EgressProxyAddr:   strings.TrimSpace(*egressProxy),
 			LeaseTTL:          *leaseTTL,
@@ -608,7 +643,7 @@ func runWorker(args []string) int {
 		EngineVersion:     version,
 		BuildRevision:     revision,
 		Tags:              parseTags(*workerTags),
-		Labels:            parseLabels(*workerLabels),
+		Labels:            advertisedLabels,
 		ExecutionProfiles: executionProfiles,
 		EgressProxyAddr:   strings.TrimSpace(*egressProxy),
 		LeaseTTL:          *leaseTTL,
@@ -967,7 +1002,7 @@ func printUsage(file io.Writer) {
 	fmt.Fprintln(file, "usage:")
 	fmt.Fprintln(file, "  windforce-core version")
 	fmt.Fprintln(file, "  windforce-core server [--addr :8080] [--state-backend local|postgres] [--ui-mode embedded|disabled] [--worker-group-operator self-managed|external] [--git-sources <path>] [--provision-dir <path>]")
-	fmt.Fprintln(file, "  windforce-core worker [--api-url <url> --worker-token-env <name>] [--state-backend local|postgres] [--worker-group default] [--labels <csv>] [--egress-proxy host:port] [--auth-session-url <url>] [--bun-path <path>] [--python-path <path>] [--go-path <path>] [--prepare-timeout 5m] [--once]")
-	fmt.Fprintln(file, "  windforce-core standalone [--addr :8080] [--state-backend local|postgres] [--ui-mode embedded|disabled] [--worker-group-operator self-managed|external] [--worker-group default] [--egress-proxy host:port] [--auth-session-url <url>] [--git-sources <path>] [--provision-dir <path>] [--bun-path <path>] [--python-path <path>] [--go-path <path>] [--prepare-timeout 5m]")
+	fmt.Fprintln(file, "  windforce-core worker [--api-url <url> --worker-token-env <name>] [--state-backend local|postgres] [--worker-group default] [--labels <csv>] [--egress-proxy host:port] [--auth-session-url <url>] [--capability-gateway-url <url> --capability-gateway-labels <csv>] [--bun-path <path>] [--python-path <path>] [--go-path <path>] [--prepare-timeout 5m] [--once]")
+	fmt.Fprintln(file, "  windforce-core standalone [--addr :8080] [--state-backend local|postgres] [--ui-mode embedded|disabled] [--worker-group-operator self-managed|external] [--worker-group default] [--egress-proxy host:port] [--auth-session-url <url>] [--capability-gateway-url <url> --capability-gateway-labels <csv>] [--git-sources <path>] [--provision-dir <path>] [--bun-path <path>] [--python-path <path>] [--go-path <path>] [--prepare-timeout 5m]")
 	fmt.Fprintln(file, "  windforce-core run-json [flags] -- <command> [args...]")
 }
