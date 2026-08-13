@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/imprun/windforce-core/internal/contract"
 )
 
 func TestCapabilityGatewayBindingDiscoversBindsAndClosesRun(t *testing.T) {
@@ -133,6 +135,93 @@ func TestCapabilityGatewayBindingDiscoversBindsAndClosesRun(t *testing.T) {
 	}
 }
 
+func TestProcessorClosesAndMasksCapabilityGatewayRun(t *testing.T) {
+	const (
+		workerToken = "worker-secret-value"
+		runToken    = "job-run-secret-value"
+	)
+	var creates atomic.Int32
+	var closes atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/capabilities":
+			writeCapabilityTestJSON(t, w, http.StatusOK, map[string]any{
+				"capabilities": []map[string]any{
+					{"id": "document.pdf/v1", "operations": []string{"transform"}, "ready": true, "maxConcurrency": 1},
+				},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/runs":
+			creates.Add(1)
+			if got := r.Header.Get("Authorization"); got != "Bearer "+workerToken {
+				t.Errorf("create authorization = %q", got)
+			}
+			writeCapabilityTestJSON(t, w, http.StatusCreated, map[string]any{
+				"runRef": "run-processor", "runToken": runToken, "expiresInSeconds": 3600,
+			})
+		case r.Method == http.MethodDelete && r.URL.Path == "/v1/runs/run-processor":
+			closes.Add(1)
+			if got := r.Header.Get("Authorization"); got != "Bearer "+runToken {
+				t.Errorf("close authorization = %q", got)
+			}
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("TEST_CAPABILITY_GATEWAY_TOKEN", workerToken)
+
+	processor, stateStore, run := newProcessorTestHarnessWithDeployment(t, "echo", func(deployment *contract.Deployment) {
+		runsOn := []string{"document.pdf.v1"}
+		action := deployment.Actions["echo"]
+		action.RunsOn = &runsOn
+		deployment.Actions["echo"] = action
+	})
+	binding, err := NewCapabilityGatewayBinding(
+		server.URL,
+		"TEST_CAPABILITY_GATEWAY_TOKEN",
+		"",
+		time.Second,
+		[]string{"document.pdf.v1"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	processor.Labels = append(processor.Labels, binding.Labels...)
+	processor.RuntimeBindings.CapabilityGateway = binding
+
+	processed, err := processor.ProcessOne(context.Background())
+	if err != nil || !processed {
+		t.Fatalf("ProcessOne = %v, %v", processed, err)
+	}
+	if creates.Load() != 1 || closes.Load() != 1 {
+		t.Fatalf("gateway lifecycle creates=%d closes=%d", creates.Load(), closes.Load())
+	}
+	completed, err := stateStore.GetRun(context.Background(), run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(completed.Output), workerToken) || strings.Contains(string(completed.Output), runToken) {
+		t.Fatalf("completed output leaked gateway credential: %s", completed.Output)
+	}
+	if !strings.Contains(string(completed.Output), strings.Repeat("*", len(runToken))) {
+		t.Fatalf("completed output did not mask the Job token: %s", completed.Output)
+	}
+}
+
+func TestCapabilityRunTTLUsesPinnedTimeoutAndFallsBackToGatewayMaximum(t *testing.T) {
+	timeout := int32(15)
+	if got := capabilityRunTTL(contract.Deployment{TimeoutS: 30}, contract.Action{TimeoutS: &timeout}); got != 15*time.Second {
+		t.Fatalf("action timeout TTL = %s", got)
+	}
+	if got := capabilityRunTTL(contract.Deployment{TimeoutS: 30}, contract.Action{}); got != 30*time.Second {
+		t.Fatalf("deployment timeout TTL = %s", got)
+	}
+	if got := capabilityRunTTL(contract.Deployment{}, contract.Action{}); got != 0 || capabilityTTLSeconds(got) != 3600 {
+		t.Fatalf("unbounded timeout TTL = %s (%d seconds)", got, capabilityTTLSeconds(got))
+	}
+}
+
 func TestCapabilityGatewayBindingRejectsUnsafeOrInvalidGateway(t *testing.T) {
 	t.Setenv("TEST_CAPABILITY_GATEWAY_TOKEN", "worker-secret")
 	if _, err := NewCapabilityGatewayBinding(
@@ -162,6 +251,69 @@ func TestCapabilityGatewayBindingRejectsUnsafeOrInvalidGateway(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "do-not-leak") || strings.Contains(err.Error(), "worker-secret") {
 		t.Fatalf("discovery error leaked secret material: %v", err)
+	}
+}
+
+func TestCapabilityGatewayBindingRejectsRedirects(t *testing.T) {
+	t.Setenv("TEST_CAPABILITY_GATEWAY_TOKEN", "worker-secret")
+	var followed atomic.Bool
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		followed.Store(true)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer target.Close()
+	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusTemporaryRedirect)
+	}))
+	defer redirect.Close()
+
+	_, err := NewCapabilityGatewayBinding(
+		redirect.URL,
+		"TEST_CAPABILITY_GATEWAY_TOKEN",
+		"",
+		time.Second,
+		[]string{"document.pdf.v1"},
+	)
+	if err == nil || !strings.Contains(err.Error(), "discovery failed") {
+		t.Fatalf("redirect error = %v", err)
+	}
+	if followed.Load() {
+		t.Fatal("capability gateway redirect was followed")
+	}
+}
+
+func TestCapabilityGatewayBindingRejectsExcessiveLifetimeAndCleanupTimeout(t *testing.T) {
+	const runToken = "run-secret"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			writeCapabilityTestJSON(t, w, http.StatusCreated, map[string]any{
+				"runRef": "run-123", "runToken": runToken, "expiresInSeconds": 3601,
+			})
+		case http.MethodDelete:
+			w.WriteHeader(http.StatusRequestTimeout)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	binding := CapabilityGatewayBinding{
+		ServiceURL:  server.URL,
+		WorkerToken: "worker-secret",
+		Timeout:     time.Second,
+		client:      newCapabilityGatewayHTTPClient(time.Second),
+	}
+	if _, err := binding.open(context.Background(), time.Minute); err == nil || !strings.Contains(err.Error(), "lifetime") {
+		t.Fatalf("excessive lifetime error = %v", err)
+	}
+	if err := binding.close(context.Background(), capabilityGatewaySession{RunRef: "run-123", RunToken: runToken}); err == nil || !strings.Contains(err.Error(), "408") {
+		t.Fatalf("cleanup timeout error = %v", err)
+	}
+}
+
+func TestCapabilityGatewayDialerRejectsNonLoopbackTarget(t *testing.T) {
+	if _, err := dialCapabilityGatewayLoopback(context.Background(), "tcp", "192.0.2.1:80"); err == nil || !strings.Contains(err.Error(), "loopback") {
+		t.Fatalf("non-loopback dial error = %v", err)
 	}
 }
 

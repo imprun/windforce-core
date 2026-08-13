@@ -876,6 +876,14 @@ func waitForWorkerStatus(t *testing.T, store *state.LocalStore, workerID string,
 }
 
 func newProcessorTestHarness(t *testing.T, helperMode string) (Processor, *state.LocalStore, state.Run) {
+	return newProcessorTestHarnessWithDeployment(t, helperMode, nil)
+}
+
+func newProcessorTestHarnessWithDeployment(
+	t *testing.T,
+	helperMode string,
+	configure func(*contract.Deployment),
+) (Processor, *state.LocalStore, state.Run) {
 	t.Helper()
 	tempDir := t.TempDir()
 	sourceDir := filepath.Join(tempDir, "source")
@@ -906,6 +914,9 @@ func newProcessorTestHarness(t *testing.T, helperMode string) (Processor, *state
 				Command: []string{os.Args[0], "-test.run=TestWorkerHelperProcess", "--", helperMode},
 			},
 		},
+	}
+	if configure != nil {
+		configure(&deployment)
 	}
 	executionBundleStore := executionbundle.NewLocalStore(filepath.Join(tempDir, "artifacts"))
 	runner := &actionruntime.Runner{

@@ -118,16 +118,6 @@ after configuration.
 
 ## Worker-local capability labels
 
-A worker-local capability gateway participates in placement only through the
-same required-label contract. The worker is configured with ordinary,
-label-valid values such as `document.pdf.v1` and advertises them only after the
-loopback gateway reports at least one ready provider. A Job whose effective
-labels do not intersect those configured values receives no gateway run.
+A worker-local capability gateway participates in placement only through the same required-label contract. The worker is configured with ordinary, label-valid values such as `document.pdf.v1` and advertises them only after the loopback gateway reports at least one ready provider. A Job whose effective labels do not intersect those configured values receives no gateway run.
 
-Provider identifiers returned at runtime are a separate opaque namespace and
-may contain characters that worker labels do not allow. The external authoring
-pipeline or Application SDK owns the stable mapping from a provider identifier
-such as `document.pdf/v1` to the canonical manifest label
-`document.pdf.v1`. Core does not derive the mapping, inspect SDK requirements,
-or treat discovery as an execution-time placement override. See [ADR
-0034](../adr/0034-bind-worker-local-capability-gateways.md).
+Provider identifiers returned at runtime are a separate opaque namespace and may contain characters that worker labels do not allow. The external authoring pipeline or Application SDK owns the stable mapping from a provider identifier such as `document.pdf/v1` to the canonical manifest label `document.pdf.v1`. Core does not derive the mapping, inspect SDK requirements, or treat discovery as an execution-time placement override. See [ADR 0034](../adr/0034-bind-worker-local-capability-gateways.md).

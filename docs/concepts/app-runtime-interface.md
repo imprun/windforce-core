@@ -56,14 +56,7 @@ The current TypeScript low-level HTTP capability is `coreCtx.http.fetch`. An App
 
 The TypeScript `coreCtx.human.wait()` capability is similarly generic. It persists a form task and keeps the same Action process and call stack alive until a decision arrives. An Application SDK may wrap it with app-, domain-, or vendor-specific Interaction vocabulary, but that vocabulary and external delivery channel do not become Core types. See [HumanTask hold](human-task-hold.md).
 
-A worker may also attach private metadata for an optional worker-local
-capability gateway. This metadata contains a loopback URL, an opaque Job run
-reference, a Job-scoped token, and opaque ready-provider identifiers. It is not
-a new provider-specific `WindforceContext` API. An Application SDK may consume
-and remove this reserved metadata at the App boundary, then expose its own typed
-facade using the existing low-level host HTTP capability. Core never supplies
-the worker-wide gateway credential, never interprets provider operations, and
-never proxies provider binary artifacts. See [ADR 0034](../adr/0034-bind-worker-local-capability-gateways.md).
+A worker may also attach private metadata for an optional worker-local capability gateway. This metadata contains a loopback URL, an opaque Job run reference, a Job-scoped token, and opaque ready-provider identifiers. It is not a new provider-specific `WindforceContext` API. An Application SDK may consume and remove this reserved metadata at the App boundary, then expose its own typed facade using the existing low-level host HTTP capability. Core never supplies the worker-wide gateway credential, never interprets provider operations, and never proxies provider binary artifacts. See [ADR 0034](../adr/0034-bind-worker-local-capability-gateways.md).
 
 ## Application SDK adaptation
 
@@ -153,8 +146,7 @@ Before changing either side, verify:
 - No Application SDK receives Core service credentials or Worker Plane authority.
 - Core does not inspect SDK identity, import SDK vocabulary, or interpret an SDK context version.
 - `runsOn` and worker labels remain Core scheduling inputs rather than SDK capabilities.
-- Worker-local provider identifiers remain opaque runtime observations; an
-  Application SDK consumes the private Job binding and owns its typed facade.
+- Worker-local provider identifiers remain opaque runtime observations; an Application SDK consumes the private Job binding and owns its typed facade.
 - Browser or mobile library behavior is separated from worker provisioning and Job lifecycle.
 - Core and Application SDK conformance suites each test the boundary they own.
 

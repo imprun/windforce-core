@@ -339,7 +339,7 @@ func capabilityRunTTL(deployment contract.Deployment, action contract.Action) ti
 	if deployment.TimeoutS > 0 {
 		return time.Duration(deployment.TimeoutS) * time.Second
 	}
-	return time.Duration(contract.DefaultTimeoutS) * time.Second
+	return 0
 }
 
 func attemptPropagationReason(attempt int) string {

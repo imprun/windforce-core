@@ -155,6 +155,9 @@ func (b CapabilityGatewayBinding) open(ctx context.Context, ttl time.Duration) (
 	if !validOpaqueValue(output.RunRef) || !validOpaqueValue(output.RunToken) || output.ExpiresInSeconds == 0 {
 		return capabilityGatewaySession{}, errors.New("capability gateway returned invalid run credentials")
 	}
+	if output.ExpiresInSeconds > uint64(maxCapabilityGatewayTTL/time.Second) {
+		return capabilityGatewaySession{}, errors.New("capability gateway returned an excessive run credential lifetime")
+	}
 	return capabilityGatewaySession{RunRef: output.RunRef, RunToken: output.RunToken}, nil
 }
 
@@ -174,7 +177,7 @@ func (b CapabilityGatewayBinding) close(ctx context.Context, session capabilityG
 		return errors.New("capability gateway cleanup failed")
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusNoContent || resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusRequestTimeout {
+	if resp.StatusCode == http.StatusNoContent || resp.StatusCode == http.StatusNotFound {
 		return nil
 	}
 	return fmt.Errorf("capability gateway cleanup returned status %d", resp.StatusCode)
@@ -233,7 +236,45 @@ func (b CapabilityGatewayBinding) httpClient() *http.Client {
 func newCapabilityGatewayHTTPClient(timeout time.Duration) *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = nil
-	return &http.Client{Timeout: timeout, Transport: transport}
+	transport.DialContext = dialCapabilityGatewayLoopback
+	return &http.Client{
+		Timeout:   timeout,
+		Transport: transport,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return errors.New("capability gateway redirects are forbidden")
+		},
+	}
+}
+
+func dialCapabilityGatewayLoopback(ctx context.Context, network string, address string) (net.Conn, error) {
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil, errors.New("capability gateway transport requires a host and port")
+	}
+
+	var addresses []net.IPAddr
+	if ip := net.ParseIP(host); ip != nil {
+		addresses = []net.IPAddr{{IP: ip}}
+	} else if strings.EqualFold(host, "localhost") {
+		addresses, err = net.DefaultResolver.LookupIPAddr(ctx, host)
+		if err != nil {
+			return nil, errors.New("could not resolve capability gateway loopback host")
+		}
+	} else {
+		return nil, errors.New("capability gateway transport requires a loopback host")
+	}
+
+	dialer := net.Dialer{}
+	for _, candidate := range addresses {
+		if !candidate.IP.IsLoopback() {
+			continue
+		}
+		connection, dialErr := dialer.DialContext(ctx, network, net.JoinHostPort(candidate.String(), port))
+		if dialErr == nil {
+			return connection, nil
+		}
+	}
+	return nil, errors.New("could not connect to capability gateway loopback")
 }
 
 func normalizeCapabilityGatewayURL(raw string) (string, error) {
