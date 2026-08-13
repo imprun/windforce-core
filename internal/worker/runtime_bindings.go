@@ -1,7 +1,9 @@
 package worker
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -11,7 +13,21 @@ import (
 )
 
 type RuntimeBindings struct {
-	AuthSession AuthSessionBinding
+	AuthSession       AuthSessionBinding
+	CapabilityGateway CapabilityGatewayBinding
+}
+
+type RuntimeBindingResult struct {
+	Input        json.RawMessage
+	SecretValues []string
+	close        func(context.Context) error
+}
+
+func (r RuntimeBindingResult) Close(ctx context.Context) error {
+	if r.close == nil {
+		return nil
+	}
+	return r.close(ctx)
 }
 
 type AuthSessionBinding struct {
@@ -73,5 +89,74 @@ func (b RuntimeBindings) Apply(input json.RawMessage) (json.RawMessage, error) {
 		}
 		object[state.ReservedRuntimeInputKey] = payload
 	}
+	return json.Marshal(object)
+}
+
+func (b RuntimeBindings) Bind(
+	ctx context.Context,
+	input json.RawMessage,
+	requiredLabels []string,
+	ttl time.Duration,
+) (RuntimeBindingResult, error) {
+	bound, err := b.Apply(input)
+	if err != nil {
+		return RuntimeBindingResult{}, err
+	}
+	result := RuntimeBindingResult{Input: bound}
+	if b.AuthSession.JWT != "" {
+		result.SecretValues = append(result.SecretValues, b.AuthSession.JWT)
+	}
+	if !b.CapabilityGateway.Matches(requiredLabels) {
+		return result, nil
+	}
+	session, err := b.CapabilityGateway.open(ctx, ttl)
+	if err != nil {
+		return RuntimeBindingResult{}, err
+	}
+	bound, err = addCapabilityRuntimePayload(bound, b.CapabilityGateway, session)
+	if err != nil {
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), b.CapabilityGateway.Timeout)
+		defer cancel()
+		_ = b.CapabilityGateway.close(cleanupCtx, session)
+		return RuntimeBindingResult{}, err
+	}
+	result.Input = bound
+	result.SecretValues = append(result.SecretValues, session.RunToken)
+	result.close = func(cleanupCtx context.Context) error {
+		return b.CapabilityGateway.close(cleanupCtx, session)
+	}
+	return result, nil
+}
+
+func addCapabilityRuntimePayload(
+	input json.RawMessage,
+	binding CapabilityGatewayBinding,
+	session capabilityGatewaySession,
+) (json.RawMessage, error) {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(input, &object); err != nil || object == nil {
+		return nil, errors.New("capability runtime binding requires object input")
+	}
+	runtimePayload := map[string]json.RawMessage{}
+	if raw := object[state.ReservedRuntimeInputKey]; len(raw) > 0 {
+		if err := json.Unmarshal(raw, &runtimePayload); err != nil {
+			return nil, errors.New("worker runtime metadata is invalid")
+		}
+	}
+	capabilityPayload, err := json.Marshal(map[string]any{
+		"baseUrl":   binding.ServiceURL,
+		"runRef":    session.RunRef,
+		"runToken":  session.RunToken,
+		"available": append([]string(nil), binding.Capabilities...),
+	})
+	if err != nil {
+		return nil, err
+	}
+	runtimePayload["capabilities"] = capabilityPayload
+	rawRuntime, err := json.Marshal(runtimePayload)
+	if err != nil {
+		return nil, err
+	}
+	object[state.ReservedRuntimeInputKey] = rawRuntime
 	return json.Marshal(object)
 }

@@ -463,7 +463,7 @@ func TestProcessorOwnsRuntimeBindings(t *testing.T) {
 		t.Fatalf("runtime payload missing: %v: %s", err, completed.Output)
 	}
 	if runtimePayload.AuthSession.ServiceURL != "http://auth-session:8005" ||
-		runtimePayload.AuthSession.JWT != "worker-token" ||
+		runtimePayload.AuthSession.JWT != strings.Repeat("*", len("worker-token")) ||
 		runtimePayload.AuthSession.TimeoutMs != 12000 {
 		t.Fatalf("runtime payload = %#v", runtimePayload.AuthSession)
 	}
