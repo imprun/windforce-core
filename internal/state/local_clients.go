@@ -55,22 +55,32 @@ func (s *LocalStore) GetClientByTokenHash(ctx context.Context, workspaceID strin
 }
 
 func (s *LocalStore) CreateClient(ctx context.Context, workspaceID string, name string, tokenHash string, actor string) (Client, error) {
-	workspaceID = contract.NormalizeWorkspace(workspaceID)
+	return s.CreateClientWithInvocationPolicy(ctx, CreateClientRequest{
+		WorkspaceID: workspaceID, Name: name, TokenHash: tokenHash, Actor: actor,
+	})
+}
+
+func (s *LocalStore) CreateClientWithInvocationPolicy(ctx context.Context, request CreateClientRequest) (Client, error) {
+	request.WorkspaceID = contract.NormalizeWorkspace(request.WorkspaceID)
+	policy, err := initialTargetPolicy(request.InvocationPolicy)
+	if err != nil {
+		return Client{}, ErrInvalidState
+	}
 	var created Client
-	err := s.update(ctx, func(snapshot *Snapshot, now time.Time) error {
-		if snapshot.Clients[workspaceID] == nil {
-			snapshot.Clients[workspaceID] = map[string]Client{}
+	err = s.update(ctx, func(snapshot *Snapshot, now time.Time) error {
+		if snapshot.Clients[request.WorkspaceID] == nil {
+			snapshot.Clients[request.WorkspaceID] = map[string]Client{}
 		}
-		if clientTokenHashExists(snapshot.Clients[workspaceID], tokenHash, "") {
+		if clientTokenHashExists(snapshot.Clients[request.WorkspaceID], request.TokenHash, "") {
 			return fmt.Errorf("%w: client token already exists", ErrConflict)
 		}
 		created = Client{
-			ID: NewID("client"), WorkspaceID: workspaceID, Name: name, TokenHash: tokenHash,
-			InvocationPolicy: TargetPolicy{Mode: TargetPolicyModeAll, AllowedTargets: []string{}},
-			CreatedBy:        actor, UpdatedBy: actor, CreatedAt: now, UpdatedAt: now,
+			ID: NewID("client"), WorkspaceID: request.WorkspaceID, Name: request.Name, TokenHash: request.TokenHash,
+			InvocationPolicy: policy,
+			CreatedBy:        request.Actor, UpdatedBy: request.Actor, CreatedAt: now, UpdatedAt: now,
 		}
-		snapshot.Clients[workspaceID][created.ID] = created
-		appendLocalClientAudit(snapshot, workspaceID, created.ID, "created", "", actor, now)
+		snapshot.Clients[request.WorkspaceID][created.ID] = created
+		appendLocalClientAudit(snapshot, request.WorkspaceID, created.ID, "created", clientInvocationPolicyDetail(created), request.Actor, now)
 		return nil
 	})
 	return cloneClient(created), err

@@ -448,12 +448,14 @@ func (s Service) applyClient(ctx context.Context, doc Document, options Options)
 		}
 		return client, "validated", nil
 	}
-	created, err := s.Store.CreateClient(ctx, options.Workspace, name, "", options.Actor)
-	if err != nil {
-		return state.Client{}, "", err
+	var initialPolicy *state.TargetPolicy
+	if hasDesiredPolicy {
+		initialPolicy = &desiredPolicy
 	}
-	updated, _, err := s.applyClientInvocationPolicy(ctx, created, desiredPolicy, hasDesiredPolicy, options)
-	return updated, "created", err
+	created, err := s.Store.CreateClientWithInvocationPolicy(ctx, state.CreateClientRequest{
+		WorkspaceID: options.Workspace, Name: name, InvocationPolicy: initialPolicy, Actor: options.Actor,
+	})
+	return created, "created", err
 }
 
 func provisioningTargetPolicy(spec *InvocationPolicySpec) (state.TargetPolicy, bool, error) {

@@ -63,20 +63,34 @@ WHERE workspace_id=$1 AND token_hash=$2 AND token_hash <> ''
 }
 
 func (s *PostgresStore) CreateClient(ctx context.Context, workspaceID string, name string, tokenHash string, actor string) (Client, error) {
-	workspaceID = contract.NormalizeWorkspace(workspaceID)
+	return s.CreateClientWithInvocationPolicy(ctx, CreateClientRequest{
+		WorkspaceID: workspaceID, Name: name, TokenHash: tokenHash, Actor: actor,
+	})
+}
+
+func (s *PostgresStore) CreateClientWithInvocationPolicy(ctx context.Context, request CreateClientRequest) (Client, error) {
+	request.WorkspaceID = contract.NormalizeWorkspace(request.WorkspaceID)
+	policy, err := initialTargetPolicy(request.InvocationPolicy)
+	if err != nil {
+		return Client{}, ErrInvalidState
+	}
 	id := NewID("client")
 	var created Client
-	err := s.withTx(ctx, func(tx pgx.Tx) error {
+	err = s.withTx(ctx, func(tx pgx.Tx) error {
 		var err error
 		created, err = scanClient(tx.QueryRow(ctx, `
-INSERT INTO client_registry (workspace_id, id, name, token_hash, created_by, updated_by)
-VALUES ($1, $2, $3, $4, $5, $5)
+INSERT INTO client_registry (
+    workspace_id, id, name, token_hash,
+    invocation_policy_mode, invocation_allowed_targets,
+    created_by, updated_by
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
 RETURNING `+clientColumns+`
-`, workspaceID, id, name, tokenHash, actor))
+`, request.WorkspaceID, id, request.Name, request.TokenHash, policy.Mode, policy.AllowedTargets, request.Actor))
 		if err != nil {
 			return clientPostgresError(err)
 		}
-		return insertClientAudit(ctx, tx, workspaceID, id, "created", "", actor)
+		return insertClientAudit(ctx, tx, request.WorkspaceID, id, "created", clientInvocationPolicyDetail(created), request.Actor)
 	})
 	return created, err
 }

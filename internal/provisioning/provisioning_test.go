@@ -100,8 +100,12 @@ resources:
 		t.Fatalf("clients = %#v", clients)
 	}
 	policy := clients[0].EffectiveInvocationPolicy()
-	if policy.Mode != state.TargetPolicyModeRestricted || strings.Join(policy.AllowedTargets, ",") != "APP,APP/1000" || clients[0].InvocationPolicyRevision != 1 {
+	if policy.Mode != state.TargetPolicyModeRestricted || strings.Join(policy.AllowedTargets, ",") != "APP,APP/1000" || clients[0].InvocationPolicyRevision != 0 {
 		t.Fatalf("client invocation policy = %#v revision=%d", policy, clients[0].InvocationPolicyRevision)
+	}
+	audits, err := store.ListClientAudit(context.Background(), "default", clients[0].ID)
+	if err != nil || len(audits) != 1 || audits[0].Kind != "created" || !strings.Contains(audits[0].Detail, `"mode":"restricted"`) {
+		t.Fatalf("atomic provisioning audit = %#v err=%v", audits, err)
 	}
 	configs, err := store.ListInputConfigsForClient(context.Background(), "default", clients[0].ID)
 	if err != nil {

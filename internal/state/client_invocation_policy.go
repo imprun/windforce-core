@@ -19,6 +19,14 @@ type TargetPolicy struct {
 	AllowedTargets []string `json:"allowed_targets" yaml:"allowedTargets"`
 }
 
+type CreateClientRequest struct {
+	WorkspaceID      string
+	Name             string
+	TokenHash        string
+	InvocationPolicy *TargetPolicy
+	Actor            string
+}
+
 type UpdateClientInvocationPolicyRequest struct {
 	WorkspaceID        string
 	ClientID           string
@@ -67,6 +75,13 @@ func EffectiveTargetPolicy(policy TargetPolicy) TargetPolicy {
 		return TargetPolicy{Mode: TargetPolicyModeRestricted, AllowedTargets: []string{}}
 	}
 	return normalized
+}
+
+func initialTargetPolicy(policy *TargetPolicy) (TargetPolicy, error) {
+	if policy == nil {
+		return TargetPolicy{Mode: TargetPolicyModeAll, AllowedTargets: []string{}}, nil
+	}
+	return NormalizeTargetPolicy(*policy)
 }
 
 func (policy TargetPolicy) Allows(app string, action string) bool {

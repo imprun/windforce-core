@@ -72,6 +72,58 @@ describe("localized API errors", () => {
 });
 
 describe("WindforceApi client invocation policy", () => {
+  test("sends the initial policy in the atomic client creation request", async () => {
+    const originalFetch = globalThis.fetch;
+    const requests: Array<{ url: string; method: string; body: string }> = [];
+    globalThis.fetch = (async (input, init) => {
+      requests.push({
+        url: String(input),
+        method: init?.method || "GET",
+        body: String(init?.body || ""),
+      });
+      return new Response(
+        JSON.stringify({
+          client: {
+            id: "client-a",
+            workspace_id: "ops",
+            name: "Acme",
+            has_token: true,
+            invocation_policy: {
+              mode: "restricted",
+              allowed_targets: ["orders/create"],
+              revision: 0,
+            },
+            created_by: "operator",
+            updated_by: "operator",
+            created_at: "2026-08-13T00:00:00Z",
+            updated_at: "2026-08-13T00:00:00Z",
+          },
+          api_token: "redacted-test-value",
+        }),
+        { status: 201, headers: { "content-type": "application/json" } },
+      );
+    }) as typeof fetch;
+    try {
+      const api = new WindforceApi({ workspace: "ops", token: "", actor: "operator" });
+      await api.createClient({
+        name: "Acme",
+        invocation_policy: { mode: "restricted", allowed_targets: ["orders/create"] },
+      });
+      expect(requests).toEqual([
+        {
+          url: "/api/w/ops/clients",
+          method: "POST",
+          body: JSON.stringify({
+            name: "Acme",
+            invocation_policy: { mode: "restricted", allowed_targets: ["orders/create"] },
+          }),
+        },
+      ]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test("uses the dedicated revisioned policy endpoint", async () => {
     const originalFetch = globalThis.fetch;
     const requests: Array<{ url: string; method: string; body: string }> = [];

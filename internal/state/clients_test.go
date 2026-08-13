@@ -148,6 +148,22 @@ func exerciseClientStore(t *testing.T, store Store, workspaceID string) {
 	if created.InvocationPolicy.Mode != TargetPolicyModeAll || len(created.InvocationPolicy.AllowedTargets) != 0 || created.InvocationPolicyRevision != 0 {
 		t.Fatalf("created invocation policy = %#v revision=%d", created.InvocationPolicy, created.InvocationPolicyRevision)
 	}
+	restrictedPolicy := TargetPolicy{Mode: TargetPolicyModeRestricted, AllowedTargets: []string{"billing/export", "orders", "orders"}}
+	restricted, err := store.CreateClientWithInvocationPolicy(ctx, CreateClientRequest{
+		WorkspaceID: workspaceID, Name: "Restricted Client", TokenHash: HashClientToken("client-key-restricted"),
+		InvocationPolicy: &restrictedPolicy, Actor: "alice",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restricted.InvocationPolicyRevision != 0 || !reflect.DeepEqual(restricted.InvocationPolicy.AllowedTargets, []string{"billing/export", "orders"}) {
+		t.Fatalf("atomically created policy = %#v revision=%d", restricted.InvocationPolicy, restricted.InvocationPolicyRevision)
+	}
+	restrictedAudit, err := store.ListClientAudit(ctx, workspaceID, restricted.ID)
+	if err != nil || len(restrictedAudit) != 1 || restrictedAudit[0].Kind != "created" ||
+		!strings.Contains(restrictedAudit[0].Detail, `"mode":"restricted"`) || !strings.Contains(restrictedAudit[0].Detail, `"revision":0`) {
+		t.Fatalf("atomic creation audit = %#v, %v", restrictedAudit, err)
+	}
 	if _, err := store.CreateClient(ctx, workspaceID, "Duplicate", HashClientToken("client-key-a"), "alice"); !errors.Is(err, ErrConflict) {
 		t.Fatalf("duplicate error = %v, want conflict", err)
 	}
@@ -166,7 +182,8 @@ func exerciseClientStore(t *testing.T, store Store, workspaceID string) {
 	}
 	policyUpdated, replayed, err := store.UpdateClientInvocationPolicy(ctx, policyRequest)
 	if err != nil || replayed || policyUpdated.InvocationPolicyRevision != 1 ||
-		!reflect.DeepEqual(policyUpdated.InvocationPolicy.AllowedTargets, []string{"orders", "reports/export"}) {
+		!reflect.DeepEqual(policyUpdated.InvocationPolicy.AllowedTargets, []string{"orders", "reports/export"}) ||
+		!ClientTokenMatches(policyUpdated, "client-key-a") {
 		t.Fatalf("policy update = %#v replayed=%v err=%v", policyUpdated, replayed, err)
 	}
 	replayedClient, replayed, err := store.UpdateClientInvocationPolicy(ctx, policyRequest)
@@ -192,11 +209,12 @@ func exerciseClientStore(t *testing.T, store Store, workspaceID string) {
 		t.Fatalf("updated = %#v", updated)
 	}
 	rotated, err := store.RotateClientToken(ctx, workspaceID, created.ID, HashClientToken("client-key-b"), "bob")
-	if err != nil || !ClientTokenMatches(rotated, "client-key-b") || ClientTokenMatches(rotated, "client-key-a") || rotated.InvocationPolicyRevision != 1 {
+	if err != nil || !ClientTokenMatches(rotated, "client-key-b") || ClientTokenMatches(rotated, "client-key-a") ||
+		rotated.InvocationPolicyRevision != 1 || !reflect.DeepEqual(rotated.InvocationPolicy.AllowedTargets, []string{"orders", "reports/export"}) {
 		t.Fatalf("rotated = %#v, %v", rotated, err)
 	}
 	clients, err := store.ListClients(ctx, workspaceID)
-	if err != nil || len(clients) != 1 || clients[0].ID != created.ID {
+	if err != nil || len(clients) != 2 {
 		t.Fatalf("clients = %#v, %v", clients, err)
 	}
 	audit, err := store.ListClientAudit(ctx, workspaceID, created.ID)
@@ -222,7 +240,8 @@ func exerciseClientStore(t *testing.T, store Store, workspaceID string) {
 		t.Fatalf("delete with active token error = %v, want conflict", err)
 	}
 	revoked, err := store.RevokeClientToken(ctx, workspaceID, created.ID, "carol")
-	if err != nil || revoked.TokenHash != "" {
+	if err != nil || revoked.TokenHash != "" || revoked.InvocationPolicyRevision != 1 ||
+		!reflect.DeepEqual(revoked.InvocationPolicy.AllowedTargets, []string{"orders", "reports/export"}) {
 		t.Fatalf("revoked = %#v, %v", revoked, err)
 	}
 	if err := store.DeleteClient(ctx, workspaceID, created.ID, "carol"); err != nil {

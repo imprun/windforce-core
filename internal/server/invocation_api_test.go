@@ -271,6 +271,31 @@ func TestInvocationAPIPrincipalAuthorizationAndIdempotency(t *testing.T) {
 		bytes.Contains(clientAppBody, []byte(`"hidden"`)) || bytes.Contains(clientAppBody, []byte("hidden-action-marker")) {
 		t.Fatalf("client action-filtered discovery status = %d: %s", clientApp.StatusCode, clientAppBody)
 	}
+	if _, replayed, err := store.UpdateClientInvocationPolicy(ctx, state.UpdateClientInvocationPolicyRequest{
+		WorkspaceID: "ws-a", ClientID: client.ID,
+		Policy:      state.TargetPolicy{Mode: state.TargetPolicyModeRestricted, AllowedTargets: []string{"echo"}},
+		OperationID: "allow-client-app", ExpectedRevision: 1, RequestFingerprint: "allow-client-app-v2", Actor: "admin",
+	}); err != nil || replayed {
+		t.Fatalf("allow client app policy: replayed=%v err=%v", replayed, err)
+	}
+	clientFullApp, clientFullAppBody := call(http.MethodGet, "/api/v1/workspaces/ws-a/apps/echo", clientToken, "", "")
+	if clientFullApp.StatusCode != http.StatusOK || !bytes.Contains(clientFullAppBody, []byte(`"run"`)) ||
+		!bytes.Contains(clientFullAppBody, []byte(`"hidden"`)) || !bytes.Contains(clientFullAppBody, []byte("hidden-action-marker")) {
+		t.Fatalf("client app-wide discovery status = %d: %s", clientFullApp.StatusCode, clientFullAppBody)
+	}
+	if _, replayed, err := store.UpdateClientInvocationPolicy(ctx, state.UpdateClientInvocationPolicyRequest{
+		WorkspaceID: "ws-a", ClientID: client.ID,
+		Policy:      state.TargetPolicy{Mode: state.TargetPolicyModeRestricted, AllowedTargets: []string{}},
+		OperationID: "deny-client-all", ExpectedRevision: 2, RequestFingerprint: "deny-client-all-v3", Actor: "admin",
+	}); err != nil || replayed {
+		t.Fatalf("deny client policy: replayed=%v err=%v", replayed, err)
+	}
+	clientDenyAll, clientDenyAllBody := call(
+		http.MethodPost, "/api/v1/workspaces/ws-a/runs", clientToken, "request-3", clientRequestBody,
+	)
+	if clientDenyAll.StatusCode != http.StatusForbidden {
+		t.Fatalf("client deny-all status = %d: %s", clientDenyAll.StatusCode, clientDenyAllBody)
+	}
 	clientRead, clientReadBody := call(
 		http.MethodGet, "/api/v1/workspaces/ws-a/runs/"+clientCreated.RunID, clientToken, "", "",
 	)

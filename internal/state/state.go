@@ -829,6 +829,7 @@ type Store interface {
 	GetClient(ctx context.Context, workspaceID string, id string) (Client, error)
 	GetClientByTokenHash(ctx context.Context, workspaceID string, tokenHash string) (Client, error)
 	CreateClient(ctx context.Context, workspaceID string, name string, tokenHash string, actor string) (Client, error)
+	CreateClientWithInvocationPolicy(ctx context.Context, request CreateClientRequest) (Client, error)
 	UpdateClient(ctx context.Context, workspaceID string, id string, name string, actor string) (Client, error)
 	UpdateClientInvocationPolicy(ctx context.Context, request UpdateClientInvocationPolicyRequest) (Client, bool, error)
 	RotateClientToken(ctx context.Context, workspaceID string, id string, tokenHash string, actor string) (Client, error)

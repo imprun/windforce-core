@@ -79,6 +79,10 @@ export type ClientInvocationPolicyResult = {
 
 export type ClientPayload = {
   name: string;
+  invocation_policy?: {
+    mode: ClientInvocationPolicy["mode"];
+    allowed_targets: string[];
+  };
 };
 
 export type ClientTokenResult = {

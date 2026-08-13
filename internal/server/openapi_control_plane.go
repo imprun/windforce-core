@@ -1311,6 +1311,14 @@ func controlPlaneSchemas() map[string]any {
 			},
 			"required": []any{"mode", "allowed_targets", "revision"},
 		},
+		"ClientInvocationPolicyInput": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"mode":            map[string]any{"type": "string", "enum": []any{"all", "restricted"}},
+				"allowed_targets": map[string]any{"type": "array", "items": oapiStringSchema()},
+			},
+			"required": []any{"mode", "allowed_targets"},
+		},
 		"UpdateClientInvocationPolicyRequest": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -1333,6 +1341,10 @@ func controlPlaneSchemas() map[string]any {
 			"type": "object",
 			"properties": map[string]any{
 				"name": oapiStringSchema(),
+				"invocation_policy": map[string]any{
+					"allOf":       []any{oapiSchemaRef("ClientInvocationPolicyInput")},
+					"description": "Optional initial policy committed atomically with the Client. Omission preserves legacy all-target behavior.",
+				},
 			},
 			"required": []any{"name"},
 		},

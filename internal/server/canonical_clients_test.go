@@ -69,12 +69,26 @@ func TestCanonicalClientLifecycle(t *testing.T) {
 	if bytes.Contains(createdBody, []byte("token_hash")) || bytes.Contains(createdBody, []byte("external_key")) {
 		t.Fatalf("created response exposes stored credential data: %s", createdBody)
 	}
+	var restrictedIssued struct {
+		Client   clientView `json:"client"`
+		APIToken string     `json:"api_token"`
+	}
+	restrictedBody := do(http.MethodPost, "/api/w/ws-a/clients", "alice@example.test", `{"name":"Restricted Customer","invocation_policy":{"mode":"restricted","allowed_targets":["echo/run","echo/run"]}}`, http.StatusCreated, &restrictedIssued)
+	if restrictedIssued.Client.InvocationPolicy.Mode != state.TargetPolicyModeRestricted ||
+		restrictedIssued.Client.InvocationPolicy.Revision != 0 || strings.Join(restrictedIssued.Client.InvocationPolicy.AllowedTargets, ",") != "echo/run" {
+		t.Fatalf("atomically created policy = %#v", restrictedIssued.Client.InvocationPolicy)
+	}
+	do(http.MethodPost, "/api/w/ws-a/clients", "alice@example.test", `{"name":"Invalid Customer","invocation_policy":{"mode":"restricted"}}`, http.StatusBadRequest, nil)
+	do(http.MethodPost, "/api/w/ws-a/clients", "alice@example.test", `{"name":"Invalid Customer","invocation_policy":{"mode":"all","allowed_targets":["echo"]}}`, http.StatusBadRequest, nil)
+	if bytes.Contains(restrictedBody, []byte("token_hash")) || bytes.Contains(restrictedBody, []byte("external_key")) {
+		t.Fatalf("restricted creation response exposes stored credential data: %s", restrictedBody)
+	}
 
 	do(http.MethodPost, "/api/w/ws-a/clients", "alice@example.test", `{"name":"   "}`, http.StatusBadRequest, nil)
 
 	var clients []clientView
 	do(http.MethodGet, "/api/w/ws-a/clients", "", "", http.StatusOK, &clients)
-	if len(clients) != 1 || clients[0].ID != created.ID {
+	if len(clients) != 2 {
 		t.Fatalf("clients = %#v", clients)
 	}
 
@@ -142,10 +156,14 @@ func TestCanonicalClientLifecycle(t *testing.T) {
 
 func TestControlPlaneOpenAPIIncludesClients(t *testing.T) {
 	schemas := controlPlaneSchemas()
-	for _, name := range []string{"Client", "ClientInvocationPolicy", "UpdateClientInvocationPolicyRequest", "ClientInvocationPolicyResult", "ClientTokenResult", "CreateClientRequest", "UpdateClientRequest", "ClientAudit", "AuditChanges", "AuditEvent", "InputConfig", "SetInputConfigRequest", "InputConfigAudit", "ProvisioningInvocationPolicy", "ProvisioningResource", "ProvisioningImportRequest", "ProvisioningResult"} {
+	for _, name := range []string{"Client", "ClientInvocationPolicy", "ClientInvocationPolicyInput", "UpdateClientInvocationPolicyRequest", "ClientInvocationPolicyResult", "ClientTokenResult", "CreateClientRequest", "UpdateClientRequest", "ClientAudit", "AuditChanges", "AuditEvent", "InputConfig", "SetInputConfigRequest", "InputConfigAudit", "ProvisioningInvocationPolicy", "ProvisioningResource", "ProvisioningImportRequest", "ProvisioningResult"} {
 		if schemas[name] == nil {
 			t.Fatalf("missing schema %s", name)
 		}
+	}
+	createClient := schemas["CreateClientRequest"].(map[string]any)
+	if createClient["properties"].(map[string]any)["invocation_policy"] == nil {
+		t.Fatal("Client creation does not expose an atomic initial invocation policy")
 	}
 	provisioningResource := schemas["ProvisioningResource"].(map[string]any)
 	provisioningProperties := provisioningResource["properties"].(map[string]any)

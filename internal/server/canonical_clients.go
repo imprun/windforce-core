@@ -17,6 +17,16 @@ type canonicalClientRequest struct {
 	Name *string `json:"name"`
 }
 
+type canonicalCreateClientRequest struct {
+	Name             *string                               `json:"name"`
+	InvocationPolicy *canonicalClientInvocationPolicyInput `json:"invocation_policy,omitempty"`
+}
+
+type canonicalClientInvocationPolicyInput struct {
+	Mode           string    `json:"mode"`
+	AllowedTargets *[]string `json:"allowed_targets"`
+}
+
 type canonicalClientInvocationPolicyRequest struct {
 	OperationID      string    `json:"operation_id"`
 	ExpectedRevision *int64    `json:"expected_revision"`
@@ -77,7 +87,7 @@ func (h *Handler) handleCanonicalClient(w http.ResponseWriter, r *http.Request, 
 }
 
 func (h *Handler) handleCanonicalCreateClient(w http.ResponseWriter, r *http.Request, workspaceID string) {
-	var request canonicalClientRequest
+	var request canonicalCreateClientRequest
 	if err := readRequiredJSON(r, &request); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
@@ -90,12 +100,30 @@ func (h *Handler) handleCanonicalCreateClient(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
+	var invocationPolicy *state.TargetPolicy
+	if request.InvocationPolicy != nil {
+		if request.InvocationPolicy.AllowedTargets == nil {
+			writeError(w, http.StatusBadRequest, "invocation_policy.allowed_targets is required")
+			return
+		}
+		policy, err := state.NormalizeTargetPolicy(state.TargetPolicy{
+			Mode: request.InvocationPolicy.Mode, AllowedTargets: *request.InvocationPolicy.AllowedTargets,
+		})
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid invocation_policy")
+			return
+		}
+		invocationPolicy = &policy
+	}
 	value, err := newClientToken()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "could not generate client token")
 		return
 	}
-	client, err := h.store.CreateClient(r.Context(), workspaceID, name, state.HashClientToken(value), clientActor(r))
+	client, err := h.store.CreateClientWithInvocationPolicy(r.Context(), state.CreateClientRequest{
+		WorkspaceID: workspaceID, Name: name, TokenHash: state.HashClientToken(value),
+		InvocationPolicy: invocationPolicy, Actor: clientActor(r),
+	})
 	if err != nil {
 		writeStateError(w, err)
 		return

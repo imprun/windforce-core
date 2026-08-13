@@ -25,7 +25,7 @@ ClientInvocationPolicy
 
 `all` permits every App and Action in the Client's workspace and requires an empty target list. `restricted` permits only normalized exact `app` and `app/action` entries; an App entry permits all Actions in that App, and an empty restricted list denies all targets. Target syntax is validated but target existence is not, so an operator may stage policy before publishing a Release.
 
-The policy revision is independent from Client name updates and token rotation or revocation. Existing Clients and newly created Core-only Clients default to explicit `all` at revision zero. Existing Client IDs, tokens, InputConfig, Runs, and audit history remain unchanged.
+The policy revision is independent from Client name updates and token rotation or revocation. The policy remains owned by the Client, so future support for multiple credentials per Client can share one execution target policy without copying it onto each credential. Existing Clients and newly created Core-only Clients default to explicit `all` at revision zero. Existing Client IDs, tokens, InputConfig, Runs, and audit history remain unchanged.
 
 ### Mutation contract
 
@@ -45,7 +45,7 @@ Content-Type: application/json
 
 The request requires a valid operation ID, a non-negative expected revision, an explicit mode, and a normalized policy. The resulting policy, monotonic revision, latest operation replay metadata, Client audit record, actor, and update timestamp commit atomically. An exact retry of the latest operation returns the same revision without another audit record. Reusing the operation ID with a different fingerprint or using a stale revision with a different operation returns conflict.
 
-Client create and name-update requests retain their current shape. Create defaults to `all`; name updates preserve the current policy. Policy-aware Client responses always return an explicit normalized policy and revision.
+Client creation accepts an optional initial `invocation_policy` without revision or operation metadata. The Client, issued token hash, initial policy at revision zero, and creation audit record commit in one store transaction. Omission preserves the existing `all` default for backward-compatible Core-only callers. Hosted control planes and customer-registration automation must send the intended policy during creation rather than create `all` and narrow it afterward. Name updates preserve the current policy. Policy-aware Client responses always return an explicit normalized policy and revision.
 
 ### Admission and idempotency ordering
 
@@ -67,6 +67,7 @@ Core owns Client identity, `wfk_` authentication, Client-specific InputConfig re
 
 - Core-only installations keep the existing allow-all creation experience and can opt into least privilege per Client.
 - Hosted products can maintain their own grant model while Core independently prevents a broader downstream invocation.
+- A hosted control plane must fail closed at its own gateway when desired policy synchronization is unknown or failed; Core continues to enforce the last policy committed successfully.
 - Local JSON and PostgreSQL stores must preserve identical policy, OCC, replay, audit, and migration behavior.
 - Control OpenAPI, provisioning import and export, the embedded administration UI, and authorization tests must expose the explicit contract.
 - An exact idempotency replay is a read of an existing admission, not authorization for new work.

@@ -1,16 +1,16 @@
 export default {
   id: "client-input-settings",
-  title: "Manage client input settings",
-  description: "Review app- and action-specific values applied for one external client.",
+  title: "Manage customer input settings",
+  description: "Review app- and action-specific values applied for one customer.",
   guide: [
-    "Open Client Registry.",
-    "Select an external client.",
+    "Open Customers.",
+    "Select a customer.",
     "Open a settings row to review its JSON values and locked keys.",
   ],
   screenshot: "docs/assets/ui/client-input-settings.png",
   async run({ page, capture }) {
     await page.goto();
-    await page.clickText("Client Registry");
+    await page.clickText("Customers");
     await page.clickText("Example Retailer");
     await page.clickText("Input Settings");
     await page.waitForSelector("#clientInputSettingsSummary tbody tr");
