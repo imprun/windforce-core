@@ -8,7 +8,7 @@ export default {
   guide: [
     "Open App access.",
     "Scan the app caller name, API credential state, and latest change.",
-    "Open an app caller name for app access and input settings, or choose Edit for credential management.",
+    "Open an app caller name for identity and app access, or choose Edit for credential management.",
   ],
   async run({ page, capture }) {
     await page.goto();

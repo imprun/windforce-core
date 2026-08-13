@@ -13,6 +13,17 @@ describe("settings routes", () => {
   });
 });
 
+describe("app-caller routes", () => {
+  test("redirects removed app-caller input-setting routes to the caller overview", () => {
+    expect(source).toContain('matchRoute("/clients/:id/input-settings/:appKey?", path)');
+    expect(source).toMatch(
+      /<RouteRedirect to=\{`\/clients\/\$\{encodeURIComponent\(legacyClientInputSettings\.id\)\}`\} \/>/,
+    );
+    expect(source).toContain('matchRoute("/clients/:id/:tab?", path)');
+    expect(source).not.toContain('matchRoute("/clients/:id/:tab?/:appKey?", path)');
+  });
+});
+
 describe("HumanTask routes", () => {
   test("keeps the generic HumanTask queue in the workspace shell", () => {
     expect(source).toContain('matchRoute("/human-tasks", path)');

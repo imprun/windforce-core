@@ -144,6 +144,16 @@ Sync source fetches the tracked branch, validates the source contract, and store
 2. Click Sync source.
 3. Confirm that Sync source changes to Source current and Publish Release becomes available when the commit changed.
 
+## Manage app-caller input settings from an app
+
+App and action schemas stay in context while an operator reviews values for one app caller.
+
+![Manage app-caller input settings from an app](../assets/ui/app-input-settings.png)
+
+1. Open an app and choose Input Settings.
+2. Select an app-caller scope.
+3. Open a settings row to review its JSON values and locked keys.
+
 ## Publish a release
 
 Publish Release prepares the latest synchronized source and publishes it as the worker-visible contract, recorded with the audit actor.
@@ -194,7 +204,7 @@ The app-access registry keeps credential state and the latest change compact whi
 
 1. Open App access.
 2. Scan the app caller name, API credential state, and latest change.
-3. Open an app caller name for app access and input settings, or choose Edit for credential management.
+3. Open an app caller name for identity and app access, or choose Edit for credential management.
 
 ## Review app access on a narrow screen
 
@@ -585,16 +595,6 @@ The webhook list remains usable on narrow screens through a stable navigation ra
 1. Open Settings and choose Webhooks on a narrow screen.
 2. Scroll the table horizontally when all operational columns are needed.
 3. Open the webhook name to continue into its full detail page.
-
-## Manage app-caller input settings
-
-Review app- and action-specific values applied for one app caller.
-
-![Manage app-caller input settings](../assets/ui/client-input-settings.png)
-
-1. Open App access.
-2. Select an app caller.
-3. Open a settings row to review its JSON values and locked keys.
 
 ## Set app-caller access
 
