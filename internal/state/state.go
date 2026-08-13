@@ -383,14 +383,18 @@ type ResourceType struct {
 }
 
 type Client struct {
-	ID          string    `json:"id"`
-	WorkspaceID string    `json:"workspace_id"`
-	Name        string    `json:"name"`
-	TokenHash   string    `json:"token_hash,omitempty"`
-	CreatedBy   string    `json:"created_by"`
-	UpdatedBy   string    `json:"updated_by"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID                                 string       `json:"id"`
+	WorkspaceID                        string       `json:"workspace_id"`
+	Name                               string       `json:"name"`
+	TokenHash                          string       `json:"token_hash,omitempty"`
+	InvocationPolicy                   TargetPolicy `json:"invocation_policy"`
+	InvocationPolicyRevision           int64        `json:"invocation_policy_revision"`
+	InvocationPolicyOperationID        string       `json:"invocation_policy_operation_id,omitempty"`
+	InvocationPolicyRequestFingerprint string       `json:"invocation_policy_request_fingerprint,omitempty"`
+	CreatedBy                          string       `json:"created_by"`
+	UpdatedBy                          string       `json:"updated_by"`
+	CreatedAt                          time.Time    `json:"created_at"`
+	UpdatedAt                          time.Time    `json:"updated_at"`
 }
 
 type ServicePrincipal struct {
@@ -826,6 +830,7 @@ type Store interface {
 	GetClientByTokenHash(ctx context.Context, workspaceID string, tokenHash string) (Client, error)
 	CreateClient(ctx context.Context, workspaceID string, name string, tokenHash string, actor string) (Client, error)
 	UpdateClient(ctx context.Context, workspaceID string, id string, name string, actor string) (Client, error)
+	UpdateClientInvocationPolicy(ctx context.Context, request UpdateClientInvocationPolicyRequest) (Client, bool, error)
 	RotateClientToken(ctx context.Context, workspaceID string, id string, tokenHash string, actor string) (Client, error)
 	RevokeClientToken(ctx context.Context, workspaceID string, id string, actor string) (Client, error)
 	DeleteClient(ctx context.Context, workspaceID string, id string, actor string) error

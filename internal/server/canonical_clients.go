@@ -17,20 +17,38 @@ type canonicalClientRequest struct {
 	Name *string `json:"name"`
 }
 
+type canonicalClientInvocationPolicyRequest struct {
+	OperationID      string    `json:"operation_id"`
+	ExpectedRevision *int64    `json:"expected_revision"`
+	Mode             string    `json:"mode"`
+	AllowedTargets   *[]string `json:"allowed_targets"`
+}
+
+type clientInvocationPolicyView struct {
+	Mode           string   `json:"mode"`
+	AllowedTargets []string `json:"allowed_targets"`
+	Revision       int64    `json:"revision"`
+}
+
 type clientView struct {
-	ID          string `json:"id"`
-	WorkspaceID string `json:"workspace_id"`
-	Name        string `json:"name"`
-	HasToken    bool   `json:"has_token"`
-	CreatedBy   string `json:"created_by"`
-	UpdatedBy   string `json:"updated_by"`
-	CreatedAt   string `json:"created_at"`
-	UpdatedAt   string `json:"updated_at"`
+	ID               string                     `json:"id"`
+	WorkspaceID      string                     `json:"workspace_id"`
+	Name             string                     `json:"name"`
+	HasToken         bool                       `json:"has_token"`
+	InvocationPolicy clientInvocationPolicyView `json:"invocation_policy"`
+	CreatedBy        string                     `json:"created_by"`
+	UpdatedBy        string                     `json:"updated_by"`
+	CreatedAt        string                     `json:"created_at"`
+	UpdatedAt        string                     `json:"updated_at"`
 }
 
 func clientResponse(client state.Client) clientView {
+	policy := client.EffectiveInvocationPolicy()
 	return clientView{
 		ID: client.ID, WorkspaceID: client.WorkspaceID, Name: client.Name, HasToken: client.TokenHash != "",
+		InvocationPolicy: clientInvocationPolicyView{
+			Mode: policy.Mode, AllowedTargets: policy.AllowedTargets, Revision: client.InvocationPolicyRevision,
+		},
 		CreatedBy: client.CreatedBy, UpdatedBy: client.UpdatedBy,
 		CreatedAt: client.CreatedAt.UTC().Format(timeLayout), UpdatedAt: client.UpdatedAt.UTC().Format(timeLayout),
 	}
@@ -110,6 +128,48 @@ func (h *Handler) handleCanonicalUpdateClient(w http.ResponseWriter, r *http.Req
 		return
 	}
 	writeJSON(w, http.StatusOK, clientResponse(client))
+}
+
+func (h *Handler) handleCanonicalUpdateClientInvocationPolicy(w http.ResponseWriter, r *http.Request, workspaceID string, id string) {
+	var request canonicalClientInvocationPolicyRequest
+	if err := readRequiredJSON(r, &request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	policy, err := state.NormalizeTargetPolicy(state.TargetPolicy{
+		Mode: request.Mode, AllowedTargets: valueOrEmpty(request.AllowedTargets),
+	})
+	if err != nil || !validOperationID(request.OperationID) || request.ExpectedRevision == nil ||
+		*request.ExpectedRevision < 0 || request.AllowedTargets == nil {
+		writeError(w, http.StatusBadRequest, "valid operation_id, non-negative expected_revision, mode, and allowed_targets are required")
+		return
+	}
+	expectedRevision := *request.ExpectedRevision
+	fingerprint := requestFingerprint(struct {
+		OperationID      string             `json:"operation_id"`
+		ExpectedRevision int64              `json:"expected_revision"`
+		Policy           state.TargetPolicy `json:"policy"`
+	}{strings.TrimSpace(request.OperationID), expectedRevision, policy})
+	client, replayed, err := h.store.UpdateClientInvocationPolicy(r.Context(), state.UpdateClientInvocationPolicyRequest{
+		WorkspaceID: workspaceID, ClientID: strings.TrimSpace(id), Policy: policy,
+		OperationID: strings.TrimSpace(request.OperationID), ExpectedRevision: expectedRevision,
+		RequestFingerprint: fingerprint, Actor: clientActor(r),
+	})
+	if err != nil {
+		writeStateError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"invocation_policy": clientResponse(client).InvocationPolicy,
+		"replayed":          replayed,
+	})
+}
+
+func valueOrEmpty(value *[]string) []string {
+	if value == nil {
+		return nil
+	}
+	return *value
 }
 
 func (h *Handler) handleCanonicalRotateClientToken(w http.ResponseWriter, r *http.Request, workspaceID string, id string) {

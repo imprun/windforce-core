@@ -52,10 +52,29 @@ export type Client = {
   workspace_id: string;
   name: string;
   has_token: boolean;
+  invocation_policy: ClientInvocationPolicy;
   created_by: string;
   updated_by: string;
   created_at: string;
   updated_at: string;
+};
+
+export type ClientInvocationPolicy = {
+  mode: "all" | "restricted";
+  allowed_targets: string[];
+  revision: number;
+};
+
+export type ClientInvocationPolicyPayload = {
+  operation_id: string;
+  expected_revision: number;
+  mode: ClientInvocationPolicy["mode"];
+  allowed_targets: string[];
+};
+
+export type ClientInvocationPolicyResult = {
+  invocation_policy: ClientInvocationPolicy;
+  replayed: boolean;
 };
 
 export type ClientPayload = {
@@ -871,6 +890,16 @@ export class WindforceApi {
 
   revokeClientToken(id: string): Promise<Client> {
     return this.request(`/clients/${encodeURIComponent(id)}/token`, { method: "DELETE" });
+  }
+
+  updateClientInvocationPolicy(
+    id: string,
+    payload: ClientInvocationPolicyPayload,
+  ): Promise<ClientInvocationPolicyResult> {
+    return this.request(`/clients/${encodeURIComponent(id)}/invocation-policy`, {
+      method: "PUT",
+      body: payload,
+    });
   }
 
   clientInputConfigs(id: string): Promise<InputConfig[]> {

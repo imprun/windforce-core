@@ -161,6 +161,16 @@ export default {
       headers: { "x-windforce-actor": "ui-guide@example.test" },
       body: { name: "Example Retailer" },
     });
+    await api(`/clients/${encodeURIComponent(clientToken.client.id)}/invocation-policy`, {
+      method: "PUT",
+      headers: { "x-windforce-actor": "ui-guide@example.test" },
+      body: {
+        operation_id: "ui-guide-client-policy",
+        expected_revision: 0,
+        mode: "restricted",
+        allowed_targets: ["echo/echo"],
+      },
+    });
     await api("/apps/echo/input-configs", {
       method: "PUT",
       headers: { "x-windforce-actor": "ui-guide@example.test" },

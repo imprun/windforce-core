@@ -173,9 +173,6 @@ func (s *AdmissionService) CreateRun(ctx context.Context, request CreateRunReque
 		if !principal.HasScope(ScopeRunsCreate) {
 			return Admission{}, &Fault{Kind: FaultForbidden, Message: "principal lacks runs:create"}
 		}
-		if !principal.AllowsTarget(request.App, request.Action) {
-			return Admission{}, &Fault{Kind: FaultForbidden, Message: "principal is not allowed to invoke this app/action"}
-		}
 		if len(request.Env) > 0 {
 			return Admission{}, &Fault{Kind: FaultInvalidRequest, Message: "per-run env is not allowed"}
 		}
@@ -198,6 +195,12 @@ func (s *AdmissionService) CreateRun(ctx context.Context, request CreateRunReque
 			return Admission{}, &Fault{Kind: FaultInternal, Message: "could not resolve client", Err: err}
 		}
 		clientID = client.ID
+		if principal.Kind == PrincipalClient && principal.ID == client.ID {
+			// Authentication produces a policy snapshot. Refresh it at the later
+			// admission boundary so a policy reduction that completed in between
+			// cannot authorize a new run through the stale snapshot.
+			principal.TargetPolicy = client.EffectiveInvocationPolicy()
+		}
 	}
 
 	fingerprint, err := invocationRequestFingerprint(request.App, request.Action, request.Input, request.CorrelationID, request.ScheduledFor)
@@ -222,6 +225,9 @@ func (s *AdmissionService) CreateRun(ctx context.Context, request CreateRunReque
 		if found {
 			return replayAdmission(existingRun, existingJob, fingerprint)
 		}
+	}
+	if principal.Kind != "" && !principal.AllowsTarget(request.App, request.Action) {
+		return Admission{}, &Fault{Kind: FaultForbidden, Message: "principal is not allowed to invoke this app/action"}
 	}
 
 	deployment, err := s.lookupDeployment(ctx, request.Workspace, request.App)
@@ -398,17 +404,21 @@ func (s *Service) DescribeApp(ctx context.Context, workspace string, app string)
 	if err != nil {
 		return AppDescription{}, &Fault{Kind: FaultAppNotFound, Message: "app not found: " + app, Err: err}
 	}
+	return s.describeDeployment(ctx, deployment)
+}
+
+func (s *Service) describeDeployment(ctx context.Context, deployment contract.Deployment) (AppDescription, error) {
 	reader := NewSchemaReader(ctx, s.bundles, deployment)
 	defer reader.Close()
 	actions := make(map[string]ActionDescription, len(deployment.Actions))
 	for key, spec := range deployment.Actions {
 		inputSchema, readErr := reader.Read(spec.InputSchema, spec.InputSchemaBody)
 		if readErr != nil {
-			return AppDescription{}, &Fault{Kind: FaultInternal, Message: fmt.Sprintf("input schema for %s/%s: %v", app, key, readErr), Err: readErr}
+			return AppDescription{}, &Fault{Kind: FaultInternal, Message: fmt.Sprintf("input schema for %s/%s: %v", deployment.App, key, readErr), Err: readErr}
 		}
 		outputSchema, readErr := reader.Read(spec.OutputSchema, spec.OutputSchemaBody)
 		if readErr != nil {
-			return AppDescription{}, &Fault{Kind: FaultInternal, Message: fmt.Sprintf("output schema for %s/%s: %v", app, key, readErr), Err: readErr}
+			return AppDescription{}, &Fault{Kind: FaultInternal, Message: fmt.Sprintf("output schema for %s/%s: %v", deployment.App, key, readErr), Err: readErr}
 		}
 		actions[key] = ActionDescription{Spec: spec, InputSchema: inputSchema, OutputSchema: outputSchema}
 	}
@@ -458,10 +468,35 @@ func (s *AdmissionService) DescribeAppForPrincipal(ctx context.Context, principa
 	if !principal.HasScope(ScopeAppsRead) {
 		return AppDescription{}, &Fault{Kind: FaultForbidden, Message: "principal lacks apps:read"}
 	}
+	if principal.Kind == PrincipalClient {
+		client, err := s.store.GetClient(ctx, workspace, principal.ID)
+		if err != nil {
+			return AppDescription{}, &Fault{Kind: FaultForbidden, Message: "client is no longer available", Err: err}
+		}
+		principal.TargetPolicy = client.EffectiveInvocationPolicy()
+	}
 	if !principal.AllowsTarget(app, "") {
 		return AppDescription{}, &Fault{Kind: FaultForbidden, Message: "principal is not allowed to read this app"}
 	}
-	return s.DescribeApp(ctx, workspace, app)
+	app = strings.TrimSpace(app)
+	if !contract.ValidAppKey(app) {
+		return AppDescription{}, &Fault{Kind: FaultInvalidRequest, Message: "invalid app key"}
+	}
+	deployment, err := s.lookupDeployment(ctx, workspace, app)
+	if err != nil {
+		return AppDescription{}, &Fault{Kind: FaultAppNotFound, Message: "app not found: " + app, Err: err}
+	}
+	visible := make(map[string]contract.Action)
+	for key, action := range deployment.Actions {
+		if principal.AllowsTarget(app, key) {
+			visible[key] = action
+		}
+	}
+	if len(visible) == 0 {
+		return AppDescription{}, &Fault{Kind: FaultForbidden, Message: "principal is not allowed to read a published action in this app"}
+	}
+	deployment.Actions = visible
+	return s.describeDeployment(ctx, deployment)
 }
 
 func (s *Service) lookupDeployment(ctx context.Context, workspace string, app string) (contract.Deployment, error) {

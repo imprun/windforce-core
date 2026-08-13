@@ -4,6 +4,7 @@ import { DefinitionList, EmptyState, ErrorNotice, Loading, Panel } from "../comp
 import { AuditEventTable } from "../features/AuditEventTable";
 import { ClientDialog } from "../features/ClientDialog";
 import { ClientInputSettings } from "../features/ClientInputSettings";
+import { ClientInvocationPolicy } from "../features/ClientInvocationPolicy";
 import type { Client, InputConfig } from "../lib/api";
 import { useApp, useAsync } from "../lib/app-context";
 import { formatRelative, formatTime } from "../lib/format";
@@ -90,7 +91,9 @@ export function ClientDetailPage({
         ))}
       </nav>
 
-      {activeTab === "overview" ? <ClientOverview client={client} configs={configs} /> : null}
+      {activeTab === "overview" ? (
+        <ClientOverview client={client} configs={configs} onUpdated={state.reload} />
+      ) : null}
       {activeTab === "input-settings" ? (
         <ClientInputSettings
           client={client}
@@ -117,7 +120,15 @@ export function ClientDetailPage({
   );
 }
 
-function ClientOverview({ client, configs }: { client: Client; configs: InputConfig[] }) {
+function ClientOverview({
+  client,
+  configs,
+  onUpdated,
+}: {
+  client: Client;
+  configs: InputConfig[];
+  onUpdated: () => void;
+}) {
   const groups = useMemo(() => groupInputSettings(configs, (config) => config.app_key), [configs]);
   const latest = useMemo(
     () =>
@@ -147,6 +158,7 @@ function ClientOverview({ client, configs }: { client: Client; configs: InputCon
           ]}
         />
       </Panel>
+      <ClientInvocationPolicy client={client} onUpdated={onUpdated} />
       <Panel
         title={translate("clients.configurationSummary")}
         subtitle={translate("clients.configurationSummaryHint")}

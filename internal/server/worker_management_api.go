@@ -140,7 +140,7 @@ func (h *Handler) handleCreateWorkerCredential(w http.ResponseWriter, r *http.Re
 		expiresAt := request.ExpiresAt.UTC()
 		request.ExpiresAt = &expiresAt
 	}
-	fingerprint := workerRequestFingerprint(struct {
+	fingerprint := requestFingerprint(struct {
 		Group              string     `json:"group"`
 		OperationID        string     `json:"operation_id"`
 		ExpectedGeneration int64      `json:"expected_generation"`
@@ -187,7 +187,7 @@ func (h *Handler) handleRevokeWorkerCredential(w http.ResponseWriter, r *http.Re
 		return
 	}
 	deadline := request.DrainDeadlineAt.UTC()
-	fingerprint := workerRequestFingerprint(struct {
+	fingerprint := requestFingerprint(struct {
 		Group           string    `json:"group"`
 		CredentialID    string    `json:"credential_id"`
 		OperationID     string    `json:"operation_id"`
@@ -244,7 +244,7 @@ func (h *Handler) handlePutWorkerGroupRunState(w http.ResponseWriter, r *http.Re
 		deadline := request.DeadlineAt.UTC()
 		request.DeadlineAt = &deadline
 	}
-	fingerprint := workerRequestFingerprint(struct {
+	fingerprint := requestFingerprint(struct {
 		Group            string     `json:"group"`
 		OperationID      string     `json:"operation_id"`
 		ExpectedRevision int64      `json:"expected_revision"`
@@ -268,7 +268,7 @@ func validOperationID(value string) bool {
 	return value != "" && len(value) <= 128 && state.CleanID(value) == value
 }
 
-func workerRequestFingerprint(value any) string {
+func requestFingerprint(value any) string {
 	encoded, _ := json.Marshal(value)
 	sum := sha256.Sum256(encoded)
 	return hex.EncodeToString(sum[:])

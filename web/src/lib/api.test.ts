@@ -71,6 +71,54 @@ describe("localized API errors", () => {
   });
 });
 
+describe("WindforceApi client invocation policy", () => {
+  test("uses the dedicated revisioned policy endpoint", async () => {
+    const originalFetch = globalThis.fetch;
+    const requests: Array<{ url: string; method: string; body: string }> = [];
+    globalThis.fetch = (async (input, init) => {
+      requests.push({
+        url: String(input),
+        method: init?.method || "GET",
+        body: String(init?.body || ""),
+      });
+      return new Response(
+        JSON.stringify({
+          invocation_policy: {
+            mode: "restricted",
+            allowed_targets: ["orders/create"],
+            revision: 3,
+          },
+          replayed: false,
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }) as typeof fetch;
+    try {
+      const api = new WindforceApi({ workspace: "ops", token: "", actor: "operator" });
+      await api.updateClientInvocationPolicy("client/a", {
+        operation_id: "policy-3",
+        expected_revision: 2,
+        mode: "restricted",
+        allowed_targets: ["orders/create"],
+      });
+      expect(requests).toEqual([
+        {
+          url: "/api/w/ops/clients/client%2Fa/invocation-policy",
+          method: "PUT",
+          body: JSON.stringify({
+            operation_id: "policy-3",
+            expected_revision: 2,
+            mode: "restricted",
+            allowed_targets: ["orders/create"],
+          }),
+        },
+      ]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
 describe("WindforceApi job log streaming", () => {
   test("keeps incomplete SSE blocks and decodes multiline data", () => {
     const split = splitSSEBlocks(

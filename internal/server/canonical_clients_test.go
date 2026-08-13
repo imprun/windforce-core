@@ -60,6 +60,9 @@ func TestCanonicalClientLifecycle(t *testing.T) {
 	if created.ID == "" || created.WorkspaceID != "ws-a" || created.Name != "Acme Operations" || !created.HasToken || !strings.HasPrefix(issued.APIToken, contract.ClientTokenPrefix) {
 		t.Fatalf("created = %#v", created)
 	}
+	if created.InvocationPolicy.Mode != state.TargetPolicyModeAll || created.InvocationPolicy.Revision != 0 || len(created.InvocationPolicy.AllowedTargets) != 0 {
+		t.Fatalf("default invocation policy = %#v", created.InvocationPolicy)
+	}
 	if created.CreatedBy != "alice@example.test" || created.UpdatedBy != "alice@example.test" {
 		t.Fatalf("created actors = %#v", created)
 	}
@@ -77,8 +80,30 @@ func TestCanonicalClientLifecycle(t *testing.T) {
 
 	var updated clientView
 	clientPath := "/api/w/ws-a/clients/" + created.ID
+	policyPath := clientPath + "/invocation-policy"
+	do(http.MethodPut, policyPath, "policy-admin@example.test", `{"operation_id":"policy-missing-revision","mode":"restricted","allowed_targets":[]}`, http.StatusBadRequest, nil)
+	do(http.MethodPut, policyPath, "policy-admin@example.test", `{"operation_id":"policy-missing-targets","expected_revision":0,"mode":"restricted"}`, http.StatusBadRequest, nil)
+	do(http.MethodPut, policyPath, "policy-admin@example.test", `{"operation_id":"policy-invalid","expected_revision":0,"mode":"all","allowed_targets":["echo"]}`, http.StatusBadRequest, nil)
+	policyBody := `{"operation_id":"policy-1","expected_revision":0,"mode":"restricted","allowed_targets":["echo/run","echo","echo/run"]}`
+	var policyResult struct {
+		InvocationPolicy clientInvocationPolicyView `json:"invocation_policy"`
+		Replayed         bool                       `json:"replayed"`
+	}
+	do(http.MethodPut, policyPath, "policy-admin@example.test", policyBody, http.StatusOK, &policyResult)
+	if policyResult.Replayed || policyResult.InvocationPolicy.Mode != state.TargetPolicyModeRestricted ||
+		policyResult.InvocationPolicy.Revision != 1 || strings.Join(policyResult.InvocationPolicy.AllowedTargets, ",") != "echo,echo/run" {
+		t.Fatalf("updated invocation policy = %#v", policyResult)
+	}
+	do(http.MethodPut, policyPath, "policy-admin@example.test", policyBody, http.StatusOK, &policyResult)
+	if !policyResult.Replayed || policyResult.InvocationPolicy.Revision != 1 {
+		t.Fatalf("replayed invocation policy = %#v", policyResult)
+	}
+	do(http.MethodPut, policyPath, "policy-admin@example.test", `{"operation_id":"policy-1","expected_revision":0,"mode":"restricted","allowed_targets":["other"]}`, http.StatusConflict, nil)
+	do(http.MethodPut, policyPath, "policy-admin@example.test", `{"operation_id":"policy-stale","expected_revision":0,"mode":"restricted","allowed_targets":[]}`, http.StatusConflict, nil)
+
 	do(http.MethodPatch, clientPath, "bob@example.test", `{"name":"Acme Korea"}`, http.StatusOK, &updated)
-	if updated.ID != created.ID || updated.Name != "Acme Korea" || !updated.HasToken || updated.UpdatedBy != "bob@example.test" {
+	if updated.ID != created.ID || updated.Name != "Acme Korea" || !updated.HasToken || updated.UpdatedBy != "bob@example.test" ||
+		updated.InvocationPolicy.Revision != 1 || strings.Join(updated.InvocationPolicy.AllowedTargets, ",") != "echo,echo/run" {
 		t.Fatalf("updated = %#v", updated)
 	}
 	var rotated struct {
@@ -92,7 +117,7 @@ func TestCanonicalClientLifecycle(t *testing.T) {
 
 	var audit []state.ClientAudit
 	auditBody := do(http.MethodGet, clientPath+"/audit", "", "", http.StatusOK, &audit)
-	if len(audit) != 3 || audit[0].Kind != "token_rotated" || audit[1].Kind != "updated" || audit[2].Kind != "created" {
+	if len(audit) != 4 || audit[0].Kind != "token_rotated" || audit[1].Kind != "updated" || audit[2].Kind != "invocation_policy_updated" || audit[3].Kind != "created" {
 		t.Fatalf("audit = %#v", audit)
 	}
 	if bytes.Contains(auditBody, []byte(issued.APIToken)) || bytes.Contains(auditBody, []byte(rotated.APIToken)) {
@@ -107,7 +132,7 @@ func TestCanonicalClientLifecycle(t *testing.T) {
 	do(http.MethodDelete, clientPath, "carol@example.test", "", http.StatusNoContent, nil)
 	do(http.MethodGet, clientPath, "", "", http.StatusNotFound, nil)
 	auditBody = do(http.MethodGet, clientPath+"/audit", "", "", http.StatusOK, &audit)
-	if len(audit) != 5 || audit[0].Kind != "deleted" || audit[1].Kind != "token_revoked" || audit[0].Actor != "carol@example.test" {
+	if len(audit) != 6 || audit[0].Kind != "deleted" || audit[1].Kind != "token_revoked" || audit[0].Actor != "carol@example.test" {
 		t.Fatalf("audit after delete = %#v", audit)
 	}
 	if bytes.Contains(auditBody, []byte(issued.APIToken)) || bytes.Contains(auditBody, []byte(rotated.APIToken)) {
@@ -117,10 +142,16 @@ func TestCanonicalClientLifecycle(t *testing.T) {
 
 func TestControlPlaneOpenAPIIncludesClients(t *testing.T) {
 	schemas := controlPlaneSchemas()
-	for _, name := range []string{"Client", "ClientTokenResult", "CreateClientRequest", "UpdateClientRequest", "ClientAudit", "AuditChanges", "AuditEvent", "InputConfig", "SetInputConfigRequest", "InputConfigAudit", "ProvisioningResource", "ProvisioningImportRequest", "ProvisioningResult"} {
+	for _, name := range []string{"Client", "ClientInvocationPolicy", "UpdateClientInvocationPolicyRequest", "ClientInvocationPolicyResult", "ClientTokenResult", "CreateClientRequest", "UpdateClientRequest", "ClientAudit", "AuditChanges", "AuditEvent", "InputConfig", "SetInputConfigRequest", "InputConfigAudit", "ProvisioningInvocationPolicy", "ProvisioningResource", "ProvisioningImportRequest", "ProvisioningResult"} {
 		if schemas[name] == nil {
 			t.Fatalf("missing schema %s", name)
 		}
+	}
+	provisioningResource := schemas["ProvisioningResource"].(map[string]any)
+	provisioningProperties := provisioningResource["properties"].(map[string]any)
+	provisioningSpec := provisioningProperties["spec"].(map[string]any)
+	if provisioningSpec["properties"].(map[string]any)["invocationPolicy"] == nil {
+		t.Fatal("provisioning Client spec does not expose invocationPolicy")
 	}
 	paths := buildControlPlaneOpenAPI("http://example.test", "default")["paths"].(map[string]any)
 	for _, path := range []string{
@@ -130,6 +161,7 @@ func TestControlPlaneOpenAPIIncludesClients(t *testing.T) {
 		"/api/w/{workspace}/clients",
 		"/api/w/{workspace}/clients/{client_id}",
 		"/api/w/{workspace}/clients/{client_id}/token",
+		"/api/w/{workspace}/clients/{client_id}/invocation-policy",
 		"/api/w/{workspace}/clients/{client_id}/audit",
 		"/api/w/{workspace}/clients/{client_id}/input-configs",
 		"/api/w/{workspace}/clients/{client_id}/input-config-audit",

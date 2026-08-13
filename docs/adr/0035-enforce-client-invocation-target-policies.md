@@ -1,0 +1,72 @@
+# ADR 0035: Enforce Client invocation target policies
+
+- Status: Accepted
+- Date: 2026-08-13
+- Issue: [#222](https://github.com/imprun/windforce-core/issues/222)
+
+## Context
+
+A workspace-scoped Client authenticated by a `wfk_` token currently receives the standard Client scopes but no persisted App or Action target policy. The execution principal treats an empty target list as allow-all, so every Client can invoke and discover every App and Action in its workspace. Client-specific InputConfig depends on preserving the Client identity and therefore cannot be replaced by a Service Principal without changing execution input semantics.
+
+Self-hosters need least-privilege machine clients without depending on a hosted tenant, billing, entitlement, or gateway product. Core must remain the final execution admission boundary while allowing a downstream control plane to reconcile its product grants into the neutral Client policy.
+
+## Decision
+
+### Client-owned policy
+
+Each Client owns one versioned invocation policy:
+
+```text
+ClientInvocationPolicy
+  mode: all | restricted
+  allowed_targets: [app, app/action, ...]
+  revision: non-negative integer
+```
+
+`all` permits every App and Action in the Client's workspace and requires an empty target list. `restricted` permits only normalized exact `app` and `app/action` entries; an App entry permits all Actions in that App, and an empty restricted list denies all targets. Target syntax is validated but target existence is not, so an operator may stage policy before publishing a Release.
+
+The policy revision is independent from Client name updates and token rotation or revocation. Existing Clients and newly created Core-only Clients default to explicit `all` at revision zero. Existing Client IDs, tokens, InputConfig, Runs, and audit history remain unchanged.
+
+### Mutation contract
+
+Invocation policy changes use a dedicated subresource:
+
+```http
+PUT /api/w/{workspace}/clients/{client_id}/invocation-policy
+Content-Type: application/json
+
+{
+  "operation_id": "op-...",
+  "expected_revision": 0,
+  "mode": "restricted",
+  "allowed_targets": ["orders", "reports/export"]
+}
+```
+
+The request requires a valid operation ID, a non-negative expected revision, an explicit mode, and a normalized policy. The resulting policy, monotonic revision, latest operation replay metadata, Client audit record, actor, and update timestamp commit atomically. An exact retry of the latest operation returns the same revision without another audit record. Reusing the operation ID with a different fingerprint or using a stale revision with a different operation returns conflict.
+
+Client create and name-update requests retain their current shape. Create defaults to `all`; name updates preserve the current policy. Policy-aware Client responses always return an explicit normalized policy and revision.
+
+### Admission and idempotency ordering
+
+Core authenticates the current Client token and validates workspace and `runs:create` scope before processing a request. If the request has a principal-scoped idempotency key, Core resolves the deterministic Run and validates the exact request fingerprint before applying the current target policy. A matching replay returns the already admitted Run and creates no new Job even when policy was reduced after the original admission. A mismatched replay remains a conflict.
+
+Every new admission, including a new idempotency key, applies the current Client policy before App lookup, InputConfig resolution, schema validation, or queue mutation. Policy changes do not retroactively cancel or alter admitted Runs.
+
+### Discovery projection
+
+App contract discovery applies the same target policy. App-level permission returns the App and all Actions. Action-level permissions return the App shell with only the permitted Actions. A policy that leaves no published Action visible returns forbidden. Hidden Actions do not expose input or output schemas, runtime access, timeout, placement, or other Action metadata. Future Client-visible App lists and generated contracts must use the same projection.
+
+Operators retain unrestricted access. Existing Service Principal target semantics remain unchanged by this decision.
+
+### Ownership boundary
+
+Core owns Client identity, `wfk_` authentication, Client-specific InputConfig resolution, policy persistence, discovery projection, and final execution enforcement. A hosted control plane may own Tenant or product entitlement and reconcile a restricted policy, but tenant state, commercial entitlement, sync status, gateway credential exposure, NetworkPolicy, and short-lived delegated credentials do not become Core concepts.
+
+## Consequences
+
+- Core-only installations keep the existing allow-all creation experience and can opt into least privilege per Client.
+- Hosted products can maintain their own grant model while Core independently prevents a broader downstream invocation.
+- Local JSON and PostgreSQL stores must preserve identical policy, OCC, replay, audit, and migration behavior.
+- Control OpenAPI, provisioning import and export, the embedded administration UI, and authorization tests must expose the explicit contract.
+- An exact idempotency replay is a read of an existing admission, not authorization for new work.

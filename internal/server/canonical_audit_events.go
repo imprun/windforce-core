@@ -420,6 +420,7 @@ func canonicalAuditSummary(category string, kind string) string {
 		"created":                       "Client registered",
 		"updated":                       "Client updated",
 		"deleted":                       "Client removed",
+		"invocation_policy_updated":     "Client invocation access updated",
 		"input_settings_set":            "Input settings updated",
 		"input_settings_deleted":        "Input settings removed",
 		"secret_resolved":               "Secret variable resolved",

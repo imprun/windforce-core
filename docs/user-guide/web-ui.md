@@ -596,6 +596,16 @@ Review app- and action-specific values applied for one external client.
 2. Select an external client.
 3. Open a settings row to review its JSON values and locked keys.
 
+## Limit client invocation access
+
+Core operators can choose broad compatibility or an exact App and Action allow-list for each client.
+
+![Limit client invocation access](../assets/ui/client-invocation-policy.png)
+
+1. Open Client Registry and select a client.
+2. Review the effective policy, targets, and revision.
+3. Choose Edit access to replace the policy for newly admitted Runs.
+
 ## Open host management
 
 A hosted or self-managed portal can configure one explicit management-plane action in the top bar.
