@@ -34,6 +34,7 @@ func TestWorkerManagementAppearsInControlPlaneOpenAPI(t *testing.T) {
 		"/api/worker-groups/{group}/credentials",
 		"/api/worker-groups/{group}/credentials/{credential_id}/revoke",
 		"/api/worker-groups/{group}/run-state",
+		"/api/worker-groups/{group}/observation",
 	} {
 		if _, ok := paths[path]; !ok {
 			t.Fatalf("worker management path %q missing from control-plane OpenAPI", path)
@@ -44,6 +45,7 @@ func TestWorkerManagementAppearsInControlPlaneOpenAPI(t *testing.T) {
 	for _, name := range []string{
 		"WorkerCredential", "CreateWorkerCredentialRequest", "WorkerCredentialIssueResponse",
 		"RevokeWorkerCredentialRequest", "WorkerGroupRunState", "PutWorkerGroupRunStateRequest",
+		"WorkerGenerationActivity", "WorkerGroupObservation",
 	} {
 		if _, ok := schemas[name]; !ok {
 			t.Fatalf("worker management schema %q missing from control-plane OpenAPI", name)
@@ -161,6 +163,28 @@ func TestManagedWorkerCredentialAndDrainContract(t *testing.T) {
 	if status != http.StatusConflict {
 		t.Fatalf("stale run-state update = %d, want 409", status)
 	}
+	status, _ = workerManagementRequest(t, http.MethodGet, server.URL+"/api/worker-groups/group-a/observation", first.WorkerToken, "")
+	if status != http.StatusUnauthorized {
+		t.Fatalf("worker bearer observation = %d, want 401", status)
+	}
+	status, body = workerManagementRequest(t, http.MethodGet, server.URL+"/api/worker-groups/group-a/observation", "admin-secret", "")
+	if status != http.StatusOK {
+		t.Fatalf("draining observation = %d: %s", status, body)
+	}
+	if bytes.Contains(body, []byte(first.WorkerToken)) || bytes.Contains(body, []byte(first.Credential.ID)) ||
+		bytes.Contains(body, []byte("token_hash")) || bytes.Contains(body, []byte("requestFingerprint")) {
+		t.Fatal("draining observation exposed worker credential material")
+	}
+	var observation state.WorkerGroupObservation
+	if err := json.Unmarshal(body, &observation); err != nil {
+		t.Fatal(err)
+	}
+	if observation.RunState != state.WorkerGroupDraining || observation.RunStateRevision != 1 ||
+		observation.LiveWorkers != 1 || observation.UnmanagedLiveWorkers != 0 || observation.AvailableSlots != 0 || observation.ActiveLeases != 1 ||
+		observation.RunningJobs != 1 || observation.Quiescent || len(observation.ActiveWorkersByGeneration) != 1 ||
+		observation.ActiveWorkersByGeneration[0].Generation != 1 || observation.ActiveWorkersByGeneration[0].Workers != 1 {
+		t.Fatalf("unexpected draining observation: %#v", observation)
+	}
 	enqueueManagedWorkerJob(t, store, "ws-a", "blocked-by-drain")
 	status, _ = workerManagementRequest(t, http.MethodPost, server.URL+"/worker/v1/claims", first.WorkerToken,
 		`{"worker_id":"worker-a","labels":["linux","arm64"]}`)
@@ -210,6 +234,16 @@ func TestManagedWorkerCredentialAndDrainContract(t *testing.T) {
 		`{"lease":`+string(leaseJSON)+`,"outcome":"succeeded","result":{"app":"echo","action":"run","output":{"ok":true},"exitCode":0}}`)
 	if status != http.StatusNoContent {
 		t.Fatalf("completion during revoked drain = %d: %s", status, body)
+	}
+	status, body = workerManagementRequest(t, http.MethodGet, server.URL+"/api/worker-groups/group-a/observation", "admin-secret", "")
+	if status != http.StatusOK {
+		t.Fatalf("quiescent observation = %d: %s", status, body)
+	}
+	if err := json.Unmarshal(body, &observation); err != nil {
+		t.Fatal(err)
+	}
+	if !observation.Quiescent || observation.LiveWorkers != 1 || observation.ActiveLeases != 0 || observation.RunningJobs != 0 {
+		t.Fatalf("completed group should be quiescent with idle worker registered: %#v", observation)
 	}
 
 	status, body = workerManagementRequest(t, http.MethodPut, server.URL+"/api/worker-groups/group-a/run-state", "admin-secret",

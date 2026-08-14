@@ -1,6 +1,6 @@
 ---
 title: Worker management API
-description: Instance-admin credential, rotation, revocation, and group drain contracts for remote workers.
+description: Instance-admin credential, rotation, revocation, group drain, and activity observation contracts for remote workers.
 ---
 
 # Worker management API
@@ -100,6 +100,41 @@ automatically resume anything at the deadline. Resume explicitly:
   "state": "running"
 }
 ```
+
+## Observe group activity and drain readiness
+
+```http
+GET /api/worker-groups/{group}/observation
+Authorization: Bearer <instance-admin-token>
+```
+
+The response is computed from one Local store lock/snapshot or one PostgreSQL repeatable-read transaction. It is the Core-owned gate for credential-generation rollout and `draining -> quiescent -> replica reduction`:
+
+```json
+{
+  "group": "group-a",
+  "run_state": "draining",
+  "run_state_revision": 1,
+  "deadline_at": "2026-08-03T00:10:00Z",
+  "observed_at": "2026-08-03T00:01:00Z",
+  "live_workers": 2,
+  "unmanaged_live_workers": 0,
+  "available_slots": 0,
+  "active_leases": 1,
+  "running_jobs": 1,
+  "unattributed_active_leases": 0,
+  "unattributed_running_jobs": 0,
+  "active_workers_by_generation": [
+    {"generation": 1, "workers": 1},
+    {"generation": 2, "workers": 1}
+  ],
+  "quiescent": false
+}
+```
+
+`active_workers_by_generation` counts live registry activity and includes Workers whose per-Worker status is already `draining`; generation `0` represents the legacy static Worker Plane credential. `available_slots` counts only live Workers whose status is `active`, subtracts their active leases, and is always zero while the group run state is `draining`.
+
+`quiescent` becomes true only while the group is `draining`, no live generation-zero Worker can bypass that managed claim fence, and its active lease and running Job counts are zero. Live idle managed Workers may remain registered so an external controller can observe quiescence before reducing replicas. A running Job whose Worker registration no longer identifies a group is reported in the unattributed counts and conservatively keeps every group observation non-quiescent until the Job settles or is requeued. The endpoint never returns a Worker identity, endpoint, credential ID, bearer, token hash, or request fingerprint.
 
 ## Worker command
 
