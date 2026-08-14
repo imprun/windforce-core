@@ -81,11 +81,12 @@ func TestWorkerPlaneClaimAndComplete(t *testing.T) {
 		t.Fatalf("invalid build identity = %d: %s", resp.StatusCode, payload)
 	}
 
-	// A claim without the required label yields no job.
+	// A registered Worker cannot claim with a selector different from its
+	// authoritative registry advertisement.
 	resp, _ = workerPlanePost(t, server.URL+"/worker/v1/claims", "admin-secret",
 		`{"worker_id":"w-remote","labels":[]}`)
-	if resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("labelless claim = %d, want 204", resp.StatusCode)
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("labelless claim = %d, want 403", resp.StatusCode)
 	}
 
 	resp, payload = workerPlanePost(t, server.URL+"/worker/v1/claims", "admin-secret",

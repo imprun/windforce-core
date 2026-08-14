@@ -29,7 +29,7 @@ const runColumns = `
 const jobColumns = `
 	id, run_id, state, kind, payload, priority, attempt, lease_owner,
 	lease_expires_at, started_at, canceled_by, canceled_reason, created_at, updated_at,
-	trace_context
+	trace_context, lease_identity
 `
 
 const humanTaskColumns = `
@@ -441,12 +441,20 @@ func (s *PostgresStore) ClaimJobForWorkerScope(ctx context.Context, workerID str
 	if leaseTTL <= 0 {
 		leaseTTL = defaultLeaseTime
 	}
-	allowedTags := normalizeClaimTags(tags)
-	offeredLabels := normalizeClaimTags(labels)
+	requestedTags := NormalizeWorkerScope(tags)
+	requestedLabels := NormalizeWorkerScope(labels)
 	var claimed Job
 	var lease Lease
 	err := s.withTx(ctx, func(tx pgx.Tx) error {
 		now := currentUTC(s.leaseNow)
+		registeredTags, registeredLabels, leaseIdentity, err := postgresRegisteredWorkerClaim(
+			ctx, tx, workerID, requestedTags, requestedLabels, now,
+		)
+		if err != nil {
+			return err
+		}
+		allowedTags := normalizeClaimTags(registeredTags)
+		offeredLabels := normalizeClaimTags(registeredLabels)
 		canceledRows, err := tx.Query(ctx, `SELECT `+jobColumns+` FROM jobs WHERE state='running' AND lease_expires_at < $1 AND canceled_by IS NOT NULL FOR UPDATE`, now)
 		if err != nil {
 			return err
@@ -475,7 +483,7 @@ func (s *PostgresStore) ClaimJobForWorkerScope(ctx context.Context, workerID str
 		}
 		if _, err := tx.Exec(ctx, `
 UPDATE jobs
-SET state='queued', lease_owner=NULL, lease_expires_at=NULL, started_at=NULL, updated_at=$1
+SET state='queued', lease_owner=NULL, lease_expires_at=NULL, lease_identity=NULL, started_at=NULL, updated_at=$1
 WHERE state='running' AND lease_expires_at < $1 AND canceled_by IS NULL
 `, now); err != nil {
 			return err
@@ -500,16 +508,24 @@ WHERE state='running' AND lease_expires_at < $1 AND canceled_by IS NULL
 		if selected.ID == "" {
 			return ErrNoQueuedJob
 		}
+		var leaseIdentityJSON json.RawMessage
+		if leaseIdentity != nil {
+			leaseIdentityJSON, err = json.Marshal(leaseIdentity)
+			if err != nil {
+				return err
+			}
+		}
 		job, err := scanJob(tx.QueryRow(ctx, `
 UPDATE jobs
 SET state='running',
     lease_owner=$1,
     lease_expires_at=$2,
-    started_at=$3,
+    lease_identity=$3,
+    started_at=$4,
     attempt=attempt + 1,
-    updated_at=$3
-WHERE id=$4
-RETURNING `+jobColumns, workerID, expiresAt, now, selected.ID))
+    updated_at=$4
+WHERE id=$5
+RETURNING `+jobColumns, workerID, expiresAt, leaseIdentityJSON, now, selected.ID))
 		if err != nil {
 			return err
 		}
@@ -524,13 +540,46 @@ WHERE id=$3 AND state IN ($4, $5)
 			return err
 		}
 		claimed = job
-		lease = Lease{JobID: job.ID, WorkerID: workerID, ExpiresAt: expiresAt, Attempt: job.Attempt, AcquiredAt: now}
+		lease = Lease{JobID: job.ID, WorkerID: workerID, ExpiresAt: expiresAt, Attempt: job.Attempt, AcquiredAt: now, Identity: leaseIdentity}
 		return nil
 	})
 	if err != nil {
 		return Job{}, Lease{}, err
 	}
 	return claimed, lease, nil
+}
+
+func postgresRegisteredWorkerClaim(ctx context.Context, tx pgx.Tx, workerID string, requestedTags []string, requestedLabels []string, now time.Time) ([]string, []string, *WorkerLeaseIdentity, error) {
+	var record WorkerRecord
+	var tagsJSON, labelsJSON, profilesJSON []byte
+	err := tx.QueryRow(ctx, `
+SELECT id, worker_group, tags, labels, execution_profiles, status, credential_generation, last_heartbeat_at
+FROM worker_registry
+WHERE id=$1
+FOR SHARE`, workerID).Scan(
+		&record.ID, &record.Group, &tagsJSON, &labelsJSON, &profilesJSON,
+		&record.Status, &record.CredentialGeneration, &record.LastHeartbeatAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return requestedTags, requestedLabels, nil, nil
+	}
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if err := json.Unmarshal(tagsJSON, &record.Tags); err != nil {
+		return nil, nil, nil, err
+	}
+	if err := json.Unmarshal(labelsJSON, &record.Labels); err != nil {
+		return nil, nil, nil, err
+	}
+	if err := json.Unmarshal(profilesJSON, &record.ExecutionProfiles); err != nil {
+		return nil, nil, nil, err
+	}
+	registeredTags, registeredLabels, identity, err := RegisteredWorkerClaim(record, requestedTags, requestedLabels, now)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return registeredTags, registeredLabels, &identity, nil
 }
 
 func postgresClaimCandidates(
@@ -1026,7 +1075,7 @@ WHERE id=$4
 		}
 		if _, err := tx.Exec(ctx, `
 UPDATE jobs
-SET state=$1, lease_owner=NULL, lease_expires_at=NULL, updated_at=$2
+SET state=$1, lease_owner=NULL, lease_expires_at=NULL, lease_identity=NULL, updated_at=$2
 WHERE run_id=$3 AND state IN ($4, $5)
 `, string(JobFailed), now, run.ID, string(JobQueued), string(JobRunning)); err != nil {
 			return err

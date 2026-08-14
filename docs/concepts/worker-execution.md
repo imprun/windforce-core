@@ -123,6 +123,15 @@ Local and remote workers preserve the same ordering and pinned-bundle semantics.
 
 Workers detect and register the Bun, Python, and static-Go profiles they can execute. Claim matching compiles those profiles into reserved labels and reuses the State Store's atomic label filter, so incompatible Jobs remain queued instead of being claimed and failed. The Processor repeats a structured profile check immediately after claim as an invariant defense. Operator labels and execution-profile labels remain separate: managed credentials constrain the former, while Core derives the latter from registered profiles.
 
+Once a Worker ID is present in the canonical registry, that record is also the
+authoritative claim selector. The State Store atomically requires the claim's
+tags and labels to equal the registered advertisement (including the derived
+execution-profile labels), then pins the Worker's group and credential
+generation to the claimed attempt. Deregistration or later reuse of the Worker
+ID cannot rewrite that historical attribution. Lease expiry or another path
+that removes ownership clears the attribution before requeue. See [ADR
+0038](../adr/0038-bind-registered-worker-claims-to-immutable-lease-identity.md).
+
 Workers also register the Core build they are actually running as optional
 `engine_version` and `build_revision` observations. Release and container
 builds inject these values into the binary; local development builds report
@@ -145,6 +154,12 @@ whose group, exact offered labels, and workspace allowlist are persisted by
 Core. Registration binds the live worker record to that credential ID and
 generation. Claim selection then applies the existing tag and AND-label rules
 inside the credential's workspace scope.
+
+An unregistered static Worker may still use the historical request selector,
+but its lease is deliberately unattributed. It cannot be counted as positive
+evidence for managed Worker-group capacity or quiescence. A static Worker that
+registers is bound to its registered selector and receives generation-zero
+attempt attribution.
 
 Credential rotation activates a new generation before the old generation is
 revoked. Revocation blocks new registration and claims, but a revoked
@@ -195,6 +210,9 @@ Before accepting a worker or runtime change, verify all of the following:
 - New cache hits validate both the digest marker and pinned execution profile; legacy profile-less bundles retain strict `prepare-v3` fingerprint validation.
 - One Release has one App runtime and one execution profile; Action runtime overrides are rejected.
 - A worker cannot claim a profile-pinned Job unless its engine-derived profile label matches, and the Processor repeats the structured check before launch.
+- A registered Worker cannot claim with tags or labels different from its
+  registry advertisement, and reusing its Worker ID cannot change an existing
+  attempt's pinned group or credential generation.
 - Container deployments should set `WINDFORCE_EXECUTION_PROFILE_ID` (or `--execution-profile-id`) to the exact immutable image digest or an equivalently immutable profile revision.
 - Entrypoint containment prevents paths from escaping the fetched bundle root.
 - Local and remote worker paths preserve equivalent bundle and completion semantics.
