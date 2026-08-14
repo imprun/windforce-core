@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -13,11 +14,38 @@ import (
 type RoutingPolicy struct {
 	Workspace              string                         `json:"workspace"`
 	App                    string                         `json:"app"`
+	Revision               int64                          `json:"revision"`
 	RouteTagOverride       *string                        `json:"routeTagOverride,omitempty"`
 	RequiredLabelsOverride *[]string                      `json:"requiredLabelsOverride,omitempty"`
 	Actions                map[string]ActionRoutingPolicy `json:"actions,omitempty"`
+	LastOperationID        string                         `json:"lastOperationId,omitempty"`
+	LastRequestFingerprint string                         `json:"lastRequestFingerprint,omitempty"`
+	LastOperationResult    *RoutingPolicyOperationResult  `json:"lastOperationResult,omitempty"`
 	UpdatedBy              string                         `json:"updatedBy,omitempty"`
 	UpdatedAt              time.Time                      `json:"updatedAt,omitempty"`
+}
+
+// RoutingPolicyOperationResult is the durable, redacted result of the latest
+// opt-in placement precondition. It lets an exact operation retry return the
+// original transaction snapshot even when the Worker registry changed later.
+type RoutingPolicyOperationResult struct {
+	CheckedAt            time.Time                        `json:"checkedAt"`
+	MinimumMatchingSlots int64                            `json:"minimumMatchingSlots"`
+	AppliedRevision      int64                            `json:"appliedRevision"`
+	Targets              []RoutingPolicyTargetObservation `json:"targets"`
+}
+
+// RoutingPolicyTargetObservation contains only selector and aggregate
+// capacity data. Worker identity, endpoint and credential data never enter the
+// persisted replay result or API response.
+type RoutingPolicyTargetObservation struct {
+	App                     string                    `json:"app"`
+	Action                  string                    `json:"action,omitempty"`
+	EffectiveTag            string                    `json:"effectiveTag"`
+	EffectiveRequiredLabels []string                  `json:"effectiveRequiredLabels"`
+	ExecutionProfile        contract.ExecutionProfile `json:"executionProfile,omitempty,omitzero"`
+	MatchingWorkers         int64                     `json:"matchingWorkers"`
+	MatchingSlots           int64                     `json:"matchingSlots"`
 }
 
 type ActionRoutingPolicy struct {
@@ -50,6 +78,9 @@ func RoutingPolicyKey(workspace string, app string) string {
 func NormalizeRoutingPolicy(policy RoutingPolicy) RoutingPolicy {
 	policy.Workspace = contract.NormalizeWorkspace(policy.Workspace)
 	policy.App = strings.TrimSpace(policy.App)
+	if policy.Revision < 0 {
+		policy.Revision = 0
+	}
 	policy.RouteTagOverride = cloneTrimmedStringPtr(policy.RouteTagOverride)
 	policy.RequiredLabelsOverride = cloneStringSlicePtrPreserveEmpty(policy.RequiredLabelsOverride)
 	if policy.Actions == nil {
@@ -59,6 +90,16 @@ func NormalizeRoutingPolicy(policy RoutingPolicy) RoutingPolicy {
 		action.RouteTagOverride = cloneTrimmedStringPtr(action.RouteTagOverride)
 		action.RequiredLabelsOverride = cloneStringSlicePtrPreserveEmpty(action.RequiredLabelsOverride)
 		policy.Actions[key] = action
+	}
+	policy.LastOperationID = strings.TrimSpace(policy.LastOperationID)
+	policy.LastRequestFingerprint = strings.TrimSpace(policy.LastRequestFingerprint)
+	if policy.LastOperationID == "" || policy.LastRequestFingerprint == "" || policy.LastOperationResult == nil {
+		policy.LastOperationID = ""
+		policy.LastRequestFingerprint = ""
+		policy.LastOperationResult = nil
+	} else {
+		result := cloneRoutingPolicyOperationResult(*policy.LastOperationResult)
+		policy.LastOperationResult = &result
 	}
 	return policy
 }
@@ -135,6 +176,10 @@ func RoutingPolicyEmpty(policy RoutingPolicy) bool {
 
 func ApplyRoutingPolicyPatch(policy RoutingPolicy, actionKey string, patch RoutingPolicyPatch, now time.Time) RoutingPolicy {
 	policy = NormalizeRoutingPolicy(policy)
+	policy.Revision++
+	policy.LastOperationID = ""
+	policy.LastRequestFingerprint = ""
+	policy.LastOperationResult = nil
 	actor := strings.TrimSpace(patch.Actor)
 	if actor == "" {
 		actor = "system"
@@ -167,6 +212,63 @@ func ApplyRoutingPolicyPatch(policy RoutingPolicy, actionKey string, patch Routi
 	policy.UpdatedBy = actor
 	policy.UpdatedAt = now
 	return policy
+}
+
+// RecordRoutingPolicyOperation attaches a successful precondition result to
+// the policy revision produced by ApplyRoutingPolicyPatch.
+func RecordRoutingPolicyOperation(policy RoutingPolicy, operationID string, requestFingerprint string, result RoutingPolicyOperationResult) RoutingPolicy {
+	policy = NormalizeRoutingPolicy(policy)
+	policy.LastOperationID = strings.TrimSpace(operationID)
+	policy.LastRequestFingerprint = strings.TrimSpace(requestFingerprint)
+	result.AppliedRevision = policy.Revision
+	result = cloneRoutingPolicyOperationResult(result)
+	policy.LastOperationResult = &result
+	return policy
+}
+
+// RoutingPolicyMutationDetail is the stable audit detail shared by legacy and
+// preconditioned placement mutations.
+func RoutingPolicyMutationDetail(scope string, actionKey string, previous RoutingPolicy, updated RoutingPolicy) string {
+	type values struct {
+		RouteTagOverride       *string   `json:"tag_override"`
+		RequiredLabelsOverride *[]string `json:"required_labels_override"`
+	}
+	selectValues := func(policy RoutingPolicy) values {
+		if actionKey == "" {
+			return values{
+				RouteTagOverride:       policy.RouteTagOverride,
+				RequiredLabelsOverride: policy.RequiredLabelsOverride,
+			}
+		}
+		action := policy.Actions[actionKey]
+		return values{
+			RouteTagOverride:       action.RouteTagOverride,
+			RequiredLabelsOverride: action.RequiredLabelsOverride,
+		}
+	}
+	detail := map[string]any{
+		"scope":    scope,
+		"previous": selectValues(previous),
+		"new":      selectValues(updated),
+	}
+	if actionKey != "" {
+		detail["action_key"] = actionKey
+	}
+	encoded, err := json.Marshal(detail)
+	if err != nil {
+		return scope + " execution placement updated"
+	}
+	return string(encoded)
+}
+
+func cloneRoutingPolicyOperationResult(result RoutingPolicyOperationResult) RoutingPolicyOperationResult {
+	cloned := result
+	cloned.Targets = make([]RoutingPolicyTargetObservation, len(result.Targets))
+	for i, target := range result.Targets {
+		target.EffectiveRequiredLabels = append([]string{}, target.EffectiveRequiredLabels...)
+		cloned.Targets[i] = target
+	}
+	return cloned
 }
 
 func cloneTrimmedStringPtr(value *string) *string {

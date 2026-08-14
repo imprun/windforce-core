@@ -381,12 +381,16 @@ func jobRequiredLabels(job Job) []string {
 //     job's required labels, so a worker with no labels claims only
 //     unconstrained jobs.
 func claimAllowed(job Job, tags map[string]struct{}, labels map[string]struct{}) bool {
+	return selectorAllowed(jobTag(job), jobRequiredLabels(job), tags, labels)
+}
+
+func selectorAllowed(tag string, requiredLabels []string, tags map[string]struct{}, labels map[string]struct{}) bool {
 	if len(tags) > 0 {
-		if _, ok := tags[jobTag(job)]; !ok {
+		if _, ok := tags[tag]; !ok {
 			return false
 		}
 	}
-	for _, required := range jobRequiredLabels(job) {
+	for _, required := range requiredLabels {
 		if _, ok := labels[required]; !ok {
 			return false
 		}

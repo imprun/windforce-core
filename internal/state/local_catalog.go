@@ -166,9 +166,11 @@ func (s *LocalStore) SetAppRoutingPolicy(ctx context.Context, workspace string, 
 		if policy.App == "" {
 			policy = catalog.NewRoutingPolicy(workspace, app)
 		}
+		previous := policy
 		policy = catalog.ApplyRoutingPolicyPatch(policy, "", patch, now)
 		snapshot.ReleaseCatalog.RoutingPolicies[key] = policy
 		updated = catalog.ApplyRoutingPolicy(deployment, policy)
+		snapshot.ReleaseCatalog.Audit = append(snapshot.ReleaseCatalog.Audit, placementPolicyAuditRecord(deployment, "", previous, policy, patch.Actor, now))
 		return nil
 	})
 	return updated, err
@@ -193,12 +195,85 @@ func (s *LocalStore) SetActionRoutingPolicy(ctx context.Context, workspace strin
 		if policy.App == "" {
 			policy = catalog.NewRoutingPolicy(workspace, app)
 		}
+		previous := policy
 		policy = catalog.ApplyRoutingPolicyPatch(policy, actionKey, patch, now)
 		snapshot.ReleaseCatalog.RoutingPolicies[key] = policy
 		updated = catalog.ApplyRoutingPolicy(deployment, policy).Actions[actionKey]
+		snapshot.ReleaseCatalog.Audit = append(snapshot.ReleaseCatalog.Audit, placementPolicyAuditRecord(deployment, actionKey, previous, policy, patch.Actor, now))
 		return nil
 	})
 	return updated, err
+}
+
+func (s *LocalStore) UpdateRoutingPolicyWithPrecondition(ctx context.Context, request PlacementPolicyMutationRequest) (PlacementPolicyMutationResult, error) {
+	request, err := normalizePlacementPolicyMutationRequest(request)
+	if err != nil {
+		return PlacementPolicyMutationResult{}, err
+	}
+	var result PlacementPolicyMutationResult
+	err = s.withLock(ctx, func() error {
+		snapshot, err := s.Load(ctx)
+		if err != nil {
+			return err
+		}
+		key := catalog.DeploymentKey(request.WorkspaceID, request.App)
+		deployment, ok := snapshot.ReleaseCatalog.Deployments[key]
+		if !ok {
+			return catalog.ErrDeploymentNotFound
+		}
+		if request.Action != "" {
+			if _, ok := deployment.Actions[request.Action]; !ok {
+				return catalog.ErrActionNotFound
+			}
+		}
+		policy := snapshot.ReleaseCatalog.RoutingPolicies[key]
+		if policy.App == "" {
+			policy = catalog.NewRoutingPolicy(request.WorkspaceID, request.App)
+		}
+		if replay, ok, err := replayPlacementPolicyMutation(policy, request); err != nil {
+			return err
+		} else if ok {
+			result = PlacementPolicyMutationResult{
+				Deployment: catalog.ApplyRoutingPolicy(deployment, policy), Policy: policy, Check: replay, Replayed: true,
+			}
+			return nil
+		}
+		if policy.Revision != request.ExpectedRevision {
+			return ErrConflict
+		}
+		now := currentUTC(nil)
+		candidatePolicy := catalog.ApplyRoutingPolicyPatch(policy, request.Action, request.Patch, now)
+		candidateDeployment := catalog.ApplyRoutingPolicy(deployment, candidatePolicy)
+		check, sufficient, err := observePlacementTargets(
+			candidateDeployment, request.Action, request.MinimumMatchingSlots, now,
+			workerRecords(snapshot.Workers), snapshot.WorkerCredentials, snapshot.WorkerGroupRunStates,
+		)
+		result = PlacementPolicyMutationResult{Deployment: candidateDeployment, Policy: policy, Check: check}
+		if err != nil {
+			return err
+		}
+		if !sufficient {
+			return ErrInsufficientPlacementCapacity
+		}
+		candidatePolicy = catalog.RecordRoutingPolicyOperation(candidatePolicy, request.OperationID, request.RequestFingerprint, check)
+		check = *candidatePolicy.LastOperationResult
+		snapshot.ReleaseCatalog.RoutingPolicies[key] = candidatePolicy
+		snapshot.ReleaseCatalog.Audit = append(snapshot.ReleaseCatalog.Audit,
+			placementPolicyAuditRecord(deployment, request.Action, policy, candidatePolicy, request.Actor, now))
+		result = PlacementPolicyMutationResult{
+			Deployment: candidateDeployment, Policy: candidatePolicy, Check: check,
+		}
+		return s.write(snapshot)
+	})
+	return result, err
+}
+
+func workerRecords(records map[string]WorkerRecord) []WorkerRecord {
+	workers := make([]WorkerRecord, 0, len(records))
+	for _, record := range records {
+		workers = append(workers, record)
+	}
+	return workers
 }
 
 func (s *LocalStore) ListSourceReleaseMarkers(ctx context.Context) (map[string]catalog.SourceReleaseMarker, error) {

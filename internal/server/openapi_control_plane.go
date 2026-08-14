@@ -466,12 +466,13 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 			"patch": map[string]any{
 				"operationId": "patchApp",
 				"summary":     "Update app execution placement",
-				"description": "Sets operator-owned worker-tag and required-label overrides. null inherits the active release default; an empty label array explicitly requires no labels.",
+				"description": "Sets operator-owned worker-tag and required-label overrides. null inherits the active release default; an empty label array explicitly requires no labels. An optional precondition atomically verifies the policy revision and matching live Worker slots before saving.",
 				"parameters":  []any{oapiWorkspaceParam(workspaceID), oapiPathParam("app", "App key.")},
 				"requestBody": oapiJSONBody(oapiSchemaRef("ExecutionPlacementPatch"), true),
 				"responses": withErrors(map[string]any{
 					"200": oapiResponse("Updated app.", oapiSchemaRef("App")),
-				}, "400", "401", "403", "404"),
+					"422": oapiResponse("Candidate placement has insufficient matching slots.", oapiSchemaRef("ExecutionPlacementCapacityError")),
+				}, "400", "401", "403", "404", "409"),
 			},
 		},
 		"/api/w/{workspace}/apps/{app}/source": map[string]any{
@@ -586,12 +587,13 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 			"patch": map[string]any{
 				"operationId": "patchAction",
 				"summary":     "Update action execution placement",
-				"description": "Action overrides take precedence over app policy and active-release defaults. null inherits; an empty label array explicitly requires no labels.",
+				"description": "Action overrides take precedence over app policy and active-release defaults. null inherits; an empty label array explicitly requires no labels. An optional precondition atomically verifies the policy revision and exact Action matching slots before saving.",
 				"parameters":  []any{oapiWorkspaceParam(workspaceID), oapiPathParam("app", "App key."), oapiPathParam("action", "Action key.")},
 				"requestBody": oapiJSONBody(oapiSchemaRef("ExecutionPlacementPatch"), true),
 				"responses": withErrors(map[string]any{
 					"200": oapiResponse("Updated action.", oapiSchemaRef("Action")),
-				}, "400", "401", "403", "404"),
+					"422": oapiResponse("Candidate placement has insufficient matching slots.", oapiSchemaRef("ExecutionPlacementCapacityError")),
+				}, "400", "401", "403", "404", "409"),
 			},
 		},
 		"/api/w/{workspace}/apps/{app}/actions/{action}/schema": map[string]any{
@@ -919,46 +921,53 @@ func controlPlaneSchemas() map[string]any {
 	nullableDateTime := map[string]any{"type": []any{"string", "null"}, "format": "date-time"}
 	executionLimits := oapiSchemaRef("ExecutionLimits")
 	appProperties := map[string]any{
-		"id":                       oapiStringSchema(),
-		"workspace_id":             oapiStringSchema(),
-		"app_key":                  oapiStringSchema(),
-		"git_source_id":            oapiIntegerSchema(),
-		"commit_sha":               oapiStringSchema(),
-		"entrypoint":               oapiStringSchema(),
-		"tag":                      oapiStringSchema(),
-		"tag_override":             nullableString,
-		"timeout_s":                oapiIntegerSchema(),
-		"script_lang":              oapiStringSchema(),
-		"bundle_status":            map[string]any{"type": "string", "enum": []any{"ready", "missing"}},
-		"bundle_digest":            oapiStringSchema(),
-		"bundle_uri":               oapiStringSchema(),
-		"required_capabilities":    stringArray,
-		"required_labels":          stringArray,
-		"required_labels_override": nullableStringArray,
-		"max_concurrent":           nullableInteger,
-		"execution_limits":         executionLimits,
-		"updated_at":               oapiDateTimeSchema(),
+		"id":                        oapiStringSchema(),
+		"workspace_id":              oapiStringSchema(),
+		"app_key":                   oapiStringSchema(),
+		"git_source_id":             oapiIntegerSchema(),
+		"commit_sha":                oapiStringSchema(),
+		"entrypoint":                oapiStringSchema(),
+		"tag":                       oapiStringSchema(),
+		"tag_override":              nullableString,
+		"timeout_s":                 oapiIntegerSchema(),
+		"script_lang":               oapiStringSchema(),
+		"bundle_status":             map[string]any{"type": "string", "enum": []any{"ready", "missing"}},
+		"bundle_digest":             oapiStringSchema(),
+		"bundle_uri":                oapiStringSchema(),
+		"execution_profile":         oapiSchemaRef("ExecutionProfile"),
+		"required_capabilities":     stringArray,
+		"required_labels":           stringArray,
+		"required_labels_override":  nullableStringArray,
+		"max_concurrent":            nullableInteger,
+		"execution_limits":          executionLimits,
+		"updated_at":                oapiDateTimeSchema(),
+		"placement_policy_revision": map[string]any{"type": "integer", "minimum": 0},
+		"placement_precondition":    oapiSchemaRef("ExecutionPlacementPreconditionResult"),
+		"replayed":                  map[string]any{"type": "boolean"},
 	}
 	appViewProperties := cloneSchemaProperties(appProperties)
 	appViewProperties["effective_route_tag"] = oapiStringSchema()
 	appViewProperties["effective_required_labels"] = stringArray
 	actionProperties := map[string]any{
-		"id":                       oapiStringSchema(),
-		"workspace_id":             oapiStringSchema(),
-		"app_key":                  oapiStringSchema(),
-		"action_key":               oapiStringSchema(),
-		"display_name":             map[string]any{"type": "string", "description": "Human-readable label derived from a materialized JSON Schema title, preferring the input schema."},
-		"input_schema":             catalogSchema,
-		"output_schema":            catalogSchema,
-		"tag":                      nullableString,
-		"tag_override":             nullableString,
-		"timeout_s":                nullableInteger,
-		"required_capabilities":    stringArray,
-		"required_labels":          stringArray,
-		"required_labels_override": nullableStringArray,
-		"runtime_access":           oapiSchemaRef("RuntimeAccess"),
-		"execution_limits":         executionLimits,
-		"updated_at":               oapiDateTimeSchema(),
+		"id":                        oapiStringSchema(),
+		"workspace_id":              oapiStringSchema(),
+		"app_key":                   oapiStringSchema(),
+		"action_key":                oapiStringSchema(),
+		"display_name":              map[string]any{"type": "string", "description": "Human-readable label derived from a materialized JSON Schema title, preferring the input schema."},
+		"input_schema":              catalogSchema,
+		"output_schema":             catalogSchema,
+		"tag":                       nullableString,
+		"tag_override":              nullableString,
+		"timeout_s":                 nullableInteger,
+		"required_capabilities":     stringArray,
+		"required_labels":           stringArray,
+		"required_labels_override":  nullableStringArray,
+		"runtime_access":            oapiSchemaRef("RuntimeAccess"),
+		"execution_limits":          executionLimits,
+		"updated_at":                oapiDateTimeSchema(),
+		"placement_policy_revision": map[string]any{"type": "integer", "minimum": 0},
+		"placement_precondition":    oapiSchemaRef("ExecutionPlacementPreconditionResult"),
+		"replayed":                  map[string]any{"type": "boolean"},
 	}
 	appActionProperties := cloneSchemaProperties(actionProperties)
 	appActionProperties["effective_capabilities"] = stringArray
@@ -966,6 +975,16 @@ func controlPlaneSchemas() map[string]any {
 	appActionProperties["effective_required_labels"] = stringArray
 
 	return map[string]any{
+		"ExecutionProfile": map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"properties": map[string]any{
+				"version": oapiStringSchema(), "key": oapiStringSchema(), "id": oapiStringSchema(),
+				"os": oapiStringSchema(), "arch": oapiStringSchema(), "runtime": oapiStringSchema(),
+				"runtimeAbi": oapiStringSchema(), "libc": oapiStringSchema(),
+			},
+			"required": []any{"version", "key", "os", "arch", "runtime", "runtimeAbi", "libc"},
+		},
 		"KeyedConcurrencyLimit": map[string]any{
 			"type":                 "object",
 			"additionalProperties": false,
@@ -1671,19 +1690,68 @@ func controlPlaneSchemas() map[string]any {
 		"AppDetailResponse": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"app":     oapiSchemaRef("AppView"),
-				"actions": map[string]any{"type": "array", "items": oapiSchemaRef("AppAction")},
+				"app":                       oapiSchemaRef("AppView"),
+				"actions":                   map[string]any{"type": "array", "items": oapiSchemaRef("AppAction")},
+				"placement_policy_revision": map[string]any{"type": "integer", "minimum": 0},
 			},
-			"required": []any{"app", "actions"},
+			"required": []any{"app", "actions", "placement_policy_revision"},
 		},
 		"ExecutionPlacementPatch": map[string]any{
 			"type":                 "object",
 			"additionalProperties": false,
 			"minProperties":        1,
+			"anyOf": []any{
+				map[string]any{"required": []any{"tag_override"}},
+				map[string]any{"required": []any{"required_labels_override"}},
+			},
 			"properties": map[string]any{
 				"tag_override":             nullableString,
 				"required_labels_override": nullableStringArray,
+				"precondition":             oapiSchemaRef("ExecutionPlacementPrecondition"),
 			},
+		},
+		"ExecutionPlacementPrecondition": map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"properties": map[string]any{
+				"operation_id":             map[string]any{"type": "string", "minLength": 1, "maxLength": 128},
+				"expected_policy_revision": map[string]any{"type": "integer", "minimum": 0},
+				"minimum_matching_slots":   map[string]any{"type": "integer", "minimum": 1},
+			},
+			"required": []any{"operation_id", "expected_policy_revision", "minimum_matching_slots"},
+		},
+		"ExecutionPlacementTargetObservation": map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"properties": map[string]any{
+				"app": oapiStringSchema(), "action": oapiStringSchema(), "effective_tag": oapiStringSchema(),
+				"effective_required_labels": stringArray, "execution_profile": oapiSchemaRef("ExecutionProfile"),
+				"matching_workers": map[string]any{"type": "integer", "minimum": 0},
+				"matching_slots":   map[string]any{"type": "integer", "minimum": 0},
+			},
+			"required": []any{"app", "effective_tag", "effective_required_labels", "matching_workers", "matching_slots"},
+		},
+		"ExecutionPlacementPreconditionResult": map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"properties": map[string]any{
+				"checked_at":             oapiDateTimeSchema(),
+				"minimum_matching_slots": map[string]any{"type": "integer", "minimum": 1},
+				"applied_revision":       map[string]any{"type": "integer", "minimum": 0},
+				"targets":                map[string]any{"type": "array", "items": oapiSchemaRef("ExecutionPlacementTargetObservation")},
+			},
+			"required": []any{"checked_at", "minimum_matching_slots", "targets"},
+		},
+		"ExecutionPlacementCapacityError": map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"properties": map[string]any{
+				"error":                     oapiStringSchema(),
+				"reason":                    map[string]any{"type": "string", "enum": []any{"insufficient_matching_capacity"}},
+				"placement_policy_revision": map[string]any{"type": "integer", "minimum": 0},
+				"placement_precondition":    oapiSchemaRef("ExecutionPlacementPreconditionResult"),
+			},
+			"required": []any{"error", "reason", "placement_policy_revision", "placement_precondition"},
 		},
 		"AppSourceResponse": map[string]any{
 			"type": "object",

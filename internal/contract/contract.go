@@ -489,23 +489,34 @@ func NormalizeCapabilities(caps []string) ([]string, error) {
 // deployment (app-level) labels unioned with the action's contribution.
 // Legacy deployments that only carry requiredCapabilities are honored.
 func EffectiveRequiredLabels(deployment Deployment, action Action) []string {
+	var effective []string
 	if action.RequiredLabelsOverride != nil {
-		return normalizedEffectiveLabels(*action.RequiredLabelsOverride)
+		effective = normalizedEffectiveLabels(*action.RequiredLabelsOverride)
+	} else if deployment.RequiredLabelsOverride != nil {
+		effective = normalizedEffectiveLabels(*deployment.RequiredLabelsOverride)
+	} else {
+		base := deployment.RequiredLabels
+		if base == nil {
+			base = deployment.RequiredCapabilities
+		}
+		merged := append([]string(nil), base...)
+		if action.RunsOn != nil {
+			merged = append(merged, *action.RunsOn...)
+		} else if action.Capabilities != nil {
+			merged = append(merged, *action.Capabilities...)
+		}
+		effective = normalizedEffectiveLabels(merged)
 	}
-	if deployment.RequiredLabelsOverride != nil {
-		return normalizedEffectiveLabels(*deployment.RequiredLabelsOverride)
+	if strings.TrimSpace(deployment.ExecutionProfile.Key) == "" {
+		return effective
 	}
-	base := deployment.RequiredLabels
-	if base == nil {
-		base = deployment.RequiredCapabilities
+	withProfile, err := WithExecutionProfileLabel(effective, deployment.ExecutionProfile)
+	if err != nil {
+		// A persisted invalid profile is handled by bundle validation. Placement
+		// must not silently replace the already pinned label set.
+		return effective
 	}
-	merged := append([]string(nil), base...)
-	if action.RunsOn != nil {
-		merged = append(merged, *action.RunsOn...)
-	} else if action.Capabilities != nil {
-		merged = append(merged, *action.Capabilities...)
-	}
-	return normalizedEffectiveLabels(merged)
+	return normalizedEffectiveLabels(withProfile)
 }
 
 func normalizedEffectiveLabels(labels []string) []string {

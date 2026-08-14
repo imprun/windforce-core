@@ -247,8 +247,13 @@ func (c *FileCatalog) SetAppRoutingPolicy(ctx context.Context, workspace string,
 		policy = NewRoutingPolicy(workspace, app)
 	}
 	now := time.Now().UTC()
+	previous := policy
 	policy = ApplyRoutingPolicyPatch(policy, "", patch, now)
 	snapshot.RoutingPolicies[key] = policy
+	snapshot.Audit = append(snapshot.Audit, PrepareAuditRecord(AuditRecord{
+		Workspace: deployment.SourceWorkspace(), GitSourceID: deployment.SourceGitSourceID(), App: deployment.App,
+		Kind: "execution_placement_updated", Detail: RoutingPolicyMutationDetail("app", "", previous, policy), Actor: strings.TrimSpace(patch.Actor),
+	}, now))
 	if err := c.write(snapshot); err != nil {
 		return contract.Deployment{}, err
 	}
@@ -279,8 +284,14 @@ func (c *FileCatalog) SetActionRoutingPolicy(ctx context.Context, workspace stri
 	if policy.App == "" {
 		policy = NewRoutingPolicy(workspace, app)
 	}
-	policy = ApplyRoutingPolicyPatch(policy, actionKey, patch, time.Now().UTC())
+	now := time.Now().UTC()
+	previous := policy
+	policy = ApplyRoutingPolicyPatch(policy, actionKey, patch, now)
 	snapshot.RoutingPolicies[key] = policy
+	snapshot.Audit = append(snapshot.Audit, PrepareAuditRecord(AuditRecord{
+		Workspace: deployment.SourceWorkspace(), GitSourceID: deployment.SourceGitSourceID(), App: deployment.App,
+		Kind: "execution_placement_updated", Detail: RoutingPolicyMutationDetail("action", actionKey, previous, policy), Actor: strings.TrimSpace(patch.Actor),
+	}, now))
 	if err := c.write(snapshot); err != nil {
 		return contract.Action{}, err
 	}
