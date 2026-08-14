@@ -92,9 +92,26 @@ func (h *Handler) handleWorkerManagementAPI(w http.ResponseWriter, r *http.Reque
 	case len(parts) == 4 && parts[3] == "run-state" && r.Method == http.MethodPut:
 		h.handlePutWorkerGroupRunState(w, r, store, group)
 		return true
+	case len(parts) == 4 && parts[3] == "observation" && r.Method == http.MethodGet:
+		h.handleGetWorkerGroupObservation(w, r, store, group)
+		return true
 	default:
 		return false
 	}
+}
+
+func (h *Handler) handleGetWorkerGroupObservation(
+	w http.ResponseWriter,
+	r *http.Request,
+	store state.WorkerControlStore,
+	group string,
+) {
+	observation, err := store.GetWorkerGroupObservation(r.Context(), group)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "worker group observation unavailable")
+		return
+	}
+	writeJSON(w, http.StatusOK, observation)
 }
 
 func (h *Handler) handleListWorkerCredentials(w http.ResponseWriter, r *http.Request, store state.WorkerControlStore, group string) {

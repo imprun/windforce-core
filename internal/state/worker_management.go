@@ -96,6 +96,7 @@ type WorkerControlStore interface {
 	RevokeWorkerCredential(context.Context, RevokeWorkerCredentialRequest) (WorkerCredential, bool, error)
 	GetWorkerGroupRunState(context.Context, string) (WorkerGroupRunState, error)
 	PutWorkerGroupRunState(context.Context, PutWorkerGroupRunStateRequest) (WorkerGroupRunState, bool, error)
+	GetWorkerGroupObservation(context.Context, string) (WorkerGroupObservation, error)
 	GetWorker(context.Context, string) (WorkerRecord, error)
 	ClaimJobForWorkerScope(context.Context, string, []string, []string, []string, time.Duration) (Job, Lease, error)
 }

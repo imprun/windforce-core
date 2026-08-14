@@ -68,6 +68,17 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 				}, "400", "401", "403", "409", "500", "501"),
 			},
 		},
+		"/api/worker-groups/{group}/observation": map[string]any{
+			"get": map[string]any{
+				"operationId": "getWorkerGroupObservation",
+				"summary":     "Read a consistent managed WorkerGroup activity snapshot",
+				"description": "Instance-admin operation. Counts are read from one store snapshot and omit Worker identities and credential material. Unattributed running work keeps quiescent false.",
+				"parameters":  []any{oapiPathParam("group", "Managed worker group id.")},
+				"responses": withErrors(map[string]any{
+					"200": oapiResponse("Current WorkerGroup activity and drain gate.", oapiSchemaRef("WorkerGroupObservation")),
+				}, "400", "401", "403", "500", "501"),
+			},
+		},
 		"/api/workspaces": map[string]any{
 			"get": map[string]any{
 				"operationId": "listWorkspaces",
@@ -1094,6 +1105,40 @@ func controlPlaneSchemas() map[string]any {
 				"replayed":  oapiBooleanSchema(),
 			},
 			"required": []any{"run_state", "replayed"},
+		},
+		"WorkerGenerationActivity": map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"properties": map[string]any{
+				"generation": map[string]any{"type": "integer", "minimum": 0, "description": "Managed credential generation; zero denotes the legacy static Worker Plane credential."},
+				"workers":    map[string]any{"type": "integer", "minimum": 0},
+			},
+			"required": []any{"generation", "workers"},
+		},
+		"WorkerGroupObservation": map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"properties": map[string]any{
+				"group":                        oapiStringSchema(),
+				"run_state":                    oapiStringEnumSchema("running", "draining"),
+				"run_state_revision":           map[string]any{"type": "integer", "minimum": 0},
+				"deadline_at":                  nullableDateTime,
+				"observed_at":                  oapiDateTimeSchema(),
+				"live_workers":                 map[string]any{"type": "integer", "minimum": 0},
+				"unmanaged_live_workers":       map[string]any{"type": "integer", "minimum": 0, "description": "Live generation-zero Workers whose static credential is not fenced by managed group run state."},
+				"available_slots":              map[string]any{"type": "integer", "minimum": 0, "description": "Unleased slots on live active Workers; zero while the group is draining."},
+				"active_leases":                map[string]any{"type": "integer", "minimum": 0},
+				"running_jobs":                 map[string]any{"type": "integer", "minimum": 0},
+				"unattributed_active_leases":   map[string]any{"type": "integer", "minimum": 0, "description": "Instance-wide active leases whose Worker registration no longer identifies a group."},
+				"unattributed_running_jobs":    map[string]any{"type": "integer", "minimum": 0, "description": "Instance-wide running Jobs whose Worker registration no longer identifies a group."},
+				"active_workers_by_generation": map[string]any{"type": "array", "items": oapiSchemaRef("WorkerGenerationActivity")},
+				"quiescent":                    oapiBooleanSchema(),
+			},
+			"required": []any{
+				"group", "run_state", "run_state_revision", "observed_at", "live_workers", "unmanaged_live_workers", "available_slots",
+				"active_leases", "running_jobs", "unattributed_active_leases", "unattributed_running_jobs",
+				"active_workers_by_generation", "quiescent",
+			},
 		},
 		"Workspace": map[string]any{
 			"type": "object",

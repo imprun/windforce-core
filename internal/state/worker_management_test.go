@@ -141,6 +141,15 @@ func exerciseWorkerControlStore(t *testing.T, store workerControlTestStore) {
 	if err := store.RegisterWorker(ctx, takeover); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("worker ownership takeover err=%v, want ErrForbidden", err)
 	}
+	secondWorker := ownedWorker
+	secondWorker.ID = "owned-worker-generation-2"
+	secondWorker.Slots = 2
+	secondWorker.Status = WorkerStatusDraining
+	secondWorker.CredentialID = second.ID
+	secondWorker.CredentialGeneration = second.Generation
+	if err := store.RegisterWorker(ctx, secondWorker); err != nil {
+		t.Fatalf("register second generation worker: %v", err)
+	}
 
 	for _, workspace := range []string{"workspace-b", "workspace-a"} {
 		deployment := contract.Deployment{
@@ -154,8 +163,8 @@ func exerciseWorkerControlStore(t *testing.T, store workerControlTestStore) {
 			t.Fatal(err)
 		}
 	}
-	claimed, _, err := store.ClaimJobForWorkerScope(
-		ctx, "managed-worker", nil, []string{"linux", "arm64"}, []string{"workspace-a"}, time.Minute,
+	claimed, claimedLease, err := store.ClaimJobForWorkerScope(
+		ctx, ownedWorker.ID, nil, []string{"linux", "arm64"}, []string{"workspace-a"}, time.Minute,
 	)
 	if err != nil || contract.NormalizeWorkspace(claimed.Payload.Workspace) != "workspace-a" {
 		t.Fatalf("scoped claim = %#v, err=%v", claimed, err)
@@ -191,6 +200,70 @@ func exerciseWorkerControlStore(t *testing.T, store workerControlTestStore) {
 		RequestFingerprint: "stale-state", Actor: "tester",
 	}); !errors.Is(err, ErrConflict) {
 		t.Fatalf("stale run state err=%v, want ErrConflict", err)
+	}
+
+	observation, err := store.GetWorkerGroupObservation(ctx, "group-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if observation.RunState != WorkerGroupDraining || observation.RunStateRevision != 1 ||
+		observation.LiveWorkers != 2 || observation.AvailableSlots != 0 || observation.ActiveLeases != 1 ||
+		observation.RunningJobs != 1 || observation.UnattributedActiveLeases != 0 ||
+		observation.UnattributedRunningJobs != 0 || observation.Quiescent {
+		t.Fatalf("draining observation = %#v", observation)
+	}
+	if len(observation.ActiveWorkersByGeneration) != 2 ||
+		observation.ActiveWorkersByGeneration[0] != (WorkerGenerationActivity{Generation: 1, Workers: 1}) ||
+		observation.ActiveWorkersByGeneration[1] != (WorkerGenerationActivity{Generation: 2, Workers: 1}) {
+		t.Fatalf("generation activity = %#v", observation.ActiveWorkersByGeneration)
+	}
+	if err := store.CompleteJobSucceeded(ctx, claimedLease, contract.JobResult{
+		JobID: claimed.ID, App: claimed.Payload.App, Action: claimed.Payload.Action, Output: []byte(`{"ok":true}`),
+	}); err != nil {
+		t.Fatalf("complete attributed lease: %v", err)
+	}
+	legacyWorker := WorkerRecord{
+		ID: "legacy-static-worker", Group: "group-a", Slots: 1, Status: WorkerStatusActive,
+	}
+	if err := store.RegisterWorker(ctx, legacyWorker); err != nil {
+		t.Fatalf("register legacy static worker: %v", err)
+	}
+	observation, err = store.GetWorkerGroupObservation(ctx, "group-a")
+	if err != nil || observation.Quiescent || observation.UnmanagedLiveWorkers != 1 {
+		t.Fatalf("unmanaged live worker must keep managed drain open: %#v, err=%v", observation, err)
+	}
+	if err := store.DeregisterWorker(ctx, legacyWorker.ID); err != nil {
+		t.Fatalf("deregister legacy static worker: %v", err)
+	}
+	observation, err = store.GetWorkerGroupObservation(ctx, "group-a")
+	if err != nil || !observation.Quiescent || observation.LiveWorkers != 2 || observation.UnmanagedLiveWorkers != 0 {
+		t.Fatalf("idle managed workers should remain observable after quiescence: %#v, err=%v", observation, err)
+	}
+
+	orphanDeployment := contract.Deployment{
+		Workspace: "workspace-a", App: "orphan", Commit: "commit-orphan",
+		RequiredLabels: []string{"linux", "arm64"},
+		Actions:        map[string]contract.Action{"run": {Action: "run", Command: []string{"helper"}}},
+	}
+	orphanRun := NewRun("windforce", "run-orphan", "orphan", "run", orphanDeployment, []byte(`{}`))
+	orphanJob := NewActionJob(orphanRun, nil)
+	if err := store.CreateRunAndEnqueue(ctx, orphanRun, orphanJob); err != nil {
+		t.Fatal(err)
+	}
+	_, orphanLease, err := store.ClaimJobForWorkerScope(
+		ctx, "unregistered-worker", nil, []string{"linux", "arm64"}, []string{"workspace-a"}, time.Minute,
+	)
+	if err != nil {
+		t.Fatalf("claim unattributed lease: %v", err)
+	}
+	observation, err = store.GetWorkerGroupObservation(ctx, "group-a")
+	if err != nil || observation.UnattributedActiveLeases != 1 || observation.UnattributedRunningJobs != 1 || observation.Quiescent {
+		t.Fatalf("unattributed running work must fail closed: %#v, err=%v", observation, err)
+	}
+	if err := store.CompleteJobSucceeded(ctx, orphanLease, contract.JobResult{
+		JobID: orphanJob.ID, App: orphanJob.Payload.App, Action: orphanJob.Payload.Action, Output: []byte(`{"ok":true}`),
+	}); err != nil {
+		t.Fatalf("complete unattributed lease: %v", err)
 	}
 
 	drainDeadline := time.Now().UTC().Add(5 * time.Minute)
