@@ -121,11 +121,11 @@ func observePlacementTargets(
 			if !placementWorkerEligible(worker, deployment.SourceWorkspace(), checkedAt, credentials, runStates) {
 				continue
 			}
-			labels, err := contract.WithExecutionProfileLabels(worker.Labels, worker.ExecutionProfiles)
+			tags, labels, err := WorkerClaimSelector(worker)
 			if err != nil {
 				return catalog.RoutingPolicyOperationResult{}, false, err
 			}
-			if !selectorAllowed(candidate.tag, candidate.labels, normalizeClaimTags(worker.Tags), normalizeClaimTags(labels)) {
+			if !selectorAllowed(candidate.tag, candidate.labels, normalizeClaimTags(tags), normalizeClaimTags(labels)) {
 				continue
 			}
 			observation.MatchingWorkers++
@@ -159,8 +159,8 @@ func placementWorkerEligible(
 		return false
 	}
 	if strings.TrimSpace(worker.CredentialID) == "" {
-		// Static Worker-plane credentials keep their historical unrestricted
-		// claim scope, so their current registry advertisement is eligible.
+		// A registered static Worker is bound to this same registry selector at
+		// claim time. Unregistered compatibility claims have no capacity record.
 		return true
 	}
 	credential, ok := credentials[worker.CredentialID]
