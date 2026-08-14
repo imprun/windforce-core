@@ -150,6 +150,7 @@ func TestLocalDeleteWorkspacePurgesScopedData(t *testing.T) {
 	if err := store.update(ctx, func(snapshot *Snapshot, now time.Time) error {
 		snapshot.Runs["run-delete"] = Run{ID: "run-delete"}
 		snapshot.Jobs["job-delete"] = Job{ID: "job-delete", RunID: "run-delete", Payload: JobPayload{Workspace: workspaceID}}
+		snapshot.WorkerLeaseIdentities["job-delete"] = WorkerLeaseIdentity{Group: "group-delete", CredentialGeneration: 1}
 		snapshot.HumanTasks["task-delete"] = HumanTask{ID: "task-delete", RunID: "run-delete"}
 		snapshot.Events = append(snapshot.Events, RunEvent{ID: 1, RunID: "run-delete"})
 		snapshot.JobLogs["job-delete"] = JobLog{JobID: "job-delete", WorkspaceID: workspaceID}
@@ -194,7 +195,7 @@ func TestLocalDeleteWorkspacePurgesScopedData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, exists := snapshot.Workspaces[workspaceID]; exists || len(snapshot.Runs) != 0 || len(snapshot.Jobs) != 0 || len(snapshot.HumanTasks) != 0 || len(snapshot.Events) != 0 || len(snapshot.JobLogs) != 0 {
+	if _, exists := snapshot.Workspaces[workspaceID]; exists || len(snapshot.Runs) != 0 || len(snapshot.Jobs) != 0 || len(snapshot.WorkerLeaseIdentities) != 0 || len(snapshot.HumanTasks) != 0 || len(snapshot.Events) != 0 || len(snapshot.JobLogs) != 0 {
 		t.Fatalf("execution data remained after deletion: %#v", snapshot)
 	}
 	if _, exists := snapshot.JobState[workspaceID]; exists || len(snapshot.LegacyClients) != 0 || len(snapshot.LegacyClientAudits) != 0 || len(snapshot.Triggers) != 0 || len(snapshot.WebhookSubscriptions) != 0 || len(snapshot.ControlPlaneEvents) != 0 || len(snapshot.ReleaseCatalog.Deployments) != 0 || len(snapshot.ReleaseCatalog.RoutingPolicies) != 0 {
