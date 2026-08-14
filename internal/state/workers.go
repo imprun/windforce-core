@@ -78,3 +78,34 @@ const WorkerRegistryExpiry = 15 * time.Minute
 func (w WorkerRecord) Live(now time.Time) bool {
 	return now.Sub(w.LastHeartbeatAt) <= WorkerLiveTTL
 }
+
+// WorkerClaimSelector returns the canonical selector a registered Worker may
+// use for claims. Execution-profile labels are engine-owned capabilities and
+// therefore become part of the authoritative registry advertisement.
+func WorkerClaimSelector(record WorkerRecord) ([]string, []string, error) {
+	labels, err := contract.WithExecutionProfileLabels(record.Labels, record.ExecutionProfiles)
+	if err != nil {
+		return nil, nil, err
+	}
+	return NormalizeWorkerScope(record.Tags), NormalizeWorkerScope(labels), nil
+}
+
+// RegisteredWorkerClaim validates a claim against the current registry record
+// and returns the immutable, non-secret identity to pin to the claim attempt.
+func RegisteredWorkerClaim(record WorkerRecord, requestedTags []string, requestedLabels []string, now time.Time) ([]string, []string, WorkerLeaseIdentity, error) {
+	status, err := NormalizeWorkerStatus(record.Status)
+	if err != nil || status != WorkerStatusActive || !record.Live(now) {
+		return nil, nil, WorkerLeaseIdentity{}, ErrForbidden
+	}
+	tags, labels, err := WorkerClaimSelector(record)
+	if err != nil {
+		return nil, nil, WorkerLeaseIdentity{}, err
+	}
+	if !SameWorkerScope(requestedTags, tags) || !SameWorkerScope(requestedLabels, labels) {
+		return nil, nil, WorkerLeaseIdentity{}, ErrForbidden
+	}
+	return tags, labels, WorkerLeaseIdentity{
+		Group:                strings.TrimSpace(record.Group),
+		CredentialGeneration: record.CredentialGeneration,
+	}, nil
+}

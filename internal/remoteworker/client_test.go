@@ -92,8 +92,8 @@ func TestClientLifecycleAgainstRealServer(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, _, err := client.ClaimJobForWorker(ctx, "w-remote", nil, nil, time.Minute); err != state.ErrNoQueuedJob {
-		t.Fatalf("labelless remote claim err = %v, want ErrNoQueuedJob", err)
+	if _, _, err := client.ClaimJobForWorker(ctx, "w-remote", nil, nil, time.Minute); !errors.Is(err, state.ErrForbidden) {
+		t.Fatalf("labelless remote claim err = %v, want ErrForbidden", err)
 	}
 
 	claimed, lease, err := client.ClaimJobForWorker(ctx, "w-remote", nil, []string{"browser"}, time.Minute)

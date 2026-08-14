@@ -126,6 +126,8 @@ func wireError(method string, path string, status int, payload []byte) error {
 		return fmt.Errorf("%v: %w", err, state.ErrNotFound)
 	case "conflict":
 		return fmt.Errorf("%v: %w", err, state.ErrConflict)
+	case "forbidden":
+		return fmt.Errorf("%v: %w", err, state.ErrForbidden)
 	}
 	return err
 }

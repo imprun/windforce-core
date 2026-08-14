@@ -65,6 +65,8 @@ func writeStoreError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, state.ErrInvalidLease):
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error(), "code": "invalid_lease"})
+	case errors.Is(err, state.ErrForbidden):
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error(), "code": "forbidden"})
 	case errors.Is(err, state.ErrNotFound):
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error(), "code": "not_found"})
 	case errors.Is(err, state.ErrConflict):
@@ -83,10 +85,6 @@ func clampLeaseTTL(ms int64) time.Duration {
 		return workerPlaneMaxLeaseTTL
 	}
 	return leaseTTL
-}
-
-func workerClaimLabels(record state.WorkerRecord) ([]string, error) {
-	return contract.WithExecutionProfileLabels(record.Labels, record.ExecutionProfiles)
 }
 
 func sameExecutionProfiles(left []contract.ExecutionProfile, right []contract.ExecutionProfile) bool {
@@ -294,9 +292,9 @@ func (h *Handler) workerPlaneClaim(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		record, recordErr := managedWorkerRecord(r.Context(), store, *credential, req.WorkerID)
-		claimLabels, labelsErr := workerClaimLabels(record)
-		if recordErr != nil || labelsErr != nil || !state.SameWorkerScope(record.Labels, credential.Labels) ||
-			!state.SameWorkerScope(req.Labels, claimLabels) || !state.SameWorkerScope(req.Tags, record.Tags) {
+		claimTags, claimLabels, selectorErr := state.WorkerClaimSelector(record)
+		if recordErr != nil || selectorErr != nil || !state.SameWorkerScope(record.Labels, credential.Labels) ||
+			!state.SameWorkerScope(req.Labels, claimLabels) || !state.SameWorkerScope(req.Tags, claimTags) {
 			writeError(w, http.StatusForbidden, "worker claim exceeds registered credential scope")
 			return
 		}
@@ -310,7 +308,7 @@ func (h *Handler) workerPlaneClaim(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		job, lease, err = store.ClaimJobForWorkerScope(
-			r.Context(), req.WorkerID, req.Tags, claimLabels, credential.WorkspaceIDs, leaseTTL,
+			r.Context(), req.WorkerID, claimTags, claimLabels, credential.WorkspaceIDs, leaseTTL,
 		)
 	} else {
 		// Static worker-plane bearer tokens retain their historical unrestricted
