@@ -107,9 +107,10 @@ func scanJob(row rowScanner) (Job, error) {
 	var canceledBy sql.NullString
 	var canceledReason sql.NullString
 	var traceContext json.RawMessage
+	var leaseIdentity json.RawMessage
 	if err := row.Scan(
 		&job.ID, &job.RunID, &stateValue, &job.Kind, &payload, &job.Priority, &job.Attempt,
-		&leaseOwner, &leaseExpiresAt, &startedAt, &canceledBy, &canceledReason, &job.CreatedAt, &job.UpdatedAt, &traceContext,
+		&leaseOwner, &leaseExpiresAt, &startedAt, &canceledBy, &canceledReason, &job.CreatedAt, &job.UpdatedAt, &traceContext, &leaseIdentity,
 	); err != nil {
 		return Job{}, err
 	}
@@ -136,6 +137,13 @@ func scanJob(row rowScanner) (Job, error) {
 		if err := json.Unmarshal(traceContext, &job.TraceContext); err != nil {
 			return Job{}, err
 		}
+	}
+	if len(leaseIdentity) > 0 && string(leaseIdentity) != "null" {
+		var identity WorkerLeaseIdentity
+		if err := json.Unmarshal(leaseIdentity, &identity); err != nil {
+			return Job{}, err
+		}
+		job.LeaseIdentity = &identity
 	}
 	if job.TraceContext.Version != 0 && !job.TraceContext.IsCanonical() {
 		job.TraceContext = telemetry.TraceContextV1{}
