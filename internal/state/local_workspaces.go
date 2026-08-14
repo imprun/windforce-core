@@ -232,6 +232,7 @@ func purgeLocalWorkspace(snapshot *Snapshot, workspaceID string) {
 		runIDs[job.RunID] = struct{}{}
 		jobIDs[id] = struct{}{}
 		delete(snapshot.Jobs, id)
+		delete(snapshot.WorkerLeaseIdentities, id)
 	}
 	for id := range runIDs {
 		delete(snapshot.Runs, id)
