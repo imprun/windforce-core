@@ -6,7 +6,7 @@ RUN bun install --frozen-lockfile
 COPY web ./
 RUN bun run build
 
-FROM golang:1.26.5-bookworm AS go-toolchain
+FROM golang:1.26.6-bookworm AS go-toolchain
 
 FROM go-toolchain AS build
 
