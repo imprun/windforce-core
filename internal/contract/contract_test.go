@@ -177,6 +177,26 @@ func TestEffectiveRequiredLabels(t *testing.T) {
 	}
 }
 
+func TestEffectiveRequiredLabelsPreservesExecutionProfileAcrossOperatorOverrides(t *testing.T) {
+	profile, err := NewExecutionProfile("image-a", "linux", "amd64", "bun", "1.2.3", "glibc-2.39")
+	if err != nil {
+		t.Fatal(err)
+	}
+	profileLabel, err := ExecutionProfileLabel(profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	empty := []string{}
+	deployment := Deployment{ExecutionProfile: profile, RequiredLabelsOverride: &empty}
+	if got := EffectiveRequiredLabels(deployment, Action{}); !reflect.DeepEqual(got, []string{profileLabel}) {
+		t.Fatalf("app override labels = %#v, want pinned profile", got)
+	}
+	actionOverride := []string{"gpu"}
+	if got := EffectiveRequiredLabels(deployment, Action{RequiredLabelsOverride: &actionOverride}); !reflect.DeepEqual(got, []string{"gpu", profileLabel}) {
+		t.Fatalf("action override labels = %#v, want operator plus pinned profile", got)
+	}
+}
+
 func TestEffectiveRequiredLabelsOperatorPrecedence(t *testing.T) {
 	appOverride := []string{"gpu"}
 	actionOverride := []string{}

@@ -52,10 +52,21 @@ func (h *Handler) handleCanonicalApp(w http.ResponseWriter, r *http.Request, wor
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	response := map[string]any{
 		"app":     newCanonicalAppView(deployment),
 		"actions": actions,
-	})
+	}
+	if reader, ok := h.catalog.(interface {
+		GetRoutingPolicy(context.Context, string, string) (catalogpkg.RoutingPolicy, error)
+	}); ok {
+		policy, err := reader.GetRoutingPolicy(r.Context(), workspaceID, app)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		response["placement_policy_revision"] = policy.Revision
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (h *Handler) handleCanonicalAppSource(w http.ResponseWriter, r *http.Request, workspaceID string, app string) {
@@ -192,14 +203,33 @@ func (h *Handler) handleCanonicalPatchApp(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusNotImplemented, "app patch is not supported")
 		return
 	}
-	patch, ok := decodeCanonicalRoutingPolicyPatch(w, r)
+	patch, precondition, ok := decodeCanonicalRoutingPolicyPatch(w, r)
 	if !ok {
 		return
 	}
 	patch.Actor = requestActorSubject(r)
-	previous, err := patcher.GetRoutingPolicy(r.Context(), workspaceID, app)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+	if precondition != nil {
+		request, ok := canonicalPlacementPolicyMutationRequest(w, workspaceID, app, "", patch, *precondition)
+		if !ok {
+			return
+		}
+		updater, ok := h.catalog.(interface {
+			UpdateRoutingPolicyWithPrecondition(context.Context, state.PlacementPolicyMutationRequest) (state.PlacementPolicyMutationResult, error)
+		})
+		if !ok {
+			writeError(w, http.StatusNotImplemented, "placement precondition is not supported")
+			return
+		}
+		result, err := updater.UpdateRoutingPolicyWithPrecondition(r.Context(), request)
+		if h.writeCanonicalPlacementMutationError(w, err, result) {
+			return
+		}
+		model := newCanonicalAppModel(result.Deployment)
+		model.PlacementPolicyRevision = &result.Policy.Revision
+		check := newCanonicalPlacementPreconditionResult(result.Check)
+		model.PlacementPrecondition = &check
+		model.Replayed = &result.Replayed
+		writeJSON(w, http.StatusOK, model)
 		return
 	}
 	deployment, err := patcher.SetAppRoutingPolicy(r.Context(), workspaceID, app, patch)
@@ -211,12 +241,6 @@ func (h *Handler) handleCanonicalPatchApp(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	updated, err := patcher.GetRoutingPolicy(r.Context(), workspaceID, app)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	h.recordAudit(r, workspaceID, deployment.SourceGitSourceID(), app, "execution_placement_updated", routingPolicyMutationDetail("app", "", previous, updated))
 	writeJSON(w, http.StatusOK, newCanonicalAppModel(deployment))
 }
 
@@ -233,14 +257,40 @@ func (h *Handler) handleCanonicalPatchAction(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusNotImplemented, "action patch is not supported")
 		return
 	}
-	patch, ok := decodeCanonicalRoutingPolicyPatch(w, r)
+	patch, precondition, ok := decodeCanonicalRoutingPolicyPatch(w, r)
 	if !ok {
 		return
 	}
 	patch.Actor = requestActorSubject(r)
-	previous, err := patcher.GetRoutingPolicy(r.Context(), workspaceID, app)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+	if precondition != nil {
+		request, ok := canonicalPlacementPolicyMutationRequest(w, workspaceID, app, actionKey, patch, *precondition)
+		if !ok {
+			return
+		}
+		updater, ok := h.catalog.(interface {
+			UpdateRoutingPolicyWithPrecondition(context.Context, state.PlacementPolicyMutationRequest) (state.PlacementPolicyMutationResult, error)
+		})
+		if !ok {
+			writeError(w, http.StatusNotImplemented, "placement precondition is not supported")
+			return
+		}
+		result, err := updater.UpdateRoutingPolicyWithPrecondition(r.Context(), request)
+		if h.writeCanonicalPlacementMutationError(w, err, result) {
+			return
+		}
+		action := result.Deployment.Actions[actionKey]
+		schemaReader := h.newCanonicalSchemaReader(r.Context(), result.Deployment)
+		defer schemaReader.Close()
+		view, err := h.newCanonicalActionModel(schemaReader, result.Deployment, actionKey, action)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		view.PlacementPolicyRevision = &result.Policy.Revision
+		check := newCanonicalPlacementPreconditionResult(result.Check)
+		view.PlacementPrecondition = &check
+		view.Replayed = &result.Replayed
+		writeJSON(w, http.StatusOK, view)
 		return
 	}
 	action, err := patcher.SetActionRoutingPolicy(r.Context(), workspaceID, app, actionKey, patch)
@@ -260,12 +310,6 @@ func (h *Handler) handleCanonicalPatchAction(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
-	updated, err := patcher.GetRoutingPolicy(r.Context(), workspaceID, app)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	h.recordAudit(r, workspaceID, deployment.SourceGitSourceID(), app, "execution_placement_updated", routingPolicyMutationDetail("action", actionKey, previous, updated))
 	schemaReader := h.newCanonicalSchemaReader(r.Context(), deployment)
 	defer schemaReader.Close()
 	view, err := h.newCanonicalActionModel(schemaReader, deployment, actionKey, action)
@@ -274,6 +318,68 @@ func (h *Handler) handleCanonicalPatchAction(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeJSON(w, http.StatusOK, view)
+}
+
+func canonicalPlacementPolicyMutationRequest(
+	w http.ResponseWriter,
+	workspaceID string,
+	app string,
+	action string,
+	patch catalogpkg.RoutingPolicyPatch,
+	precondition canonicalPlacementPreconditionRequest,
+) (state.PlacementPolicyMutationRequest, bool) {
+	if !validOperationID(precondition.OperationID) || precondition.ExpectedPolicyRevision == nil ||
+		*precondition.ExpectedPolicyRevision < 0 || precondition.MinimumMatchingSlots == nil || *precondition.MinimumMatchingSlots < 1 {
+		writeError(w, http.StatusBadRequest, "precondition requires a valid operation_id, non-negative expected_policy_revision, and positive minimum_matching_slots")
+		return state.PlacementPolicyMutationRequest{}, false
+	}
+	expectedRevision := *precondition.ExpectedPolicyRevision
+	minimumMatchingSlots := *precondition.MinimumMatchingSlots
+	fingerprint := requestFingerprint(struct {
+		WorkspaceID          string    `json:"workspace_id"`
+		App                  string    `json:"app"`
+		Action               string    `json:"action,omitempty"`
+		OperationID          string    `json:"operation_id"`
+		ExpectedRevision     int64     `json:"expected_policy_revision"`
+		MinimumMatchingSlots int64     `json:"minimum_matching_slots"`
+		RouteTagSet          bool      `json:"tag_override_set"`
+		RouteTagOverride     *string   `json:"tag_override"`
+		RequiredLabelsSet    bool      `json:"required_labels_override_set"`
+		RequiredLabels       *[]string `json:"required_labels_override"`
+	}{
+		contract.NormalizeWorkspace(workspaceID), app, action, strings.TrimSpace(precondition.OperationID),
+		expectedRevision, minimumMatchingSlots, patch.RouteTagSet, patch.RouteTagOverride,
+		patch.RequiredLabelsSet, patch.RequiredLabelsOverride,
+	})
+	return state.PlacementPolicyMutationRequest{
+		WorkspaceID: workspaceID, App: app, Action: action, Patch: patch,
+		OperationID: strings.TrimSpace(precondition.OperationID), ExpectedRevision: expectedRevision,
+		MinimumMatchingSlots: minimumMatchingSlots, RequestFingerprint: fingerprint, Actor: patch.Actor,
+	}, true
+}
+
+func (h *Handler) writeCanonicalPlacementMutationError(w http.ResponseWriter, err error, result state.PlacementPolicyMutationResult) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, state.ErrInsufficientPlacementCapacity) {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+			"error": "insufficient matching placement capacity", "reason": "insufficient_matching_capacity",
+			"placement_policy_revision": result.Policy.Revision,
+			"placement_precondition":    newCanonicalPlacementPreconditionResult(result.Check),
+		})
+		return true
+	}
+	if errors.Is(err, catalogpkg.ErrDeploymentNotFound) {
+		writeError(w, http.StatusNotFound, "app not found")
+		return true
+	}
+	if errors.Is(err, catalogpkg.ErrActionNotFound) {
+		writeError(w, http.StatusNotFound, "action not found")
+		return true
+	}
+	writeStateError(w, err)
+	return true
 }
 
 func (h *Handler) handleCanonicalRequeueApp(w http.ResponseWriter, r *http.Request, workspaceID string, app string) {

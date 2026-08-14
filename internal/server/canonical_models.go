@@ -217,26 +217,29 @@ func canonicalDeploymentActions(deployment contract.Deployment) []string {
 }
 
 type canonicalAppModel struct {
-	ID                     string                    `json:"id"`
-	WorkspaceID            string                    `json:"workspace_id"`
-	AppKey                 string                    `json:"app_key"`
-	GitSourceID            int64                     `json:"git_source_id"`
-	CommitSha              string                    `json:"commit_sha"`
-	Entrypoint             string                    `json:"entrypoint"`
-	Tag                    string                    `json:"tag"`
-	TagOverride            *string                   `json:"tag_override,omitempty"`
-	TimeoutS               int32                     `json:"timeout_s"`
-	ScriptLang             string                    `json:"script_lang"`
-	BundleStatus           string                    `json:"bundle_status"`
-	BundleDigest           string                    `json:"bundle_digest,omitempty"`
-	BundleURI              string                    `json:"bundle_uri,omitempty"`
-	ExecutionProfile       contract.ExecutionProfile `json:"execution_profile,omitempty,omitzero"`
-	RequiredCapabilities   []string                  `json:"required_capabilities"`
-	RequiredLabels         []string                  `json:"required_labels"`
-	RequiredLabelsOverride *[]string                 `json:"required_labels_override,omitempty"`
-	MaxConcurrent          *int32                    `json:"max_concurrent,omitempty"`
-	ExecutionLimits        canonicalExecutionLimits  `json:"execution_limits,omitempty,omitzero"`
-	UpdatedAt              time.Time                 `json:"updated_at"`
+	ID                      string                                `json:"id"`
+	WorkspaceID             string                                `json:"workspace_id"`
+	AppKey                  string                                `json:"app_key"`
+	GitSourceID             int64                                 `json:"git_source_id"`
+	CommitSha               string                                `json:"commit_sha"`
+	Entrypoint              string                                `json:"entrypoint"`
+	Tag                     string                                `json:"tag"`
+	TagOverride             *string                               `json:"tag_override,omitempty"`
+	TimeoutS                int32                                 `json:"timeout_s"`
+	ScriptLang              string                                `json:"script_lang"`
+	BundleStatus            string                                `json:"bundle_status"`
+	BundleDigest            string                                `json:"bundle_digest,omitempty"`
+	BundleURI               string                                `json:"bundle_uri,omitempty"`
+	ExecutionProfile        contract.ExecutionProfile             `json:"execution_profile,omitempty,omitzero"`
+	RequiredCapabilities    []string                              `json:"required_capabilities"`
+	RequiredLabels          []string                              `json:"required_labels"`
+	RequiredLabelsOverride  *[]string                             `json:"required_labels_override,omitempty"`
+	MaxConcurrent           *int32                                `json:"max_concurrent,omitempty"`
+	ExecutionLimits         canonicalExecutionLimits              `json:"execution_limits,omitempty,omitzero"`
+	UpdatedAt               time.Time                             `json:"updated_at"`
+	PlacementPolicyRevision *int64                                `json:"placement_policy_revision,omitempty"`
+	PlacementPrecondition   *canonicalPlacementPreconditionResult `json:"placement_precondition,omitempty"`
+	Replayed                *bool                                 `json:"replayed,omitempty"`
 }
 
 type canonicalAppView struct {
@@ -266,22 +269,25 @@ type canonicalAppHistoryItem struct {
 }
 
 type canonicalActionModel struct {
-	ID                     string                   `json:"id"`
-	WorkspaceID            string                   `json:"workspace_id"`
-	AppKey                 string                   `json:"app_key"`
-	ActionKey              string                   `json:"action_key"`
-	DisplayName            string                   `json:"display_name,omitempty"`
-	InputSchema            []byte                   `json:"input_schema"`
-	OutputSchema           []byte                   `json:"output_schema"`
-	Tag                    *string                  `json:"tag,omitempty"`
-	TagOverride            *string                  `json:"tag_override,omitempty"`
-	TimeoutS               *int32                   `json:"timeout_s,omitempty"`
-	RequiredCapabilities   []string                 `json:"required_capabilities,omitempty"`
-	RequiredLabels         []string                 `json:"required_labels"`
-	RequiredLabelsOverride *[]string                `json:"required_labels_override,omitempty"`
-	RuntimeAccess          contract.RuntimeAccess   `json:"runtime_access"`
-	ExecutionLimits        canonicalExecutionLimits `json:"execution_limits,omitempty,omitzero"`
-	UpdatedAt              time.Time                `json:"updated_at"`
+	ID                      string                                `json:"id"`
+	WorkspaceID             string                                `json:"workspace_id"`
+	AppKey                  string                                `json:"app_key"`
+	ActionKey               string                                `json:"action_key"`
+	DisplayName             string                                `json:"display_name,omitempty"`
+	InputSchema             []byte                                `json:"input_schema"`
+	OutputSchema            []byte                                `json:"output_schema"`
+	Tag                     *string                               `json:"tag,omitempty"`
+	TagOverride             *string                               `json:"tag_override,omitempty"`
+	TimeoutS                *int32                                `json:"timeout_s,omitempty"`
+	RequiredCapabilities    []string                              `json:"required_capabilities,omitempty"`
+	RequiredLabels          []string                              `json:"required_labels"`
+	RequiredLabelsOverride  *[]string                             `json:"required_labels_override,omitempty"`
+	RuntimeAccess           contract.RuntimeAccess                `json:"runtime_access"`
+	ExecutionLimits         canonicalExecutionLimits              `json:"execution_limits,omitempty,omitzero"`
+	UpdatedAt               time.Time                             `json:"updated_at"`
+	PlacementPolicyRevision *int64                                `json:"placement_policy_revision,omitempty"`
+	PlacementPrecondition   *canonicalPlacementPreconditionResult `json:"placement_precondition,omitempty"`
+	Replayed                *bool                                 `json:"replayed,omitempty"`
 }
 
 type canonicalExecutionLimits struct {
@@ -685,17 +691,42 @@ func decodeCanonicalTagOverride(w http.ResponseWriter, r *http.Request) (*string
 }
 
 type canonicalRoutingPolicyRequest struct {
-	RouteTagOverride       json.RawMessage `json:"tag_override"`
-	RequiredLabelsOverride json.RawMessage `json:"required_labels_override"`
+	RouteTagOverride       json.RawMessage                        `json:"tag_override"`
+	RequiredLabelsOverride json.RawMessage                        `json:"required_labels_override"`
+	Precondition           *canonicalPlacementPreconditionRequest `json:"precondition,omitempty"`
 }
 
-func decodeCanonicalRoutingPolicyPatch(w http.ResponseWriter, r *http.Request) (catalogpkg.RoutingPolicyPatch, bool) {
+type canonicalPlacementPreconditionRequest struct {
+	OperationID            string `json:"operation_id"`
+	ExpectedPolicyRevision *int64 `json:"expected_policy_revision"`
+	MinimumMatchingSlots   *int64 `json:"minimum_matching_slots"`
+}
+
+type canonicalPlacementPreconditionResult struct {
+	CheckedAt            time.Time                             `json:"checked_at"`
+	MinimumMatchingSlots int64                                 `json:"minimum_matching_slots"`
+	AppliedRevision      *int64                                `json:"applied_revision,omitempty"`
+	Targets              []canonicalPlacementTargetObservation `json:"targets"`
+}
+
+type canonicalPlacementTargetObservation struct {
+	App                     string                    `json:"app"`
+	Action                  string                    `json:"action,omitempty"`
+	EffectiveTag            string                    `json:"effective_tag"`
+	EffectiveRequiredLabels []string                  `json:"effective_required_labels"`
+	ExecutionProfile        contract.ExecutionProfile `json:"execution_profile,omitempty,omitzero"`
+	MatchingWorkers         int64                     `json:"matching_workers"`
+	MatchingSlots           int64                     `json:"matching_slots"`
+}
+
+func decodeCanonicalRoutingPolicyPatch(w http.ResponseWriter, r *http.Request) (catalogpkg.RoutingPolicyPatch, *canonicalPlacementPreconditionRequest, bool) {
 	var request canonicalRoutingPolicyRequest
 	if err := readOptionalJSON(r, &request); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
-		return catalogpkg.RoutingPolicyPatch{}, false
+		return catalogpkg.RoutingPolicyPatch{}, nil, false
 	}
-	return parseCanonicalRoutingPolicyPatch(w, request)
+	patch, ok := parseCanonicalRoutingPolicyPatch(w, request)
+	return patch, request.Precondition, ok
 }
 
 func parseCanonicalRoutingPolicyPatch(w http.ResponseWriter, request canonicalRoutingPolicyRequest) (catalogpkg.RoutingPolicyPatch, bool) {
@@ -736,36 +767,25 @@ func parseCanonicalRoutingPolicyPatch(w http.ResponseWriter, request canonicalRo
 }
 
 func routingPolicyMutationDetail(scope string, actionKey string, previous catalogpkg.RoutingPolicy, updated catalogpkg.RoutingPolicy) string {
-	type values struct {
-		RouteTagOverride       *string   `json:"tag_override"`
-		RequiredLabelsOverride *[]string `json:"required_labels_override"`
+	return catalogpkg.RoutingPolicyMutationDetail(scope, actionKey, previous, updated)
+}
+
+func newCanonicalPlacementPreconditionResult(result catalogpkg.RoutingPolicyOperationResult) canonicalPlacementPreconditionResult {
+	view := canonicalPlacementPreconditionResult{
+		CheckedAt: result.CheckedAt, MinimumMatchingSlots: result.MinimumMatchingSlots,
+		Targets: make([]canonicalPlacementTargetObservation, 0, len(result.Targets)),
 	}
-	selectValues := func(policy catalogpkg.RoutingPolicy) values {
-		if actionKey == "" {
-			return values{
-				RouteTagOverride:       policy.RouteTagOverride,
-				RequiredLabelsOverride: policy.RequiredLabelsOverride,
-			}
-		}
-		action := policy.Actions[actionKey]
-		return values{
-			RouteTagOverride:       action.RouteTagOverride,
-			RequiredLabelsOverride: action.RequiredLabelsOverride,
-		}
+	if result.AppliedRevision > 0 {
+		view.AppliedRevision = &result.AppliedRevision
 	}
-	detail := map[string]any{
-		"scope":    scope,
-		"previous": selectValues(previous),
-		"new":      selectValues(updated),
+	for _, target := range result.Targets {
+		view.Targets = append(view.Targets, canonicalPlacementTargetObservation{
+			App: target.App, Action: target.Action, EffectiveTag: target.EffectiveTag,
+			EffectiveRequiredLabels: cloneStringSliceOrEmpty(target.EffectiveRequiredLabels),
+			ExecutionProfile:        target.ExecutionProfile, MatchingWorkers: target.MatchingWorkers, MatchingSlots: target.MatchingSlots,
+		})
 	}
-	if actionKey != "" {
-		detail["action_key"] = actionKey
-	}
-	encoded, err := json.Marshal(detail)
-	if err != nil {
-		return scope + " execution placement updated"
-	}
-	return string(encoded)
+	return view
 }
 
 func validRouteTag(value string) bool {

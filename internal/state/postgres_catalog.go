@@ -516,12 +516,14 @@ func (s *PostgresStore) SetAppRoutingPolicy(ctx context.Context, workspace strin
 		if err != nil {
 			return err
 		}
-		policy = catalog.ApplyRoutingPolicyPatch(policy, "", patch, time.Now().UTC())
+		previous := policy
+		now := time.Now().UTC()
+		policy = catalog.ApplyRoutingPolicyPatch(policy, "", patch, now)
 		if err := upsertPostgresRoutingPolicy(ctx, tx, policy); err != nil {
 			return err
 		}
 		updated = catalog.ApplyRoutingPolicy(deployment, policy)
-		return nil
+		return insertPostgresCatalogAudit(ctx, tx, placementPolicyAuditRecord(deployment, "", previous, policy, patch.Actor, now))
 	})
 	return updated, err
 }
@@ -547,12 +549,14 @@ func (s *PostgresStore) SetActionRoutingPolicy(ctx context.Context, workspace st
 		if err != nil {
 			return err
 		}
-		policy = catalog.ApplyRoutingPolicyPatch(policy, actionKey, patch, time.Now().UTC())
+		previous := policy
+		now := time.Now().UTC()
+		policy = catalog.ApplyRoutingPolicyPatch(policy, actionKey, patch, now)
 		if err := upsertPostgresRoutingPolicy(ctx, tx, policy); err != nil {
 			return err
 		}
 		updated = catalog.ApplyRoutingPolicy(deployment, policy).Actions[actionKey]
-		return nil
+		return insertPostgresCatalogAudit(ctx, tx, placementPolicyAuditRecord(deployment, actionKey, previous, policy, patch.Actor, now))
 	})
 	return updated, err
 }
@@ -688,6 +692,18 @@ ON CONFLICT (workspace_id, app_key) DO UPDATE SET
     policy = EXCLUDED.policy,
     updated_at = EXCLUDED.updated_at
 `, policy.Workspace, policy.App, raw, policy.UpdatedAt)
+	return err
+}
+
+func insertPostgresCatalogAudit(ctx context.Context, tx pgx.Tx, record catalog.AuditRecord) error {
+	raw, err := json.Marshal(record)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `
+INSERT INTO control_audit (id, workspace_id, git_source_id, app_key, kind, record, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+`, record.ID, contract.NormalizeWorkspace(record.Workspace), record.GitSourceID, record.App, record.Kind, raw, record.CreatedAt)
 	return err
 }
 

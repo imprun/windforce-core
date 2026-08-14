@@ -76,6 +76,33 @@ a partial update. Set a field to `null` to inherit. The App detail GET response
 returns manifest, override, and effective fields so operators do not need to
 reconstruct precedence themselves.
 
+The App detail response also returns `placement_policy_revision`. The revision covers the complete App policy object, including every Action override, and advances on every App or Action placement mutation.
+
+### Optional fail-closed capacity precondition
+
+The default PATCH remains warning-allow for compatibility: it may save policy before Workers are deployed. Headless reconcilers can opt into a transaction-snapshot capacity gate by adding `precondition` to the same patch body:
+
+```http
+PATCH /api/w/{workspace}/apps/{app}
+Content-Type: application/json
+
+{
+  "tag_override": "browser",
+  "required_labels_override": ["linux", "kr"],
+  "precondition": {
+    "operation_id": "placement-20260814-01",
+    "expected_policy_revision": 3,
+    "minimum_matching_slots": 1
+  }
+}
+```
+
+An App patch checks the candidate App selector and every active Action after inheritance. An Action patch checks only that Action. Every target must have at least `minimum_matching_slots` across live, active Workers that can accept new work. Matching uses the same tag, required-label, and engine-owned execution-profile label contract as Job claim. Managed Workers must also have an active workspace-scoped credential and a WorkerGroup in `running` state.
+
+Success returns the applied revision, one database/store `checked_at`, and redacted effective selector plus matching Worker/slot counts for each target. An exact retry of the latest `operation_id` and request fingerprint returns the original result without another audit. A stale revision or conflicting operation reuse returns 409. Insufficient capacity returns 422. Rejected requests do not change policy, revision, replay state, or audit.
+
+`matching_slots` is compatible advertised capacity, not currently idle slots. This precondition does not reserve a Worker or promise future availability. If capacity disappears after the mutation, Core keeps the policy and later Jobs remain queued until compatible capacity returns.
+
 ## Headless operation
 
 The Web Console is an optional client of these APIs, not an operational
@@ -88,8 +115,8 @@ placement without serving `/ui` through its ingress or gateway:
    selectors they currently advertise.
 3. Read `GET /api/w/{workspace}/apps/{app}` to compare release defaults,
    operator overrides, and effective App/Action placement.
-4. Apply App or Action policy with the PATCH requests above, then read the App
-   again to verify the effective values.
+4. Apply App or Action policy with the PATCH requests above. Automation that must fail closed sends the current `placement_policy_revision`, a unique operation ID, and a positive minimum matching slot count in `precondition`.
+5. Read the App again to verify the effective values and applied revision.
 
 An operations repository may keep declarative desired state and run a
 reconciler that calls these APIs. The persisted Core policy remains the runtime
@@ -115,6 +142,8 @@ changes.
 The Console warns when no live Worker currently matches the effective tag and
 labels. This warning does not reject the policy because workers may be deployed
 after configuration.
+
+Operator required-label overrides never remove the engine-owned execution-profile label pinned by the active Release. The profile constraint is appended after operator override resolution and is evaluated by both the capacity precondition and the actual claim matcher.
 
 ## Worker-local capability labels
 

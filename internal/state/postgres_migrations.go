@@ -400,6 +400,10 @@ CREATE TABLE IF NOT EXISTS control_routing_policy (
     PRIMARY KEY (workspace_id, app_key)
 );
 
+UPDATE control_routing_policy
+SET policy = jsonb_set(policy, '{revision}', '0'::jsonb, true)
+WHERE NOT (policy ? 'revision');
+
 CREATE TABLE IF NOT EXISTS control_audit (
     id TEXT PRIMARY KEY,
     workspace_id TEXT NOT NULL,
