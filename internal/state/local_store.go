@@ -549,14 +549,26 @@ func (s *LocalStore) ClaimJobForWorkerScope(ctx context.Context, workerID string
 	if leaseTTL <= 0 {
 		leaseTTL = defaultLeaseTime
 	}
-	allowedTags := normalizeClaimTags(tags)
-	offeredLabels := normalizeClaimTags(labels)
+	requestedTags := NormalizeWorkerScope(tags)
+	requestedLabels := NormalizeWorkerScope(labels)
 	allowedWorkspaces := normalizeClaimTags(workspaceIDs)
 	var claimed Job
 	var lease Lease
 	err := s.updateLease(ctx, func(snapshot *Snapshot, now time.Time) error {
 		if err := s.requeueExpiredJobs(ctx, snapshot, now); err != nil {
 			return err
+		}
+		allowedTags := normalizeClaimTags(requestedTags)
+		offeredLabels := normalizeClaimTags(requestedLabels)
+		var leaseIdentity *WorkerLeaseIdentity
+		if record, registered := snapshot.Workers[workerID]; registered {
+			registeredTags, registeredLabels, identity, err := RegisteredWorkerClaim(record, requestedTags, requestedLabels, now)
+			if err != nil {
+				return err
+			}
+			allowedTags = normalizeClaimTags(registeredTags)
+			offeredLabels = normalizeClaimTags(registeredLabels)
+			leaseIdentity = &identity
 		}
 
 		ids := make([]string, 0, len(snapshot.Jobs))
@@ -603,6 +615,14 @@ func (s *LocalStore) ClaimJobForWorkerScope(ctx context.Context, workerID string
 		job.LeaseExpiresAt = &expiresAt
 		job.StartedAt = &now
 		job.UpdatedAt = now
+		if leaseIdentity != nil {
+			identity := *leaseIdentity
+			job.LeaseIdentity = &identity
+			snapshot.WorkerLeaseIdentities[job.ID] = identity
+		} else {
+			job.LeaseIdentity = nil
+			delete(snapshot.WorkerLeaseIdentities, job.ID)
+		}
 		snapshot.Jobs[job.ID] = job
 
 		run := snapshot.Runs[job.RunID]
@@ -615,7 +635,7 @@ func (s *LocalStore) ClaimJobForWorkerScope(ctx context.Context, workerID string
 		appendEvent(snapshot, job.RunID, "job_claimed", eventPayload(job.Payload.CorrelationID, map[string]any{"jobId": job.ID, "workerId": workerID, "attempt": job.Attempt}), now)
 
 		claimed = job
-		lease = Lease{JobID: job.ID, WorkerID: workerID, ExpiresAt: expiresAt, Attempt: job.Attempt, AcquiredAt: now}
+		lease = Lease{JobID: job.ID, WorkerID: workerID, ExpiresAt: expiresAt, Attempt: job.Attempt, AcquiredAt: now, Identity: leaseIdentity}
 		return nil
 	})
 	if err != nil {
@@ -875,6 +895,8 @@ func (s *LocalStore) CancelRun(ctx context.Context, runID string, reason string)
 			job.State = JobFailed
 			job.LeaseOwner = ""
 			job.LeaseExpiresAt = nil
+			job.LeaseIdentity = nil
+			delete(snapshot.WorkerLeaseIdentities, id)
 			job.UpdatedAt = now
 			snapshot.Jobs[id] = job
 		}
@@ -1114,6 +1136,19 @@ func ensureSnapshot(snapshot *Snapshot) {
 	if snapshot.Jobs == nil {
 		snapshot.Jobs = map[string]Job{}
 	}
+	if snapshot.WorkerLeaseIdentities == nil {
+		snapshot.WorkerLeaseIdentities = map[string]WorkerLeaseIdentity{}
+	}
+	for jobID, identity := range snapshot.WorkerLeaseIdentities {
+		job, ok := snapshot.Jobs[jobID]
+		if !ok {
+			delete(snapshot.WorkerLeaseIdentities, jobID)
+			continue
+		}
+		identityCopy := identity
+		job.LeaseIdentity = &identityCopy
+		snapshot.Jobs[jobID] = job
+	}
 	if snapshot.HumanTasks == nil {
 		snapshot.HumanTasks = map[string]HumanTask{}
 	}
@@ -1281,6 +1316,8 @@ func (s *LocalStore) requeueExpiredJobs(ctx context.Context, snapshot *Snapshot,
 		job.LeaseOwner = ""
 		job.LeaseExpiresAt = nil
 		job.StartedAt = nil
+		job.LeaseIdentity = nil
+		delete(snapshot.WorkerLeaseIdentities, id)
 		job.UpdatedAt = now
 		snapshot.Jobs[id] = job
 		appendEvent(snapshot, job.RunID, "job_lease_expired", eventPayload(job.Payload.CorrelationID, map[string]any{"jobId": job.ID}), now)
@@ -1374,6 +1411,7 @@ func (s *LocalStore) PruneSettledJobs(ctx context.Context, successOlderThan time
 		for id, job := range snapshot.Jobs {
 			if expiredRuns[job.RunID] {
 				delete(snapshot.Jobs, id)
+				delete(snapshot.WorkerLeaseIdentities, id)
 				delete(snapshot.JobLogs, id)
 				pruned++
 			}

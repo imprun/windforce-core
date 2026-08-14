@@ -121,19 +121,27 @@ func TestTypeScriptRuntimeSecretsGuideE2E(t *testing.T) {
 	remoteRun := admitRuntimeSecretsGuideRun(t, server.URL, workspaceID, issued.APIToken, appKey, actionKey, "ORDER-REMOTE")
 	assertRuntimeSecretsGuideJobEncrypted(t, statePath, remoteRun.RunID, secretValue)
 	remoteBackend := remoteworker.New(server.URL, workerToken)
-	remoteRecord := state.WorkerRecord{ID: "runtime-secrets-remote", Group: "guide-e2e", Slots: 1, Status: state.WorkerStatusActive}
+	remoteRunner := &actionruntime.Runner{
+		ArtifactStore: remoteworker.ArtifactStore{Client: remoteBackend},
+		CacheRoot:     filepath.Join(tempDir, "remote-cache"),
+		BaseURL:       server.URL,
+		APIToken:      workerToken,
+	}
+	remoteProfiles, err := remoteRunner.ExecutionProfiles(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	remoteRecord := state.WorkerRecord{
+		ID: "runtime-secrets-remote", Group: "guide-e2e", Slots: 1, Status: state.WorkerStatusActive,
+		ExecutionProfiles: remoteProfiles,
+	}
 	if err := remoteBackend.RegisterWorker(context.Background(), remoteRecord); err != nil {
 		t.Fatal(err)
 	}
 	defer remoteBackend.DeregisterWorker(context.Background(), remoteRecord.ID)
 	remoteProcessor := worker.Processor{
-		Store: remoteBackend,
-		Runner: &actionruntime.Runner{
-			ArtifactStore: remoteworker.ArtifactStore{Client: remoteBackend},
-			CacheRoot:     filepath.Join(tempDir, "remote-cache"),
-			BaseURL:       server.URL,
-			APIToken:      workerToken,
-		},
+		Store:    remoteBackend,
+		Runner:   remoteRunner,
 		WorkerID: remoteRecord.ID,
 		Group:    remoteRecord.Group,
 		LeaseTTL: time.Minute,

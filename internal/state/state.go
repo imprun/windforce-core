@@ -209,6 +209,18 @@ type Job struct {
 	TraceContext   telemetry.TraceContextV1 `json:"traceContext,omitempty,omitzero"`
 	CreatedAt      time.Time                `json:"createdAt"`
 	UpdatedAt      time.Time                `json:"updatedAt"`
+	// LeaseIdentity is internal immutable attribution captured when a
+	// registered Worker claims this attempt. It is intentionally excluded from
+	// Worker-plane and Control API Job JSON.
+	LeaseIdentity *WorkerLeaseIdentity `json:"-"`
+}
+
+// WorkerLeaseIdentity is the non-secret registered Worker identity pinned to
+// one claim attempt. It deliberately excludes Worker IDs and credential IDs so
+// operational observation cannot reconstruct credential material.
+type WorkerLeaseIdentity struct {
+	Group                string `json:"group"`
+	CredentialGeneration int64  `json:"credentialGeneration"`
 }
 
 type Lease struct {
@@ -217,6 +229,7 @@ type Lease struct {
 	ExpiresAt  time.Time
 	Attempt    int
 	AcquiredAt time.Time
+	Identity   *WorkerLeaseIdentity `json:"-"`
 }
 
 type HeartbeatResult struct {
@@ -767,6 +780,7 @@ type Snapshot struct {
 	HTTPRouteBindings      map[string]HTTPRouteBinding            `json:"httpRouteBindings"`
 	HTTPRouteBindingAudits map[string][]HTTPRouteBindingAudit     `json:"httpRouteBindingAudits"`
 	Workers                map[string]WorkerRecord                `json:"workers,omitempty"`
+	WorkerLeaseIdentities  map[string]WorkerLeaseIdentity         `json:"workerLeaseIdentities,omitempty"`
 	WorkerCredentials      map[string]WorkerCredential            `json:"workerCredentials,omitempty"`
 	WorkerGroupRunStates   map[string]WorkerGroupRunState         `json:"workerGroupRunStates,omitempty"`
 	Workspaces             map[string]Workspace                   `json:"workspaces"`

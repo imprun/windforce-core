@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     attempt INTEGER NOT NULL DEFAULT 0,
     lease_owner TEXT,
     lease_expires_at TIMESTAMPTZ,
+    lease_identity JSONB,
     started_at TIMESTAMPTZ,
     canceled_by TEXT,
     canceled_reason TEXT,
@@ -626,6 +627,7 @@ ALTER TABLE jobs ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ;
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS canceled_by TEXT;
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS canceled_reason TEXT;
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS trace_context JSONB;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS lease_identity JSONB;
 ALTER TABLE job_logs ADD COLUMN IF NOT EXISTS workspace_id TEXT NOT NULL DEFAULT 'default';
 ALTER TABLE workspace_key ADD COLUMN IF NOT EXISTS kek_version INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE human_tasks ADD COLUMN IF NOT EXISTS workspace_id TEXT NOT NULL DEFAULT 'default';
