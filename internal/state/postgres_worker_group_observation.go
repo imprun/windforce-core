@@ -2,6 +2,7 @@ package state
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -57,7 +58,7 @@ FROM worker_registry`)
 	}
 
 	jobRows, err := tx.Query(ctx, `
-SELECT state, COALESCE(lease_owner, ''), lease_expires_at
+SELECT state, lease_expires_at, lease_identity
 FROM jobs WHERE state='running'`)
 	if err != nil {
 		return WorkerGroupObservation{}, err
@@ -65,9 +66,18 @@ FROM jobs WHERE state='running'`)
 	jobs := []Job{}
 	for jobRows.Next() {
 		var job Job
-		if err := jobRows.Scan(&job.State, &job.LeaseOwner, &job.LeaseExpiresAt); err != nil {
+		var leaseIdentity json.RawMessage
+		if err := jobRows.Scan(&job.State, &job.LeaseExpiresAt, &leaseIdentity); err != nil {
 			jobRows.Close()
 			return WorkerGroupObservation{}, err
+		}
+		if len(leaseIdentity) > 0 && string(leaseIdentity) != "null" {
+			var identity WorkerLeaseIdentity
+			if err := json.Unmarshal(leaseIdentity, &identity); err != nil {
+				jobRows.Close()
+				return WorkerGroupObservation{}, err
+			}
+			job.LeaseIdentity = &identity
 		}
 		jobs = append(jobs, job)
 	}

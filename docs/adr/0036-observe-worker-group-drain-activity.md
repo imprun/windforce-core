@@ -20,9 +20,21 @@ Local storage computes the response under one store lock from one state snapshot
 
 Credential generation zero identifies registrations that used the legacy static Worker Plane credential. The generation aggregate intentionally omits Worker IDs, credential IDs, endpoints, bearer values, token hashes, and request fingerprints.
 
-Available slots are the sum of positive `slots - active leases` for live Workers in `active` status. A draining group reports zero available slots because new managed claims are fenced even while idle Workers remain registered.
+Available slots are the total slots of live Workers in `active` status minus
+the group's pinned active leases, clamped at zero. A draining group reports zero
+available slots because new managed claims are fenced even while idle Workers
+remain registered.
 
-Quiescence means the group run state is `draining`, no live generation-zero Worker can bypass that managed claim fence, and no attributed active lease or running Job remains. It does not require live managed Worker registrations to reach zero: the controller first observes quiescence, then reduces replicas. A running Job whose current Worker registration no longer identifies a group is counted as unattributed. Any unattributed active lease or running Job keeps every group observation non-quiescent, preventing registry cleanup or an unexpected Worker lifecycle from producing a false safe-to-scale signal.
+Quiescence means the group run state is `draining`, no live generation-zero
+Worker can bypass that managed claim fence, and no attributed active lease or
+running Job remains. It does not require live managed Worker registrations to
+reach zero: the controller first observes quiescence, then reduces replicas.
+Attribution comes only from the immutable claim-time identity in [ADR
+0038](0038-bind-registered-worker-claims-to-immutable-lease-identity.md), never
+from joining `lease_owner` to the current registry. A running Job without that
+identity, including an existing row migrated while running or an unregistered
+legacy claim, is counted as unattributed. Any unattributed active lease or
+running Job keeps every group observation non-quiescent.
 
 The endpoint is read-only. It does not requeue expired leases, delete stale registry records, change run state, revoke credentials, scale Workers, or promise future capacity after the returned observation time.
 
@@ -30,5 +42,7 @@ The endpoint is read-only. It does not requeue expired leases, delete stale regi
 
 - A self-hosted controller can gate generation rotation and drain-driven replica reduction without reading Core storage or reconstructing mutable state from workspace-scoped endpoints.
 - Local and PostgreSQL counts have an explicit within-response consistency boundary.
-- Unattributed running work can conservatively delay an unrelated group rollout. This is preferable to falsely declaring quiescence; a future lease contract may persist group attribution if operators need narrower recovery.
+- Unattributed running work can conservatively delay an unrelated group
+  rollout. This is preferable to falsely declaring quiescence; all new
+  registered claims now persist immutable group attribution.
 - Core still does not own desired replicas, Kubernetes rollout, autoscaling, tenant lifecycle, or hosted product policy.

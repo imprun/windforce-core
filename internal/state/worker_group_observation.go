@@ -41,13 +41,7 @@ func buildWorkerGroupObservation(
 	jobs []Job,
 ) WorkerGroupObservation {
 	observedAt = observedAt.UTC()
-	workerByID := make(map[string]WorkerRecord, len(workers))
-	activeLeasesByWorker := make(map[string]int)
 	generationCounts := map[int64]int{}
-
-	for _, worker := range workers {
-		workerByID[worker.ID] = worker
-	}
 
 	result := WorkerGroupObservation{
 		Group:            group,
@@ -60,21 +54,19 @@ func buildWorkerGroupObservation(
 		if job.State != JobRunning {
 			continue
 		}
-		worker, attributed := workerByID[strings.TrimSpace(job.LeaseOwner)]
-		if !attributed || strings.TrimSpace(worker.Group) == "" {
+		if job.LeaseIdentity == nil || strings.TrimSpace(job.LeaseIdentity.Group) == "" {
 			result.UnattributedRunningJobs++
 			if activeQueueLease(job, observedAt) {
 				result.UnattributedActiveLeases++
 			}
 			continue
 		}
-		if worker.Group != group {
+		if strings.TrimSpace(job.LeaseIdentity.Group) != group {
 			continue
 		}
 		result.RunningJobs++
 		if activeQueueLease(job, observedAt) {
 			result.ActiveLeases++
-			activeLeasesByWorker[worker.ID]++
 		}
 	}
 
@@ -90,10 +82,14 @@ func buildWorkerGroupObservation(
 		if runState.Draining() || worker.Status != WorkerStatusActive {
 			continue
 		}
-		available := worker.Slots - activeLeasesByWorker[worker.ID]
-		if available > 0 {
-			result.AvailableSlots += available
+		if worker.Slots > 0 {
+			result.AvailableSlots += worker.Slots
 		}
+	}
+	if result.ActiveLeases >= result.AvailableSlots {
+		result.AvailableSlots = 0
+	} else {
+		result.AvailableSlots -= result.ActiveLeases
 	}
 
 	generations := make([]int64, 0, len(generationCounts))

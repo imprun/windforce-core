@@ -132,9 +132,9 @@ The response is computed from one Local store lock/snapshot or one PostgreSQL re
 }
 ```
 
-`active_workers_by_generation` counts live registry activity and includes Workers whose per-Worker status is already `draining`; generation `0` represents the legacy static Worker Plane credential. `available_slots` counts only live Workers whose status is `active`, subtracts their active leases, and is always zero while the group run state is `draining`.
+`active_workers_by_generation` counts live registry activity and includes Workers whose per-Worker status is already `draining`; generation `0` represents the legacy static Worker Plane credential. `available_slots` totals live active Worker slots, subtracts the group's immutable claim-time active leases, clamps at zero, and is always zero while the group run state is `draining`.
 
-`quiescent` becomes true only while the group is `draining`, no live generation-zero Worker can bypass that managed claim fence, and its active lease and running Job counts are zero. Live idle managed Workers may remain registered so an external controller can observe quiescence before reducing replicas. A running Job whose Worker registration no longer identifies a group is reported in the unattributed counts and conservatively keeps every group observation non-quiescent until the Job settles or is requeued. The endpoint never returns a Worker identity, endpoint, credential ID, bearer, token hash, or request fingerprint.
+`quiescent` becomes true only while the group is `draining`, no live generation-zero Worker can bypass that managed claim fence, and its active lease and running Job counts are zero. Live idle managed Workers may remain registered so an external controller can observe quiescence before reducing replicas. Running Job attribution comes from the immutable group and credential generation pinned when a registered Worker claimed the attempt. A Job without that identity is reported in the unattributed counts and conservatively keeps every group observation non-quiescent until it settles or is requeued. Deregistration or reuse of the same Worker ID cannot rewrite attribution. The endpoint never returns a Worker identity, endpoint, credential ID, bearer, token hash, or request fingerprint.
 
 ## Worker command
 
