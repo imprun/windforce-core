@@ -27,6 +27,7 @@ const (
 type PlacementObservationStore interface {
 	GetWorkerGroupInventory(context.Context, string, bool) (WorkerGroupInventory, error)
 	GetPlacementCandidates(context.Context, string, string, string, bool) (PlacementCandidates, error)
+	GetExecutionDemand(context.Context, string, string, string, bool) (ExecutionDemand, error)
 }
 
 type WorkerGroupInventory struct {
@@ -46,6 +47,8 @@ type WorkerGroupInventoryItem struct {
 	DeadlineAt           *time.Time                  `json:"deadline_at,omitempty"`
 	LiveWorkers          int                         `json:"live_workers"`
 	UnmanagedLiveWorkers int                         `json:"unmanaged_live_workers"`
+	TotalSlots           int                         `json:"total_slots"`
+	OccupiedSlots        int                         `json:"occupied_slots"`
 	AvailableSlots       int                         `json:"available_slots"`
 	ActiveLeases         int                         `json:"active_leases"`
 	RunningJobs          int                         `json:"running_jobs"`
@@ -84,8 +87,35 @@ type WorkerGroupPlacementCandidate struct {
 	Eligible            bool     `json:"eligible"`
 	MatchingWorkers     int64    `json:"matching_workers"`
 	MatchingSlots       int64    `json:"matching_slots"`
+	OccupiedSlots       int64    `json:"occupied_slots"`
+	AvailableSlots      int64    `json:"available_slots"`
+	Saturated           bool     `json:"saturated"`
 	ReasonCodes         []string `json:"reason_codes"`
 	VersionOrBuildDrift bool     `json:"version_or_build_drift"`
+}
+
+type ExecutionDemand struct {
+	Workspace      string                  `json:"workspace"`
+	ObservedAt     time.Time               `json:"observed_at"`
+	QueuedJobs     int64                   `json:"queued_jobs"`
+	OldestQueuedAt *time.Time              `json:"oldest_queued_at,omitempty"`
+	Targets        []ExecutionDemandTarget `json:"targets"`
+}
+
+type ExecutionDemandTarget struct {
+	App                     string                          `json:"app"`
+	Action                  string                          `json:"action"`
+	EffectiveTag            string                          `json:"effective_tag"`
+	EffectiveRequiredLabels []string                        `json:"effective_required_labels"`
+	ExecutionProfile        contract.ExecutionProfile       `json:"execution_profile"`
+	QueuedJobs              int64                           `json:"queued_jobs"`
+	OldestQueuedAt          *time.Time                      `json:"oldest_queued_at,omitempty"`
+	MatchingWorkers         int64                           `json:"matching_workers"`
+	TotalSlots              int64                           `json:"total_slots"`
+	OccupiedSlots           int64                           `json:"occupied_slots"`
+	AvailableSlots          int64                           `json:"available_slots"`
+	Saturated               bool                            `json:"saturated"`
+	Candidates              []WorkerGroupPlacementCandidate `json:"candidates"`
 }
 
 type placementTarget struct {
@@ -202,7 +232,7 @@ func buildWorkerGroupInventoryItem(
 	profileSet := map[string]contract.ExecutionProfile{}
 	versionSet := map[string]struct{}{}
 	revisionSet := map[string]struct{}{}
-	availableSlots := 0
+	activeLeasesByWorker := activeLeaseCountsByWorker(observedAt, jobs)
 	for _, worker := range workers {
 		if placementWorkerGroup(worker) != group || !placementWorkerGenerallyActive(worker, observedAt, credentials) {
 			continue
@@ -222,7 +252,13 @@ func buildWorkerGroupInventoryItem(
 			item.UnmanagedLiveWorkers++
 		}
 		if placementWorkerEligible(worker, workspaceID, observedAt, credentials, runStates) {
-			availableSlots += normalizedWorkerSlots(worker)
+			slots := normalizedWorkerSlots(worker)
+			item.TotalSlots = saturatingAddInt(item.TotalSlots, slots)
+			occupied := activeLeasesByWorker[worker.ID]
+			if occupied > int64(slots) {
+				occupied = int64(slots)
+			}
+			item.OccupiedSlots = saturatingAddInt(item.OccupiedSlots, int(occupied))
 		}
 		if item.LastHeartbeatAt == nil || worker.LastHeartbeatAt.After(*item.LastHeartbeatAt) {
 			heartbeat := worker.LastHeartbeatAt.UTC()
@@ -251,10 +287,10 @@ func buildWorkerGroupInventoryItem(
 			revisionSet[value] = struct{}{}
 		}
 	}
-	if item.ActiveLeases >= availableSlots {
+	if item.OccupiedSlots >= item.TotalSlots {
 		item.AvailableSlots = 0
 	} else {
-		item.AvailableSlots = availableSlots - item.ActiveLeases
+		item.AvailableSlots = item.TotalSlots - item.OccupiedSlots
 	}
 	item.Tags = sortedSet(tagSet)
 	item.Labels = sortedSet(labelSet)
@@ -307,6 +343,7 @@ func buildPlacementCandidates(
 		Workspace: inventory.Workspace, ObservedAt: inventory.ObservedAt,
 		Targets: make([]PlacementTargetCandidates, 0, len(targets)),
 	}
+	activeLeases := activeLeaseCountsByWorker(inventory.ObservedAt, jobs)
 	for _, target := range targets {
 		view := PlacementTargetCandidates{
 			App: target.app, Action: target.action, EffectiveTag: target.tag,
@@ -315,7 +352,7 @@ func buildPlacementCandidates(
 		}
 		for _, group := range inventory.Groups {
 			candidate, err := buildWorkerGroupPlacementCandidate(
-				target, group, inventory.Workspace, inventory.ObservedAt, workers, credentials, runStates,
+				target, group, inventory.Workspace, inventory.ObservedAt, workers, credentials, runStates, activeLeases,
 			)
 			if err != nil {
 				return PlacementCandidates{}, err
@@ -341,6 +378,7 @@ func buildWorkerGroupPlacementCandidate(
 	workers []WorkerRecord,
 	credentials map[string]WorkerCredential,
 	runStates map[string]WorkerGroupRunState,
+	activeLeases map[string]int64,
 ) (WorkerGroupPlacementCandidate, error) {
 	result := WorkerGroupPlacementCandidate{
 		Group: group.Group, WorkspaceAllowed: group.WorkspaceAllowed, Managed: group.Managed,
@@ -402,7 +440,22 @@ func buildWorkerGroupPlacementCandidate(
 		} else {
 			result.MatchingSlots += slots
 		}
+		occupied := activeLeases[worker.ID]
+		if occupied > slots {
+			occupied = slots
+		}
+		if result.OccupiedSlots > math.MaxInt64-occupied {
+			result.OccupiedSlots = math.MaxInt64
+		} else {
+			result.OccupiedSlots += occupied
+		}
 	}
+	if result.OccupiedSlots >= result.MatchingSlots {
+		result.AvailableSlots = 0
+	} else {
+		result.AvailableSlots = result.MatchingSlots - result.OccupiedSlots
+	}
+	result.Saturated = result.MatchingSlots > 0 && result.AvailableSlots == 0
 	result.Eligible = result.MatchingWorkers > 0
 	if result.Eligible {
 		return result, nil
@@ -427,6 +480,163 @@ func buildWorkerGroupPlacementCandidate(
 	}
 	result.ReasonCodes = appendReasonCode(result.ReasonCodes, PlacementReasonMissingLabel)
 	return result, nil
+}
+
+type executionDemandKey struct {
+	app     string
+	action  string
+	tag     string
+	labels  string
+	profile contract.ExecutionProfile
+}
+
+func buildExecutionDemand(
+	workspaceID string,
+	appFilter string,
+	actionFilter string,
+	includeUnauthorized bool,
+	observedAt time.Time,
+	workers []WorkerRecord,
+	credentials map[string]WorkerCredential,
+	runStates map[string]WorkerGroupRunState,
+	jobs []Job,
+) (ExecutionDemand, error) {
+	observedAt = observedAt.UTC()
+	workspaceID = contract.NormalizeWorkspace(workspaceID)
+	result := ExecutionDemand{
+		Workspace: workspaceID, ObservedAt: observedAt, Targets: []ExecutionDemandTarget{},
+	}
+	inventory, err := buildWorkerGroupInventory(
+		workspaceID, includeUnauthorized, observedAt, workers, credentials, runStates, jobs,
+	)
+	if err != nil {
+		return ExecutionDemand{}, err
+	}
+	targets := map[executionDemandKey]*ExecutionDemandTarget{}
+	for _, job := range jobs {
+		if job.State != JobQueued || normalizedJobWorkspace("", job) != workspaceID {
+			continue
+		}
+		app := jobAppKey(job)
+		action := strings.TrimSpace(job.Payload.Action)
+		if appFilter != "" && app != appFilter || actionFilter != "" && action != actionFilter {
+			continue
+		}
+		labels := sortedSet(normalizeClaimTags(jobRequiredLabels(job)))
+		profile := jobExecutionProfile(job)
+		key := executionDemandKey{
+			app: app, action: action, tag: jobTag(job), labels: strings.Join(labels, "\x1f"), profile: profile,
+		}
+		target := targets[key]
+		if target == nil {
+			target = &ExecutionDemandTarget{
+				App: app, Action: action, EffectiveTag: key.tag,
+				EffectiveRequiredLabels: labels, ExecutionProfile: profile,
+				Candidates: []WorkerGroupPlacementCandidate{},
+			}
+			targets[key] = target
+		}
+		target.QueuedJobs++
+		result.QueuedJobs++
+		queuedAt := job.UpdatedAt.UTC()
+		if queuedAt.IsZero() {
+			queuedAt = job.CreatedAt.UTC()
+		}
+		setOldestTime(&target.OldestQueuedAt, queuedAt)
+		setOldestTime(&result.OldestQueuedAt, queuedAt)
+	}
+	keys := make([]executionDemandKey, 0, len(targets))
+	for key := range targets {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		left, right := keys[i], keys[j]
+		if left.app != right.app {
+			return left.app < right.app
+		}
+		if left.action != right.action {
+			return left.action < right.action
+		}
+		if left.tag != right.tag {
+			return left.tag < right.tag
+		}
+		if left.labels != right.labels {
+			return left.labels < right.labels
+		}
+		return executionProfileSortKey(left.profile) < executionProfileSortKey(right.profile)
+	})
+	activeLeases := activeLeaseCountsByWorker(observedAt, jobs)
+	for _, key := range keys {
+		target := targets[key]
+		candidateTarget := placementTarget{
+			app: target.App, action: target.Action, tag: target.EffectiveTag,
+			labels: target.EffectiveRequiredLabels, profile: target.ExecutionProfile,
+		}
+		for _, group := range inventory.Groups {
+			candidate, err := buildWorkerGroupPlacementCandidate(
+				candidateTarget, group, workspaceID, observedAt, workers, credentials, runStates, activeLeases,
+			)
+			if err != nil {
+				return ExecutionDemand{}, err
+			}
+			target.Candidates = append(target.Candidates, candidate)
+			target.MatchingWorkers += candidate.MatchingWorkers
+			target.TotalSlots = saturatingAddInt64(target.TotalSlots, candidate.MatchingSlots)
+			target.OccupiedSlots = saturatingAddInt64(target.OccupiedSlots, candidate.OccupiedSlots)
+			target.AvailableSlots = saturatingAddInt64(target.AvailableSlots, candidate.AvailableSlots)
+		}
+		target.Saturated = target.TotalSlots > 0 && target.AvailableSlots == 0
+		result.Targets = append(result.Targets, *target)
+	}
+	return result, nil
+}
+
+func jobExecutionProfile(job Job) contract.ExecutionProfile {
+	if strings.TrimSpace(job.Payload.ExecutionProfile.Key) != "" {
+		return job.Payload.ExecutionProfile
+	}
+	return job.Payload.PinnedDeployment().ExecutionProfile
+}
+
+func activeLeaseCountsByWorker(observedAt time.Time, jobs []Job) map[string]int64 {
+	counts := map[string]int64{}
+	for _, job := range jobs {
+		workerID := strings.TrimSpace(job.LeaseOwner)
+		if workerID == "" || !activeQueueLease(job, observedAt) {
+			continue
+		}
+		counts[workerID] = saturatingAddInt64(counts[workerID], 1)
+	}
+	return counts
+}
+
+func setOldestTime(current **time.Time, candidate time.Time) {
+	if candidate.IsZero() || (*current != nil && !candidate.Before(**current)) {
+		return
+	}
+	value := candidate.UTC()
+	*current = &value
+}
+
+func executionProfileSortKey(profile contract.ExecutionProfile) string {
+	return strings.Join([]string{
+		profile.Key, profile.Version, profile.ID, profile.OS, profile.Arch,
+		profile.Runtime, profile.RuntimeABI, profile.Libc,
+	}, "\x1f")
+}
+
+func saturatingAddInt64(current int64, addition int64) int64 {
+	if addition > 0 && current > math.MaxInt64-addition {
+		return math.MaxInt64
+	}
+	return current + addition
+}
+
+func saturatingAddInt(current int, addition int) int {
+	if addition > 0 && current > math.MaxInt-addition {
+		return math.MaxInt
+	}
+	return current + addition
 }
 
 func placementGroups(

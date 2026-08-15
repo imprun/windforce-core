@@ -50,32 +50,33 @@ The embedded console supports Korean across navigation and product screens while
 
 ## Review workspace execution pools
 
-Execution pools show the redacted WorkerGroup capacity that Core can actually use for this workspace without exposing physical Worker or credential identities.
+Execution pools compare queued execution demand with redacted WorkerGroup slot capacity without exposing physical Worker or credential identities.
 
 ![Review workspace execution pools](../assets/ui/worker-groups.png)
 
 1. Open Execution pools from the workspace navigation.
-2. Review live Workers, free slots, current work, selectors, runtime builds, and the latest heartbeat from one Core snapshot.
-3. Treat build drift as an operational warning. It does not change placement eligibility by itself.
-4. Provisioning, scaling, and rollout remain with the configured hosting operator; this Core view is read-only.
+2. Review queued Runs, oldest wait, occupied and free slots, and pinned targets before inspecting the pool inventory.
+3. A queued Run appears once even when several pools are compatible; target capacity is not summed across different targets.
+4. Treat build drift as an operational warning. It does not change placement eligibility by itself.
+5. Provisioning, scaling, and rollout remain with the configured hosting operator; this Core view is read-only.
 
 ## Review execution pools in dark mode
 
-Dark mode keeps capacity, drain state, selector, and build diagnostics legible without changing the workspace-scoped projection.
+Dark mode keeps queue pressure, slot usage, pinned targets, and pool diagnostics legible without changing the workspace-scoped projection.
 
 ![Review execution pools in dark mode](../assets/ui/worker-groups-dark.png)
 
 1. Open Execution pools and switch the console to dark mode.
-2. Confirm capacity totals, status badges, and runtime metadata remain readable.
+2. Confirm queued demand, capacity badges, and runtime metadata remain readable.
 
 ## Review execution pools on a narrow screen
 
-The execution-pool summary stays visible on a narrow screen while the detailed inventory remains available in a horizontal table.
+Queue pressure and slot usage stay visible on a narrow screen while pinned demand and pool inventory remain available in horizontal tables.
 
 ![Review execution pools on a narrow screen](../assets/ui/worker-groups-mobile.png)
 
 1. Open Execution pools from the mobile navigation.
-2. Review the capacity summary first, then scroll the detailed inventory horizontally when needed.
+2. Review queued Runs and slot usage first, then scroll pinned demand and pool inventory horizontally when needed.
 
 ## Inspect an app
 
@@ -102,14 +103,15 @@ The Execution limits tab shows immutable App and Action keyed-concurrency polici
 
 ## Review App and Action execution candidates
 
-App placement uses Core's authoritative claim rules to show eligible execution pools, compatible Worker and slot totals, and stable exclusion reasons.
+App placement keeps current eligible capacity separate from queued Runs whose execution targets were pinned at admission.
 
 ![Review App and Action execution candidates](../assets/ui/placement-candidates.png)
 
 1. Open an App and choose Placement.
-2. Review the App default capacity before the Action-specific rows.
-3. Expand excluded pools to see whether workspace scope, drain state, live capacity, tag, label, or execution-profile matching prevents a new claim.
-4. Build drift is shown separately and never becomes an implicit placement rule.
+2. Review the App default capacity and its queued demand before the Action-specific rows.
+3. Current placement shows occupied and free compatible slots; queued demand preserves older pinned tag, label, and execution-profile targets.
+4. Expand excluded pools to see whether workspace scope, drain state, live capacity, tag, label, or execution-profile matching prevents a new claim.
+5. Build drift is shown separately and never becomes an implicit placement rule.
 
 ## Review execution limits in dark mode
 

@@ -4,6 +4,8 @@ import { ErrorNotice, Field, Modal, Panel, SelectControl } from "../components/u
 import {
   type ActionView,
   type AppDetail,
+  type ExecutionDemand,
+  type ExecutionDemandTarget,
   errorMessage,
   type PlacementCandidates,
   type PlacementReasonCode,
@@ -11,6 +13,7 @@ import {
   type RoutingPolicyPatch,
 } from "../lib/api";
 import { useApp, useAsync } from "../lib/app-context";
+import { formatRelative } from "../lib/format";
 import { type TranslationKey, translate } from "../shared/i18n";
 
 type RoutingTarget = { kind: "app" } | { kind: "action"; action: ActionView };
@@ -35,7 +38,9 @@ export function ExecutionPlacementPanel({
   const [target, setTarget] = useState<RoutingTarget | null>(null);
   const app = detail.app;
   const placement = useAsync(() => api.placementCandidates(app.app_key), [api, app.app_key]);
+  const demand = useAsync(() => api.executionDemand(app.app_key), [api, app.app_key]);
   const appPlacement = placementTargetForAction(placement.data, undefined);
+  const appDemand = summarizeDemandTargets(demand.data?.targets || []);
 
   return (
     <>
@@ -56,6 +61,7 @@ export function ExecutionPlacementPanel({
         {placement.error ? (
           <ErrorNotice message={placement.error} onRetry={placement.reload} />
         ) : null}
+        {demand.error ? <ErrorNotice message={demand.error} onRetry={demand.reload} /> : null}
         <div className="routingPolicySummary">
           <RoutingValue
             icon={<Server size={16} aria-hidden="true" />}
@@ -76,6 +82,9 @@ export function ExecutionPlacementPanel({
         <div className="mt-4 rounded-lg border border-border bg-muted/30 p-4">
           <div className="mb-2 text-sm font-medium">{translate("routing.appCapacity")}</div>
           <PlacementAvailability target={appPlacement} loading={placement.loading} />
+          <div className="mt-3 border-t border-border pt-3">
+            <ExecutionDemandAvailability summary={appDemand} loading={demand.loading} />
+          </div>
         </div>
 
         <div className="tableWrap routingActionTable">
@@ -86,6 +95,7 @@ export function ExecutionPlacementPanel({
                 <th>{translate("routing.effectiveRoute")}</th>
                 <th>{translate("routing.effectiveLabels")}</th>
                 <th>{translate("routing.workerAvailability")}</th>
+                <th>{translate("routing.executionDemand")}</th>
                 <th aria-label={translate("common.actions")} />
               </tr>
             </thead>
@@ -94,6 +104,9 @@ export function ExecutionPlacementPanel({
                 const routeTag = action.effective_route_tag || app.effective_route_tag || app.tag;
                 const labels = action.effective_required_labels || [];
                 const actionPlacement = placementTargetForAction(placement.data, action.action_key);
+                const actionDemand = summarizeDemandTargets(
+                  executionDemandTargetsForAction(demand.data, action.action_key),
+                );
                 return (
                   <tr key={action.action_key}>
                     <td>
@@ -106,6 +119,12 @@ export function ExecutionPlacementPanel({
                     <td>{formatLabels(labels)}</td>
                     <td>
                       <PlacementAvailability target={actionPlacement} loading={placement.loading} />
+                    </td>
+                    <td>
+                      <ExecutionDemandAvailability
+                        summary={actionDemand}
+                        loading={demand.loading}
+                      />
                     </td>
                     <td>
                       <button
@@ -159,25 +178,37 @@ function PlacementAvailability({
   }
   const eligible = target.candidates.filter((candidate) => candidate.eligible);
   const excluded = target.candidates.filter((candidate) => !candidate.eligible);
+  const capacity = placementCapacity(target);
   return (
     <div className="grid min-w-56 gap-1.5">
-      {target.matching_workers > 0 ? (
-        <span className="badge badge-good w-fit">
-          {translate("routing.workersAndSlotsReady", {
-            workers: target.matching_workers,
-            slots: target.matching_slots,
-          })}
-        </span>
-      ) : (
+      {capacity.totalSlots === 0 ? (
         <span className="badge badge-warning w-fit">
           <AlertTriangle size={13} aria-hidden="true" />
           {translate("routing.noReadyWorker")}
+        </span>
+      ) : capacity.saturated ? (
+        <span className="badge badge-warning w-fit">
+          <AlertTriangle size={13} aria-hidden="true" />
+          {translate("routing.slotsSaturated", { total: capacity.totalSlots })}
+        </span>
+      ) : (
+        <span className="badge badge-good w-fit">
+          {translate("routing.slotsAvailable", {
+            workers: target.matching_workers,
+            available: capacity.availableSlots,
+            total: capacity.totalSlots,
+          })}
         </span>
       )}
       {eligible.length > 0 ? (
         <span className="cellSub">
           {translate("routing.eligibleGroups", {
-            groups: eligible.map((candidate) => candidate.group).join(", "),
+            groups: eligible
+              .map(
+                (candidate) =>
+                  `${candidate.group} (${candidate.available_slots}/${candidate.matching_slots})`,
+              )
+              .join(", "),
           })}
         </span>
       ) : null}
@@ -195,6 +226,73 @@ function PlacementAvailability({
         </details>
       ) : null}
     </div>
+  );
+}
+
+type DemandSummary = {
+  queuedJobs: number;
+  oldestQueuedAt?: string;
+  targets: ExecutionDemandTarget[];
+};
+
+function ExecutionDemandAvailability({
+  summary,
+  loading,
+}: {
+  summary: DemandSummary;
+  loading: boolean;
+}) {
+  if (loading && summary.targets.length === 0) {
+    return <span className="cellSub">{translate("common.loading")}</span>;
+  }
+  if (summary.queuedJobs === 0) {
+    return <span className="badge badge-neutral w-fit">{translate("routing.noQueuedRuns")}</span>;
+  }
+  return (
+    <div className="grid min-w-56 gap-1.5">
+      <span className="badge badge-warning w-fit">
+        {translate("routing.queuedRuns", { count: summary.queuedJobs })}
+      </span>
+      <span className="cellSub">
+        {translate("routing.oldestQueued", { time: formatRelative(summary.oldestQueuedAt) })}
+      </span>
+      {summary.targets.length === 1 ? (
+        <PinnedTargetCapacity target={summary.targets[0]!} />
+      ) : (
+        <details className="text-xs text-muted-foreground">
+          <summary className="cursor-pointer">
+            {translate("routing.pinnedTargets", { count: summary.targets.length })}
+          </summary>
+          <ul className="mt-1 grid gap-1 pl-4">
+            {summary.targets.map((target) => (
+              <li key={executionDemandTargetKey(target)}>
+                <PinnedTargetCapacity target={target} />
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
+  );
+}
+
+function PinnedTargetCapacity({ target }: { target: ExecutionDemandTarget }) {
+  const selector = target.effective_required_labels.length
+    ? `${target.effective_tag} · ${target.effective_required_labels.join(", ")}`
+    : target.effective_tag;
+  const capacity =
+    target.total_slots === 0
+      ? translate("routing.pinnedNoCapacity")
+      : target.saturated
+        ? translate("routing.pinnedSaturated", { total: target.total_slots })
+        : translate("routing.pinnedAvailable", {
+            available: target.available_slots,
+            total: target.total_slots,
+          });
+  return (
+    <span className="cellSub">
+      <span className="mono">{selector}</span>: {capacity}
+    </span>
   );
 }
 
@@ -434,6 +532,53 @@ export function placementTargetForAction(
   return placement?.targets.find((target) =>
     actionKey === undefined ? !target.action : target.action === actionKey,
   );
+}
+
+export function placementCapacity(target: PlacementTargetCandidates) {
+  const eligible = target.candidates.filter((candidate) => candidate.eligible);
+  const occupiedSlots = eligible.reduce((total, candidate) => total + candidate.occupied_slots, 0);
+  const availableSlots = eligible.reduce(
+    (total, candidate) => total + candidate.available_slots,
+    0,
+  );
+  return {
+    totalSlots: target.matching_slots,
+    occupiedSlots,
+    availableSlots,
+    saturated: target.matching_slots > 0 && availableSlots === 0,
+  };
+}
+
+export function executionDemandTargetsForAction(
+  demand: ExecutionDemand | null | undefined,
+  actionKey: string,
+): ExecutionDemandTarget[] {
+  return demand?.targets.filter((target) => target.action === actionKey) || [];
+}
+
+export function summarizeDemandTargets(targets: ExecutionDemandTarget[]): DemandSummary {
+  let oldestQueuedAt: string | undefined;
+  let queuedJobs = 0;
+  for (const target of targets) {
+    queuedJobs += target.queued_jobs;
+    if (
+      target.oldest_queued_at &&
+      (!oldestQueuedAt || Date.parse(target.oldest_queued_at) < Date.parse(oldestQueuedAt))
+    ) {
+      oldestQueuedAt = target.oldest_queued_at;
+    }
+  }
+  return { queuedJobs, oldestQueuedAt, targets };
+}
+
+function executionDemandTargetKey(target: ExecutionDemandTarget): string {
+  return [
+    target.app,
+    target.action,
+    target.effective_tag,
+    target.effective_required_labels.join("\u001f"),
+    target.execution_profile.key,
+  ].join("\u001e");
 }
 
 function formatCandidateReasons(reasons: PlacementReasonCode[]): string {

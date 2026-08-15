@@ -541,10 +541,16 @@ describe("WindforceApi placement observations", () => {
       await api.workerGroups();
       await api.placementCandidates("orders/v2");
       await api.placementCandidates("orders/v2", "sync now");
+      await api.executionDemand();
+      await api.executionDemand("orders/v2");
+      await api.executionDemand("orders/v2", "sync now");
       expect(urls).toEqual([
         "/api/w/ops/worker-groups",
         "/api/w/ops/apps/orders%2Fv2/placement-candidates",
         "/api/w/ops/apps/orders%2Fv2/actions/sync%20now/placement-candidates",
+        "/api/w/ops/execution-demand",
+        "/api/w/ops/apps/orders%2Fv2/execution-demand",
+        "/api/w/ops/apps/orders%2Fv2/actions/sync%20now/execution-demand",
       ]);
     } finally {
       globalThis.fetch = originalFetch;

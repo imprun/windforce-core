@@ -2,7 +2,12 @@ import { ExternalLink, ServerCog } from "lucide-react";
 import { Layout } from "../components/Layout";
 import { StatTile } from "../components/stats";
 import { EmptyState, ErrorNotice, Loading, Panel } from "../components/ui";
-import type { WorkerGroupInventoryItem, WorkerGroupStatus } from "../lib/api";
+import type {
+  ExecutionDemand,
+  ExecutionDemandTarget,
+  WorkerGroupInventoryItem,
+  WorkerGroupStatus,
+} from "../lib/api";
 import { useApp, useAsync } from "../lib/app-context";
 import { formatRelative } from "../lib/format";
 import { type TranslationKey, translate } from "../shared/i18n";
@@ -16,9 +21,12 @@ const workerGroupStatusKeys: Record<WorkerGroupStatus, TranslationKey> = {
 
 export function WorkerGroupsPage() {
   const { api, runtimeConfig } = useApp();
-  const state = useAsync(() => api.workerGroups(), [api]);
-  const groups = state.data?.groups || [];
-  const summary = summarizeWorkerGroups(groups);
+  const state = useAsync(async () => {
+    const [inventory, demand] = await Promise.all([api.workerGroups(), api.executionDemand()]);
+    return { inventory, demand };
+  }, [api]);
+  const groups = state.data?.inventory.groups || [];
+  const summary = summarizeWorkerGroups(groups, state.data?.demand);
   const externalOperator = runtimeConfig?.workerGroupOperator === "external";
 
   return (
@@ -57,31 +65,67 @@ export function WorkerGroupsPage() {
         <>
           <div className="statRow" data-ui-guide="worker-group-summary">
             <StatTile
-              label={translate("workerGroups.summary.usablePools")}
-              value={summary.usableGroups}
-              tone="good"
+              label={translate("workerGroups.summary.queuedJobs")}
+              value={summary.queuedJobs}
+              tone={summary.queuedJobs > 0 ? "waiting" : "neutral"}
             />
             <StatTile
-              label={translate("workerGroups.summary.liveWorkers")}
-              value={summary.liveWorkers}
-              tone="running"
+              label={translate("workerGroups.summary.oldestWait")}
+              value={formatRelative(summary.oldestQueuedAt)}
+              tone={summary.queuedJobs > 0 ? "waiting" : "neutral"}
+            />
+            <StatTile
+              label={translate("workerGroups.summary.slotUsage")}
+              value={translate("workerGroups.summary.slotUsageValue", {
+                occupied: summary.occupiedSlots,
+                total: summary.totalSlots,
+              })}
+              tone={summary.occupiedSlots > 0 ? "running" : "neutral"}
             />
             <StatTile
               label={translate("workerGroups.summary.availableSlots")}
               value={summary.availableSlots}
-              tone="good"
-            />
-            <StatTile
-              label={translate("workerGroups.summary.attention")}
-              value={summary.attentionGroups}
-              tone={summary.attentionGroups > 0 ? "serious" : "neutral"}
+              tone={
+                summary.availableSlots > 0 ? "good" : summary.queuedJobs > 0 ? "serious" : "neutral"
+              }
             />
           </div>
 
           <Panel
+            title={translate("workerGroups.demand.title")}
+            subtitle={translate("workerGroups.demand.hint", {
+              time: formatRelative(state.data.demand.observed_at),
+            })}
+          >
+            {state.data.demand.targets.length === 0 ? (
+              <EmptyState title={translate("workerGroups.demand.empty")}>
+                <p>{translate("workerGroups.demand.emptyHint")}</p>
+              </EmptyState>
+            ) : (
+              <div className="tableWrap" data-ui-guide="execution-demand">
+                <table className="table workerGroupTable">
+                  <thead>
+                    <tr>
+                      <th>{translate("workerGroups.demand.target")}</th>
+                      <th>{translate("workerGroups.demand.queue")}</th>
+                      <th>{translate("workerGroups.demand.selector")}</th>
+                      <th>{translate("workerGroups.demand.capacity")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {state.data.demand.targets.map((target) => (
+                      <ExecutionDemandRow key={executionDemandTargetKey(target)} target={target} />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Panel>
+
+          <Panel
             title={translate("workerGroups.inventory")}
             subtitle={translate("workerGroups.inventoryHint", {
-              time: formatRelative(state.data.observed_at),
+              time: formatRelative(state.data.inventory.observed_at),
             })}
           >
             {groups.length === 0 ? (
@@ -117,6 +161,85 @@ export function WorkerGroupsPage() {
   );
 }
 
+function ExecutionDemandRow({ target }: { target: ExecutionDemandTarget }) {
+  const eligibleGroups = target.candidates
+    .filter((candidate) => candidate.eligible)
+    .map((candidate) => candidate.group);
+  return (
+    <tr className="tableRow">
+      <td>
+        <span className="cellTitle">{target.app}</span>
+        <span className="cellSub mono">{target.action}</span>
+      </td>
+      <td>
+        <span className="badge badge-warning w-fit">
+          {translate("workerGroups.demand.queued", { count: target.queued_jobs })}
+        </span>
+        <span className="cellSub">
+          {translate("workerGroups.demand.oldest", {
+            time: formatRelative(target.oldest_queued_at),
+          })}
+        </span>
+      </td>
+      <td>
+        <SelectorLine label={translate("workerGroups.tags")} values={[target.effective_tag]} />
+        <SelectorLine
+          label={translate("workerGroups.labels")}
+          values={target.effective_required_labels}
+        />
+      </td>
+      <td>
+        <DemandCapacity target={target} />
+        {eligibleGroups.length > 0 ? (
+          <span className="cellSub">
+            {translate("workerGroups.demand.compatiblePools", {
+              groups: eligibleGroups.join(", "),
+            })}
+          </span>
+        ) : null}
+      </td>
+    </tr>
+  );
+}
+
+function DemandCapacity({ target }: { target: ExecutionDemandTarget }) {
+  if (target.total_slots === 0) {
+    return (
+      <span className="badge badge-critical w-fit">
+        {translate("workerGroups.demand.noMatchingSlots")}
+      </span>
+    );
+  }
+  if (target.saturated) {
+    return (
+      <span className="badge badge-warning w-fit">
+        {translate("workerGroups.demand.saturated", {
+          occupied: target.occupied_slots,
+          total: target.total_slots,
+        })}
+      </span>
+    );
+  }
+  return (
+    <span className="badge badge-good w-fit">
+      {translate("workerGroups.demand.freeSlots", {
+        available: target.available_slots,
+        total: target.total_slots,
+      })}
+    </span>
+  );
+}
+
+function executionDemandTargetKey(target: ExecutionDemandTarget): string {
+  return [
+    target.app,
+    target.action,
+    target.effective_tag,
+    target.effective_required_labels.join("\u001f"),
+    target.execution_profile.key,
+  ].join("\u001e");
+}
+
 function WorkerGroupRow({ group }: { group: WorkerGroupInventoryItem }) {
   return (
     <tr className="tableRow">
@@ -142,8 +265,14 @@ function WorkerGroupRow({ group }: { group: WorkerGroupInventoryItem }) {
       <td>
         <span className="cellTitle">
           {translate("workerGroups.capacityValue", {
+            occupied: group.occupied_slots,
+            total: group.total_slots,
+          })}
+        </span>
+        <span className="cellSub">
+          {translate("workerGroups.capacityDetail", {
+            available: group.available_slots,
             workers: group.live_workers,
-            slots: group.available_slots,
           })}
         </span>
         {group.unmanaged_live_workers > 0 ? (
@@ -206,12 +335,19 @@ function SelectorLine({ label, values }: { label: string; values: string[] }) {
   );
 }
 
-export function summarizeWorkerGroups(groups: WorkerGroupInventoryItem[]) {
+export function summarizeWorkerGroups(
+  groups: WorkerGroupInventoryItem[],
+  demand?: ExecutionDemand,
+) {
   const usable = groups.filter((group) => group.workspace_allowed);
   return {
     usableGroups: usable.length,
     liveWorkers: usable.reduce((total, group) => total + group.live_workers, 0),
+    totalSlots: usable.reduce((total, group) => total + group.total_slots, 0),
+    occupiedSlots: usable.reduce((total, group) => total + group.occupied_slots, 0),
     availableSlots: usable.reduce((total, group) => total + group.available_slots, 0),
+    queuedJobs: demand?.queued_jobs || 0,
+    oldestQueuedAt: demand?.oldest_queued_at,
     attentionGroups: usable.filter(
       (group) =>
         group.status === "offline" || group.status === "draining" || group.version_or_build_drift,
