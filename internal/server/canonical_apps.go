@@ -468,6 +468,11 @@ func (h *Handler) handleCanonicalWorkerTags(w http.ResponseWriter, r *http.Reque
 // handleCanonicalListWorkers serves the worker registry (ADR 0009 item 6):
 // the observable truth of which labels and slots are alive right now.
 func (h *Handler) handleCanonicalListWorkers(w http.ResponseWriter, r *http.Request) {
+	principal := workspacePrincipalFrom(r.Context())
+	if principal == nil || !principal.Admin {
+		writeError(w, http.StatusForbidden, "instance admin authorization is required")
+		return
+	}
 	if h.store == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"workers": []any{}})
 		return

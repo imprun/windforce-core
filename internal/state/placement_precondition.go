@@ -2,8 +2,6 @@ package state
 
 import (
 	"errors"
-	"math"
-	"sort"
 	"strings"
 	"time"
 
@@ -70,74 +68,24 @@ func observePlacementTargets(
 	credentials map[string]WorkerCredential,
 	runStates map[string]WorkerGroupRunState,
 ) (catalog.RoutingPolicyOperationResult, bool, error) {
-	type target struct {
-		app     string
-		action  string
-		tag     string
-		labels  []string
-		profile contract.ExecutionProfile
+	projection, err := buildPlacementCandidates(
+		deployment.SourceWorkspace(), actionKey, true, checkedAt, deployment, workers, credentials, runStates, nil,
+	)
+	if err != nil {
+		return catalog.RoutingPolicyOperationResult{}, false, err
 	}
-	targets := []target{{
-		app: deployment.App, tag: contract.EffectiveRouteTagForApp(deployment),
-		labels: contract.EffectiveRequiredLabels(deployment, contract.Action{}), profile: deployment.ExecutionProfile,
-	}}
-	if actionKey != "" {
-		action, ok := deployment.Actions[actionKey]
-		if !ok {
-			return catalog.RoutingPolicyOperationResult{}, false, catalog.ErrActionNotFound
-		}
-		targets = []target{{
-			app: deployment.App, action: actionKey,
-			tag:    contract.EffectiveRouteTagForAction(deployment, action),
-			labels: contract.EffectiveRequiredLabels(deployment, action), profile: deployment.ExecutionProfile,
-		}}
-	} else {
-		actionKeys := make([]string, 0, len(deployment.Actions))
-		for key := range deployment.Actions {
-			actionKeys = append(actionKeys, key)
-		}
-		sort.Strings(actionKeys)
-		for _, key := range actionKeys {
-			action := deployment.Actions[key]
-			targets = append(targets, target{
-				app: deployment.App, action: key,
-				tag:    contract.EffectiveRouteTagForAction(deployment, action),
-				labels: contract.EffectiveRequiredLabels(deployment, action), profile: deployment.ExecutionProfile,
-			})
-		}
-	}
-
 	result := catalog.RoutingPolicyOperationResult{
 		CheckedAt: checkedAt.UTC(), MinimumMatchingSlots: minimumMatchingSlots,
-		Targets: make([]catalog.RoutingPolicyTargetObservation, 0, len(targets)),
+		Targets: make([]catalog.RoutingPolicyTargetObservation, 0, len(projection.Targets)),
 	}
 	sufficient := true
-	for _, candidate := range targets {
+	for _, candidate := range projection.Targets {
 		observation := catalog.RoutingPolicyTargetObservation{
-			App: candidate.app, Action: candidate.action, EffectiveTag: candidate.tag,
-			EffectiveRequiredLabels: append([]string{}, candidate.labels...), ExecutionProfile: candidate.profile,
-		}
-		for _, worker := range workers {
-			if !placementWorkerEligible(worker, deployment.SourceWorkspace(), checkedAt, credentials, runStates) {
-				continue
-			}
-			tags, labels, err := WorkerClaimSelector(worker)
-			if err != nil {
-				return catalog.RoutingPolicyOperationResult{}, false, err
-			}
-			if !selectorAllowed(candidate.tag, candidate.labels, normalizeClaimTags(tags), normalizeClaimTags(labels)) {
-				continue
-			}
-			observation.MatchingWorkers++
-			slots := worker.Slots
-			if slots < 1 {
-				slots = 1
-			}
-			if observation.MatchingSlots > math.MaxInt64-int64(slots) {
-				observation.MatchingSlots = math.MaxInt64
-			} else {
-				observation.MatchingSlots += int64(slots)
-			}
+			App: candidate.App, Action: candidate.Action, EffectiveTag: candidate.EffectiveTag,
+			EffectiveRequiredLabels: append([]string{}, candidate.EffectiveRequiredLabels...),
+			ExecutionProfile:        candidate.ExecutionProfile,
+			MatchingWorkers:         candidate.MatchingWorkers,
+			MatchingSlots:           candidate.MatchingSlots,
 		}
 		if observation.MatchingSlots < minimumMatchingSlots {
 			sufficient = false
@@ -154,19 +102,13 @@ func placementWorkerEligible(
 	credentials map[string]WorkerCredential,
 	runStates map[string]WorkerGroupRunState,
 ) bool {
-	status, err := NormalizeWorkerStatus(worker.Status)
-	if err != nil || status != WorkerStatusActive || !worker.Live(now) {
+	if !placementWorkerWorkspaceActive(worker, workspaceID, now, credentials) {
 		return false
 	}
 	if strings.TrimSpace(worker.CredentialID) == "" {
 		// A registered static Worker is bound to this same registry selector at
 		// claim time. Unregistered compatibility claims have no capacity record.
 		return true
-	}
-	credential, ok := credentials[worker.CredentialID]
-	if !ok || credential.Generation != worker.CredentialGeneration || credential.Group != worker.Group ||
-		!credential.AllowsNewWork(now) || !WorkspaceAllowed(workspaceID, credential.WorkspaceIDs) {
-		return false
 	}
 	runState, ok := runStates[worker.Group]
 	if !ok {

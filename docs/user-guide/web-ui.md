@@ -48,6 +48,35 @@ The embedded console supports Korean across navigation and product screens while
 3. Reload the page and confirm the selected language remains active.
 4. Keep API paths, app and Action keys, event types, logs, and user-entered values unchanged.
 
+## Review workspace execution pools
+
+Execution pools show the redacted WorkerGroup capacity that Core can actually use for this workspace without exposing physical Worker or credential identities.
+
+![Review workspace execution pools](../assets/ui/worker-groups.png)
+
+1. Open Execution pools from the workspace navigation.
+2. Review live Workers, free slots, current work, selectors, runtime builds, and the latest heartbeat from one Core snapshot.
+3. Treat build drift as an operational warning. It does not change placement eligibility by itself.
+4. Provisioning, scaling, and rollout remain with the configured hosting operator; this Core view is read-only.
+
+## Review execution pools in dark mode
+
+Dark mode keeps capacity, drain state, selector, and build diagnostics legible without changing the workspace-scoped projection.
+
+![Review execution pools in dark mode](../assets/ui/worker-groups-dark.png)
+
+1. Open Execution pools and switch the console to dark mode.
+2. Confirm capacity totals, status badges, and runtime metadata remain readable.
+
+## Review execution pools on a narrow screen
+
+The execution-pool summary stays visible on a narrow screen while the detailed inventory remains available in a horizontal table.
+
+![Review execution pools on a narrow screen](../assets/ui/worker-groups-mobile.png)
+
+1. Open Execution pools from the mobile navigation.
+2. Review the capacity summary first, then scroll the detailed inventory horizontally when needed.
+
 ## Inspect an app
 
 The app detail Overview keeps immutable release defaults separate from effective execution placement and worker readiness.
@@ -70,6 +99,17 @@ The Execution limits tab shows immutable App and Action keyed-concurrency polici
 2. Review App-scoped policies shared by every Action.
 3. Review Action-scoped policies, capacities, and JSON Pointer key inputs.
 4. Edit the source manifest and publish a new release when the policy must change.
+
+## Review App and Action execution candidates
+
+App placement uses Core's authoritative claim rules to show eligible execution pools, compatible Worker and slot totals, and stable exclusion reasons.
+
+![Review App and Action execution candidates](../assets/ui/placement-candidates.png)
+
+1. Open an App and choose Placement.
+2. Review the App default capacity before the Action-specific rows.
+3. Expand excluded pools to see whether workspace scope, drain state, live capacity, tag, label, or execution-profile matching prevents a new claim.
+4. Build drift is shown separately and never becomes an implicit placement rule.
 
 ## Review execution limits in dark mode
 
@@ -101,7 +141,7 @@ Execution placement is operator-owned configuration that selects eligible worker
 2. Choose whether the worker tag and required labels inherit the active release or use an operator override.
 3. An empty required-label override explicitly means no labels; Inherit follows the active release.
 4. Review the effective-after-save preview. The policy applies only to newly admitted Runs.
-5. After saving, review each Action for a matching live worker. Missing workers warn but do not block the change.
+5. After saving, review the server-projected eligible pools, matching Workers and slots, and any exclusion reasons for the App and each Action.
 
 ## Configure execution placement in dark mode
 

@@ -1,6 +1,7 @@
 import {
   Activity,
   AppWindow,
+  Boxes,
   ChevronDown,
   CircleHelp,
   CircleUserRound,
@@ -46,6 +47,12 @@ export const primaryNavItems = [
     labelKey: "navigation.clientRegistry" as TranslationKey,
     icon: ContactRound,
     match: (path: string) => path.startsWith("/clients"),
+  },
+  {
+    to: "/worker-groups",
+    labelKey: "navigation.workerGroups" as TranslationKey,
+    icon: Boxes,
+    match: (path: string) => path.startsWith("/worker-groups"),
   },
   {
     to: "/monitoring",

@@ -5,13 +5,24 @@ import {
   type ActionView,
   type AppDetail,
   errorMessage,
+  type PlacementCandidates,
+  type PlacementReasonCode,
+  type PlacementTargetCandidates,
   type RoutingPolicyPatch,
-  type WorkerView,
 } from "../lib/api";
 import { useApp, useAsync } from "../lib/app-context";
-import { translate } from "../shared/i18n";
+import { type TranslationKey, translate } from "../shared/i18n";
 
 type RoutingTarget = { kind: "app" } | { kind: "action"; action: ActionView };
+
+const placementReasonKeys: Record<PlacementReasonCode, TranslationKey> = {
+  workspace_not_allowed: "routing.reason.workspace_not_allowed",
+  draining: "routing.reason.draining",
+  no_live_capacity: "routing.reason.no_live_capacity",
+  missing_tag: "routing.reason.missing_tag",
+  missing_label: "routing.reason.missing_label",
+  execution_profile_mismatch: "routing.reason.execution_profile_mismatch",
+};
 
 export function ExecutionPlacementPanel({
   detail,
@@ -22,8 +33,9 @@ export function ExecutionPlacementPanel({
 }) {
   const { api } = useApp();
   const [target, setTarget] = useState<RoutingTarget | null>(null);
-  const workers = useAsync(() => api.workers(), [api]);
   const app = detail.app;
+  const placement = useAsync(() => api.placementCandidates(app.app_key), [api, app.app_key]);
+  const appPlacement = placementTargetForAction(placement.data, undefined);
 
   return (
     <>
@@ -41,7 +53,9 @@ export function ExecutionPlacementPanel({
           </button>
         }
       >
-        {workers.error ? <ErrorNotice message={workers.error} onRetry={workers.reload} /> : null}
+        {placement.error ? (
+          <ErrorNotice message={placement.error} onRetry={placement.reload} />
+        ) : null}
         <div className="routingPolicySummary">
           <RoutingValue
             icon={<Server size={16} aria-hidden="true" />}
@@ -59,6 +73,11 @@ export function ExecutionPlacementPanel({
           />
         </div>
 
+        <div className="mt-4 rounded-lg border border-border bg-muted/30 p-4">
+          <div className="mb-2 text-sm font-medium">{translate("routing.appCapacity")}</div>
+          <PlacementAvailability target={appPlacement} loading={placement.loading} />
+        </div>
+
         <div className="tableWrap routingActionTable">
           <table className="table">
             <thead>
@@ -74,11 +93,7 @@ export function ExecutionPlacementPanel({
               {detail.actions.map((action) => {
                 const routeTag = action.effective_route_tag || app.effective_route_tag || app.tag;
                 const labels = action.effective_required_labels || [];
-                const matchingWorkers = countMatchingWorkers(
-                  workers.data?.workers || [],
-                  routeTag,
-                  labels,
-                );
+                const actionPlacement = placementTargetForAction(placement.data, action.action_key);
                 return (
                   <tr key={action.action_key}>
                     <td>
@@ -90,18 +105,7 @@ export function ExecutionPlacementPanel({
                     </td>
                     <td>{formatLabels(labels)}</td>
                     <td>
-                      {workers.loading ? (
-                        <span className="cellSub">{translate("common.loading")}</span>
-                      ) : matchingWorkers > 0 ? (
-                        <span className="badge badge-good">
-                          {translate("routing.workersReady", { count: matchingWorkers })}
-                        </span>
-                      ) : (
-                        <span className="badge badge-warning">
-                          <AlertTriangle size={13} aria-hidden="true" />
-                          {translate("routing.noReadyWorker")}
-                        </span>
-                      )}
+                      <PlacementAvailability target={actionPlacement} loading={placement.loading} />
                     </td>
                     <td>
                       <button
@@ -132,6 +136,65 @@ export function ExecutionPlacementPanel({
         />
       ) : null}
     </>
+  );
+}
+
+function PlacementAvailability({
+  target,
+  loading,
+}: {
+  target: PlacementTargetCandidates | undefined;
+  loading: boolean;
+}) {
+  if (loading && !target) {
+    return <span className="cellSub">{translate("common.loading")}</span>;
+  }
+  if (!target) {
+    return (
+      <span className="badge badge-warning">
+        <AlertTriangle size={13} aria-hidden="true" />
+        {translate("routing.capacityUnavailable")}
+      </span>
+    );
+  }
+  const eligible = target.candidates.filter((candidate) => candidate.eligible);
+  const excluded = target.candidates.filter((candidate) => !candidate.eligible);
+  return (
+    <div className="grid min-w-56 gap-1.5">
+      {target.matching_workers > 0 ? (
+        <span className="badge badge-good w-fit">
+          {translate("routing.workersAndSlotsReady", {
+            workers: target.matching_workers,
+            slots: target.matching_slots,
+          })}
+        </span>
+      ) : (
+        <span className="badge badge-warning w-fit">
+          <AlertTriangle size={13} aria-hidden="true" />
+          {translate("routing.noReadyWorker")}
+        </span>
+      )}
+      {eligible.length > 0 ? (
+        <span className="cellSub">
+          {translate("routing.eligibleGroups", {
+            groups: eligible.map((candidate) => candidate.group).join(", "),
+          })}
+        </span>
+      ) : null}
+      {excluded.length > 0 ? (
+        <details className="text-xs text-muted-foreground">
+          <summary className="cursor-pointer">{translate("routing.excludedGroups")}</summary>
+          <ul className="mt-1 grid gap-1 pl-4">
+            {excluded.map((candidate) => (
+              <li key={candidate.group}>
+                <span className="mono">{candidate.group}</span>:{" "}
+                {formatCandidateReasons(candidate.reason_codes)}
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+    </div>
   );
 }
 
@@ -364,17 +427,16 @@ export function actionReleaseLabels(appLabels?: string[], actionLabels?: string[
   return uniqueLabels([...(appLabels || []), ...(actionLabels || [])]);
 }
 
-export function countMatchingWorkers(
-  workers: WorkerView[],
-  routeTag: string,
-  labels: string[],
-): number {
-  return workers.filter((worker) => {
-    if (!worker.live || (worker.tags.length > 0 && !worker.tags.includes(routeTag))) return false;
-    const placementLabels = new Set(worker.labels);
-    for (const profile of worker.execution_profiles ?? []) {
-      placementLabels.add(`sys/execution-profile-${profile.key.slice(0, 24)}`);
-    }
-    return labels.every((label) => placementLabels.has(label));
-  }).length;
+export function placementTargetForAction(
+  placement: PlacementCandidates | null | undefined,
+  actionKey: string | undefined,
+): PlacementTargetCandidates | undefined {
+  return placement?.targets.find((target) =>
+    actionKey === undefined ? !target.action : target.action === actionKey,
+  );
+}
+
+function formatCandidateReasons(reasons: PlacementReasonCode[]): string {
+  if (reasons.length === 0) return translate("routing.reason.unknown");
+  return reasons.map((reason) => translate(placementReasonKeys[reason])).join(", ");
 }

@@ -27,8 +27,11 @@ const binary = path.resolve(
 let server = null;
 let receiver = null;
 let receiverUrl = "";
+let workerHeartbeatTimer = null;
 
 function stopServer() {
+  if (workerHeartbeatTimer) clearInterval(workerHeartbeatTimer);
+  workerHeartbeatTimer = null;
   if (server && server.exitCode === null) server.kill();
   server = null;
   if (receiver) receiver.close();
@@ -92,6 +95,7 @@ export default {
         "--webhook-allow-insecure-loopback",
         "--ui-host-url", "https://portal.example.test/console",
         "--ui-host-label", "Open host console",
+        "--worker-group-operator", "external",
         "--http-route-provider", "ui-guide-router",
       ],
       { cwd: baseDir, stdio: "ignore" },
@@ -229,6 +233,7 @@ export default {
       },
     });
     await waitForClientConfigRun(clientToken.client.id, clientToken.api_token);
+    await seedWorkerGroupInventory(api);
     // The standalone local store replaces its JSON file after the worker
     // publishes the terminal result. Let that final Windows file operation
     // settle before browser scenarios begin issuing concurrent reads.
@@ -341,6 +346,40 @@ async function seedTriggers(api, baseUrl) {
   if (response.status !== 202) {
     throw new Error(`Trigger seed delivery failed: HTTP ${response.status} ${await response.text()}`);
   }
+}
+
+async function seedWorkerGroupInventory(api) {
+  const detail = await api("/apps/echo");
+  const profile = detail.app?.execution_profile;
+  const tags = [detail.app?.effective_route_tag || detail.app?.tag || "default"];
+  const workers = [
+    { id: "ui-guide-worker-a", group: "ui-guide-pool", tags, engine_version: "0.12.0", build_revision: "ui-guide-a", slots: 3 },
+    { id: "ui-guide-worker-b", group: "ui-guide-pool", tags, engine_version: "0.12.1", build_revision: "ui-guide-b", slots: 2 },
+    { id: "ui-guide-worker-c", group: "archive-pool", tags: ["archive"], engine_version: "0.12.1", build_revision: "ui-guide-b", slots: 1 },
+  ];
+  for (const worker of workers) {
+    const response = await fetch(`http://127.0.0.1:${port}/worker/v1/workers`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        ...worker,
+        labels: [],
+        execution_profiles: profile?.key ? [profile] : [],
+        status: "active",
+      }),
+    });
+    if (response.status !== 201) {
+      throw new Error(`UI guide Worker registration failed: HTTP ${response.status} ${await response.text()}`);
+    }
+  }
+  const heartbeat = async () => {
+    for (const worker of workers) {
+      await fetch(`http://127.0.0.1:${port}/worker/v1/workers/${worker.id}/heartbeat`, {
+        method: "POST",
+      });
+    }
+  };
+  workerHeartbeatTimer = setInterval(() => void heartbeat(), 5000);
 }
 
 async function advanceSampleRepository(exec) {

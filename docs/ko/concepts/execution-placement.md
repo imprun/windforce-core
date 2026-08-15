@@ -113,10 +113,12 @@ Web Console은 이 API를 사용하는 선택적 클라이언트이며 Core 운�
 
 1. 사내 Helm, Kubernetes 또는 GitOps 소유자가 원하는 그룹·태그·레이블로 Worker를
    배포하거나 갱신합니다.
-2. `GET /api/w/{workspace}/workers`에서 등록된 Worker와 현재 광고하는 선택자를
-   확인합니다.
+2. `GET /api/w/{workspace}/worker-groups`에서 이 워크스페이스가 사용할 수 있는
+   민감정보 제거 실행 풀과 선택자를 확인합니다. 물리 Worker 레코드는 instance admin만
+   조회할 수 있습니다.
 3. `GET /api/w/{workspace}/apps/{app}`에서 릴리스 기본값, 운영자 재정의, 최종 App·Action
-   실행 배치를 비교합니다.
+   실행 배치를 비교하고, 이어지는 `/placement-candidates` endpoint에서 Core가 계산한
+   그룹별 후보를 확인합니다.
 4. 위 PATCH API로 App 또는 Action 정책을 반영합니다. fail-closed가 필요한 자동화는 현재 `placement_policy_revision`, 고유 operation ID, 양수인 최소 매칭 slot 수를 `precondition`에 보냅니다.
 5. App을 다시 조회하여 최종값과 적용된 revision을 검증합니다.
 
@@ -129,8 +131,8 @@ WorkerGroup 생성, 자격증명, drain, scaling, 태그·레이블 어휘 관�
 포털이나 자체 설치 배포 소유자의 책임입니다. Core는 중립적인
 [Worker 관리 API](../../api/worker-management.md), 등록 상태 관찰, 실행 배치 API를
 제공하지만 Web Console에서 Hosted WorkerGroup 제어판을 복제하지 않습니다. 권한이
-있는 운영자에게 선택자 값과 집계된 매칭 수는 보여줄 수 있지만, Worker endpoint,
-자격증명, 호스트 식별정보는 실행 배치 화면에 노출하지 않습니다.
+있는 운영자에게 선택자 값, 그룹 단위 용량과 제외 사유는 보여줄 수 있지만, 물리
+Worker ID, 자격증명과 호스트 식별정보는 workspace 실행 배치 화면에 노출하지 않습니다.
 
 ## Release와 Job 동작
 
@@ -138,7 +140,8 @@ WorkerGroup 생성, 자격증명, drain, scaling, 태그·레이블 어휘 관�
 수정 이후 승인되는 Run에만 적용됩니다. Admission은 최종 값을 Run과 Job에
 고정하므로 대기 중인 Job은 이후 정책 변경을 따라가지 않습니다.
 
-Console은 현재 최종 태그와 레이블에 맞는 활성 Worker가 없으면 경고합니다.
-정책을 저장한 뒤 Worker를 배치할 수도 있으므로 저장 자체를 막지는 않습니다.
+Console은 App과 각 Action에 대해 서버가 계산한 매칭 Worker·광고 slot, 실행 가능한
+그룹과 안정적인 제외 사유를 보여줍니다. 정책을 저장한 뒤 Worker를 배치할 수도 있으므로
+경고가 저장 자체를 막지는 않습니다.
 
 운영자 필수 레이블 재정의는 활성 Release가 고정한 엔진 소유 execution-profile 레이블을 제거하지 않습니다. Core는 운영자 재정의를 계산한 뒤 profile 제약을 추가하며 용량 전제조건과 실제 claim matcher가 같은 결과를 사용합니다.

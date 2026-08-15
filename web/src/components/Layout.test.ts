@@ -9,6 +9,7 @@ describe("primaryNavItems", () => {
     expect(primaryNavItems.map((item) => item.labelKey)).toEqual([
       "navigation.apps",
       "navigation.clientRegistry",
+      "navigation.workerGroups",
       "navigation.monitoring",
       "navigation.humanTasks",
       "navigation.audit",

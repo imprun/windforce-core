@@ -486,6 +486,17 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 				}, "400", "401", "403", "404", "409"),
 			},
 		},
+		"/api/w/{workspace}/apps/{app}/placement-candidates": map[string]any{
+			"get": map[string]any{
+				"operationId": "getAppPlacementCandidates",
+				"summary":     "Project WorkerGroup candidates for an app and its actions",
+				"description": "Evaluates the active release and placement policy against the same Worker eligibility rules used by admission and placement preconditions. Workspace credentials see only usable groups; instance admins also receive workspace_not_allowed diagnostics. Physical Worker and credential identities are omitted.",
+				"parameters":  []any{oapiWorkspaceParam(workspaceID), oapiPathParam("app", "App key.")},
+				"responses": withErrors(map[string]any{
+					"200": oapiResponse("App and Action WorkerGroup placement candidates.", oapiSchemaRef("PlacementCandidates")),
+				}, "400", "401", "403", "404", "500", "501"),
+			},
+		},
 		"/api/w/{workspace}/apps/{app}/source": map[string]any{
 			"get": map[string]any{
 				"operationId": "getAppSource",
@@ -607,6 +618,17 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 				}, "400", "401", "403", "404", "409"),
 			},
 		},
+		"/api/w/{workspace}/apps/{app}/actions/{action}/placement-candidates": map[string]any{
+			"get": map[string]any{
+				"operationId": "getActionPlacementCandidates",
+				"summary":     "Project WorkerGroup candidates for one action",
+				"description": "Evaluates the exact Action target against the authoritative claim selector and managed draining fence. Workspace credentials see only usable groups; instance admins also receive workspace_not_allowed diagnostics.",
+				"parameters":  []any{oapiWorkspaceParam(workspaceID), oapiPathParam("app", "App key."), oapiPathParam("action", "Action key.")},
+				"responses": withErrors(map[string]any{
+					"200": oapiResponse("Exact Action WorkerGroup placement candidates.", oapiSchemaRef("PlacementCandidates")),
+				}, "400", "401", "403", "404", "500", "501"),
+			},
+		},
 		"/api/w/{workspace}/apps/{app}/actions/{action}/schema": map[string]any{
 			"get": map[string]any{
 				"operationId": "getActionSchema",
@@ -627,6 +649,17 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 				"responses": withErrors(map[string]any{
 					"200": oapiResponse("Requeue count.", oapiSchemaRef("RequeueResponse")),
 				}, "400", "401", "403", "404"),
+			},
+		},
+		"/api/w/{workspace}/worker-groups": map[string]any{
+			"get": map[string]any{
+				"operationId": "listWorkspaceWorkerGroups",
+				"summary":     "List workspace-scoped WorkerGroup inventory",
+				"description": "Returns a redacted, single-snapshot operational projection. Static Workers remain visible as the unmanaged compatibility pool. Version and build drift are diagnostic and do not by themselves change placement eligibility.",
+				"parameters":  []any{oapiWorkspaceParam(workspaceID)},
+				"responses": withErrors(map[string]any{
+					"200": oapiResponse("Workspace WorkerGroup inventory.", oapiSchemaRef("WorkerGroupInventory")),
+				}, "401", "403", "500", "501"),
 			},
 		},
 		"/api/w/{workspace}/worker-tags": map[string]any{
@@ -1158,6 +1191,89 @@ func controlPlaneSchemas() map[string]any {
 				"active_leases", "running_jobs", "unattributed_active_leases", "unattributed_running_jobs",
 				"active_workers_by_generation", "quiescent",
 			},
+		},
+		"WorkerGroupInventory": map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"properties": map[string]any{
+				"workspace":   oapiStringSchema(),
+				"observed_at": oapiDateTimeSchema(),
+				"groups":      map[string]any{"type": "array", "items": oapiSchemaRef("WorkerGroupInventoryItem")},
+			},
+			"required": []any{"workspace", "observed_at", "groups"},
+		},
+		"WorkerGroupInventoryItem": map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"properties": map[string]any{
+				"group":                  oapiStringSchema(),
+				"status":                 oapiStringEnumSchema("ready", "degraded", "offline", "draining"),
+				"workspace_allowed":      oapiBooleanSchema(),
+				"managed":                oapiBooleanSchema(),
+				"active_credentials":     map[string]any{"type": "integer", "minimum": 0},
+				"run_state":              oapiStringEnumSchema("running", "draining"),
+				"run_state_revision":     map[string]any{"type": "integer", "minimum": 0},
+				"deadline_at":            nullableDateTime,
+				"live_workers":           map[string]any{"type": "integer", "minimum": 0},
+				"unmanaged_live_workers": map[string]any{"type": "integer", "minimum": 0},
+				"available_slots":        map[string]any{"type": "integer", "minimum": 0},
+				"active_leases":          map[string]any{"type": "integer", "minimum": 0},
+				"running_jobs":           map[string]any{"type": "integer", "minimum": 0},
+				"quiescent":              oapiBooleanSchema(),
+				"tags":                   stringArray,
+				"labels":                 stringArray,
+				"execution_profiles":     map[string]any{"type": "array", "items": oapiSchemaRef("ExecutionProfile")},
+				"engine_versions":        stringArray,
+				"build_revisions":        stringArray,
+				"version_or_build_drift": oapiBooleanSchema(),
+				"last_heartbeat_at":      nullableDateTime,
+			},
+			"required": []any{
+				"group", "status", "workspace_allowed", "managed", "active_credentials", "run_state", "run_state_revision",
+				"live_workers", "unmanaged_live_workers", "available_slots", "active_leases", "running_jobs", "quiescent",
+				"tags", "labels", "execution_profiles", "engine_versions", "build_revisions", "version_or_build_drift",
+			},
+		},
+		"PlacementCandidates": map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"properties": map[string]any{
+				"workspace":   oapiStringSchema(),
+				"observed_at": oapiDateTimeSchema(),
+				"targets":     map[string]any{"type": "array", "items": oapiSchemaRef("PlacementTargetCandidates")},
+			},
+			"required": []any{"workspace", "observed_at", "targets"},
+		},
+		"PlacementTargetCandidates": map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"properties": map[string]any{
+				"app":                       oapiStringSchema(),
+				"action":                    oapiStringSchema(),
+				"effective_tag":             oapiStringSchema(),
+				"effective_required_labels": stringArray,
+				"execution_profile":         oapiSchemaRef("ExecutionProfile"),
+				"matching_workers":          map[string]any{"type": "integer", "minimum": 0},
+				"matching_slots":            map[string]any{"type": "integer", "minimum": 0},
+				"candidates":                map[string]any{"type": "array", "items": oapiSchemaRef("WorkerGroupPlacementCandidate")},
+			},
+			"required": []any{"app", "effective_tag", "effective_required_labels", "execution_profile", "matching_workers", "matching_slots", "candidates"},
+		},
+		"WorkerGroupPlacementCandidate": map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"properties": map[string]any{
+				"group":                  oapiStringSchema(),
+				"workspace_allowed":      oapiBooleanSchema(),
+				"managed":                oapiBooleanSchema(),
+				"run_state":              oapiStringEnumSchema("running", "draining"),
+				"eligible":               oapiBooleanSchema(),
+				"matching_workers":       map[string]any{"type": "integer", "minimum": 0},
+				"matching_slots":         map[string]any{"type": "integer", "minimum": 0},
+				"reason_codes":           map[string]any{"type": "array", "items": oapiStringEnumSchema("workspace_not_allowed", "draining", "no_live_capacity", "missing_tag", "missing_label", "execution_profile_mismatch")},
+				"version_or_build_drift": oapiBooleanSchema(),
+			},
+			"required": []any{"group", "workspace_allowed", "managed", "run_state", "eligible", "matching_workers", "matching_slots", "reason_codes", "version_or_build_drift"},
 		},
 		"Workspace": map[string]any{
 			"type": "object",

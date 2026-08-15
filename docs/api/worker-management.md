@@ -152,15 +152,46 @@ bearer directly in arguments, manifests, logs, or registry metadata.
 Re-registering a worker ID is allowed only for the same credential ID and
 generation; another generation or the legacy static token cannot take it over.
 
-## Observe live Workers
+## Observe workspace execution pools
+
+Workspace operators use the redacted projection instead of reading physical
+Worker records:
 
 ```http
-GET /api/w/{workspace}/workers
+GET /api/w/{workspace}/worker-groups
 Authorization: Bearer <workspace-or-instance-admin-token>
 ```
 
-The response lists the live registry. `engine_version` and `build_revision`
-identify the Core build reported by each Worker:
+The response is calculated from one authoritative State Store snapshot. It
+includes group status, live Worker and free-slot counts, running work, effective
+selectors, execution profiles, heartbeat time, and self-reported build drift.
+Static Workers remain visible as the `unmanaged` compatibility pool. A workspace
+token receives only groups usable by that workspace; an instance administrator
+also sees other groups with `workspace_allowed: false`. Worker IDs and credential
+identities or secrets are never returned.
+
+To explain which groups can execute an active App contract, use:
+
+```http
+GET /api/w/{workspace}/apps/{app}/placement-candidates
+GET /api/w/{workspace}/apps/{app}/actions/{action}/placement-candidates
+```
+
+The App endpoint returns an App target and every Action target. The Action
+endpoint returns only the exact Action. Counts and exclusion reasons reuse the
+claim selector and managed draining rules used by the placement precondition;
+build drift remains diagnostic only. See [ADR 0039](../adr/0039-project-worker-group-placement-observations.md).
+
+## Observe physical Workers as an instance administrator
+
+```http
+GET /api/w/{workspace}/workers
+Authorization: Bearer <instance-admin-token>
+```
+
+This diagnostic endpoint is instance-admin-only because it exposes physical
+Worker IDs. `engine_version` and `build_revision` identify the Core build
+reported by each Worker:
 
 ```json
 {
