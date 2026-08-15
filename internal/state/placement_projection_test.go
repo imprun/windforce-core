@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/imprun/windforce-core/internal/contract"
+	"github.com/jackc/pgx/v5"
 )
 
 type placementProjectionStore interface {
@@ -30,6 +31,61 @@ func TestPostgresPlacementProjectionContract(t *testing.T) {
 		t.Skip("WINDFORCE_CORE_POSTGRES_TEST_DSN is not set")
 	}
 	exercisePlacementProjectionContract(t, openIsolatedPostgresCatalogStore(t, dsn))
+}
+
+func TestPostgresExecutionDemandJobsUsesCompactWorkspaceProjection(t *testing.T) {
+	dsn := postgresTestDSN()
+	if dsn == "" {
+		t.Skip("WINDFORCE_CORE_POSTGRES_TEST_DSN is not set")
+	}
+	store := openIsolatedPostgresCatalogStore(t, dsn)
+	ctx := context.Background()
+	legacyTag := "legacy"
+	profile, err := contract.NewExecutionProfile("image-a", "linux", "amd64", "bun", "1.2.3", "glibc-2.39")
+	if err != nil {
+		t.Fatal(err)
+	}
+	deployment := contract.Deployment{
+		Workspace: "workspace-a", App: "echo", Tag: "app-tag", ExecutionProfile: profile,
+		Actions: map[string]contract.Action{"run": {Action: "run", TagOverride: &legacyTag}},
+	}
+	run := NewRun("api", "compact-demand", "echo", "run", deployment, json.RawMessage(`{"payload":"must-not-project"}`))
+	job := NewActionJob(run, nil)
+	job.Payload.Workspace = ""
+	job.Payload.App = ""
+	job.Payload.Tag = ""
+	job.Payload.Deployment = &deployment
+	job.Payload.RequiredLabels = []string{}
+	job.Payload.RequiredCapabilities = []string{"legacy-capability"}
+	job.Payload.InputSchema = json.RawMessage(`{"type":"object"}`)
+	if err := store.CreateRunAndEnqueue(ctx, run, job); err != nil {
+		t.Fatal(err)
+	}
+
+	tx, err := store.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	jobs, err := postgresExecutionDemandJobs(ctx, tx, "workspace-a", "echo", "run")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("compact demand jobs = %#v", jobs)
+	}
+	projected := jobs[0]
+	if projected.Payload.Workspace != "workspace-a" || projected.Payload.App != "echo" ||
+		projected.Payload.Action != "run" || projected.Payload.Tag != legacyTag ||
+		projected.Payload.ExecutionProfile != profile {
+		t.Fatalf("compact demand target = %#v", projected.Payload)
+	}
+	if got, want := jobRequiredLabels(projected), []string{"legacy-capability"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("legacy required capabilities = %#v, want %#v", got, want)
+	}
+	if len(projected.Payload.Input) != 0 || len(projected.Payload.InputSchema) != 0 || projected.Payload.Deployment != nil {
+		t.Fatalf("compact demand projection loaded execution payload fields: %#v", projected.Payload)
+	}
 }
 
 func TestPlacementProjectionExplainsSelectorMismatches(t *testing.T) {
@@ -62,6 +118,115 @@ func TestPlacementProjectionExplainsSelectorMismatches(t *testing.T) {
 		if candidate.Eligible || !slices.Contains(candidate.ReasonCodes, reason) {
 			t.Fatalf("candidate %s = %#v, want reason %s", group, candidate, reason)
 		}
+	}
+}
+
+func TestExecutionDemandUsesQueuedStateAgeAndExactActiveLeases(t *testing.T) {
+	observedAt := time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC)
+	oldCreatedAt := observedAt.Add(-30 * time.Minute)
+	firstQueuedAt := observedAt.Add(-8 * time.Minute)
+	secondQueuedAt := observedAt.Add(-3 * time.Minute)
+	activeLeaseExpiry := observedAt.Add(time.Minute)
+	expiredLeaseExpiry := observedAt.Add(-time.Minute)
+	jobs := []Job{
+		{
+			ID: "queued-first", State: JobQueued, CreatedAt: oldCreatedAt, UpdatedAt: firstQueuedAt,
+			Payload: JobPayload{Workspace: "workspace-a", App: "echo", Action: "run", Tag: "ready"},
+		},
+		{
+			ID: "queued-second", State: JobQueued, CreatedAt: oldCreatedAt.Add(-time.Hour), UpdatedAt: secondQueuedAt,
+			Payload: JobPayload{Workspace: "workspace-a", App: "echo", Action: "run", Tag: "ready"},
+		},
+		{
+			ID: "running-active", State: JobRunning, LeaseOwner: "worker-a", LeaseExpiresAt: &activeLeaseExpiry,
+			Payload: JobPayload{Workspace: "workspace-b", App: "other", Action: "run", Tag: "ready"},
+		},
+		{
+			ID: "running-expired", State: JobRunning, LeaseOwner: "worker-a", LeaseExpiresAt: &expiredLeaseExpiry,
+			Payload: JobPayload{Workspace: "workspace-a", App: "echo", Action: "run", Tag: "ready"},
+		},
+	}
+	workers := []WorkerRecord{{
+		ID: "worker-a", Tags: []string{"ready"}, Slots: 1,
+		Status: WorkerStatusActive, LastHeartbeatAt: observedAt,
+	}}
+	demand, err := buildExecutionDemand("workspace-a", "echo", "run", false, observedAt, workers, nil, nil, jobs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if demand.QueuedJobs != 2 || demand.OldestQueuedAt == nil || !demand.OldestQueuedAt.Equal(firstQueuedAt) || len(demand.Targets) != 1 {
+		t.Fatalf("execution demand = %#v", demand)
+	}
+	target := demand.Targets[0]
+	if target.TotalSlots != 1 || target.OccupiedSlots != 1 || target.AvailableSlots != 0 || !target.Saturated {
+		t.Fatalf("active lease capacity = %#v", target)
+	}
+
+	jobs[2].LeaseExpiresAt = &expiredLeaseExpiry
+	demand, err = buildExecutionDemand("workspace-a", "echo", "run", false, observedAt, workers, nil, nil, jobs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target = demand.Targets[0]
+	if target.OccupiedSlots != 0 || target.AvailableSlots != 1 || target.Saturated {
+		t.Fatalf("expired lease capacity = %#v", target)
+	}
+}
+
+func TestExecutionDemandDoesNotReattributeLeaseToReusedWorkerID(t *testing.T) {
+	observedAt := time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC)
+	leaseExpiresAt := observedAt.Add(time.Minute)
+	workers := []WorkerRecord{{
+		ID: "worker-reused", Group: "group-new", CredentialGeneration: 7,
+		Tags: []string{"ready"}, Slots: 1, Status: WorkerStatusActive, LastHeartbeatAt: observedAt,
+	}}
+	jobs := []Job{
+		{
+			ID: "queued", State: JobQueued, CreatedAt: observedAt.Add(-time.Minute), UpdatedAt: observedAt.Add(-time.Minute),
+			Payload: JobPayload{Workspace: "workspace-a", App: "echo", Action: "run", Tag: "ready"},
+		},
+		{
+			ID: "old-incarnation", State: JobRunning, LeaseOwner: "worker-reused", LeaseExpiresAt: &leaseExpiresAt,
+			LeaseIdentity: &WorkerLeaseIdentity{Group: "group-old", CredentialGeneration: 6},
+		},
+	}
+
+	demand, err := buildExecutionDemand("workspace-a", "echo", "run", false, observedAt, workers, nil, nil, jobs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := demand.Targets[0]
+	if target.OccupiedSlots != 0 || target.AvailableSlots != 1 || target.Saturated {
+		t.Fatalf("reused worker capacity = %#v", target)
+	}
+
+	inventory, err := buildWorkerGroupInventory("workspace-a", false, observedAt, workers, nil, nil, jobs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	group := requireInventoryGroup(t, inventory, "group-new")
+	if group.OccupiedSlots != 0 || group.AvailableSlots != 1 {
+		t.Fatalf("reused worker inventory = %#v", group)
+	}
+
+	jobs[1].LeaseIdentity = &WorkerLeaseIdentity{Group: "group-new", CredentialGeneration: 6}
+	demand, err = buildExecutionDemand("workspace-a", "echo", "run", false, observedAt, workers, nil, nil, jobs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target = demand.Targets[0]
+	if target.OccupiedSlots != 0 || target.AvailableSlots != 1 || target.Saturated {
+		t.Fatalf("previous credential generation capacity = %#v", target)
+	}
+
+	jobs[1].LeaseIdentity = &WorkerLeaseIdentity{Group: "group-new", CredentialGeneration: 7}
+	demand, err = buildExecutionDemand("workspace-a", "echo", "run", false, observedAt, workers, nil, nil, jobs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target = demand.Targets[0]
+	if target.OccupiedSlots != 1 || target.AvailableSlots != 0 || !target.Saturated {
+		t.Fatalf("current worker capacity = %#v", target)
 	}
 }
 
@@ -124,10 +289,10 @@ func exercisePlacementProjectionContract(t *testing.T, store placementProjection
 		t.Fatalf("workspace group names = %#v, want %#v", got, want)
 	}
 	readyInventory := requireInventoryGroup(t, workspaceInventory, "group-ready")
-	if !readyInventory.VersionOrBuildDrift || readyInventory.Status != "degraded" || readyInventory.LiveWorkers != 2 || readyInventory.AvailableSlots != 5 {
+	if !readyInventory.VersionOrBuildDrift || readyInventory.Status != "degraded" || readyInventory.LiveWorkers != 2 || readyInventory.TotalSlots != 5 || readyInventory.OccupiedSlots != 0 || readyInventory.AvailableSlots != 5 {
 		t.Fatalf("ready inventory = %#v", readyInventory)
 	}
-	if static := requireInventoryGroup(t, workspaceInventory, unmanagedWorkerGroup); static.Managed || static.LiveWorkers != 1 || static.AvailableSlots != 4 {
+	if static := requireInventoryGroup(t, workspaceInventory, unmanagedWorkerGroup); static.Managed || static.LiveWorkers != 1 || static.TotalSlots != 4 || static.OccupiedSlots != 0 || static.AvailableSlots != 4 {
 		t.Fatalf("static inventory = %#v", static)
 	}
 	if drainingInventory := requireInventoryGroup(t, workspaceInventory, "group-draining"); drainingInventory.Status != WorkerGroupDraining || drainingInventory.AvailableSlots != 0 {
@@ -180,10 +345,62 @@ func exercisePlacementProjectionContract(t *testing.T, store placementProjection
 		t.Fatalf("hidden candidate = %#v", hiddenCandidate)
 	}
 
+	leaseExpiresAt := time.Now().UTC().Add(10 * time.Minute)
+	createPlacementJob(t, store, deployment, "run-occupied", "workspace-a", "ready", JobRunning, "worker-ready-a", &leaseExpiresAt)
+	createPlacementJob(t, store, deployment, "run-queued-a", "workspace-a", "ready", JobQueued, "", nil)
+	createPlacementJob(t, store, deployment, "run-queued-b", "workspace-a", "ready", JobQueued, "", nil)
+	createPlacementJob(t, store, deployment, "run-legacy", "workspace-a", "legacy", JobQueued, "", nil)
+	createPlacementJob(t, store, deployment, "run-other-workspace", "workspace-b", "ready", JobQueued, "", nil)
+
+	demand, err := store.GetExecutionDemand(ctx, "workspace-a", "echo", "run", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if demand.Workspace != "workspace-a" || demand.QueuedJobs != 3 || demand.OldestQueuedAt == nil || len(demand.Targets) != 2 {
+		t.Fatalf("execution demand = %#v", demand)
+	}
+	readyDemand := requireDemandTarget(t, demand, "ready")
+	if readyDemand.QueuedJobs != 2 || readyDemand.MatchingWorkers != 3 || readyDemand.TotalSlots != 9 || readyDemand.OccupiedSlots != 1 || readyDemand.AvailableSlots != 8 || readyDemand.Saturated {
+		t.Fatalf("ready execution demand = %#v", readyDemand)
+	}
+	if candidate := requireCandidateGroup(t, PlacementTargetCandidates{Candidates: readyDemand.Candidates}, "group-ready"); candidate.OccupiedSlots != 1 || candidate.AvailableSlots != 4 || candidate.Saturated {
+		t.Fatalf("ready demand candidate = %#v", candidate)
+	}
+	if candidate := requireCandidateGroup(t, PlacementTargetCandidates{Candidates: readyDemand.Candidates}, unmanagedWorkerGroup); candidate.OccupiedSlots != 0 || candidate.AvailableSlots != 4 {
+		t.Fatalf("static demand candidate = %#v", candidate)
+	}
+	legacyDemand := requireDemandTarget(t, demand, "legacy")
+	if legacyDemand.QueuedJobs != 1 || legacyDemand.MatchingWorkers != 0 || legacyDemand.TotalSlots != 0 || legacyDemand.OccupiedSlots != 0 || legacyDemand.AvailableSlots != 0 || legacyDemand.Saturated {
+		t.Fatalf("legacy execution demand = %#v", legacyDemand)
+	}
+	var counted int64
+	for _, demandTarget := range demand.Targets {
+		counted += demandTarget.QueuedJobs
+	}
+	if counted != demand.QueuedJobs {
+		t.Fatalf("target demand sum = %d, workspace demand = %d", counted, demand.QueuedJobs)
+	}
+	adminDemand, err := store.GetExecutionDemand(ctx, "workspace-a", "echo", "run", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hiddenDemandCandidate := requireCandidateGroup(t, PlacementTargetCandidates{Candidates: requireDemandTarget(t, adminDemand, "ready").Candidates}, "group-hidden")
+	if hiddenDemandCandidate.Eligible || hiddenDemandCandidate.MatchingSlots != 0 || !slices.Contains(hiddenDemandCandidate.ReasonCodes, PlacementReasonWorkspaceNotAllowed) {
+		t.Fatalf("hidden demand candidate = %#v", hiddenDemandCandidate)
+	}
+	updatedInventory, err := store.GetWorkerGroupInventory(ctx, "workspace-a", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ready := requireInventoryGroup(t, updatedInventory, "group-ready"); ready.TotalSlots != 5 || ready.OccupiedSlots != 1 || ready.AvailableSlots != 4 {
+		t.Fatalf("updated ready inventory = %#v", ready)
+	}
+
 	encoded, err := json.Marshal(struct {
 		Inventory  WorkerGroupInventory `json:"inventory"`
 		Candidates PlacementCandidates  `json:"candidates"`
-	}{workspaceInventory, workspaceCandidates})
+		Demand     ExecutionDemand      `json:"demand"`
+	}{workspaceInventory, workspaceCandidates, demand})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,6 +408,31 @@ func exercisePlacementProjectionContract(t *testing.T, store placementProjection
 		if bytes.Contains(encoded, []byte(forbidden)) {
 			t.Fatalf("workspace projection exposed %q: %s", forbidden, encoded)
 		}
+	}
+}
+
+func createPlacementJob(
+	t *testing.T,
+	store Store,
+	deployment contract.Deployment,
+	runID string,
+	workspace string,
+	tag string,
+	state JobState,
+	leaseOwner string,
+	leaseExpiresAt *time.Time,
+) {
+	t.Helper()
+	run := NewRun("api", runID, "echo", "run", deployment, json.RawMessage(`{}`))
+	job := NewActionJob(run, nil)
+	job.ID = "job-" + runID
+	job.Payload.Workspace = workspace
+	job.Payload.Tag = tag
+	job.State = state
+	job.LeaseOwner = leaseOwner
+	job.LeaseExpiresAt = leaseExpiresAt
+	if err := store.CreateRunAndEnqueue(context.Background(), run, job); err != nil {
+		t.Fatalf("CreateRunAndEnqueue(%s): %v", runID, err)
 	}
 }
 
@@ -242,4 +484,15 @@ func requireCandidateGroup(t *testing.T, target PlacementTargetCandidates, group
 	}
 	t.Fatalf("candidate group %q not found in %#v", group, target.Candidates)
 	return WorkerGroupPlacementCandidate{}
+}
+
+func requireDemandTarget(t *testing.T, demand ExecutionDemand, tag string) ExecutionDemandTarget {
+	t.Helper()
+	for _, target := range demand.Targets {
+		if target.EffectiveTag == tag {
+			return target
+		}
+	}
+	t.Fatalf("execution demand target %q not found in %#v", tag, demand.Targets)
+	return ExecutionDemandTarget{}
 }

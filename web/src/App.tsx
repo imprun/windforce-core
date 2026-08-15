@@ -39,6 +39,7 @@ export function App() {
   }
 
   if (matchRoute("/worker-groups", path)) return <WorkerGroupsPage />;
+  if (matchRoute("/execution-pools", path)) return <RouteRedirect to="/worker-groups" />;
   if (matchRoute("/monitoring", path)) return <MonitoringPage />;
   if (matchRoute("/human-tasks", path)) return <HumanTasksPage />;
   if (matchRoute("/audit", path)) return <AuditPage />;

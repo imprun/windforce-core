@@ -41,6 +41,22 @@ func TestCanonicalPlacementObservationsAuthorizationAndRedaction(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	queuedRun := state.NewRun("api", "run-demand-queued", "echo", "run", deployment, json.RawMessage(`{}`))
+	queuedJob := state.NewActionJob(queuedRun, nil)
+	queuedJob.ID = "job-demand-queued"
+	if err := store.CreateRunAndEnqueue(ctx, queuedRun, queuedJob); err != nil {
+		t.Fatal(err)
+	}
+	runningRun := state.NewRun("api", "run-demand-running", "echo", "run", deployment, json.RawMessage(`{}`))
+	runningJob := state.NewActionJob(runningRun, nil)
+	runningJob.ID = "job-demand-running"
+	runningJob.State = state.JobRunning
+	runningJob.LeaseOwner = "physical-worker-allowed"
+	leaseExpiresAt := time.Now().UTC().Add(10 * time.Minute)
+	runningJob.LeaseExpiresAt = &leaseExpiresAt
+	if err := store.CreateRunAndEnqueue(ctx, runningRun, runningJob); err != nil {
+		t.Fatal(err)
+	}
 
 	server := httptest.NewServer(New(Config{
 		Store: store, Catalog: store, ManagedWorkspaces: true, AdminToken: "instance-admin",
@@ -55,6 +71,9 @@ func TestCanonicalPlacementObservationsAuthorizationAndRedaction(t *testing.T) {
 	decodeResponse(t, workspaceInventoryResponse, &workspaceInventory)
 	if len(workspaceInventory.Groups) != 1 || workspaceInventory.Groups[0].Group != "group-allowed" {
 		t.Fatalf("workspace inventory = %#v", workspaceInventory)
+	}
+	if group := workspaceInventory.Groups[0]; group.TotalSlots != 2 || group.OccupiedSlots != 1 || group.AvailableSlots != 1 {
+		t.Fatalf("workspace inventory capacity = %#v", group)
 	}
 
 	adminInventoryResponse := workspaceRequest(t, server.URL, http.MethodGet, "/api/w/team-a/worker-groups", "instance-admin", "")
@@ -86,6 +105,68 @@ func TestCanonicalPlacementObservationsAuthorizationAndRedaction(t *testing.T) {
 		}
 	}
 
+	unauthorizedDemand := workspaceRequest(t, server.URL, http.MethodGet, "/api/w/team-a/execution-demand", "", "")
+	if unauthorizedDemand.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauthorized execution demand status = %d: %s", unauthorizedDemand.StatusCode, readResponse(t, unauthorizedDemand))
+	}
+	demandResponse := workspaceRequest(t, server.URL, http.MethodGet, "/api/w/team-a/execution-demand", workspaceToken, "")
+	if demandResponse.StatusCode != http.StatusOK {
+		t.Fatalf("execution demand status = %d: %s", demandResponse.StatusCode, readResponse(t, demandResponse))
+	}
+	var demand state.ExecutionDemand
+	decodeResponse(t, demandResponse, &demand)
+	if demand.Workspace != "team-a" || demand.QueuedJobs != 1 || demand.OldestQueuedAt == nil || len(demand.Targets) != 1 {
+		t.Fatalf("workspace execution demand = %#v", demand)
+	}
+	demandTarget := demand.Targets[0]
+	if demandTarget.App != "echo" || demandTarget.Action != "run" || demandTarget.MatchingWorkers != 1 || demandTarget.TotalSlots != 2 || demandTarget.OccupiedSlots != 1 || demandTarget.AvailableSlots != 1 || demandTarget.Saturated || len(demandTarget.Candidates) != 1 {
+		t.Fatalf("execution demand target = %#v", demandTarget)
+	}
+	encodedDemand, err := json.Marshal(demand)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"physical-worker-allowed", allowed.ID, "allowed-token", "job-demand-queued", "run-demand-queued"} {
+		if strings.Contains(string(encodedDemand), forbidden) {
+			t.Fatalf("execution demand response exposed %q: %s", forbidden, encodedDemand)
+		}
+	}
+	adminDemandResponse := workspaceRequest(t, server.URL, http.MethodGet, "/api/w/team-a/execution-demand", "instance-admin", "")
+	if adminDemandResponse.StatusCode != http.StatusOK {
+		t.Fatalf("admin execution demand status = %d: %s", adminDemandResponse.StatusCode, readResponse(t, adminDemandResponse))
+	}
+	var adminDemand state.ExecutionDemand
+	decodeResponse(t, adminDemandResponse, &adminDemand)
+	if len(adminDemand.Targets) != 1 || len(adminDemand.Targets[0].Candidates) != 2 {
+		t.Fatalf("admin execution demand = %#v", adminDemand)
+	}
+	if hiddenCandidate := adminDemand.Targets[0].Candidates[1]; hiddenCandidate.Group != "group-hidden" || hiddenCandidate.WorkspaceAllowed || hiddenCandidate.Eligible || hiddenCandidate.MatchingSlots != 0 {
+		t.Fatalf("admin hidden demand candidate = %#v", hiddenCandidate)
+	}
+	for _, path := range []string{
+		"/api/w/team-a/apps/echo/execution-demand",
+		"/api/w/team-a/apps/echo/actions/run/execution-demand",
+	} {
+		response := workspaceRequest(t, server.URL, http.MethodGet, path, workspaceToken, "")
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("filtered execution demand %s status = %d: %s", path, response.StatusCode, readResponse(t, response))
+		}
+		var filtered state.ExecutionDemand
+		decodeResponse(t, response, &filtered)
+		if filtered.QueuedJobs != 1 || len(filtered.Targets) != 1 {
+			t.Fatalf("filtered execution demand %s = %#v", path, filtered)
+		}
+	}
+	emptyDemand := workspaceRequest(t, server.URL, http.MethodGet, "/api/w/team-a/apps/deleted/execution-demand", workspaceToken, "")
+	if emptyDemand.StatusCode != http.StatusOK {
+		t.Fatalf("deleted app execution demand status = %d: %s", emptyDemand.StatusCode, readResponse(t, emptyDemand))
+	}
+	var empty state.ExecutionDemand
+	decodeResponse(t, emptyDemand, &empty)
+	if empty.QueuedJobs != 0 || len(empty.Targets) != 0 {
+		t.Fatalf("deleted app execution demand = %#v", empty)
+	}
+
 	missingAction := workspaceRequest(t, server.URL, http.MethodGet, "/api/w/team-a/apps/echo/actions/missing/placement-candidates", workspaceToken, "")
 	if missingAction.StatusCode != http.StatusNotFound {
 		t.Fatalf("missing action status = %d: %s", missingAction.StatusCode, readResponse(t, missingAction))
@@ -106,6 +187,9 @@ func TestPlacementObservationsAppearInControlPlaneOpenAPI(t *testing.T) {
 	paths := document["paths"].(map[string]any)
 	for _, path := range []string{
 		"/api/w/{workspace}/worker-groups",
+		"/api/w/{workspace}/execution-demand",
+		"/api/w/{workspace}/apps/{app}/execution-demand",
+		"/api/w/{workspace}/apps/{app}/actions/{action}/execution-demand",
 		"/api/w/{workspace}/apps/{app}/placement-candidates",
 		"/api/w/{workspace}/apps/{app}/actions/{action}/placement-candidates",
 	} {
@@ -116,7 +200,7 @@ func TestPlacementObservationsAppearInControlPlaneOpenAPI(t *testing.T) {
 	schemas := document["components"].(map[string]any)["schemas"].(map[string]any)
 	for _, name := range []string{
 		"WorkerGroupInventory", "WorkerGroupInventoryItem", "PlacementCandidates",
-		"PlacementTargetCandidates", "WorkerGroupPlacementCandidate",
+		"PlacementTargetCandidates", "WorkerGroupPlacementCandidate", "ExecutionDemand", "ExecutionDemandTarget",
 	} {
 		if schemas[name] == nil {
 			t.Fatalf("placement observation schema %q missing from control-plane OpenAPI", name)

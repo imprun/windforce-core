@@ -68,10 +68,49 @@ func (s *LocalStore) GetPlacementCandidates(
 	return result, err
 }
 
+func (s *LocalStore) GetExecutionDemand(
+	ctx context.Context,
+	workspaceID string,
+	app string,
+	action string,
+	includeUnauthorized bool,
+) (ExecutionDemand, error) {
+	var result ExecutionDemand
+	err := s.withLock(ctx, func() error {
+		snapshot, err := s.Load(ctx)
+		if err != nil {
+			return err
+		}
+		result, err = buildExecutionDemand(
+			workspaceID,
+			app,
+			action,
+			includeUnauthorized,
+			currentUTC(s.leaseNow),
+			workerRecords(snapshot.Workers),
+			snapshot.WorkerCredentials,
+			snapshot.WorkerGroupRunStates,
+			executionDemandJobs(snapshot),
+		)
+		return err
+	})
+	return result, err
+}
+
 func runningPlacementJobs(snapshot Snapshot) []Job {
 	jobs := make([]Job, 0)
 	for _, job := range snapshot.Jobs {
 		if job.State == JobRunning {
+			jobs = append(jobs, job)
+		}
+	}
+	return jobs
+}
+
+func executionDemandJobs(snapshot Snapshot) []Job {
+	jobs := make([]Job, 0)
+	for _, job := range snapshot.Jobs {
+		if job.State == JobRunning || job.State == JobQueued {
 			jobs = append(jobs, job)
 		}
 	}

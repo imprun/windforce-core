@@ -69,3 +69,30 @@ func (h *Handler) handleCanonicalPlacementCandidates(
 	}
 	writeJSON(w, http.StatusOK, result)
 }
+
+func (h *Handler) handleCanonicalExecutionDemand(
+	w http.ResponseWriter,
+	r *http.Request,
+	workspaceID string,
+	app string,
+	action string,
+) {
+	if app != "" && !validAppKey(app) || action != "" && !validActionKey(action) {
+		writeError(w, http.StatusBadRequest, "invalid App or Action key")
+		return
+	}
+	store, ok := h.placementObservationStore()
+	if !ok {
+		writeError(w, http.StatusNotImplemented, "placement observations are not supported by this store")
+		return
+	}
+	principal := workspacePrincipalFrom(r.Context())
+	result, err := store.GetExecutionDemand(
+		r.Context(), workspaceID, app, action, principal != nil && principal.Admin,
+	)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}

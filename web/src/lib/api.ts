@@ -317,6 +317,8 @@ export type WorkerGroupInventoryItem = {
   deadline_at?: string;
   live_workers: number;
   unmanaged_live_workers: number;
+  total_slots: number;
+  occupied_slots: number;
   available_slots: number;
   active_leases: number;
   running_jobs: number;
@@ -352,6 +354,9 @@ export type WorkerGroupPlacementCandidate = {
   eligible: boolean;
   matching_workers: number;
   matching_slots: number;
+  occupied_slots: number;
+  available_slots: number;
+  saturated: boolean;
   reason_codes: PlacementReasonCode[];
   version_or_build_drift: boolean;
 };
@@ -371,6 +376,30 @@ export type PlacementCandidates = {
   workspace: string;
   observed_at: string;
   targets: PlacementTargetCandidates[];
+};
+
+export type ExecutionDemandTarget = {
+  app: string;
+  action: string;
+  effective_tag: string;
+  effective_required_labels: string[];
+  execution_profile: ExecutionProfileView;
+  queued_jobs: number;
+  oldest_queued_at?: string;
+  matching_workers: number;
+  total_slots: number;
+  occupied_slots: number;
+  available_slots: number;
+  saturated: boolean;
+  candidates: WorkerGroupPlacementCandidate[];
+};
+
+export type ExecutionDemand = {
+  workspace: string;
+  observed_at: string;
+  queued_jobs: number;
+  oldest_queued_at?: string;
+  targets: ExecutionDemandTarget[];
 };
 
 export type ActionSchemas = {
@@ -1128,6 +1157,16 @@ export class WindforceApi {
       actionKey
         ? `${appPath}/actions/${encodeURIComponent(actionKey)}/placement-candidates`
         : `${appPath}/placement-candidates`,
+    );
+  }
+
+  executionDemand(appKey?: string, actionKey?: string): Promise<ExecutionDemand> {
+    if (!appKey) return this.request("/execution-demand");
+    const appPath = `/apps/${encodeURIComponent(appKey)}`;
+    return this.request(
+      actionKey
+        ? `${appPath}/actions/${encodeURIComponent(actionKey)}/execution-demand`
+        : `${appPath}/execution-demand`,
     );
   }
 

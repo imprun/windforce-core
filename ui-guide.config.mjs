@@ -234,6 +234,7 @@ export default {
     });
     await waitForClientConfigRun(clientToken.client.id, clientToken.api_token);
     await seedWorkerGroupInventory(api);
+    await seedQueuedExecutionDemand(api, clientToken.api_token);
     // The standalone local store replaces its JSON file after the worker
     // publishes the terminal result. Let that final Windows file operation
     // settle before browser scenarios begin issuing concurrent reads.
@@ -380,6 +381,31 @@ async function seedWorkerGroupInventory(api) {
     }
   };
   workerHeartbeatTimer = setInterval(() => void heartbeat(), 5000);
+}
+
+async function seedQueuedExecutionDemand(api, apiToken) {
+  const actorHeaders = { "x-windforce-actor": "ui-guide@example.test" };
+  await api("/apps/echo", {
+    method: "PATCH",
+    headers: actorHeaders,
+    body: { required_labels_override: ["queued-no-capacity"] },
+  });
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/v1/workspaces/default/runs`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${apiToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ app: "echo", action: "echo", input: {} }),
+    });
+    if (!response.ok) {
+      throw new Error(`queued demand seed failed: HTTP ${response.status} ${await response.text()}`);
+    }
+  } finally {
+    await api("/apps/echo", {
+      method: "PATCH",
+      headers: actorHeaders,
+      body: { required_labels_override: null },
+    });
+  }
 }
 
 async function advanceSampleRepository(exec) {

@@ -17,6 +17,16 @@ describe("primaryNavItems", () => {
     ]);
   });
 
+  test("uses the canonical worker-groups path for WorkerGroup navigation", () => {
+    const item = primaryNavItems.find(
+      (candidate) => candidate.labelKey === "navigation.workerGroups",
+    );
+
+    expect(item?.to).toBe("/worker-groups");
+    expect(item?.match("/worker-groups")).toBe(true);
+    expect(item?.match("/execution-pools")).toBe(false);
+  });
+
   test("uses the topbar breadcrumb for workspace context and keeps account context in the sidebar", () => {
     expect(layoutSource).toContain('data-testid="workspace-topbar-context"');
     expect(layoutSource).not.toContain("sidebarWorkspaceContext");

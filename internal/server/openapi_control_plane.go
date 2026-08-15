@@ -497,6 +497,17 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 				}, "400", "401", "403", "404", "500", "501"),
 			},
 		},
+		"/api/w/{workspace}/apps/{app}/execution-demand": map[string]any{
+			"get": map[string]any{
+				"operationId": "getAppExecutionDemand",
+				"summary":     "Read queued execution demand and matching slot capacity for an app",
+				"description": "Groups each queued Job once by its admission-pinned App, Action, tag, labels, and execution profile. Capacity uses the same current Worker eligibility and draining rules as claim admission. Physical Worker, lease-owner, and credential identities are omitted.",
+				"parameters":  []any{oapiWorkspaceParam(workspaceID), oapiPathParam("app", "App key.")},
+				"responses": withErrors(map[string]any{
+					"200": oapiResponse("App execution demand and matching capacity.", oapiSchemaRef("ExecutionDemand")),
+				}, "400", "401", "403", "500", "501"),
+			},
+		},
 		"/api/w/{workspace}/apps/{app}/source": map[string]any{
 			"get": map[string]any{
 				"operationId": "getAppSource",
@@ -629,6 +640,17 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 				}, "400", "401", "403", "404", "500", "501"),
 			},
 		},
+		"/api/w/{workspace}/apps/{app}/actions/{action}/execution-demand": map[string]any{
+			"get": map[string]any{
+				"operationId": "getActionExecutionDemand",
+				"summary":     "Read queued execution demand and matching slot capacity for one action",
+				"description": "Preserves admission-pinned selectors so old and current Action targets remain distinct while queued. Each Job contributes to exactly one target.",
+				"parameters":  []any{oapiWorkspaceParam(workspaceID), oapiPathParam("app", "App key."), oapiPathParam("action", "Action key.")},
+				"responses": withErrors(map[string]any{
+					"200": oapiResponse("Action execution demand and matching capacity.", oapiSchemaRef("ExecutionDemand")),
+				}, "400", "401", "403", "500", "501"),
+			},
+		},
 		"/api/w/{workspace}/apps/{app}/actions/{action}/schema": map[string]any{
 			"get": map[string]any{
 				"operationId": "getActionSchema",
@@ -659,6 +681,17 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 				"parameters":  []any{oapiWorkspaceParam(workspaceID)},
 				"responses": withErrors(map[string]any{
 					"200": oapiResponse("Workspace WorkerGroup inventory.", oapiSchemaRef("WorkerGroupInventory")),
+				}, "401", "403", "500", "501"),
+			},
+		},
+		"/api/w/{workspace}/execution-demand": map[string]any{
+			"get": map[string]any{
+				"operationId": "getWorkspaceExecutionDemand",
+				"summary":     "Read workspace queued execution demand against matching slot capacity",
+				"description": "Returns a redacted, single-snapshot projection grouped by admission-pinned execution targets. Queued Jobs are not attributed to individual WorkerGroups and are never duplicated across candidate groups.",
+				"parameters":  []any{oapiWorkspaceParam(workspaceID)},
+				"responses": withErrors(map[string]any{
+					"200": oapiResponse("Workspace execution demand and matching capacity.", oapiSchemaRef("ExecutionDemand")),
 				}, "401", "403", "500", "501"),
 			},
 		},
@@ -1216,6 +1249,8 @@ func controlPlaneSchemas() map[string]any {
 				"deadline_at":            nullableDateTime,
 				"live_workers":           map[string]any{"type": "integer", "minimum": 0},
 				"unmanaged_live_workers": map[string]any{"type": "integer", "minimum": 0},
+				"total_slots":            map[string]any{"type": "integer", "minimum": 0},
+				"occupied_slots":         map[string]any{"type": "integer", "minimum": 0},
 				"available_slots":        map[string]any{"type": "integer", "minimum": 0},
 				"active_leases":          map[string]any{"type": "integer", "minimum": 0},
 				"running_jobs":           map[string]any{"type": "integer", "minimum": 0},
@@ -1230,7 +1265,7 @@ func controlPlaneSchemas() map[string]any {
 			},
 			"required": []any{
 				"group", "status", "workspace_allowed", "managed", "active_credentials", "run_state", "run_state_revision",
-				"live_workers", "unmanaged_live_workers", "available_slots", "active_leases", "running_jobs", "quiescent",
+				"live_workers", "unmanaged_live_workers", "total_slots", "occupied_slots", "available_slots", "active_leases", "running_jobs", "quiescent",
 				"tags", "labels", "execution_profiles", "engine_versions", "build_revisions", "version_or_build_drift",
 			},
 		},
@@ -1270,10 +1305,48 @@ func controlPlaneSchemas() map[string]any {
 				"eligible":               oapiBooleanSchema(),
 				"matching_workers":       map[string]any{"type": "integer", "minimum": 0},
 				"matching_slots":         map[string]any{"type": "integer", "minimum": 0},
+				"occupied_slots":         map[string]any{"type": "integer", "minimum": 0},
+				"available_slots":        map[string]any{"type": "integer", "minimum": 0},
+				"saturated":              oapiBooleanSchema(),
 				"reason_codes":           map[string]any{"type": "array", "items": oapiStringEnumSchema("workspace_not_allowed", "draining", "no_live_capacity", "missing_tag", "missing_label", "execution_profile_mismatch")},
 				"version_or_build_drift": oapiBooleanSchema(),
 			},
-			"required": []any{"group", "workspace_allowed", "managed", "run_state", "eligible", "matching_workers", "matching_slots", "reason_codes", "version_or_build_drift"},
+			"required": []any{"group", "workspace_allowed", "managed", "run_state", "eligible", "matching_workers", "matching_slots", "occupied_slots", "available_slots", "saturated", "reason_codes", "version_or_build_drift"},
+		},
+		"ExecutionDemand": map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"properties": map[string]any{
+				"workspace":        oapiStringSchema(),
+				"observed_at":      oapiDateTimeSchema(),
+				"queued_jobs":      map[string]any{"type": "integer", "minimum": 0},
+				"oldest_queued_at": nullableDateTime,
+				"targets":          map[string]any{"type": "array", "items": oapiSchemaRef("ExecutionDemandTarget")},
+			},
+			"required": []any{"workspace", "observed_at", "queued_jobs", "targets"},
+		},
+		"ExecutionDemandTarget": map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"properties": map[string]any{
+				"app":                       oapiStringSchema(),
+				"action":                    oapiStringSchema(),
+				"effective_tag":             oapiStringSchema(),
+				"effective_required_labels": stringArray,
+				"execution_profile":         oapiSchemaRef("ExecutionProfile"),
+				"queued_jobs":               map[string]any{"type": "integer", "minimum": 0},
+				"oldest_queued_at":          nullableDateTime,
+				"matching_workers":          map[string]any{"type": "integer", "minimum": 0},
+				"total_slots":               map[string]any{"type": "integer", "minimum": 0},
+				"occupied_slots":            map[string]any{"type": "integer", "minimum": 0},
+				"available_slots":           map[string]any{"type": "integer", "minimum": 0},
+				"saturated":                 oapiBooleanSchema(),
+				"candidates":                map[string]any{"type": "array", "items": oapiSchemaRef("WorkerGroupPlacementCandidate")},
+			},
+			"required": []any{
+				"app", "action", "effective_tag", "effective_required_labels", "execution_profile", "queued_jobs",
+				"matching_workers", "total_slots", "occupied_slots", "available_slots", "saturated", "candidates",
+			},
 		},
 		"Workspace": map[string]any{
 			"type": "object",
