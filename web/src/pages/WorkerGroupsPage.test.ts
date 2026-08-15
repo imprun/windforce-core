@@ -30,6 +30,19 @@ function group(name: string, values: Partial<WorkerGroupInventoryItem>): WorkerG
 }
 
 describe("WorkerGroupsPage", () => {
+  test("keeps inventory capacity available when demand has no result", () => {
+    const result = summarizeWorkerGroups([
+      group("ready", { total_slots: 4, occupied_slots: 1, available_slots: 3 }),
+    ]);
+
+    expect(result).toMatchObject({
+      totalSlots: 4,
+      occupiedSlots: 1,
+      availableSlots: 3,
+      queuedJobs: 0,
+    });
+  });
+
   test("keeps admin-only unauthorized groups out of workspace capacity totals", () => {
     const result = summarizeWorkerGroups(
       [

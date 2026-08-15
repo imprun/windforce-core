@@ -71,7 +71,9 @@ func (s *PostgresStore) GetExecutionDemand(
 		return ExecutionDemand{}, err
 	}
 	defer tx.Rollback(ctx)
-	observedAt, workers, credentials, runStates, jobs, err := postgresExecutionDemandObservationSnapshot(ctx, tx)
+	observedAt, workers, credentials, runStates, jobs, err := postgresExecutionDemandObservationSnapshot(
+		ctx, tx, workspaceID, app, action,
+	)
 	if err != nil {
 		return ExecutionDemand{}, err
 	}
@@ -98,12 +100,15 @@ func postgresPlacementObservationSnapshot(
 func postgresExecutionDemandObservationSnapshot(
 	ctx context.Context,
 	tx pgx.Tx,
+	workspaceID string,
+	app string,
+	action string,
 ) (time.Time, []WorkerRecord, map[string]WorkerCredential, map[string]WorkerGroupRunState, []Job, error) {
 	observedAt, workers, credentials, runStates, err := postgresPlacementCapacitySnapshot(ctx, tx)
 	if err != nil {
 		return time.Time{}, nil, nil, nil, nil, err
 	}
-	jobs, err := postgresExecutionDemandJobs(ctx, tx)
+	jobs, err := postgresExecutionDemandJobs(ctx, tx, workspaceID, app, action)
 	if err != nil {
 		return time.Time{}, nil, nil, nil, nil, err
 	}
@@ -189,19 +194,114 @@ FROM jobs WHERE state=$1`, string(JobRunning))
 	return jobs, rows.Err()
 }
 
-func postgresExecutionDemandJobs(ctx context.Context, tx pgx.Tx) ([]Job, error) {
-	rows, err := tx.Query(ctx, `SELECT `+jobColumns+` FROM jobs WHERE state IN ($1, $2)`, string(JobRunning), string(JobQueued))
+func postgresExecutionDemandJobs(
+	ctx context.Context,
+	tx pgx.Tx,
+	workspaceID string,
+	app string,
+	action string,
+) ([]Job, error) {
+	jobs, err := postgresPlacementJobs(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := tx.Query(ctx, `
+SELECT
+  COALESCE(
+    NULLIF(BTRIM(payload->>'workspace'), ''),
+    NULLIF(BTRIM(payload->'deployment'->>'workspace'), ''),
+    $5
+  ),
+  COALESCE(
+    NULLIF(BTRIM(payload->>'app'), ''),
+    NULLIF(BTRIM(payload->'deployment'->>'app'), ''),
+    ''
+  ),
+  BTRIM(COALESCE(payload->>'action', '')),
+  COALESCE(
+    NULLIF(BTRIM(payload->>'tag'), ''),
+    NULLIF(BTRIM(payload->'actionSpec'->>'tagOverride'), ''),
+    CASE
+      WHEN payload->'deployment' ? 'tagOverride'
+        THEN NULLIF(BTRIM(payload->'deployment'->>'tagOverride'), '')
+      ELSE NULLIF(BTRIM(payload->>'deploymentTagOverride'), '')
+    END,
+    NULLIF(BTRIM(payload->'actionSpec'->>'tag'), ''),
+    NULLIF(BTRIM(payload->'deployment'->>'tag'), ''),
+    NULLIF(BTRIM(payload->>'deploymentTag'), ''),
+    $6
+  ),
+  payload->'requiredLabels',
+  payload->'requiredCapabilities',
+  CASE
+    WHEN NULLIF(BTRIM(payload->'executionProfile'->>'key'), '') IS NOT NULL
+      THEN payload->'executionProfile'
+    ELSE payload->'deployment'->'executionProfile'
+  END,
+  created_at,
+  updated_at
+FROM jobs
+WHERE state = $1
+  AND COALESCE(
+    NULLIF(BTRIM(payload->>'workspace'), ''),
+    NULLIF(BTRIM(payload->'deployment'->>'workspace'), ''),
+    $5
+  ) = $2
+  AND (
+    $3 = '' OR COALESCE(
+      NULLIF(BTRIM(payload->>'app'), ''),
+      NULLIF(BTRIM(payload->'deployment'->>'app'), ''),
+      ''
+    ) = $3
+  )
+  AND ($4 = '' OR BTRIM(COALESCE(payload->>'action', '')) = $4)
+`,
+		string(JobQueued),
+		contract.NormalizeWorkspace(workspaceID),
+		app,
+		action,
+		contract.DefaultWorkspace,
+		contract.DefaultRouteTag,
+	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	jobs := []Job{}
 	for rows.Next() {
-		job, err := scanJob(rows)
-		if err != nil {
+		job := Job{State: JobQueued}
+		var requiredLabels json.RawMessage
+		var requiredCapabilities json.RawMessage
+		var executionProfile json.RawMessage
+		if err := rows.Scan(
+			&job.Payload.Workspace,
+			&job.Payload.App,
+			&job.Payload.Action,
+			&job.Payload.Tag,
+			&requiredLabels,
+			&requiredCapabilities,
+			&executionProfile,
+			&job.CreatedAt,
+			&job.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		if err := unmarshalExecutionDemandField(requiredLabels, &job.Payload.RequiredLabels); err != nil {
+			return nil, err
+		}
+		if err := unmarshalExecutionDemandField(requiredCapabilities, &job.Payload.RequiredCapabilities); err != nil {
+			return nil, err
+		}
+		if err := unmarshalExecutionDemandField(executionProfile, &job.Payload.ExecutionProfile); err != nil {
 			return nil, err
 		}
 		jobs = append(jobs, job)
 	}
 	return jobs, rows.Err()
+}
+
+func unmarshalExecutionDemandField(raw json.RawMessage, target any) error {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	return json.Unmarshal(raw, target)
 }

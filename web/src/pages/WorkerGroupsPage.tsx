@@ -21,13 +21,16 @@ const workerGroupStatusKeys: Record<WorkerGroupStatus, TranslationKey> = {
 
 export function WorkerGroupsPage() {
   const { api, runtimeConfig } = useApp();
-  const state = useAsync(async () => {
-    const [inventory, demand] = await Promise.all([api.workerGroups(), api.executionDemand()]);
-    return { inventory, demand };
-  }, [api]);
-  const groups = state.data?.inventory.groups || [];
-  const summary = summarizeWorkerGroups(groups, state.data?.demand);
+  const inventoryState = useAsync(() => api.workerGroups(), [api]);
+  const demandState = useAsync(() => api.executionDemand(), [api]);
+  const groups = inventoryState.data?.groups || [];
+  const summary = summarizeWorkerGroups(groups, demandState.data ?? undefined);
   const externalOperator = runtimeConfig?.workerGroupOperator === "external";
+  const hasData = Boolean(inventoryState.data || demandState.data);
+  const reload = () => {
+    inventoryState.reload();
+    demandState.reload();
+  };
 
   return (
     <Layout
@@ -35,7 +38,7 @@ export function WorkerGroupsPage() {
       subtitle={translate("workerGroups.subtitle")}
       titleLeading={<ServerCog size={22} aria-hidden="true" />}
       actions={
-        <button className="button" type="button" onClick={() => state.reload()}>
+        <button className="button" type="button" onClick={reload}>
           {translate("common.refresh")}
         </button>
       }
@@ -58,10 +61,15 @@ export function WorkerGroupsPage() {
         <div className="inlineNotice">{translate("workerGroups.coreOperatorHint")}</div>
       )}
 
-      {state.error ? <ErrorNotice message={state.error} onRetry={state.reload} /> : null}
-      {state.loading && !state.data ? <Loading /> : null}
+      {inventoryState.error ? (
+        <ErrorNotice message={inventoryState.error} onRetry={inventoryState.reload} />
+      ) : null}
+      {demandState.error ? (
+        <ErrorNotice message={demandState.error} onRetry={demandState.reload} />
+      ) : null}
+      {inventoryState.loading && demandState.loading && !hasData ? <Loading /> : null}
 
-      {state.data ? (
+      {hasData ? (
         <>
           <div className="statRow" data-ui-guide="worker-group-summary">
             <StatTile
@@ -91,70 +99,77 @@ export function WorkerGroupsPage() {
             />
           </div>
 
-          <Panel
-            title={translate("workerGroups.demand.title")}
-            subtitle={translate("workerGroups.demand.hint", {
-              time: formatRelative(state.data.demand.observed_at),
-            })}
-          >
-            {state.data.demand.targets.length === 0 ? (
-              <EmptyState title={translate("workerGroups.demand.empty")}>
-                <p>{translate("workerGroups.demand.emptyHint")}</p>
-              </EmptyState>
-            ) : (
-              <div className="tableWrap" data-ui-guide="execution-demand">
-                <table className="table workerGroupTable">
-                  <thead>
-                    <tr>
-                      <th>{translate("workerGroups.demand.target")}</th>
-                      <th>{translate("workerGroups.demand.queue")}</th>
-                      <th>{translate("workerGroups.demand.selector")}</th>
-                      <th>{translate("workerGroups.demand.capacity")}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {state.data.demand.targets.map((target) => (
-                      <ExecutionDemandRow key={executionDemandTargetKey(target)} target={target} />
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </Panel>
+          {demandState.data ? (
+            <Panel
+              title={translate("workerGroups.demand.title")}
+              subtitle={translate("workerGroups.demand.hint", {
+                time: formatRelative(demandState.data.observed_at),
+              })}
+            >
+              {demandState.data.targets.length === 0 ? (
+                <EmptyState title={translate("workerGroups.demand.empty")}>
+                  <p>{translate("workerGroups.demand.emptyHint")}</p>
+                </EmptyState>
+              ) : (
+                <div className="tableWrap" data-ui-guide="execution-demand">
+                  <table className="table workerGroupTable">
+                    <thead>
+                      <tr>
+                        <th>{translate("workerGroups.demand.target")}</th>
+                        <th>{translate("workerGroups.demand.queue")}</th>
+                        <th>{translate("workerGroups.demand.selector")}</th>
+                        <th>{translate("workerGroups.demand.capacity")}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {demandState.data.targets.map((target) => (
+                        <ExecutionDemandRow
+                          key={executionDemandTargetKey(target)}
+                          target={target}
+                        />
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Panel>
+          ) : null}
 
-          <Panel
-            title={translate("workerGroups.inventory")}
-            subtitle={translate("workerGroups.inventoryHint", {
-              time: formatRelative(state.data.inventory.observed_at),
-            })}
-          >
-            {groups.length === 0 ? (
-              <EmptyState title={translate("workerGroups.empty")}>
-                <p>{translate("workerGroups.emptyHint")}</p>
-              </EmptyState>
-            ) : (
-              <div className="tableWrap" data-ui-guide="worker-group-inventory">
-                <table className="table workerGroupTable">
-                  <thead>
-                    <tr>
-                      <th>{translate("workerGroups.column.pool")}</th>
-                      <th>{translate("common.status")}</th>
-                      <th>{translate("workerGroups.column.capacity")}</th>
-                      <th>{translate("workerGroups.column.work")}</th>
-                      <th>{translate("workerGroups.column.selectors")}</th>
-                      <th>{translate("workerGroups.column.build")}</th>
-                      <th>{translate("workerGroups.column.heartbeat")}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {groups.map((group) => (
-                      <WorkerGroupRow group={group} key={group.group} />
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </Panel>
+          {inventoryState.data ? (
+            <Panel
+              title={translate("workerGroups.inventory")}
+              subtitle={translate("workerGroups.inventoryHint", {
+                time: formatRelative(inventoryState.data.observed_at),
+              })}
+            >
+              {groups.length === 0 ? (
+                <EmptyState title={translate("workerGroups.empty")}>
+                  <p>{translate("workerGroups.emptyHint")}</p>
+                </EmptyState>
+              ) : (
+                <div className="tableWrap" data-ui-guide="worker-group-inventory">
+                  <table className="table workerGroupTable">
+                    <thead>
+                      <tr>
+                        <th>{translate("workerGroups.column.pool")}</th>
+                        <th>{translate("common.status")}</th>
+                        <th>{translate("workerGroups.column.capacity")}</th>
+                        <th>{translate("workerGroups.column.work")}</th>
+                        <th>{translate("workerGroups.column.selectors")}</th>
+                        <th>{translate("workerGroups.column.build")}</th>
+                        <th>{translate("workerGroups.column.heartbeat")}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {groups.map((group) => (
+                        <WorkerGroupRow group={group} key={group.group} />
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Panel>
+          ) : null}
         </>
       ) : null}
     </Layout>

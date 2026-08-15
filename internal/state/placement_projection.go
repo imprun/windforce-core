@@ -254,7 +254,7 @@ func buildWorkerGroupInventoryItem(
 		if placementWorkerEligible(worker, workspaceID, observedAt, credentials, runStates) {
 			slots := normalizedWorkerSlots(worker)
 			item.TotalSlots = saturatingAddInt(item.TotalSlots, slots)
-			occupied := activeLeasesByWorker[worker.ID]
+			occupied := activeLeasesByWorker.forWorker(worker)
 			if occupied > int64(slots) {
 				occupied = int64(slots)
 			}
@@ -378,7 +378,7 @@ func buildWorkerGroupPlacementCandidate(
 	workers []WorkerRecord,
 	credentials map[string]WorkerCredential,
 	runStates map[string]WorkerGroupRunState,
-	activeLeases map[string]int64,
+	activeLeases workerActiveLeaseCounts,
 ) (WorkerGroupPlacementCandidate, error) {
 	result := WorkerGroupPlacementCandidate{
 		Group: group.Group, WorkspaceAllowed: group.WorkspaceAllowed, Managed: group.Managed,
@@ -440,7 +440,7 @@ func buildWorkerGroupPlacementCandidate(
 		} else {
 			result.MatchingSlots += slots
 		}
-		occupied := activeLeases[worker.ID]
+		occupied := activeLeases.forWorker(worker)
 		if occupied > slots {
 			occupied = slots
 		}
@@ -598,14 +598,47 @@ func jobExecutionProfile(job Job) contract.ExecutionProfile {
 	return job.Payload.PinnedDeployment().ExecutionProfile
 }
 
-func activeLeaseCountsByWorker(observedAt time.Time, jobs []Job) map[string]int64 {
-	counts := map[string]int64{}
+type workerLeaseIdentityKey struct {
+	workerID             string
+	group                string
+	credentialGeneration int64
+}
+
+type workerActiveLeaseCounts struct {
+	byIdentity   map[workerLeaseIdentityKey]int64
+	unattributed map[string]int64
+}
+
+func (counts workerActiveLeaseCounts) forWorker(worker WorkerRecord) int64 {
+	workerID := strings.TrimSpace(worker.ID)
+	identity := workerLeaseIdentityKey{
+		workerID:             workerID,
+		group:                strings.TrimSpace(worker.Group),
+		credentialGeneration: worker.CredentialGeneration,
+	}
+	return saturatingAddInt64(counts.byIdentity[identity], counts.unattributed[workerID])
+}
+
+func activeLeaseCountsByWorker(observedAt time.Time, jobs []Job) workerActiveLeaseCounts {
+	counts := workerActiveLeaseCounts{
+		byIdentity:   map[workerLeaseIdentityKey]int64{},
+		unattributed: map[string]int64{},
+	}
 	for _, job := range jobs {
 		workerID := strings.TrimSpace(job.LeaseOwner)
 		if workerID == "" || !activeQueueLease(job, observedAt) {
 			continue
 		}
-		counts[workerID] = saturatingAddInt64(counts[workerID], 1)
+		if job.LeaseIdentity == nil {
+			counts.unattributed[workerID] = saturatingAddInt64(counts.unattributed[workerID], 1)
+			continue
+		}
+		identity := workerLeaseIdentityKey{
+			workerID:             workerID,
+			group:                strings.TrimSpace(job.LeaseIdentity.Group),
+			credentialGeneration: job.LeaseIdentity.CredentialGeneration,
+		}
+		counts.byIdentity[identity] = saturatingAddInt64(counts.byIdentity[identity], 1)
 	}
 	return counts
 }
