@@ -13,9 +13,9 @@ export default {
     "Provisioning, scaling, and rollout remain with the configured hosting operator; this Core view is read-only.",
   ],
   async run({ page, capture }) {
-    await page.goto("worker-groups");
+    await page.goto("execution-pools");
     await page.evaluate(() => localStorage.setItem("wf.locale", "en"));
-    await page.goto("worker-groups");
+    await page.goto("execution-pools");
     await page.waitForSelector('[data-ui-guide="execution-demand"]');
     await capture(this.id);
   },

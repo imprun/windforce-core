@@ -32,8 +32,11 @@ describe("HumanTask routes", () => {
 });
 
 describe("WorkerGroup routes", () => {
-  test("keeps the workspace-scoped execution-pool inventory in the embedded shell", () => {
-    expect(source).toContain('matchRoute("/worker-groups", path)');
+  test("uses the user-facing execution-pools route and redirects the technical legacy route", () => {
+    expect(source).toContain('matchRoute("/execution-pools", path)');
+    expect(source).toContain(
+      'matchRoute("/worker-groups", path)) return <RouteRedirect to="/execution-pools"',
+    );
     expect(source).toContain("<WorkerGroupsPage");
   });
 });

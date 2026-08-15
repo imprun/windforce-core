@@ -10,9 +10,9 @@ export default {
     "Confirm queued demand, capacity badges, and runtime metadata remain readable.",
   ],
   async run({ page, capture }) {
-    await page.goto("worker-groups");
+    await page.goto("execution-pools");
     await page.evaluate(() => localStorage.setItem("wf.locale", "en"));
-    await page.goto("worker-groups");
+    await page.goto("execution-pools");
     await page.waitForSelector('[data-ui-guide="execution-demand"]');
     await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
     await capture(this.id);

@@ -17,6 +17,16 @@ describe("primaryNavItems", () => {
     ]);
   });
 
+  test("uses the user-facing execution-pools path for the execution pool navigation", () => {
+    const item = primaryNavItems.find(
+      (candidate) => candidate.labelKey === "navigation.workerGroups",
+    );
+
+    expect(item?.to).toBe("/execution-pools");
+    expect(item?.match("/execution-pools")).toBe(true);
+    expect(item?.match("/worker-groups")).toBe(false);
+  });
+
   test("uses the topbar breadcrumb for workspace context and keeps account context in the sidebar", () => {
     expect(layoutSource).toContain('data-testid="workspace-topbar-context"');
     expect(layoutSource).not.toContain("sidebarWorkspaceContext");

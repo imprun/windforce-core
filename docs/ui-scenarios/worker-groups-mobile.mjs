@@ -11,9 +11,9 @@ export default {
     "Review queued Runs and slot usage first, then scroll pinned demand and pool inventory horizontally when needed.",
   ],
   async run({ page, capture }) {
-    await page.goto("worker-groups");
+    await page.goto("execution-pools");
     await page.evaluate(() => localStorage.setItem("wf.locale", "ko"));
-    await page.goto("worker-groups");
+    await page.goto("execution-pools");
     await page.waitForSelector('[data-ui-guide="execution-demand"]');
     await capture(this.id);
   },
