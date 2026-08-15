@@ -151,7 +151,7 @@ export function WorkerGroupsPage() {
                   <table className="table workerGroupTable">
                     <thead>
                       <tr>
-                        <th>{translate("workerGroups.column.pool")}</th>
+                        <th>{translate("workerGroups.column.group")}</th>
                         <th>{translate("common.status")}</th>
                         <th>{translate("workerGroups.column.capacity")}</th>
                         <th>{translate("workerGroups.column.work")}</th>
@@ -207,7 +207,7 @@ function ExecutionDemandRow({ target }: { target: ExecutionDemandTarget }) {
         <DemandCapacity target={target} />
         {eligibleGroups.length > 0 ? (
           <span className="cellSub">
-            {translate("workerGroups.demand.compatiblePools", {
+            {translate("workerGroups.demand.compatibleGroups", {
               groups: eligibleGroups.join(", "),
             })}
           </span>

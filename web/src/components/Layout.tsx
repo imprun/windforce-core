@@ -49,10 +49,10 @@ export const primaryNavItems = [
     match: (path: string) => path.startsWith("/clients"),
   },
   {
-    to: "/execution-pools",
+    to: "/worker-groups",
     labelKey: "navigation.workerGroups" as TranslationKey,
     icon: Boxes,
-    match: (path: string) => path.startsWith("/execution-pools"),
+    match: (path: string) => path.startsWith("/worker-groups"),
   },
   {
     to: "/monitoring",

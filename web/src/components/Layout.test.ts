@@ -17,14 +17,14 @@ describe("primaryNavItems", () => {
     ]);
   });
 
-  test("uses the user-facing execution-pools path for the execution pool navigation", () => {
+  test("uses the canonical worker-groups path for WorkerGroup navigation", () => {
     const item = primaryNavItems.find(
       (candidate) => candidate.labelKey === "navigation.workerGroups",
     );
 
-    expect(item?.to).toBe("/execution-pools");
-    expect(item?.match("/execution-pools")).toBe(true);
-    expect(item?.match("/worker-groups")).toBe(false);
+    expect(item?.to).toBe("/worker-groups");
+    expect(item?.match("/worker-groups")).toBe(true);
+    expect(item?.match("/execution-pools")).toBe(false);
   });
 
   test("uses the topbar breadcrumb for workspace context and keeps account context in the sidebar", () => {

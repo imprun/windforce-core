@@ -32,10 +32,10 @@ describe("HumanTask routes", () => {
 });
 
 describe("WorkerGroup routes", () => {
-  test("uses the user-facing execution-pools route and redirects the technical legacy route", () => {
-    expect(source).toContain('matchRoute("/execution-pools", path)');
+  test("uses the canonical worker-groups route and redirects the superseded execution-pools route", () => {
+    expect(source).toContain('matchRoute("/worker-groups", path)');
     expect(source).toContain(
-      'matchRoute("/worker-groups", path)) return <RouteRedirect to="/execution-pools"',
+      'matchRoute("/execution-pools", path)) return <RouteRedirect to="/worker-groups"',
     );
     expect(source).toContain("<WorkerGroupsPage");
   });

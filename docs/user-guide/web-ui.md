@@ -48,35 +48,35 @@ The embedded console supports Korean across navigation and product screens while
 3. Reload the page and confirm the selected language remains active.
 4. Keep API paths, app and Action keys, event types, logs, and user-entered values unchanged.
 
-## Review workspace execution pools
+## Review workspace WorkerGroups
 
-Execution pools compare queued execution demand with redacted WorkerGroup slot capacity without exposing physical Worker or credential identities.
+Worker groups compare queued execution demand with redacted WorkerGroup slot capacity without exposing physical Worker or credential identities.
 
-![Review workspace execution pools](../assets/ui/worker-groups.png)
+![Review workspace WorkerGroups](../assets/ui/worker-groups.png)
 
-1. Open Execution pools from the workspace navigation.
-2. Review queued Runs, oldest wait, occupied and free slots, and pinned targets before inspecting the pool inventory.
-3. A queued Run appears once even when several pools are compatible; target capacity is not summed across different targets.
+1. Open Worker groups from the workspace navigation.
+2. Review queued Runs, oldest wait, occupied and free slots, and pinned targets before inspecting the group inventory.
+3. A queued Run appears once even when several groups are compatible; target capacity is not summed across different targets.
 4. Treat build drift as an operational warning. It does not change placement eligibility by itself.
 5. Provisioning, scaling, and rollout remain with the configured hosting operator; this Core view is read-only.
 
-## Review execution pools in dark mode
+## Review WorkerGroups in dark mode
 
-Dark mode keeps queue pressure, slot usage, pinned targets, and pool diagnostics legible without changing the workspace-scoped projection.
+Dark mode keeps queue pressure, slot usage, pinned targets, and group diagnostics legible without changing the workspace-scoped projection.
 
-![Review execution pools in dark mode](../assets/ui/worker-groups-dark.png)
+![Review WorkerGroups in dark mode](../assets/ui/worker-groups-dark.png)
 
-1. Open Execution pools and switch the console to dark mode.
+1. Open Worker groups and switch the console to dark mode.
 2. Confirm queued demand, capacity badges, and runtime metadata remain readable.
 
-## Review execution pools on a narrow screen
+## Review WorkerGroups on a narrow screen
 
-Queue pressure and slot usage stay visible on a narrow screen while pinned demand and pool inventory remain available in horizontal tables.
+Queue pressure and slot usage stay visible on a narrow screen while pinned demand and group inventory remain available in horizontal tables.
 
-![Review execution pools on a narrow screen](../assets/ui/worker-groups-mobile.png)
+![Review WorkerGroups on a narrow screen](../assets/ui/worker-groups-mobile.png)
 
-1. Open Execution pools from the mobile navigation.
-2. Review queued Runs and slot usage first, then scroll pinned demand and pool inventory horizontally when needed.
+1. Open Worker groups from the mobile navigation.
+2. Review queued Runs and slot usage first, then scroll pinned demand and group inventory horizontally when needed.
 
 ## Inspect an app
 
