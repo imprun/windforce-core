@@ -3,9 +3,9 @@ export default {
   id: "execution-limits-mobile",
   title: "Review execution limits on a narrow screen",
   description:
-    "Policy tables become labelled records on a narrow screen so scope, capacity, and key inputs remain comparable.",
+    "Policy tables become labelled records on a narrow screen so type, scope, capacity or rate window, and key inputs remain comparable.",
   screenshot: "docs/assets/ui/execution-limits-mobile.png",
-  viewport: { width: 390, height: 1100 },
+  viewport: { width: 390, height: 1500 },
   guide: [
     "Open an App and choose 실행 제한 on a narrow screen.",
     "Review the App policy as a labelled record.",

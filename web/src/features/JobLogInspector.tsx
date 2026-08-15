@@ -117,6 +117,16 @@ export function JobLogInspector({
     onClose();
   };
   const status = streamStatus || job?.status || job?.state || "";
+  const executionLimitPins = [
+    ...(job?.execution_limits?.concurrency || []).map((limit) => ({
+      kind: "concurrency" as const,
+      limit,
+    })),
+    ...(job?.execution_limits?.rate || []).map((limit) => ({
+      kind: "rate" as const,
+      limit,
+    })),
+  ];
 
   return (
     <Sheet
@@ -202,7 +212,7 @@ export function JobLogInspector({
           />
         ) : null}
 
-        {job?.execution_limits?.concurrency?.length ? (
+        {executionLimitPins.length ? (
           <section className="jobExecutionLimits" aria-labelledby="jobExecutionLimitsTitle">
             <div className="jobLogSectionHeading">
               <div>
@@ -213,18 +223,21 @@ export function JobLogInspector({
               </div>
               <span className="badge badge-neutral">
                 {translate("executionLimits.policyCount", {
-                  count: job.execution_limits.concurrency.length,
+                  count: executionLimitPins.length,
                 })}
               </span>
             </div>
             <div className="jobExecutionLimitList">
-              {job.execution_limits.concurrency.map((limit) => (
+              {executionLimitPins.map(({ kind, limit }) => (
                 <article
                   className="jobExecutionLimit"
-                  key={`${limit.scope}:${limit.policy_id}:${limit.key_digest}`}
+                  key={`${kind}:${limit.scope}:${limit.policy_id}:${limit.key_digest}`}
                 >
                   <div className="jobExecutionLimitIdentity">
                     <strong className="mono">{limit.policy_id}</strong>
+                    <span className="badge badge-neutral">
+                      {translate(`executionLimits.type.${kind}`)}
+                    </span>
                     <span className="badge badge-neutral">
                       {executionLimitScopeLabel(limit.scope)}
                     </span>
@@ -232,7 +245,14 @@ export function JobLogInspector({
                   <dl>
                     <div>
                       <dt>{translate("executionLimits.capacity")}</dt>
-                      <dd className="mono">{limit.max_concurrent}</dd>
+                      <dd className="mono">
+                        {kind === "concurrency"
+                          ? limit.max_concurrent
+                          : translate("executionLimits.rateBudgetValue", {
+                              attempts: limit.max_attempts,
+                              seconds: limit.window_seconds,
+                            })}
+                      </dd>
                     </div>
                     <div>
                       <dt>{translate("executionLimits.revision")}</dt>

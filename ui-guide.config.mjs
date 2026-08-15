@@ -426,10 +426,16 @@ async function configureSampleExecutionLimits(exec) {
     concurrency: [
       { id: "message-group", maxConcurrent: 2, inputPointers: ["/message"] },
     ],
+    rate: [
+      { id: "message-rate", maxAttempts: 120, windowSeconds: 60, inputPointers: ["/message"] },
+    ],
   };
   manifest.actions.echo.executionLimits = {
     concurrency: [
       { id: "echo-message", maxConcurrent: 1, inputPointers: ["/message"] },
+    ],
+    rate: [
+      { id: "echo-rate", maxAttempts: 30, windowSeconds: 60, inputPointers: ["/message"] },
     ],
   };
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");

@@ -315,7 +315,7 @@ func runServer(args []string, mode string) int {
 		SecretKey:             secretKey,
 		SecretKeyPrevious:     secretKeyPrevious,
 		SecretBackend:         secretStore,
-		MetricsHandler:        triggerMetrics.Handler(webhookMetrics.Handler(webhookStore)),
+		MetricsHandler:        state.ExecutionMetricsHandler(stateStore, triggerMetrics.Handler(webhookMetrics.Handler(webhookStore))),
 		UIHostURL:             *uiHostURL,
 		UIHostLabel:           *uiHostLabel,
 		UIHostAccountEndpoint: *uiHostAccountEndpoint,

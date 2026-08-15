@@ -74,6 +74,28 @@ CREATE TABLE IF NOT EXISTS jobs (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS execution_rate_bucket (
+    workspace_id   TEXT NOT NULL,
+    scope          TEXT NOT NULL,
+    policy_id      TEXT NOT NULL,
+    key_digest     TEXT NOT NULL,
+    window_seconds INTEGER NOT NULL,
+    window_start   TIMESTAMPTZ NOT NULL,
+    window_end     TIMESTAMPTZ NOT NULL,
+    consumed       INTEGER NOT NULL,
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (workspace_id, scope, policy_id, key_digest, window_seconds),
+    CHECK (scope IN ('app', 'action')),
+    CHECK (policy_id <> ''),
+    CHECK (key_digest <> ''),
+    CHECK (window_seconds BETWEEN 1 AND 86400),
+    CHECK (window_end > window_start),
+    CHECK (consumed > 0)
+);
+
+CREATE INDEX IF NOT EXISTS execution_rate_bucket_expiry_idx
+    ON execution_rate_bucket (window_end);
+
 CREATE TABLE IF NOT EXISTS human_tasks (
     id TEXT PRIMARY KEY,
     workspace_id TEXT NOT NULL DEFAULT 'default',

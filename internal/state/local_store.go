@@ -24,11 +24,16 @@ type LocalStore struct {
 	SecretKey         string
 	SecretKeyPrevious string
 	leaseNow          nowFunc
+	executionMetrics  *executionMetrics
 	humanTaskSignals  humanTaskSignalHub
 }
 
 func NewLocalStore(path string) *LocalStore {
-	return &LocalStore{Path: path}
+	return &LocalStore{Path: path, executionMetrics: newExecutionMetrics()}
+}
+
+func (s *LocalStore) executionMetricsState() (*executionMetrics, string) {
+	return s.executionMetrics, "local"
 }
 
 func (s *LocalStore) SubscribeHumanTaskChanges(taskID string) (<-chan struct{}, func()) {
@@ -554,10 +559,13 @@ func (s *LocalStore) ClaimJobForWorkerScope(ctx context.Context, workerID string
 	allowedWorkspaces := normalizeClaimTags(workspaceIDs)
 	var claimed Job
 	var lease Lease
+	rateBlocked := false
+	rateConsumed := false
 	err := s.updateLease(ctx, func(snapshot *Snapshot, now time.Time) error {
 		if err := s.requeueExpiredJobs(ctx, snapshot, now); err != nil {
 			return err
 		}
+		pruneExecutionRateBuckets(snapshot, now)
 		allowedTags := normalizeClaimTags(requestedTags)
 		offeredLabels := normalizeClaimTags(requestedLabels)
 		var leaseIdentity *WorkerLeaseIdentity
@@ -602,12 +610,20 @@ func (s *LocalStore) ClaimJobForWorkerScope(ctx context.Context, workerID string
 			if maxConcurrentReached(snapshot, candidate) {
 				continue
 			}
+			if rateLimitsReached(snapshot, candidate, now) {
+				if len(candidate.Payload.ExecutionLimits.Rate) > 0 {
+					rateBlocked = true
+				}
+				continue
+			}
 			job = candidate
 			break
 		}
 		if job.ID == "" {
 			return ErrNoQueuedJob
 		}
+		consumeRateLimits(snapshot, job, now)
+		rateConsumed = len(job.Payload.ExecutionLimits.Rate) > 0
 		expiresAt := now.Add(leaseTTL)
 		job.State = JobRunning
 		job.Attempt++
@@ -638,8 +654,14 @@ func (s *LocalStore) ClaimJobForWorkerScope(ctx context.Context, workerID string
 		lease = Lease{JobID: job.ID, WorkerID: workerID, ExpiresAt: expiresAt, Attempt: job.Attempt, AcquiredAt: now, Identity: leaseIdentity}
 		return nil
 	})
+	if errors.Is(err, ErrNoQueuedJob) && rateBlocked {
+		s.executionMetrics.observeRateClaims(executionRateOutcomeBlocked, 1)
+	}
 	if err != nil {
 		return Job{}, Lease{}, err
+	}
+	if rateConsumed {
+		s.executionMetrics.observeRateClaims(executionRateOutcomeConsumed, 1)
 	}
 	return claimed, lease, nil
 }
@@ -1233,6 +1255,9 @@ func ensureSnapshot(snapshot *Snapshot) {
 	}
 	if snapshot.WorkerGroupRunStates == nil {
 		snapshot.WorkerGroupRunStates = map[string]WorkerGroupRunState{}
+	}
+	if snapshot.ExecutionRateBuckets == nil {
+		snapshot.ExecutionRateBuckets = map[string]ExecutionRateBucket{}
 	}
 	if snapshot.Workspaces == nil {
 		snapshot.Workspaces = map[string]Workspace{}

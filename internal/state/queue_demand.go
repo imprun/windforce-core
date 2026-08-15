@@ -42,10 +42,15 @@ type QueueDemandSnapshot struct {
 }
 
 func buildQueueDemandSnapshot(storeEpoch string, revision int64, observedAt time.Time, jobs []Job, selectors []QueueDemandSelector) QueueDemandSnapshot {
+	return buildQueueDemandSnapshotWithRates(storeEpoch, revision, observedAt, jobs, selectors, nil)
+}
+
+func buildQueueDemandSnapshotWithRates(storeEpoch string, revision int64, observedAt time.Time, jobs []Job, selectors []QueueDemandSelector, rateBuckets map[string]ExecutionRateBucket) QueueDemandSnapshot {
 	observedAt = observedAt.UTC()
 	items := make([]QueueDemand, 0, len(selectors))
 	baseRunning := activeRunningByApp(jobs, observedAt)
 	baseKeyedRunning := activeRunningByKeyedConcurrency(jobs, observedAt)
+	baseRateUsage := currentRateUsage(rateBuckets, observedAt)
 
 	for _, rawSelector := range selectors {
 		selector := normalizeQueueDemandSelector(rawSelector)
@@ -84,6 +89,7 @@ func buildQueueDemandSnapshot(storeEpoch string, revision int64, observedAt time
 
 		running := cloneDemandCounts(baseRunning)
 		keyedRunning := cloneDemandCounts(baseKeyedRunning)
+		rateUsage := cloneDemandCounts(baseRateUsage)
 		for _, candidate := range candidates {
 			appKey := demandAppKey(candidate)
 			if limit, limited := jobMaxConcurrent(candidate); limited && appKey != "" && running[appKey] >= limit {
@@ -92,12 +98,16 @@ func buildQueueDemandSnapshot(storeEpoch string, revision int64, observedAt time
 			if demandKeyedConcurrencyReached(candidate, keyedRunning) {
 				continue
 			}
+			if demandRateLimitsReached(candidate, rateUsage) {
+				continue
+			}
 			if appKey != "" {
 				running[appKey]++
 			}
 			for _, limit := range candidate.Payload.ExecutionLimits.Concurrency {
 				keyedRunning[keyedConcurrencyCountKey(candidate, limit)]++
 			}
+			addDemandRateConsumption(candidate, rateUsage)
 			item.Eligible++
 			if candidate.State == JobQueued {
 				item.Queued++

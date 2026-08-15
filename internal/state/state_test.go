@@ -265,7 +265,7 @@ func TestPostgresStoreClaimCompleteAndResumeLifecycle(t *testing.T) {
 	if err := store.Migrate(context.Background()); err != nil {
 		t.Fatalf("Migrate returned error: %v", err)
 	}
-	if _, err := store.pool.Exec(context.Background(), `TRUNCATE job_logs, run_events, human_tasks, jobs, runs RESTART IDENTITY CASCADE`); err != nil {
+	if _, err := store.pool.Exec(context.Background(), `TRUNCATE execution_rate_bucket, job_logs, run_events, human_tasks, jobs, runs RESTART IDENTITY CASCADE`); err != nil {
 		t.Fatalf("TRUNCATE returned error: %v", err)
 	}
 	exerciseStoreLifecycle(t, store)
@@ -408,6 +408,166 @@ func TestPostgresStoreClaimJobEnforcesKeyedConcurrency(t *testing.T) {
 	exerciseStoreKeyedConcurrency(t, store)
 }
 
+func TestLocalStoreClaimJobEnforcesKeyedRateWithoutRefund(t *testing.T) {
+	store := NewLocalStore(t.TempDir() + "/state.json")
+	exerciseStoreKeyedRate(t, store)
+	assertKeyedRateMetrics(t, store.executionMetrics.render("local"), "local")
+}
+
+func TestLocalStoreKeyedRateResetsAtNextFixedWindow(t *testing.T) {
+	store := NewLocalStore(t.TempDir() + "/state.json")
+	now := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
+	store.leaseNow = func() time.Time { return now }
+	pin := keyedRatePin("vendor", strings.Repeat("c", 64), 1, 60)
+	first := enqueueKeyedRateJob(t, store, "run-rate-window-1", pin, now)
+	second := enqueueKeyedRateJob(t, store, "run-rate-window-2", pin, now.Add(time.Second))
+
+	claimed, _, err := store.ClaimJob(context.Background(), "worker-rate-window", 2*time.Minute)
+	if err != nil || claimed.ID != first.ID {
+		t.Fatalf("first fixed-window claim = %q, %v; want %q", claimed.ID, err, first.ID)
+	}
+	if _, _, err := store.ClaimJob(context.Background(), "worker-rate-blocked", time.Minute); err != ErrNoQueuedJob {
+		t.Fatalf("same-window claim error = %v, want %v", err, ErrNoQueuedJob)
+	}
+	now = now.Add(time.Minute)
+	claimed, _, err = store.ClaimJob(context.Background(), "worker-rate-next-window", time.Minute)
+	if err != nil || claimed.ID != second.ID {
+		t.Fatalf("next-window claim = %q, %v; want %q", claimed.ID, err, second.ID)
+	}
+}
+
+func TestLocalStoreKeyedRateDoesNotRefundFailedCanceledOrRecoveredAttempts(t *testing.T) {
+	testCases := []struct {
+		name     string
+		finalize func(t *testing.T, store *LocalStore, first Job, lease Lease)
+	}{
+		{
+			name: "failed",
+			finalize: func(t *testing.T, store *LocalStore, first Job, lease Lease) {
+				t.Helper()
+				if err := store.CompleteJobFailed(context.Background(), lease, contract.JobResult{JobID: first.ID, App: "echo", Action: "echo", Error: "vendor failed"}); err != nil {
+					t.Fatalf("CompleteJobFailed returned error: %v", err)
+				}
+			},
+		},
+		{
+			name: "canceled while running",
+			finalize: func(t *testing.T, store *LocalStore, first Job, lease Lease) {
+				t.Helper()
+				result, err := store.CancelJob(context.Background(), "ws-a", first.ID, "operator:test", "stop")
+				if err != nil || !result.SoftCanceled {
+					t.Fatalf("CancelJob result = %#v, error %v; want soft cancellation", result, err)
+				}
+				if err := store.CompleteJobSucceeded(context.Background(), lease, contract.JobResult{JobID: first.ID, App: "echo", Action: "echo", Output: json.RawMessage(`{"ok":true}`)}); err != nil {
+					t.Fatalf("CompleteJobSucceeded after cancellation returned error: %v", err)
+				}
+			},
+		},
+		{
+			name: "lease expiry recovery",
+			finalize: func(t *testing.T, store *LocalStore, _ Job, _ Lease) {
+				t.Helper()
+				now := store.leaseNow()
+				store.leaseNow = func() time.Time { return now.Add(10 * time.Second) }
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := NewLocalStore(t.TempDir() + "/state.json")
+			now := time.Now().UTC()
+			store.leaseNow = func() time.Time { return now }
+			pin := keyedRatePin("vendor", strings.Repeat("f", 64), 1, 3600)
+			first := enqueueKeyedRateJob(t, store, "run-rate-terminal-1", pin, now)
+			enqueueKeyedRateJob(t, store, "run-rate-terminal-2", pin, now.Add(time.Millisecond))
+			claimed, lease, err := store.ClaimJob(context.Background(), "worker-rate-terminal", 5*time.Second)
+			if err != nil || claimed.ID != first.ID {
+				t.Fatalf("first terminal-attempt claim = %q, %v; want %q", claimed.ID, err, first.ID)
+			}
+			tc.finalize(t, store, first, lease)
+			if _, _, err := store.ClaimJob(context.Background(), "worker-rate-terminal-next", 5*time.Second); err != ErrNoQueuedJob {
+				t.Fatalf("terminal attempt was refunded: error %v, want %v", err, ErrNoQueuedJob)
+			}
+		})
+	}
+}
+
+func TestPostgresStoreClaimJobEnforcesKeyedRateWithoutRefund(t *testing.T) {
+	dsn := postgresTestDSN()
+	if dsn == "" {
+		t.Skip("WINDFORCE_CORE_POSTGRES_TEST_DSN is not set")
+	}
+	store, err := OpenPostgresStore(context.Background(), dsn)
+	if err != nil {
+		t.Fatalf("OpenPostgresStore returned error: %v", err)
+	}
+	defer store.Close()
+	if err := store.Migrate(context.Background()); err != nil {
+		t.Fatalf("Migrate returned error: %v", err)
+	}
+	if _, err := store.pool.Exec(context.Background(), `TRUNCATE execution_rate_bucket, job_logs, run_events, human_tasks, jobs, runs RESTART IDENTITY CASCADE`); err != nil {
+		t.Fatalf("TRUNCATE returned error: %v", err)
+	}
+	exerciseStoreKeyedRate(t, store)
+	assertKeyedRateMetrics(t, store.executionMetrics.render("postgres"), "postgres")
+}
+
+func TestPostgresStoreKeyedRateClaimIsAtomicUnderContention(t *testing.T) {
+	dsn := postgresTestDSN()
+	if dsn == "" {
+		t.Skip("WINDFORCE_CORE_POSTGRES_TEST_DSN is not set")
+	}
+	store, err := OpenPostgresStore(context.Background(), dsn)
+	if err != nil {
+		t.Fatalf("OpenPostgresStore returned error: %v", err)
+	}
+	defer store.Close()
+	if err := store.Migrate(context.Background()); err != nil {
+		t.Fatalf("Migrate returned error: %v", err)
+	}
+	if _, err := store.pool.Exec(context.Background(), `TRUNCATE execution_rate_bucket, job_logs, run_events, human_tasks, jobs, runs RESTART IDENTITY CASCADE`); err != nil {
+		t.Fatalf("TRUNCATE returned error: %v", err)
+	}
+	pin := keyedRatePin("vendor-contention", strings.Repeat("9", 64), 1, 3600)
+	now := time.Now().UTC()
+	enqueueKeyedRateJob(t, store, "run-rate-contention-1", pin, now)
+	enqueueKeyedRateJob(t, store, "run-rate-contention-2", pin, now.Add(time.Millisecond))
+
+	start := make(chan struct{})
+	results := make(chan error, 2)
+	for index := 0; index < 2; index++ {
+		go func(worker int) {
+			<-start
+			_, _, claimErr := store.ClaimJob(context.Background(), "worker-rate-contention-"+string(rune('a'+worker)), time.Minute)
+			results <- claimErr
+		}(index)
+	}
+	close(start)
+	succeeded := 0
+	blocked := 0
+	for index := 0; index < 2; index++ {
+		switch claimErr := <-results; {
+		case claimErr == nil:
+			succeeded++
+		case errors.Is(claimErr, ErrNoQueuedJob):
+			blocked++
+		default:
+			t.Fatalf("contended claim returned error: %v", claimErr)
+		}
+	}
+	if succeeded != 1 || blocked != 1 {
+		t.Fatalf("contended claims succeeded=%d blocked=%d, want 1 and 1", succeeded, blocked)
+	}
+	var consumed int
+	if err := store.pool.QueryRow(context.Background(), `SELECT consumed FROM execution_rate_bucket WHERE workspace_id=$1 AND policy_id=$2 AND key_digest=$3`, "ws-a", pin.PolicyID, pin.KeyDigest).Scan(&consumed); err != nil {
+		t.Fatalf("read execution rate bucket: %v", err)
+	}
+	if consumed != 1 {
+		t.Fatalf("contended rate consumption = %d, want 1", consumed)
+	}
+}
+
 func TestPostgresClaimCandidatesFilterBeforeLockingAndBoundEachBatch(t *testing.T) {
 	dsn := postgresTestDSN()
 	if dsn == "" {
@@ -423,7 +583,7 @@ func TestPostgresClaimCandidatesFilterBeforeLockingAndBoundEachBatch(t *testing.
 	}
 	truncate := func() {
 		t.Helper()
-		if _, err := store.pool.Exec(context.Background(), `TRUNCATE job_logs, run_events, human_tasks, jobs, runs RESTART IDENTITY CASCADE`); err != nil {
+		if _, err := store.pool.Exec(context.Background(), `TRUNCATE execution_rate_bucket, job_logs, run_events, human_tasks, jobs, runs RESTART IDENTITY CASCADE`); err != nil {
 			t.Fatalf("TRUNCATE returned error: %v", err)
 		}
 	}
@@ -457,6 +617,19 @@ func TestPostgresClaimCandidatesFilterBeforeLockingAndBoundEachBatch(t *testing.
 		job := NewActionJob(run, nil)
 		if err := store.CreateRunAndEnqueue(context.Background(), run, job); err != nil {
 			t.Fatalf("CreateRunAndEnqueue keyed returned error: %v", err)
+		}
+		return job
+	}
+	enqueueRate := func(pin KeyedRateLimitPin) Job {
+		t.Helper()
+		deployment := maxConcurrentDeployment("echo", nil)
+		deployment.Tag = "gpu"
+		deployment.RequiredLabels = []string{"linux"}
+		run := NewRun("test", "", deployment.App, "echo", deployment, json.RawMessage(`{}`))
+		run.ExecutionLimits = ExecutionLimitPins{Rate: []KeyedRateLimitPin{pin}}
+		job := NewActionJob(run, nil)
+		if err := store.CreateRunAndEnqueue(context.Background(), run, job); err != nil {
+			t.Fatalf("CreateRunAndEnqueue rate returned error: %v", err)
 		}
 		return job
 	}
@@ -571,6 +744,25 @@ func TestPostgresClaimCandidatesFilterBeforeLockingAndBoundEachBatch(t *testing.
 	}
 	if claimed.ID != wanted.ID {
 		t.Fatalf("claimed job behind saturated keyed limit = %q, want %q", claimed.ID, wanted.ID)
+	}
+
+	truncate()
+	sharedRate := keyedRatePin("vendor", strings.Repeat("7", 64), 1, 3600)
+	otherRate := keyedRatePin("vendor", strings.Repeat("8", 64), 1, 3600)
+	enqueueRate(sharedRate)
+	if _, _, err := store.ClaimJobForWorker(context.Background(), "rate-limited-worker", []string{"gpu"}, []string{"linux"}, time.Minute); err != nil {
+		t.Fatalf("claim rate limited attempt: %v", err)
+	}
+	for range postgresClaimCandidateBatchSize {
+		enqueueRate(sharedRate)
+	}
+	wanted = enqueueRate(otherRate)
+	claimed, _, err = store.ClaimJobForWorker(context.Background(), "rate-available-worker", []string{"gpu"}, []string{"linux"}, time.Minute)
+	if err != nil {
+		t.Fatalf("claim behind exhausted rate limit: %v", err)
+	}
+	if claimed.ID != wanted.ID {
+		t.Fatalf("claimed job behind exhausted rate limit = %q, want %q", claimed.ID, wanted.ID)
 	}
 }
 
@@ -1064,6 +1256,53 @@ func exerciseStoreKeyedConcurrency(t *testing.T, store Store) {
 	}
 }
 
+func exerciseStoreKeyedRate(t *testing.T, store Store) {
+	t.Helper()
+	ctx := context.Background()
+	base := time.Now().UTC().Truncate(time.Second)
+	shared := keyedRatePin("vendor", strings.Repeat("d", 64), 1, 60)
+	other := keyedRatePin("vendor", strings.Repeat("e", 64), 1, 60)
+	firstShared := enqueueKeyedRateJob(t, store, "run-rate-1", shared, base)
+	secondShared := enqueueKeyedRateJob(t, store, "run-rate-2", shared, base.Add(time.Millisecond))
+	differentKey := enqueueKeyedRateJob(t, store, "run-rate-3", other, base.Add(2*time.Millisecond))
+
+	claimed, firstLease, err := store.ClaimJob(ctx, "worker-rate-first", time.Minute)
+	if err != nil || claimed.ID != firstShared.ID {
+		t.Fatalf("first rate claim = %q, %v; want %q", claimed.ID, err, firstShared.ID)
+	}
+	claimed, _, err = store.ClaimJob(ctx, "worker-rate-other", time.Minute)
+	if err != nil || claimed.ID != differentKey.ID {
+		t.Fatalf("different-key rate claim = %q, %v; want %q", claimed.ID, err, differentKey.ID)
+	}
+	if err := store.CompleteJobSucceeded(ctx, firstLease, contract.JobResult{JobID: firstShared.ID, App: "echo", Action: "echo", Output: json.RawMessage(`{"ok":true}`)}); err != nil {
+		t.Fatalf("complete rate-limited job: %v", err)
+	}
+	if _, _, err := store.ClaimJob(ctx, "worker-rate-no-refund", time.Minute); err != ErrNoQueuedJob {
+		t.Fatalf("rate budget was refunded after completion: error %v, want %v", err, ErrNoQueuedJob)
+	}
+	_, _, found, err := store.GetJob(ctx, "ws-a", secondShared.ID)
+	if err != nil || !found {
+		t.Fatalf("blocked rate Job missing: found %v, error %v", found, err)
+	}
+}
+
+func assertKeyedRateMetrics(t *testing.T, rendered string, backend string) {
+	t.Helper()
+	for _, expected := range []string{
+		`windforce_execution_rate_claims_total{backend="` + backend + `",outcome="blocked"} 1`,
+		`windforce_execution_rate_claims_total{backend="` + backend + `",outcome="consumed"} 2`,
+	} {
+		if !strings.Contains(rendered, expected) {
+			t.Fatalf("execution rate metrics missing %q:\n%s", expected, rendered)
+		}
+	}
+	for _, forbidden := range []string{"vendor", "ws-a", "hmac-sha256"} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("execution rate metrics expose %q:\n%s", forbidden, rendered)
+		}
+	}
+}
+
 func keyedConcurrencyPin(policyID string, digest string, maxConcurrent int32) KeyedConcurrencyLimitPin {
 	return KeyedConcurrencyLimitPin{
 		PolicyID:       policyID,
@@ -1071,6 +1310,17 @@ func keyedConcurrencyPin(policyID string, digest string, maxConcurrent int32) Ke
 		Scope:          ExecutionLimitScopeApp,
 		KeyDigest:      "hmac-sha256:" + digest,
 		MaxConcurrent:  maxConcurrent,
+	}
+}
+
+func keyedRatePin(policyID string, digest string, maxAttempts int32, windowSeconds int32) KeyedRateLimitPin {
+	return KeyedRateLimitPin{
+		PolicyID:       policyID,
+		PolicyRevision: "sha256:" + strings.Repeat("2", 64),
+		Scope:          ExecutionLimitScopeApp,
+		KeyDigest:      "hmac-sha256:" + digest,
+		MaxAttempts:    maxAttempts,
+		WindowSeconds:  windowSeconds,
 	}
 }
 
@@ -1093,6 +1343,29 @@ func enqueueKeyedConcurrencyJob(t *testing.T, store Store, runID string, pin Key
 	}
 	if len(storedJob.Payload.ExecutionLimits.Concurrency) != 1 || len(storedRun.ExecutionLimits.Concurrency) != 1 {
 		t.Fatalf("execution-limit pins did not round-trip: job=%#v run=%#v", storedJob.Payload.ExecutionLimits, storedRun.ExecutionLimits)
+	}
+	return job
+}
+
+func enqueueKeyedRateJob(t *testing.T, store Store, runID string, pin KeyedRateLimitPin, createdAt time.Time) Job {
+	t.Helper()
+	deployment := maxConcurrentDeployment("echo", nil)
+	run := NewRun("windforce", runID, "echo", "echo", deployment, json.RawMessage(`{}`))
+	run.ExecutionLimits = ExecutionLimitPins{Rate: []KeyedRateLimitPin{pin}}
+	job := NewActionJob(run, nil)
+	run.CreatedAt = createdAt
+	run.UpdatedAt = createdAt
+	job.CreatedAt = createdAt
+	job.UpdatedAt = createdAt
+	if err := store.CreateRunAndEnqueue(context.Background(), run, job); err != nil {
+		t.Fatalf("CreateRunAndEnqueue(%s): %v", runID, err)
+	}
+	storedJob, storedRun, found, err := store.GetJobByRunID(context.Background(), "ws-a", runID)
+	if err != nil || !found {
+		t.Fatalf("GetJobByRunID(%s) = found %v, err %v", runID, found, err)
+	}
+	if len(storedJob.Payload.ExecutionLimits.Rate) != 1 || len(storedRun.ExecutionLimits.Rate) != 1 {
+		t.Fatalf("rate-limit pins did not round-trip: job=%#v run=%#v", storedJob.Payload.ExecutionLimits, storedRun.ExecutionLimits)
 	}
 	return job
 }
@@ -1138,9 +1411,10 @@ func exerciseStoreLifecycle(t *testing.T, store Store) {
 		},
 	}
 	run := NewRun("windforce", "run-a", "echo", "echo", deployment, json.RawMessage(`{"message":"hello"}`))
-	run.ExecutionLimits = ExecutionLimitPins{Concurrency: []KeyedConcurrencyLimitPin{
-		keyedConcurrencyPin("account", strings.Repeat("1", 64), 1),
-	}}
+	run.ExecutionLimits = ExecutionLimitPins{
+		Concurrency: []KeyedConcurrencyLimitPin{keyedConcurrencyPin("account", strings.Repeat("1", 64), 1)},
+		Rate:        []KeyedRateLimitPin{keyedRatePin("account-rate", strings.Repeat("3", 64), 5, 60)},
+	}
 	run.CorrelationID = "task-a"
 	run.TraceContext, _ = telemetry.ParseCarrier("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01", "vendor=value", "http")
 	job := NewActionJob(run, nil)
@@ -1275,6 +1549,9 @@ func exerciseStoreLifecycle(t *testing.T, store Store) {
 	if len(resumeJob.Payload.ExecutionLimits.Concurrency) != 1 || resumeJob.Payload.ExecutionLimits.Concurrency[0].KeyDigest != run.ExecutionLimits.Concurrency[0].KeyDigest {
 		t.Fatalf("resume execution limits = %#v", resumeJob.Payload.ExecutionLimits)
 	}
+	if len(resumeJob.Payload.ExecutionLimits.Rate) != 1 || resumeJob.Payload.ExecutionLimits.Rate[0].KeyDigest != run.ExecutionLimits.Rate[0].KeyDigest {
+		t.Fatalf("resume rate limits = %#v", resumeJob.Payload.ExecutionLimits)
+	}
 
 	canceled, err := store.CancelRun(context.Background(), run.ID, "operator canceled")
 	if err != nil {
@@ -1298,6 +1575,9 @@ func exerciseStoreLifecycle(t *testing.T, store Store) {
 	}
 	if len(retryJob.Payload.ExecutionLimits.Concurrency) != 1 || retryJob.Payload.ExecutionLimits.Concurrency[0].KeyDigest != run.ExecutionLimits.Concurrency[0].KeyDigest {
 		t.Fatalf("retry execution limits = %#v", retryJob.Payload.ExecutionLimits)
+	}
+	if len(retryJob.Payload.ExecutionLimits.Rate) != 1 || retryJob.Payload.ExecutionLimits.Rate[0].KeyDigest != run.ExecutionLimits.Rate[0].KeyDigest {
+		t.Fatalf("retry rate limits = %#v", retryJob.Payload.ExecutionLimits)
 	}
 	var retryInput struct {
 		Message string `json:"message"`

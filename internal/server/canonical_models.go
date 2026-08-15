@@ -292,6 +292,7 @@ type canonicalActionModel struct {
 
 type canonicalExecutionLimits struct {
 	Concurrency []canonicalKeyedConcurrencyLimit `json:"concurrency,omitempty"`
+	Rate        []canonicalKeyedRateLimit        `json:"rate,omitempty"`
 }
 
 type canonicalKeyedConcurrencyLimit struct {
@@ -300,8 +301,16 @@ type canonicalKeyedConcurrencyLimit struct {
 	InputPointers []string `json:"input_pointers"`
 }
 
+type canonicalKeyedRateLimit struct {
+	ID            string   `json:"id"`
+	MaxAttempts   int32    `json:"max_attempts"`
+	WindowSeconds int32    `json:"window_seconds"`
+	InputPointers []string `json:"input_pointers"`
+}
+
 type canonicalExecutionLimitPins struct {
 	Concurrency []canonicalKeyedConcurrencyLimitPin `json:"concurrency,omitempty"`
+	Rate        []canonicalKeyedRateLimitPin        `json:"rate,omitempty"`
 }
 
 type canonicalKeyedConcurrencyLimitPin struct {
@@ -310,6 +319,15 @@ type canonicalKeyedConcurrencyLimitPin struct {
 	Scope          string `json:"scope"`
 	KeyDigest      string `json:"key_digest"`
 	MaxConcurrent  int32  `json:"max_concurrent"`
+}
+
+type canonicalKeyedRateLimitPin struct {
+	PolicyID       string `json:"policy_id"`
+	PolicyRevision string `json:"policy_revision"`
+	Scope          string `json:"scope"`
+	KeyDigest      string `json:"key_digest"`
+	MaxAttempts    int32  `json:"max_attempts"`
+	WindowSeconds  int32  `json:"window_seconds"`
 }
 
 type canonicalActionSchemaView struct {
@@ -507,7 +525,10 @@ func (h *Handler) newCanonicalActionModel(schemaReader *canonicalSchemaReader, d
 }
 
 func newCanonicalExecutionLimits(limits contract.ExecutionLimits) canonicalExecutionLimits {
-	view := canonicalExecutionLimits{Concurrency: make([]canonicalKeyedConcurrencyLimit, 0, len(limits.Concurrency))}
+	view := canonicalExecutionLimits{
+		Concurrency: make([]canonicalKeyedConcurrencyLimit, 0, len(limits.Concurrency)),
+		Rate:        make([]canonicalKeyedRateLimit, 0, len(limits.Rate)),
+	}
 	for _, limit := range limits.Concurrency {
 		view.Concurrency = append(view.Concurrency, canonicalKeyedConcurrencyLimit{
 			ID:            limit.ID,
@@ -518,11 +539,25 @@ func newCanonicalExecutionLimits(limits contract.ExecutionLimits) canonicalExecu
 	if len(view.Concurrency) == 0 {
 		view.Concurrency = nil
 	}
+	for _, limit := range limits.Rate {
+		view.Rate = append(view.Rate, canonicalKeyedRateLimit{
+			ID:            limit.ID,
+			MaxAttempts:   limit.MaxAttempts,
+			WindowSeconds: limit.WindowSeconds,
+			InputPointers: append([]string(nil), limit.InputPointers...),
+		})
+	}
+	if len(view.Rate) == 0 {
+		view.Rate = nil
+	}
 	return view
 }
 
 func newCanonicalExecutionLimitPins(pins state.ExecutionLimitPins) canonicalExecutionLimitPins {
-	view := canonicalExecutionLimitPins{Concurrency: make([]canonicalKeyedConcurrencyLimitPin, 0, len(pins.Concurrency))}
+	view := canonicalExecutionLimitPins{
+		Concurrency: make([]canonicalKeyedConcurrencyLimitPin, 0, len(pins.Concurrency)),
+		Rate:        make([]canonicalKeyedRateLimitPin, 0, len(pins.Rate)),
+	}
 	for _, pin := range pins.Concurrency {
 		view.Concurrency = append(view.Concurrency, canonicalKeyedConcurrencyLimitPin{
 			PolicyID:       pin.PolicyID,
@@ -534,6 +569,19 @@ func newCanonicalExecutionLimitPins(pins state.ExecutionLimitPins) canonicalExec
 	}
 	if len(view.Concurrency) == 0 {
 		view.Concurrency = nil
+	}
+	for _, pin := range pins.Rate {
+		view.Rate = append(view.Rate, canonicalKeyedRateLimitPin{
+			PolicyID:       pin.PolicyID,
+			PolicyRevision: pin.PolicyRevision,
+			Scope:          pin.Scope,
+			KeyDigest:      pin.KeyDigest,
+			MaxAttempts:    pin.MaxAttempts,
+			WindowSeconds:  pin.WindowSeconds,
+		})
+	}
+	if len(view.Rate) == 0 {
+		view.Rate = nil
 	}
 	return view
 }

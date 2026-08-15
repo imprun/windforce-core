@@ -3,12 +3,13 @@ export default {
   id: "execution-limits",
   title: "Review release execution limits",
   description:
-    "The Execution limits tab shows immutable App and Action keyed-concurrency policies from the active release.",
+    "The Execution limits tab shows immutable App and Action keyed-concurrency and fixed-window rate policies from the active release.",
   screenshot: "docs/assets/ui/execution-limits.png",
   guide: [
     "Open an App and choose Execution limits.",
     "Review App-scoped policies shared by every Action.",
-    "Review Action-scoped policies, capacities, and JSON Pointer key inputs.",
+    "Compare concurrency capacity and fixed-window attempt budgets without exposing resolved key values.",
+    "Review Action-scoped policies and JSON Pointer key inputs.",
     "Edit the source manifest and publish a new release when the policy must change.",
   ],
   async run({ page, capture }) {

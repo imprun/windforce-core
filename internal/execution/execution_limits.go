@@ -45,7 +45,7 @@ func resolveExecutionLimitPins(ctx context.Context, store Store, workspaceID str
 	if err != nil {
 		return state.ExecutionLimitPins{}, fmt.Errorf("active release action execution limits: %w", err)
 	}
-	if len(appLimits.Concurrency)+len(actionLimits.Concurrency) == 0 {
+	if len(appLimits.Concurrency)+len(actionLimits.Concurrency)+len(appLimits.Rate)+len(actionLimits.Rate) == 0 {
 		return state.ExecutionLimitPins{}, nil
 	}
 	digester, ok := store.(executionKeyDigester)
@@ -55,6 +55,7 @@ func resolveExecutionLimitPins(ctx context.Context, store Store, workspaceID str
 
 	pins := state.ExecutionLimitPins{
 		Concurrency: make([]state.KeyedConcurrencyLimitPin, 0, len(appLimits.Concurrency)+len(actionLimits.Concurrency)),
+		Rate:        make([]state.KeyedRateLimitPin, 0, len(appLimits.Rate)+len(actionLimits.Rate)),
 	}
 	seen := make(map[string]struct{}, cap(pins.Concurrency))
 	appendLimits := func(scope string, limits []contract.KeyedConcurrencyLimit) error {
@@ -89,25 +90,70 @@ func resolveExecutionLimitPins(ctx context.Context, store Store, workspaceID str
 	if err := appendLimits(state.ExecutionLimitScopeAction, actionLimits.Concurrency); err != nil {
 		return state.ExecutionLimitPins{}, err
 	}
+	seenRate := make(map[string]struct{}, cap(pins.Rate))
+	appendRateLimits := func(scope string, limits []contract.KeyedRateLimit) error {
+		for _, limit := range limits {
+			identity := scope + ":" + limit.ID
+			if _, exists := seenRate[identity]; exists {
+				return fmt.Errorf("active release repeats rate limit %q in %s scope", limit.ID, scope)
+			}
+			seenRate[identity] = struct{}{}
+			material, err := resolveRateKeyMaterial(root, limit)
+			if err != nil {
+				return err
+			}
+			namespace := rateLimitNamespace(appKey, actionKey, scope, limit.ID)
+			digest, err := digester.DeriveExecutionKeyDigest(ctx, workspaceID, namespace, material)
+			if err != nil {
+				return fmt.Errorf("derive rate limit %q key digest: %w", limit.ID, err)
+			}
+			pins.Rate = append(pins.Rate, state.KeyedRateLimitPin{
+				PolicyID:       limit.ID,
+				PolicyRevision: rateLimitRevision(limit),
+				Scope:          scope,
+				KeyDigest:      digest,
+				MaxAttempts:    limit.MaxAttempts,
+				WindowSeconds:  limit.WindowSeconds,
+			})
+		}
+		return nil
+	}
+	if err := appendRateLimits(state.ExecutionLimitScopeApp, appLimits.Rate); err != nil {
+		return state.ExecutionLimitPins{}, err
+	}
+	if err := appendRateLimits(state.ExecutionLimitScopeAction, actionLimits.Rate); err != nil {
+		return state.ExecutionLimitPins{}, err
+	}
 	if len(pins.Concurrency) == 0 {
 		pins.Concurrency = nil
+	}
+	if len(pins.Rate) == 0 {
+		pins.Rate = nil
 	}
 	return pins, nil
 }
 
 func resolveConcurrencyKeyMaterial(root any, limit contract.KeyedConcurrencyLimit) ([]byte, error) {
+	return resolveExecutionLimitKeyMaterial(root, "concurrency", limit.ID, limit.InputPointers)
+}
+
+func resolveRateKeyMaterial(root any, limit contract.KeyedRateLimit) ([]byte, error) {
+	return resolveExecutionLimitKeyMaterial(root, "rate", limit.ID, limit.InputPointers)
+}
+
+func resolveExecutionLimitKeyMaterial(root any, kind string, policyID string, pointers []string) ([]byte, error) {
 	var material bytes.Buffer
-	for _, pointer := range limit.InputPointers {
+	for _, pointer := range pointers {
 		value, err := resolveInputJSONPointer(root, pointer)
 		if err != nil {
-			return nil, &executionLimitInputError{message: fmt.Sprintf("concurrency limit %q: %v", limit.ID, err)}
+			return nil, &executionLimitInputError{message: fmt.Sprintf("%s limit %q: %v", kind, policyID, err)}
 		}
 		canonical, err := canonicalConcurrencyKeyComponent(value)
 		if err != nil {
-			return nil, &executionLimitInputError{message: fmt.Sprintf("concurrency limit %q input pointer %q: %v", limit.ID, pointer, err)}
+			return nil, &executionLimitInputError{message: fmt.Sprintf("%s limit %q input pointer %q: %v", kind, policyID, pointer, err)}
 		}
 		if len(canonical) > maxExecutionLimitKeyComponentBytes {
-			return nil, &executionLimitInputError{message: fmt.Sprintf("concurrency limit %q input pointer %q exceeds %d bytes", limit.ID, pointer, maxExecutionLimitKeyComponentBytes)}
+			return nil, &executionLimitInputError{message: fmt.Sprintf("%s limit %q input pointer %q exceeds %d bytes", kind, policyID, pointer, maxExecutionLimitKeyComponentBytes)}
 		}
 		_ = binary.Write(&material, binary.BigEndian, uint32(len(canonical)))
 		_, _ = material.Write(canonical)
@@ -175,7 +221,20 @@ func concurrencyLimitNamespace(appKey string, actionKey string, scope string, po
 	return "concurrency/v1/app/" + appKey + "/policy/" + policyID
 }
 
+func rateLimitNamespace(appKey string, actionKey string, scope string, policyID string) string {
+	if scope == state.ExecutionLimitScopeAction {
+		return "rate/v1/app/" + appKey + "/action/" + actionKey + "/policy/" + policyID
+	}
+	return "rate/v1/app/" + appKey + "/policy/" + policyID
+}
+
 func concurrencyLimitRevision(limit contract.KeyedConcurrencyLimit) string {
+	encoded, _ := json.Marshal(limit)
+	digest := sha256.Sum256(encoded)
+	return "sha256:" + hex.EncodeToString(digest[:])
+}
+
+func rateLimitRevision(limit contract.KeyedRateLimit) string {
 	encoded, _ := json.Marshal(limit)
 	digest := sha256.Sum256(encoded)
 	return "sha256:" + hex.EncodeToString(digest[:])
