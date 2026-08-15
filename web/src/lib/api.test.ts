@@ -523,6 +523,35 @@ describe("WindforceApi Triggers", () => {
   });
 });
 
+describe("WindforceApi placement observations", () => {
+  test("uses redacted workspace-scoped WorkerGroup routes", async () => {
+    const urls: string[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input) => {
+      urls.push(String(input));
+      return new Response(
+        JSON.stringify({ workspace: "ops", observed_at: "", groups: [], targets: [] }),
+        {
+          status: 200,
+        },
+      );
+    }) as typeof fetch;
+    try {
+      const api = new WindforceApi({ workspace: "ops", token: "", actor: "operator" });
+      await api.workerGroups();
+      await api.placementCandidates("orders/v2");
+      await api.placementCandidates("orders/v2", "sync now");
+      expect(urls).toEqual([
+        "/api/w/ops/worker-groups",
+        "/api/w/ops/apps/orders%2Fv2/placement-candidates",
+        "/api/w/ops/apps/orders%2Fv2/actions/sync%20now/placement-candidates",
+      ]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
 describe("WindforceApi provisioning", () => {
   test("imports raw YAML with dry-run and actor headers", async () => {
     const requests: Array<{ url: string; method: string; headers: Headers; body: string }> = [];

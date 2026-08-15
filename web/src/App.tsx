@@ -13,6 +13,7 @@ import { SettingsInfoPage } from "./pages/SettingsInfoPage";
 import { WebhookCreatePage } from "./pages/WebhookCreatePage";
 import { WebhookDetailPage } from "./pages/WebhookDetailPage";
 import { WebhookSettingsPage } from "./pages/WebhookSettingsPage";
+import { WorkerGroupsPage } from "./pages/WorkerGroupsPage";
 import { WorkspaceDetailPage } from "./pages/WorkspaceDetailPage";
 import { WorkspaceSettingsPage } from "./pages/WorkspaceSettingsPage";
 import { WorkspacesPage } from "./pages/WorkspacesPage";
@@ -37,6 +38,7 @@ export function App() {
     }
   }
 
+  if (matchRoute("/worker-groups", path)) return <WorkerGroupsPage />;
   if (matchRoute("/monitoring", path)) return <MonitoringPage />;
   if (matchRoute("/human-tasks", path)) return <HumanTasksPage />;
   if (matchRoute("/audit", path)) return <AuditPage />;

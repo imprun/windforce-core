@@ -111,10 +111,12 @@ placement without serving `/ui` through its ingress or gateway:
 
 1. Deploy or update Workers with the intended group, tags, and labels through
    the installation's Helm, Kubernetes, or GitOps owner.
-2. Read `GET /api/w/{workspace}/workers` to observe registered Workers and the
-   selectors they currently advertise.
+2. Read `GET /api/w/{workspace}/worker-groups` to observe the redacted execution
+   pools and selectors usable by the workspace. Physical Worker records remain
+   instance-admin-only.
 3. Read `GET /api/w/{workspace}/apps/{app}` to compare release defaults,
-   operator overrides, and effective App/Action placement.
+   operator overrides, and effective App/Action placement, then read its
+   `/placement-candidates` endpoint for the authoritative group breakdown.
 4. Apply App or Action policy with the PATCH requests above. Automation that must fail closed sends the current `placement_policy_revision`, a unique operation ID, and a positive minimum matching slot count in `precondition`.
 5. Read the App again to verify the effective values and applied revision.
 
@@ -128,9 +130,10 @@ WorkerGroup creation, credentials, draining, scaling, and selector vocabulary
 belong to a hosted operations portal or the self-hosted deployment owner. Core
 provides the neutral [Worker management API](../api/worker-management.md),
 registry observations, and placement APIs, but its Web Console does not attempt
-to reproduce a hosted WorkerGroup control plane. Selector values and aggregate
-match counts may be shown to authorized operators; worker endpoints,
-credentials, and host identity remain outside placement views.
+to reproduce a hosted WorkerGroup control plane. Selector values, group-level
+capacity, and exclusion reasons may be shown to authorized operators; physical
+Worker IDs, credentials, and host identity remain outside workspace placement
+views.
 
 ## Release and Job behavior
 
@@ -139,9 +142,10 @@ policy update affects only Runs admitted after the update. Admission pins the
 effective values into the Run and Job; a queued Job never follows later policy
 changes.
 
-The Console warns when no live Worker currently matches the effective tag and
-labels. This warning does not reject the policy because workers may be deployed
-after configuration.
+The Console shows the server-projected matching Workers, advertised slots,
+eligible groups, and stable exclusion reasons for the App and each Action. A
+warning does not reject the policy because Workers may be deployed after
+configuration.
 
 Operator required-label overrides never remove the engine-owned execution-profile label pinned by the active Release. The profile constraint is appended after operator override resolution and is evaluated by both the capacity precondition and the actual claim matcher.
 

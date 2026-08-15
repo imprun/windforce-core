@@ -368,6 +368,10 @@ func (h *Handler) handleAPI(w http.ResponseWriter, r *http.Request) bool {
 		h.handleCanonicalControlPlaneOpenAPI(w, r, parts[2])
 		return true
 	}
+	if len(parts) == 4 && parts[0] == "api" && parts[1] == "w" && parts[3] == "worker-groups" && r.Method == http.MethodGet {
+		h.handleCanonicalWorkerGroupInventory(w, r, parts[2])
+		return true
+	}
 	if len(parts) == 5 && parts[0] == "api" && parts[1] == "w" && parts[3] == "system" && parts[4] == "info" && r.Method == http.MethodGet {
 		h.handleSystemInfo(w, r, parts[2])
 		return true
@@ -536,6 +540,10 @@ func (h *Handler) handleAPI(w http.ResponseWriter, r *http.Request) bool {
 		h.handleCanonicalAppInputConfigAudit(w, r, parts[2], parts[4])
 		return true
 	}
+	if len(parts) == 6 && parts[0] == "api" && parts[1] == "w" && parts[3] == "apps" && parts[5] == "placement-candidates" && r.Method == http.MethodGet {
+		h.handleCanonicalPlacementCandidates(w, r, parts[2], parts[4], "")
+		return true
+	}
 	if len(parts) == 5 && parts[0] == "api" && parts[1] == "w" && parts[3] == "apps" && r.Method == http.MethodGet {
 		h.handleCanonicalApp(w, r, parts[2], parts[4])
 		return true
@@ -550,6 +558,10 @@ func (h *Handler) handleAPI(w http.ResponseWriter, r *http.Request) bool {
 	}
 	if len(parts) == 8 && parts[0] == "api" && parts[1] == "w" && parts[3] == "apps" && parts[5] == "actions" && parts[7] == "schema" && r.Method == http.MethodGet {
 		h.handleCanonicalActionSchema(w, r, parts[2], parts[4], parts[6])
+		return true
+	}
+	if len(parts) == 8 && parts[0] == "api" && parts[1] == "w" && parts[3] == "apps" && parts[5] == "actions" && parts[7] == "placement-candidates" && r.Method == http.MethodGet {
+		h.handleCanonicalPlacementCandidates(w, r, parts[2], parts[4], parts[6])
 		return true
 	}
 	if len(parts) == 7 && parts[0] == "api" && parts[1] == "w" && parts[3] == "apps" && parts[5] == "actions" && r.Method == http.MethodPatch {

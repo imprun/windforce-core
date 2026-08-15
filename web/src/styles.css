@@ -1176,6 +1176,39 @@ textarea {
   background: var(--status-good-bg);
 }
 
+.workerGroupTable {
+  min-width: 1120px;
+  table-layout: fixed;
+}
+
+.workerGroupTable th:nth-child(1) {
+  width: 130px;
+}
+
+.workerGroupTable th:nth-child(2) {
+  width: 140px;
+}
+
+.workerGroupTable th:nth-child(3) {
+  width: 150px;
+}
+
+.workerGroupTable th:nth-child(4) {
+  width: 160px;
+}
+
+.workerGroupTable th:nth-child(5) {
+  width: 285px;
+}
+
+.workerGroupTable th:nth-child(6) {
+  width: 190px;
+}
+
+.workerGroupTable th:nth-child(7) {
+  width: 125px;
+}
+
 .tableRow.clickable {
   cursor: pointer;
 }

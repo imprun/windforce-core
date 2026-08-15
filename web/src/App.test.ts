@@ -30,3 +30,10 @@ describe("HumanTask routes", () => {
     expect(source).toContain("<HumanTasksPage");
   });
 });
+
+describe("WorkerGroup routes", () => {
+  test("keeps the workspace-scoped execution-pool inventory in the embedded shell", () => {
+    expect(source).toContain('matchRoute("/worker-groups", path)');
+    expect(source).toContain("<WorkerGroupsPage");
+  });
+});

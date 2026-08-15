@@ -304,6 +304,75 @@ export type WorkerView = {
   last_heartbeat_at: string;
 };
 
+export type WorkerGroupStatus = "ready" | "degraded" | "offline" | "draining";
+
+export type WorkerGroupInventoryItem = {
+  group: string;
+  status: WorkerGroupStatus;
+  workspace_allowed: boolean;
+  managed: boolean;
+  active_credentials: number;
+  run_state: "running" | "draining";
+  run_state_revision: number;
+  deadline_at?: string;
+  live_workers: number;
+  unmanaged_live_workers: number;
+  available_slots: number;
+  active_leases: number;
+  running_jobs: number;
+  quiescent: boolean;
+  tags: string[];
+  labels: string[];
+  execution_profiles: ExecutionProfileView[];
+  engine_versions: string[];
+  build_revisions: string[];
+  version_or_build_drift: boolean;
+  last_heartbeat_at?: string;
+};
+
+export type WorkerGroupInventory = {
+  workspace: string;
+  observed_at: string;
+  groups: WorkerGroupInventoryItem[];
+};
+
+export type PlacementReasonCode =
+  | "workspace_not_allowed"
+  | "draining"
+  | "no_live_capacity"
+  | "missing_tag"
+  | "missing_label"
+  | "execution_profile_mismatch";
+
+export type WorkerGroupPlacementCandidate = {
+  group: string;
+  workspace_allowed: boolean;
+  managed: boolean;
+  run_state: "running" | "draining";
+  eligible: boolean;
+  matching_workers: number;
+  matching_slots: number;
+  reason_codes: PlacementReasonCode[];
+  version_or_build_drift: boolean;
+};
+
+export type PlacementTargetCandidates = {
+  app: string;
+  action?: string;
+  effective_tag: string;
+  effective_required_labels: string[];
+  execution_profile: ExecutionProfileView;
+  matching_workers: number;
+  matching_slots: number;
+  candidates: WorkerGroupPlacementCandidate[];
+};
+
+export type PlacementCandidates = {
+  workspace: string;
+  observed_at: string;
+  targets: PlacementTargetCandidates[];
+};
+
 export type ActionSchemas = {
   workspace_id: string;
   app_key: string;
@@ -1047,6 +1116,19 @@ export class WindforceApi {
 
   workers(): Promise<{ workers: WorkerView[] }> {
     return this.request("/workers");
+  }
+
+  workerGroups(): Promise<WorkerGroupInventory> {
+    return this.request("/worker-groups");
+  }
+
+  placementCandidates(appKey: string, actionKey?: string): Promise<PlacementCandidates> {
+    const appPath = `/apps/${encodeURIComponent(appKey)}`;
+    return this.request(
+      actionKey
+        ? `${appPath}/actions/${encodeURIComponent(actionKey)}/placement-candidates`
+        : `${appPath}/placement-candidates`,
+    );
   }
 
   appHistory(appKey: string): Promise<HistoryItem[]> {

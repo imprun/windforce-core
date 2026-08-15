@@ -10,7 +10,7 @@ export default {
     "Choose whether the worker tag and required labels inherit the active release or use an operator override.",
     "An empty required-label override explicitly means no labels; Inherit follows the active release.",
     "Review the effective-after-save preview. The policy applies only to newly admitted Runs.",
-    "After saving, review each Action for a matching live worker. Missing workers warn but do not block the change.",
+    "After saving, review the server-projected eligible pools, matching Workers and slots, and any exclusion reasons for the App and each Action.",
   ],
   async run({ page, capture }) {
     await page.goto();
