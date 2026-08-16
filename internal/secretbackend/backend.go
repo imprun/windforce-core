@@ -2,6 +2,9 @@ package secretbackend
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -30,7 +33,44 @@ type Database struct {
 	previous string
 }
 
-const boundCiphertextPrefix = "wfsec:v1:"
+const (
+	boundCiphertextPrefix  = "wfsec:v1:"
+	runtimeCandidatePrefix = "wfruntime:v1:"
+)
+
+// SealRuntimeCandidate preserves the candidate reference used for a Secret
+// backend write without exposing backend material or plaintext. Runtime writes
+// use distinct candidates so a failed CAS cannot overwrite the currently
+// published Secret before the state mutation commits.
+func SealRuntimeCandidate(candidateID string, stored string) (string, error) {
+	candidate, err := hex.DecodeString(strings.TrimSpace(candidateID))
+	if err != nil || len(candidate) != 16 {
+		return "", errors.New("runtime Secret candidate ID must be 16 bytes of hexadecimal")
+	}
+	return runtimeCandidatePrefix + candidateID + ":" + base64.RawURLEncoding.EncodeToString([]byte(stored)), nil
+}
+
+// OpenRuntimeCandidate restores the exact backend reference and opaque stored
+// value. Values written before runtime candidates remain compatible.
+func OpenRuntimeCandidate(reference Reference, stored string) (Reference, string, error) {
+	if !strings.HasPrefix(stored, runtimeCandidatePrefix) {
+		return reference, stored, nil
+	}
+	parts := strings.SplitN(strings.TrimPrefix(stored, runtimeCandidatePrefix), ":", 2)
+	if len(parts) != 2 {
+		return Reference{}, "", errors.New("invalid runtime Secret candidate envelope")
+	}
+	candidate, err := hex.DecodeString(parts[0])
+	if err != nil || len(candidate) != 16 {
+		return Reference{}, "", errors.New("invalid runtime Secret candidate ID")
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return Reference{}, "", errors.New("invalid runtime Secret candidate payload")
+	}
+	reference.Path = strings.TrimRight(reference.Path, "/") + "/" + parts[0]
+	return reference, string(payload), nil
+}
 
 func NewDatabase(keys WorkspaceKeyProvider, current string, previous string) *Database {
 	return &Database{

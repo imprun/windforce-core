@@ -30,7 +30,7 @@ func TestBuildAccessAndResolveRuntimeInput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SetVariable(ctx, "ws-a", "shop", "credentials/api-key", ciphertext, true, ""); err != nil {
+	if err := store.SetVariable(ctx, "ws-a", "", "credentials/api-key", ciphertext, true, ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.SetVariable(ctx, "ws-a", "", "region", "ap-northeast-2", false, ""); err != nil {
@@ -86,6 +86,46 @@ func TestBuildAccessAndResolveRuntimeInput(t *testing.T) {
 	}
 }
 
+func TestResolveRuntimeInputAllowsMissingDeclaredReadTargetUntilReferenced(t *testing.T) {
+	ctx := context.Background()
+	store := state.NewLocalStore(filepath.Join(t.TempDir(), "state.json"))
+	if _, err := store.CreateWorkspace(ctx, "ws-a", "Workspace A", "test"); err != nil {
+		t.Fatal(err)
+	}
+	declared := contract.RuntimeAccess{VariableTargets: []contract.RuntimeConfigTarget{{
+		Scope: contract.RuntimeConfigScopeApp,
+		Path:  "sessions/playwright",
+	}}}
+	resolver := New(store, nil)
+	access, err := resolver.BuildAccess(ctx, "ws-a", "shop", declared, json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("declared but unused missing target rejected admission: %v", err)
+	}
+	job := state.Job{
+		ID: "job-a",
+		Payload: state.JobPayload{
+			Workspace:     "ws-a",
+			App:           "shop",
+			RuntimeAccess: access,
+		},
+	}
+	resolved, secrets, err := resolver.ResolveRuntimeInput(ctx, job, json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("declared but unused missing target rejected admission: %v", err)
+	}
+	if string(resolved) != "{}" || len(secrets) != 0 {
+		t.Fatalf("resolved=%s secrets=%#v", resolved, secrets)
+	}
+	_, _, err = resolver.ResolveRuntimeInput(ctx, job, json.RawMessage(`{"session":"$var@app:sessions/playwright"}`))
+	if !errors.Is(err, state.ErrNotFound) {
+		t.Fatalf("referenced missing target error = %v, want not found", err)
+	}
+	_, err = resolver.BuildAccess(ctx, "ws-a", "shop", declared, json.RawMessage(`{"session":"$var@app:sessions/playwright"}`))
+	if !errors.Is(err, state.ErrNotFound) {
+		t.Fatalf("admission for referenced missing target error = %v, want not found", err)
+	}
+}
+
 func TestBuildAccessRejectsResourceCycle(t *testing.T) {
 	ctx := context.Background()
 	store := state.NewLocalStore(filepath.Join(t.TempDir(), "state.json"))
@@ -133,7 +173,7 @@ func TestSecretResolutionFailsClosedWhenAuditCannotPersist(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := local.SetVariable(ctx, "ws-a", "app", "token", ciphertext, true, ""); err != nil {
+	if err := local.SetVariable(ctx, "ws-a", "", "token", ciphertext, true, ""); err != nil {
 		t.Fatal(err)
 	}
 	store := failingAuditStore{LocalStore: local}

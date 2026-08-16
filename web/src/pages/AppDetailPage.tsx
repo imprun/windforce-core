@@ -13,6 +13,7 @@ import {
   ReleaseStateBadge,
 } from "../components/ui";
 import { AppInputSettings } from "../features/AppInputSettings";
+import { AppRuntimeConfiguration } from "../features/AppRuntimeConfiguration";
 import { AppTriggers } from "../features/AppTriggers";
 import { AuditEventTable } from "../features/AuditEventTable";
 import { ExecutionLimitsPanel } from "../features/ExecutionLimitsPanel";
@@ -44,6 +45,7 @@ const tabs = [
   { key: "docs", labelKey: "appDetail.tab.docs" as TranslationKey },
   { key: "triggers", labelKey: "trigger.title" as TranslationKey },
   { key: "input-settings", labelKey: "audit.inputSettings" as TranslationKey },
+  { key: "runtime-config", labelKey: "appDetail.tab.runtimeConfig" as TranslationKey },
   { key: "placement", labelKey: "appDetail.tab.placement" as TranslationKey },
   { key: "execution-limits", labelKey: "appDetail.tab.executionLimits" as TranslationKey },
   { key: "monitoring", labelKey: "navigation.monitoring" as TranslationKey },
@@ -199,6 +201,17 @@ export function AppDetailPage({
           sourceID={sourceID}
           selectedClientID={section === "client" ? actionKey : undefined}
         />
+      ) : null}
+      {activeTab === "runtime-config" && app ? (
+        <AppRuntimeConfiguration appKey={app.app_key} />
+      ) : null}
+      {activeTab === "runtime-config" && !app ? (
+        <Panel
+          title={translate("appRuntime.configTitle")}
+          subtitle={translate("appRuntime.publishFirstHint")}
+        >
+          <EmptyState title={translate("appRuntime.publishFirst")} />
+        </Panel>
       ) : null}
       {activeTab === "placement" ? <PlacementTab detail={detail} onUpdated={state.reload} /> : null}
       {activeTab === "execution-limits" ? <ExecutionLimitsTab detail={detail} /> : null}

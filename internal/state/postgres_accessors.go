@@ -247,10 +247,10 @@ DO UPDATE SET value=EXCLUDED.value, updated_at=now()
 func (s *PostgresStore) ListVariables(ctx context.Context, workspaceID string) ([]Variable, error) {
 	workspaceID = contract.NormalizeWorkspace(workspaceID)
 	rows, err := s.pool.Query(ctx, `
-SELECT app_key, path, value, is_secret, description
-FROM variable
+SELECT owner_scope, app_key, path, value, is_secret, description, revision, updated_at
+FROM runtime_variable
 WHERE workspace_id=$1
-ORDER BY app_key, path
+ORDER BY owner_scope, app_key, path
 `, workspaceID)
 	if err != nil {
 		return nil, err
@@ -259,7 +259,7 @@ ORDER BY app_key, path
 	variables := []Variable{}
 	for rows.Next() {
 		var variable Variable
-		if err := rows.Scan(&variable.AppKey, &variable.Path, &variable.Value, &variable.IsSecret, &variable.Description); err != nil {
+		if err := rows.Scan(&variable.OwnerScope, &variable.AppKey, &variable.Path, &variable.Value, &variable.IsSecret, &variable.Description, &variable.Revision, &variable.UpdatedAt); err != nil {
 			return nil, err
 		}
 		variables = append(variables, variable)
@@ -276,12 +276,17 @@ func (s *PostgresStore) SetVariable(ctx context.Context, workspaceID string, app
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidState, err)
 	}
+	scope := contract.RuntimeConfigScopeWorkspace
+	if strings.TrimSpace(appKey) != "" {
+		scope = contract.RuntimeConfigScopeApp
+	}
 	_, err = s.pool.Exec(ctx, `
-INSERT INTO variable (workspace_id, app_key, path, value, is_secret, description)
-VALUES ($1, $2, $3, $4, $5, $6)
-ON CONFLICT (workspace_id, app_key, path)
-DO UPDATE SET value=EXCLUDED.value, is_secret=EXCLUDED.is_secret, description=EXCLUDED.description
-`, workspaceID, appKey, path, value, isSecret, description)
+INSERT INTO runtime_variable (workspace_id, owner_scope, app_key, path, value, is_secret, description, revision, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, 1, now())
+ON CONFLICT (workspace_id, owner_scope, app_key, path)
+DO UPDATE SET value=EXCLUDED.value, is_secret=EXCLUDED.is_secret, description=EXCLUDED.description,
+              revision=runtime_variable.revision+1, updated_at=EXCLUDED.updated_at
+`, workspaceID, string(scope), strings.TrimSpace(appKey), path, value, isSecret, description)
 	return err
 }
 
@@ -289,12 +294,13 @@ func (s *PostgresStore) GetVariable(ctx context.Context, workspaceID string, app
 	workspaceID = contract.NormalizeWorkspace(workspaceID)
 	var variable Variable
 	err := s.pool.QueryRow(ctx, `
-SELECT app_key, path, value, is_secret, description
-FROM variable
-WHERE workspace_id=$1 AND path=$2 AND (app_key=$3 OR app_key='')
-ORDER BY app_key DESC
+SELECT owner_scope, app_key, path, value, is_secret, description, revision, updated_at
+FROM runtime_variable
+WHERE workspace_id=$1 AND path=$2
+  AND ((owner_scope='app' AND app_key=$3) OR (owner_scope='workspace' AND app_key=''))
+ORDER BY CASE WHEN owner_scope='app' THEN 0 ELSE 1 END
 LIMIT 1
-`, workspaceID, path, appKey).Scan(&variable.AppKey, &variable.Path, &variable.Value, &variable.IsSecret, &variable.Description)
+`, workspaceID, path, appKey).Scan(&variable.OwnerScope, &variable.AppKey, &variable.Path, &variable.Value, &variable.IsSecret, &variable.Description, &variable.Revision, &variable.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Variable{}, false, nil
 	}
@@ -305,20 +311,11 @@ LIMIT 1
 }
 
 func (s *PostgresStore) GetVariableExact(ctx context.Context, workspaceID string, appKey string, path string) (Variable, bool, error) {
-	workspaceID = contract.NormalizeWorkspace(workspaceID)
-	var variable Variable
-	err := s.pool.QueryRow(ctx, `
-SELECT app_key, path, value, is_secret, description
-FROM variable
-WHERE workspace_id=$1 AND app_key=$2 AND path=$3
-`, workspaceID, appKey, path).Scan(&variable.AppKey, &variable.Path, &variable.Value, &variable.IsSecret, &variable.Description)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return Variable{}, false, nil
+	scope := contract.RuntimeConfigScopeWorkspace
+	if strings.TrimSpace(appKey) != "" {
+		scope = contract.RuntimeConfigScopeApp
 	}
-	if err != nil {
-		return Variable{}, false, err
-	}
-	return variable, true, nil
+	return s.GetVariableScoped(ctx, workspaceID, scope, appKey, path)
 }
 
 func (s *PostgresStore) GetWorkspaceKeyVersioned(ctx context.Context, workspaceID string) (string, int32, error) {
@@ -342,13 +339,19 @@ WHERE workspace_id=$1
 func (s *PostgresStore) DeleteVariable(ctx context.Context, workspaceID string, appKey string, path string) error {
 	workspaceID = contract.NormalizeWorkspace(workspaceID)
 	_, err := s.pool.Exec(ctx, `
-DELETE FROM variable
-WHERE workspace_id=$1 AND app_key=$2 AND path=$3
-`, workspaceID, appKey, path)
+DELETE FROM runtime_variable
+WHERE workspace_id=$1
+  AND owner_scope=CASE WHEN $2='' THEN 'workspace' ELSE 'app' END
+  AND app_key=$2 AND path=$3
+`, workspaceID, strings.TrimSpace(appKey), path)
 	return err
 }
 
 func (s *PostgresStore) SetResource(ctx context.Context, workspaceID string, path string, value json.RawMessage, resourceType string, description string) error {
+	return s.SetResourceScoped(ctx, workspaceID, "", path, value, resourceType, description)
+}
+
+func (s *PostgresStore) SetResourceScoped(ctx context.Context, workspaceID string, appKey string, path string, value json.RawMessage, resourceType string, description string) error {
 	normalizedPath, err := contract.NormalizeRuntimeConfigPath(path)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidState, err)
@@ -361,6 +364,14 @@ func (s *PostgresStore) SetResource(ctx context.Context, workspaceID string, pat
 		return errors.New("resource value is not valid JSON")
 	}
 	workspaceID = contract.NormalizeWorkspace(workspaceID)
+	appKey = strings.TrimSpace(appKey)
+	ownerScope := contract.RuntimeConfigScopeWorkspace
+	if appKey != "" {
+		ownerScope = contract.RuntimeConfigScopeApp
+		if resourceType == "" {
+			return fmt.Errorf("%w: App-owned Resource requires a versioned resource type", ErrInvalidState)
+		}
+	}
 	if resourceType != "" {
 		name, version, err := resourceconfig.ParseTypeReference(resourceType)
 		if err != nil {
@@ -378,28 +389,37 @@ func (s *PostgresStore) SetResource(ctx context.Context, workspaceID string, pat
 		}
 	}
 	_, err = s.pool.Exec(ctx, `
-INSERT INTO resource (workspace_id, path, value, resource_type, description)
-VALUES ($1, $2, $3, $4, $5)
-ON CONFLICT (workspace_id, path)
-DO UPDATE SET value=EXCLUDED.value, resource_type=EXCLUDED.resource_type, description=EXCLUDED.description
-`, workspaceID, path, value, resourceType, description)
+INSERT INTO runtime_resource (workspace_id, owner_scope, app_key, path, value, resource_type, description, revision, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, 1, now())
+ON CONFLICT (workspace_id, owner_scope, app_key, path)
+DO UPDATE SET value=EXCLUDED.value, resource_type=EXCLUDED.resource_type, description=EXCLUDED.description,
+              revision=runtime_resource.revision+1, updated_at=EXCLUDED.updated_at
+`, workspaceID, ownerScope, appKey, path, value, resourceType, description)
 	return err
 }
 
-func (s *PostgresStore) GetResource(ctx context.Context, workspaceID string, path string) (Resource, bool, error) {
+func (s *PostgresStore) DeleteResourceScoped(ctx context.Context, workspaceID string, appKey string, path string) error {
 	workspaceID = contract.NormalizeWorkspace(workspaceID)
-	var resource Resource
-	err := s.pool.QueryRow(ctx, `
-SELECT path, value, resource_type, description
-FROM resource
-WHERE workspace_id=$1 AND path=$2
-`, workspaceID, path).Scan(&resource.Path, &resource.Value, &resource.ResourceType, &resource.Description)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return Resource{}, false, nil
-	}
+	appKey = strings.TrimSpace(appKey)
+	normalizedPath, err := contract.NormalizeRuntimeConfigPath(path)
 	if err != nil {
-		return Resource{}, false, err
+		return fmt.Errorf("%w: %v", ErrInvalidState, err)
 	}
-	resource.Value = cloneRaw(resource.Value)
-	return resource, true, nil
+	ownerScope := contract.RuntimeConfigScopeWorkspace
+	if appKey != "" {
+		ownerScope = contract.RuntimeConfigScopeApp
+	}
+	result, err := s.pool.Exec(ctx, `DELETE FROM runtime_resource
+WHERE workspace_id=$1 AND owner_scope=$2 AND app_key=$3 AND path=$4`, workspaceID, ownerScope, appKey, normalizedPath)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (s *PostgresStore) GetResource(ctx context.Context, workspaceID string, path string) (Resource, bool, error) {
+	return s.GetResourceScoped(ctx, workspaceID, contract.RuntimeConfigScopeWorkspace, "", path)
 }

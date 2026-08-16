@@ -259,6 +259,12 @@ func purgeLocalWorkspace(snapshot *Snapshot, workspaceID string) {
 	delete(snapshot.JobState, workspaceID)
 	delete(snapshot.Variables, workspaceID)
 	delete(snapshot.Resources, workspaceID)
+	delete(snapshot.RuntimeConfigAudits, workspaceID)
+	for key, operation := range snapshot.RuntimeConfigOperations {
+		if operation.WorkspaceID == workspaceID {
+			delete(snapshot.RuntimeConfigOperations, key)
+		}
+	}
 	delete(snapshot.ResourceTypes, workspaceID)
 	delete(snapshot.Clients, workspaceID)
 	delete(snapshot.ClientAudits, workspaceID)

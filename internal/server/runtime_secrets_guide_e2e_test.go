@@ -9,11 +9,13 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/imprun/windforce-core/internal/bundle"
 	"github.com/imprun/windforce-core/internal/catalog"
+	"github.com/imprun/windforce-core/internal/contract"
 	wfcrypto "github.com/imprun/windforce-core/internal/crypto"
 	"github.com/imprun/windforce-core/internal/executionbundle"
 	"github.com/imprun/windforce-core/internal/gitsource"
@@ -29,7 +31,9 @@ import (
 // TestTypeScriptRuntimeSecretsGuideE2E keeps the developer guide executable.
 // It publishes examples/typescript-runtime-secrets, configures a client-scoped
 // Secret Variable reference, and runs the Action through local and remote
-// workers without exposing encryption keys to the remote worker.
+// workers without exposing encryption keys to the remote worker. It also
+// verifies that a later Job cannot leak an App-owned Playwright session read
+// through the Worker-local runtime configuration proxy.
 func TestTypeScriptRuntimeSecretsGuideE2E(t *testing.T) {
 	requireCommand(t, "bun")
 	requireCommand(t, "git")
@@ -41,6 +45,7 @@ func TestTypeScriptRuntimeSecretsGuideE2E(t *testing.T) {
 		secretKey   = "runtime-secrets-guide-instance-key"
 		secretValue = "guide-secret-value-42"
 		workerToken = "runtime-secrets-guide-worker-token"
+		jobSecret   = "runtime-secrets-guide-job-token-secret"
 	)
 
 	tempDir := t.TempDir()
@@ -50,14 +55,26 @@ func TestTypeScriptRuntimeSecretsGuideE2E(t *testing.T) {
 	if _, err := stateStore.CreateWorkspace(context.Background(), workspaceID, workspaceID, "guide-e2e"); err != nil {
 		t.Fatal(err)
 	}
+	if err := stateStore.SetResourceType(context.Background(), workspaceID, state.ResourceType{
+		Name:    "browser-session",
+		Version: "1",
+		Schema: json.RawMessage(`{
+			"type":"object",
+			"required":["label","storageState"],
+			"properties":{"label":{"type":"string"},"storageState":{"type":"string"}}
+		}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	bundleStore := bundle.NewLocalStore(filepath.Join(tempDir, "source-store"))
 	executionStore := executionbundle.NewLocalStore(filepath.Join(tempDir, "execution-store"))
 	fileCatalog := catalog.NewFileCatalog(filepath.Join(tempDir, "catalog.json"))
 	runtimeRunner := &actionruntime.Runner{
-		Store:         bundleStore,
-		ArtifactStore: executionStore,
-		CacheRoot:     filepath.Join(tempDir, "local-cache"),
+		Store:          bundleStore,
+		ArtifactStore:  executionStore,
+		CacheRoot:      filepath.Join(tempDir, "local-cache"),
+		JobTokenSecret: jobSecret,
 	}
 	handler := New(Config{
 		Store:            stateStore,
@@ -66,11 +83,13 @@ func TestTypeScriptRuntimeSecretsGuideE2E(t *testing.T) {
 		ExecutionBundles: runtimeRunner,
 		GitSources:       gitsource.NewFileRegistry(filepath.Join(tempDir, "git-sources.json")),
 		WorkerToken:      workerToken,
+		JobTokenSecret:   jobSecret,
 		ArtifactStore:    executionStore,
 		SecretKey:        secretKey,
 	})
 	server := httptest.NewServer(handler)
 	defer server.Close()
+	runtimeRunner.BaseURL = server.URL
 
 	repoDir := materializeRuntimeSecretsGuideRepo(t)
 	sourceID := registerE2EGitSource(t, server.URL, workspaceID, repoDir, appKey)
@@ -89,7 +108,7 @@ func TestTypeScriptRuntimeSecretsGuideE2E(t *testing.T) {
 	runtimeSecretsGuideRequest(t, http.MethodPost, server.URL+"/api/w/"+workspaceID+"/variables", "", `{"path":"secrets/partner-token","value":"`+secretValue+`","is_secret":true,"app_key":"`+appKey+`"}`, http.StatusOK, nil)
 	inputConfigURL := server.URL + "/api/w/" + workspaceID + "/apps/" + appKey + "/input-configs"
 	runtimeSecretsGuideRequest(t, http.MethodPut, inputConfigURL, "", `{"action_key":"`+actionKey+`","client_id":"`+issued.Client.ID+`","config":{"partnerToken":"plaintext-is-forbidden"},"locked_keys":["partnerToken"]}`, http.StatusBadRequest, nil)
-	runtimeSecretsGuideRequest(t, http.MethodPut, inputConfigURL, "", `{"action_key":"`+actionKey+`","client_id":"`+issued.Client.ID+`","config":{"partnerToken":"$var:secrets/partner-token"},"locked_keys":["partnerToken"]}`, http.StatusOK, nil)
+	runtimeSecretsGuideRequest(t, http.MethodPut, inputConfigURL, "", `{"action_key":"`+actionKey+`","client_id":"`+issued.Client.ID+`","config":{"partnerToken":"$var@app:secrets/partner-token"},"locked_keys":["partnerToken"]}`, http.StatusOK, nil)
 
 	stateBytes, err := os.ReadFile(statePath)
 	if err != nil {
@@ -151,6 +170,20 @@ func TestTypeScriptRuntimeSecretsGuideE2E(t *testing.T) {
 		t.Fatalf("remote Worker processed=%v err=%v", processed, err)
 	}
 	assertRuntimeSecretsGuideRun(t, stateStore, remoteRun.RunID, "ORDER-REMOTE", len(secretValue))
+
+	refreshRun := admitRuntimeSecretsGuideAction(t, server.URL, workspaceID, issued.APIToken, appKey, "refresh", `{}`)
+	processed, err = localProcessor.ProcessOne(context.Background())
+	if err != nil || !processed {
+		t.Fatalf("refresh Worker processed=%v err=%v", processed, err)
+	}
+	assertRuntimeConfigurationRefresh(t, stateStore, statePath, workspaceID, appKey, refreshRun.RunID)
+
+	consumeRun := admitRuntimeSecretsGuideAction(t, server.URL, workspaceID, issued.APIToken, appKey, "consume", `{}`)
+	processed, err = localProcessor.ProcessOne(context.Background())
+	if err != nil || !processed {
+		t.Fatalf("consume Worker processed=%v err=%v", processed, err)
+	}
+	assertRuntimeConfigurationSecretsMasked(t, stateStore, workspaceID, consumeRun.RunID)
 }
 
 func materializeRuntimeSecretsGuideRepo(t *testing.T) string {
@@ -227,8 +260,13 @@ func runtimeSecretsGuideRequest(t *testing.T, method string, url string, token s
 
 func admitRuntimeSecretsGuideRun(t *testing.T, baseURL string, workspaceID string, token string, appKey string, actionKey string, orderID string) invocationRunView {
 	t.Helper()
+	return admitRuntimeSecretsGuideAction(t, baseURL, workspaceID, token, appKey, actionKey, `{"orderId":"`+orderID+`"}`)
+}
+
+func admitRuntimeSecretsGuideAction(t *testing.T, baseURL string, workspaceID string, token string, appKey string, actionKey string, input string) invocationRunView {
+	t.Helper()
 	var run invocationRunView
-	runtimeSecretsGuideRequest(t, http.MethodPost, baseURL+"/api/v1/workspaces/"+workspaceID+"/runs", token, `{"app":"`+appKey+`","action":"`+actionKey+`","input":{"orderId":"`+orderID+`"}}`, http.StatusCreated, &run)
+	runtimeSecretsGuideRequest(t, http.MethodPost, baseURL+"/api/v1/workspaces/"+workspaceID+"/runs", token, `{"app":"`+appKey+`","action":"`+actionKey+`","input":`+input+`}`, http.StatusCreated, &run)
 	return run
 }
 
@@ -281,5 +319,62 @@ func assertRuntimeSecretsGuideRun(t *testing.T, store *state.LocalStore, runID s
 	}
 	if output.OrderID != orderID || !output.SecretResolved || output.SecretLength != secretLength {
 		t.Fatalf("Run %s output = %#v", runID, output)
+	}
+}
+
+func assertRuntimeConfigurationRefresh(t *testing.T, store *state.LocalStore, statePath string, workspaceID string, appKey string, runID string) {
+	t.Helper()
+	variable, found, err := store.GetVariableScoped(context.Background(), workspaceID, contract.RuntimeConfigScopeApp, appKey, "sessions/playwright")
+	if err != nil || !found {
+		t.Fatalf("App Variable found=%v err=%v", found, err)
+	}
+	if variable.Revision != 1 || !variable.IsSecret {
+		t.Fatalf("App Variable = %#v", variable)
+	}
+	resource, found, err := store.GetResourceScoped(context.Background(), workspaceID, contract.RuntimeConfigScopeApp, appKey, "sessions/meta")
+	if err != nil || !found {
+		t.Fatalf("App Resource found=%v err=%v", found, err)
+	}
+	if resource.Revision != 1 || !bytes.Contains(resource.Value, []byte("$var@app:sessions/playwright")) {
+		t.Fatalf("App Resource = %#v", resource)
+	}
+	contents, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, secret := range runtimeConfigurationGuideSecrets() {
+		if bytes.Contains(contents, []byte(secret)) {
+			t.Fatalf("local state contains runtime Secret plaintext %q", secret)
+		}
+	}
+	assertRuntimeConfigurationSecretsMasked(t, store, workspaceID, runID)
+}
+
+func assertRuntimeConfigurationSecretsMasked(t *testing.T, store *state.LocalStore, workspaceID string, runID string) {
+	t.Helper()
+	run, err := store.GetRun(context.Background(), runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.State != state.RunSucceeded || run.Result == nil {
+		t.Fatalf("Run %s = state %s result %#v", runID, run.State, run.Result)
+	}
+	logs, found, err := store.GetLogs(context.Background(), workspaceID, run.Result.JobID)
+	if err != nil || !found {
+		t.Fatalf("Run %s logs found=%v err=%v", runID, found, err)
+	}
+	combined := string(run.Result.Output) + "\n" + logs
+	for _, secret := range runtimeConfigurationGuideSecrets() {
+		if strings.Contains(combined, secret) {
+			t.Fatalf("Run %s exposed runtime Secret %q in result or logs: %s", runID, secret, combined)
+		}
+	}
+}
+
+func runtimeConfigurationGuideSecrets() []string {
+	return []string{
+		"cookie-secret-value",
+		"local-storage-secret-value",
+		`{"cookies":[{"name":"session","value":"cookie-secret-value","domain":"example.test","path":"/"}],"origins":[{"origin":"https://example.test","localStorage":[{"name":"token","value":"local-storage-secret-value"}]}]}`,
 	}
 }

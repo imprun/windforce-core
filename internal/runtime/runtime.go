@@ -65,7 +65,9 @@ type RunRequest struct {
 	LogCapBytes      int
 	// JobToken, when set, is a pre-minted SDK callback token (remote
 	// workers receive it from the claim; the signing secret stays engine-side).
-	JobToken string
+	JobToken        string
+	CallbackBaseURL string
+	CallbackToken   string
 }
 
 const actionAdapterProtocolVersion = "windforce.action-adapter/v1"
@@ -415,9 +417,19 @@ func (r *Runner) jobEnv(req RunRequest, action contract.Action) []string {
 		add("HTTP_PROXY", proxyURL)
 		add("HTTPS_PROXY", proxyURL)
 	}
-	add("WF_BASE_URL", r.BaseURL)
-	add("WF_TOKEN", r.jobToken(req, action, workspace, permissionedAs))
+	add("WF_BASE_URL", firstNonEmpty(strings.TrimSpace(req.CallbackBaseURL), r.BaseURL))
+	add("WF_TOKEN", firstNonEmpty(strings.TrimSpace(req.CallbackToken), r.jobToken(req, action, workspace, permissionedAs)))
 	return env
+}
+
+// JobCallback returns the Core endpoint and attempt-bound callback token. The
+// Worker keeps both inside its loopback proxy and gives the action a separate
+// local capability.
+func (r *Runner) JobCallback(req RunRequest) (string, string) {
+	action := req.Deployment.Actions[req.Action]
+	workspace := contract.NormalizeWorkspace(firstNonEmpty(req.WorkspaceID, req.Deployment.SourceWorkspace()))
+	permissionedAs := firstNonEmpty(strings.TrimSpace(req.PermissionedAs), strings.TrimSpace(req.CreatedBy), "system")
+	return strings.TrimSpace(r.BaseURL), r.jobToken(req, action, workspace, permissionedAs)
 }
 
 func (r *Runner) jobToken(req RunRequest, action contract.Action, workspace string, permissionedAs string) string {

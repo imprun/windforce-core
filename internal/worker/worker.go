@@ -24,6 +24,10 @@ type Runner interface {
 	Run(ctx context.Context, request actionruntime.RunRequest) (contract.JobResult, error)
 }
 
+type jobCallbackProvider interface {
+	JobCallback(actionruntime.RunRequest) (baseURL string, token string)
+}
+
 type executionProfileProvider interface {
 	ExecutionProfiles(context.Context) ([]contract.ExecutionProfile, error)
 }
@@ -223,6 +227,7 @@ func (p *Processor) processOne(claimCtx context.Context, executionCtx context.Co
 	}
 	input = bindingResult.Input
 	secretValues = append(secretValues, bindingResult.SecretValues...)
+	secretRegistry := secretmask.NewRegistry(secretValues)
 	defer func() {
 		cleanupTimeout := p.RuntimeBindings.CapabilityGateway.Timeout
 		if cleanupTimeout <= 0 || cleanupTimeout > 5*time.Second {
@@ -238,36 +243,43 @@ func (p *Processor) processOne(claimCtx context.Context, executionCtx context.Co
 	if provider, ok := p.Store.(JobTokenProvider); ok {
 		jobToken = provider.JobTokenFor(job.ID)
 	}
+	runRequest := actionruntime.RunRequest{
+		JobID: job.ID, Attempt: job.Attempt, WorkspaceID: workspaceID,
+		Deployment: job.Payload.PinnedDeployment(), Action: job.Payload.Action,
+		Input: input, TriggerKind: job.Payload.TriggerKind, TriggerHeaders: job.Payload.TriggerHeaders,
+		ScheduledFor: job.Payload.ScheduledFor, Tag: job.Payload.Tag,
+		CreatedBy: job.Payload.CreatedBy, PermissionedAs: job.Payload.PermissionedAs,
+		JobToken: jobToken, WorkerGroup: p.Group, EgressProxyAddr: p.EgressProxyAddr,
+		TraceContext:     telemetry.FromContext(runCtx, "worker", attemptPropagationReason(job.Attempt)),
+		LogFlushInterval: p.LogFlushInterval, LogCapBytes: p.LogCapBytes,
+	}
+	if provider, ok := p.Runner.(jobCallbackProvider); ok {
+		coreBaseURL, coreJobToken := provider.JobCallback(runRequest)
+		if coreBaseURL != "" && coreJobToken != "" {
+			proxyURL, proxyToken, closeProxy, proxyErr := startRuntimeConfigProxy(runCtx, coreBaseURL, coreJobToken, secretRegistry, job.Payload.RuntimeAccess)
+			if proxyErr != nil {
+				outcome = "failed"
+				jobError = "could not start Worker callback proxy"
+				result := contract.JobResult{JobID: job.ID, App: job.Payload.App, Action: job.Payload.Action,
+					Output: actionruntime.ErrorResult("RuntimeConfigurationProxyError", jobError), ExitCode: -1, Error: jobError}
+				return completeProcessed(p.Store.CompleteJobFailed(completeCtx, lease, result))
+			}
+			defer closeProxy()
+			runRequest.CallbackBaseURL = proxyURL
+			runRequest.CallbackToken = proxyToken
+		}
+	}
 	emitLog := func(chunk []byte) {
 		_ = p.Store.AppendLogs(context.Background(), job.ID, workspaceID, string(chunk))
 		if p.TeeJobLogs {
 			log.Printf("worker job log job=%s app=%s action=%s chunk=%q", job.ID, job.Payload.App, job.Payload.Action, string(chunk))
 		}
 	}
-	maskedLogs := secretmask.NewStream(secretValues, emitLog)
-	result, runErr := p.Runner.Run(runCtx, actionruntime.RunRequest{
-		JobID:           job.ID,
-		Attempt:         job.Attempt,
-		WorkspaceID:     workspaceID,
-		Deployment:      job.Payload.PinnedDeployment(),
-		Action:          job.Payload.Action,
-		Input:           input,
-		TriggerKind:     job.Payload.TriggerKind,
-		TriggerHeaders:  job.Payload.TriggerHeaders,
-		ScheduledFor:    job.Payload.ScheduledFor,
-		Tag:             job.Payload.Tag,
-		CreatedBy:       job.Payload.CreatedBy,
-		PermissionedAs:  job.Payload.PermissionedAs,
-		JobToken:        jobToken,
-		WorkerGroup:     p.Group,
-		EgressProxyAddr: p.EgressProxyAddr,
-		TraceContext:    telemetry.FromContext(runCtx, "worker", attemptPropagationReason(job.Attempt)),
-		LogSink: func(chunk []byte) {
-			maskedLogs.Write(chunk)
-		},
-		LogFlushInterval: p.LogFlushInterval,
-		LogCapBytes:      p.LogCapBytes,
-	})
+	maskedLogs := secretmask.NewRegistryStream(secretRegistry, emitLog)
+	runRequest.LogSink = func(chunk []byte) {
+		maskedLogs.Write(chunk)
+	}
+	result, runErr := p.Runner.Run(runCtx, runRequest)
 	if result.Interruption == nil {
 		result.Interruption = heartbeat.interruptionCause()
 	}
@@ -280,14 +292,14 @@ func (p *Processor) processOne(claimCtx context.Context, executionCtx context.Co
 		}
 	}
 	maskedLogs.Flush()
-	result = maskJobResult(result, secretValues)
-	logJobExecution(p.LogJobPayloads, job.ID, job.Payload.App, job.Payload.Action, result, secretValues)
+	result = maskJobResultWithRegistry(result, secretRegistry)
+	logJobExecutionWithRegistry(p.LogJobPayloads, job.ID, job.Payload.App, job.Payload.Action, result, secretRegistry)
 	result.JobID = job.ID
 	result.Stdout = ""
 	result.Stderr = ""
 	if runErr != nil {
 		if result.Error == "" {
-			result.Error = secretmask.String(runErr.Error(), secretValues)
+			result.Error = secretRegistry.String(runErr.Error())
 		}
 		if len(result.Output) == 0 {
 			result.Output = namedErrorResult(runErr, result.Error)
@@ -365,11 +377,29 @@ func logJobExecution(enabled bool, jobID string, app string, action string, resu
 	}
 }
 
+func logJobExecutionWithRegistry(enabled bool, jobID string, app string, action string, result contract.JobResult, registry *secretmask.Registry) {
+	if enabled {
+		log.Printf("worker job execution job=%s app=%s action=%s exit_code=%d stdout=%q stderr=%q output=%s",
+			jobID, app, action, result.ExitCode,
+			registry.String(result.Stdout),
+			registry.String(result.Stderr),
+			registry.Bytes(result.Output))
+	}
+}
+
 func maskJobResult(result contract.JobResult, secrets []string) contract.JobResult {
 	result.Output = secretmask.Bytes(result.Output, secrets)
 	result.Stdout = secretmask.String(result.Stdout, secrets)
 	result.Stderr = secretmask.String(result.Stderr, secrets)
 	result.Error = secretmask.String(result.Error, secrets)
+	return result
+}
+
+func maskJobResultWithRegistry(result contract.JobResult, registry *secretmask.Registry) contract.JobResult {
+	result.Output = registry.Bytes(result.Output)
+	result.Stdout = registry.String(result.Stdout)
+	result.Stderr = registry.String(result.Stderr)
+	result.Error = registry.String(result.Error)
 	return result
 }
 

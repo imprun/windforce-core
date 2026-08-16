@@ -4040,9 +4040,63 @@ textarea {
   tab-size: 2;
 }
 
+.appRuntimeConfiguration {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.appRuntimeLifecycleSummary {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.appRuntimeLifecycleSummary > div:first-child {
+  min-width: 0;
+}
+
+.appRuntimeLifecycleSummary p {
+  max-width: 52rem;
+  margin: var(--space-2) 0 0;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.55;
+}
+
+.appRuntimeRevision {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-family: var(--font-family-mono);
+  font-size: 0.75rem;
+}
+
+.appRuntimeConfiguration .dangerZoneRow p {
+  max-width: 52rem;
+  margin: 0;
+}
+
 @media (max-width: 720px) {
   .runtimeConfigSectionHeader {
     align-items: flex-start;
+  }
+
+  .appRuntimeLifecycleSummary,
+  .appRuntimeConfiguration .dangerZoneRow {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .appRuntimeLifecycleSummary .panelActions,
+  .appRuntimeLifecycleSummary .button,
+  .appRuntimeConfiguration .dangerZoneRow .button {
+    width: 100%;
   }
 
 }

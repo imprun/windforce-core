@@ -203,9 +203,11 @@ func TestControlPlaneEndpoints(t *testing.T) {
 		body, _ := io.ReadAll(r.Body)
 		last = recorded{r.Method, r.URL.Path, r.URL.RawQuery, r.Header.Get("Authorization"), string(body)}
 		switch {
-		case strings.HasSuffix(r.URL.Path, "/variables/get/p/u/me/tok"):
+		case r.Method == http.MethodPut && (strings.Contains(r.URL.Path, "/variables/p/") || strings.Contains(r.URL.Path, "/resources/p/")):
+			_, _ = w.Write([]byte(`{"path":"stored","revision":4}`))
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/variables/get/p/u/me/tok"):
 			_, _ = w.Write([]byte(`{"value":"s3cr3t"}`))
-		case strings.HasSuffix(r.URL.Path, "/resources/get/p/u/me/db"):
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/resources/get/p/u/me/db"):
 			_, _ = w.Write([]byte(`{"host":"db.local"}`))
 		case strings.HasSuffix(r.URL.Path, "/state") && r.Method == http.MethodGet:
 			_, _ = w.Write([]byte(`{"runs":3}`))
@@ -235,6 +237,18 @@ func TestControlPlaneEndpoints(t *testing.T) {
 	}
 	if last.path != "/api/w/ws-x/resources/get/p/u/me/db" {
 		t.Fatalf("resources path = %s", last.path)
+	}
+	if _, err := (Variables{}).GetScoped(RuntimeScopeApp, "u/me/tok"); err != nil || last.query != "scope=app" {
+		t.Fatalf("Variables.GetScoped request = %+v err=%v", last, err)
+	}
+	expectedRevision := int64(3)
+	mutation, err := (Variables{}).Set("u/me/tok", "new", RuntimeMutationOptions{OperationID: "op-variable", ExpectedRevision: &expectedRevision})
+	if err != nil || mutation.Revision != 4 || last.method != http.MethodPut || !strings.Contains(last.body, `"operationId":"op-variable"`) || !strings.Contains(last.body, `"expectedRevision":3`) {
+		t.Fatalf("Variables.Set result=%+v request=%+v err=%v", mutation, last, err)
+	}
+	mutation, err = (Resources{}).Set("u/me/db", map[string]any{"host": "next"}, "connection@1", RuntimeMutationOptions{OperationID: "op-resource"})
+	if err != nil || mutation.Revision != 4 || !strings.Contains(last.body, `"resourceType":"connection@1"`) {
+		t.Fatalf("Resources.Set result=%+v request=%+v err=%v", mutation, last, err)
 	}
 
 	state, err := State{}.Get()

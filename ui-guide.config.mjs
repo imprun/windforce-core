@@ -233,6 +233,40 @@ export default {
         },
       },
     });
+    await api("/variables", {
+      method: "POST",
+      headers: { "x-windforce-actor": "ui-guide@example.test" },
+      body: {
+        app_key: "echo",
+        path: "runtime/last-cursor",
+        value: "cursor-2026-08-16",
+        is_secret: false,
+        description: "Last cursor owned by the echo App",
+      },
+    });
+    await api("/resources", {
+      method: "POST",
+      headers: { "x-windforce-actor": "ui-guide@example.test" },
+      body: {
+        app_key: "echo",
+        path: "runtime/session",
+        resource_type: "http-connection@1.0.0",
+        description: "Typed App-owned session endpoint",
+        value: {
+          base_url: "https://session.example.test",
+          token: "$var@workspace:credentials/partner-token",
+        },
+      },
+    });
+    await api("/apps/echo/runtime-lifecycle", {
+      method: "PUT",
+      headers: { "x-windforce-actor": "ui-guide@example.test" },
+      body: {
+        state: "active",
+        reason: "UI guide baseline",
+        expectedRevision: 0,
+      },
+    });
     await waitForClientConfigRun(clientToken.client.id, clientToken.api_token);
     await seedWorkerGroupInventory(api);
     await seedQueuedExecutionDemand(api, clientToken.api_token);

@@ -121,11 +121,14 @@ export type InputConfigAudit = {
 };
 
 export type Variable = {
-  app_key: string;
+  owner_scope: "workspace" | "app";
+  app_key?: string;
   path: string;
   value: string;
   is_secret: boolean;
   description: string;
+  revision: number;
+  updated_at: string;
 };
 
 export type SetVariablePayload = {
@@ -137,13 +140,37 @@ export type SetVariablePayload = {
 };
 
 export type Resource = {
+  owner_scope: "workspace" | "app";
+  app_key?: string;
   path: string;
   value: unknown;
   resource_type: string;
   description: string;
+  revision: number;
+  updated_at: string;
 };
 
-export type ResourcePayload = Resource;
+export type ResourcePayload = Pick<Resource, "path" | "value" | "resource_type" | "description"> & {
+  app_key?: string;
+};
+
+export type AppRuntimeState = "active" | "tombstoned" | "revoked";
+
+export type AppRuntimeLifecycle = {
+  workspaceId: string;
+  appKey: string;
+  state: AppRuntimeState;
+  reason?: string;
+  actor: string;
+  revision: number;
+  updatedAt: string;
+};
+
+export type AppRuntimeLifecycleAudit = Omit<AppRuntimeLifecycle, "updatedAt"> & {
+  purged?: boolean;
+  forced?: boolean;
+  createdAt: string;
+};
 
 export type ResourceType = {
   name: string;
@@ -1167,12 +1194,50 @@ export class WindforceApi {
     return this.request("/resources");
   }
 
-  setResource(payload: ResourcePayload): Promise<{ path: string }> {
+  setResource(payload: ResourcePayload): Promise<{ path: string; app_key: string }> {
     return this.request("/resources", { method: "POST", body: payload });
   }
 
-  async deleteResource(path: string): Promise<void> {
-    await this.request(`/resources/p/${encodePath(path)}`, { method: "DELETE" });
+  async deleteResource(path: string, appKey = ""): Promise<void> {
+    const params = new URLSearchParams();
+    if (appKey) params.set("app", appKey);
+    const query = params.toString();
+    await this.request(`/resources/p/${encodePath(path)}${query ? `?${query}` : ""}`, {
+      method: "DELETE",
+    });
+  }
+
+  appRuntimeLifecycle(appKey: string): Promise<AppRuntimeLifecycle> {
+    return this.request(`/apps/${encodeURIComponent(appKey)}/runtime-lifecycle`);
+  }
+
+  setAppRuntimeLifecycle(
+    appKey: string,
+    payload: { state: AppRuntimeState; reason?: string; expectedRevision: number },
+  ): Promise<AppRuntimeLifecycle> {
+    return this.request(`/apps/${encodeURIComponent(appKey)}/runtime-lifecycle`, {
+      method: "PUT",
+      body: payload,
+    });
+  }
+
+  appRuntimeLifecycleAudit(appKey: string): Promise<{ audits: AppRuntimeLifecycleAudit[] }> {
+    return this.request(`/apps/${encodeURIComponent(appKey)}/runtime-lifecycle/audit`);
+  }
+
+  async purgeAppRuntimeConfig(
+    appKey: string,
+    options: { reason?: string; force?: boolean } = {},
+  ): Promise<void> {
+    const force = Boolean(options.force);
+    await this.request(
+      `/apps/${encodeURIComponent(appKey)}/runtime-config${force ? "?force=true" : ""}`,
+      {
+        method: "DELETE",
+        body: options.reason ? { reason: options.reason } : undefined,
+        headers: force ? { "x-windforce-confirm-force-purge": appKey } : undefined,
+      },
+    );
   }
 
   resourceTypes(): Promise<ResourceType[]> {

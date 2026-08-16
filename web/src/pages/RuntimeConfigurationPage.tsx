@@ -60,12 +60,12 @@ export function VariablesResourcesPage() {
     return {
       variables: state.data.variables.filter((item) =>
         [item.path, item.app_key, item.description].some((value) =>
-          value.toLowerCase().includes(needle),
+          (value || "").toLowerCase().includes(needle),
         ),
       ),
       resources: state.data.resources.filter((item) =>
-        [item.path, item.resource_type, item.description].some((value) =>
-          value.toLowerCase().includes(needle),
+        [item.path, item.app_key, item.resource_type, item.description].some((value) =>
+          (value || "").toLowerCase().includes(needle),
         ),
       ),
       resourceTypes: state.data.resourceTypes.filter((item) =>
@@ -90,7 +90,7 @@ export function VariablesResourcesPage() {
       if (deleteTarget.kind === "variable") {
         await api.deleteVariable(deleteTarget.item.path, deleteTarget.item.app_key);
       } else if (deleteTarget.kind === "resource") {
-        await api.deleteResource(deleteTarget.item.path);
+        await api.deleteResource(deleteTarget.item.path, deleteTarget.item.app_key);
       } else {
         await api.deleteResourceType(deleteTarget.item.name, deleteTarget.item.version);
       }
@@ -321,6 +321,7 @@ function ResourceTable({
         <thead>
           <tr>
             <th>{translate("runtimeConfig.path")}</th>
+            <th>{translate("runtimeConfig.scope")}</th>
             <th>{translate("runtimeConfig.type")}</th>
             <th>{translate("runtimeConfig.preview")}</th>
             <th>{translate("common.description")}</th>
@@ -329,8 +330,9 @@ function ResourceTable({
         </thead>
         <tbody>
           {items.map((item) => (
-            <tr key={item.path}>
+            <tr key={`${item.app_key || "workspace"}:${item.path}`}>
               <td className="mono cellTitle">{item.path}</td>
+              <td>{item.app_key || translate("runtimeConfig.workspaceScope")}</td>
               <td>{item.resource_type || translate("runtimeConfig.untyped")}</td>
               <td>
                 <code className="runtimeConfigValue">{compactJSON(item.value)}</code>
@@ -539,6 +541,7 @@ function ResourceDialog({
 }) {
   const { api, notify } = useApp();
   const [path, setPath] = useState(item?.path || "");
+  const [appKey, setAppKey] = useState(item?.app_key || "");
   const [resourceType, setResourceType] = useState(item?.resource_type || "");
   const [value, setValue] = useState(JSON.stringify(item?.value ?? {}, null, 2));
   const [description, setDescription] = useState(item?.description || "");
@@ -558,6 +561,7 @@ function ResourceDialog({
     try {
       await api.setResource({
         path: path.trim(),
+        app_key: appKey.trim(),
         value: parsed,
         resource_type: resourceType,
         description: description.trim(),
@@ -592,6 +596,18 @@ function ResourceDialog({
               onChange={(event) => setPath(event.target.value)}
             />
           </Field>
+          <Field
+            label={translate("runtimeConfig.appScope")}
+            hint={translate("runtimeConfig.appScopeHint")}
+          >
+            <input
+              value={appKey}
+              disabled={Boolean(item)}
+              onChange={(event) => setAppKey(event.target.value)}
+            />
+          </Field>
+        </div>
+        <div className="formGrid">
           <Field label={translate("runtimeConfig.type")}>
             <SelectControl
               value={resourceType}

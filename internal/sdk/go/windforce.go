@@ -195,27 +195,96 @@ func cpGetJSON(path string, v any) error {
 // Variables resolves secrets/variables from the control plane (ADR-0014 §9).
 type Variables struct{}
 
+type RuntimeScope string
+
+const (
+	RuntimeScopeWorkspace RuntimeScope = "workspace"
+	RuntimeScopeApp       RuntimeScope = "app"
+)
+
+type RuntimeMutationOptions struct {
+	OperationID      string `json:"operationId"`
+	ExpectedRevision *int64 `json:"expectedRevision,omitempty"`
+}
+
+type RuntimeMutationResult struct {
+	Path     string `json:"path"`
+	Revision int64  `json:"revision"`
+	Replayed bool   `json:"replayed,omitempty"`
+}
+
 // Get returns a variable's plaintext value. The endpoint wraps it as {"value": "..."}
 // (mirrors the TS/Python wrapper's `(await r.json()).value`).
 func (Variables) Get(path string) (string, error) {
+	return Variables{}.GetScoped(RuntimeScopeWorkspace, path)
+}
+
+func (Variables) GetScoped(scope RuntimeScope, path string) (string, error) {
 	var out struct {
 		Value string `json:"value"`
 	}
-	if err := cpGetJSON("/variables/get/p/"+path, &out); err != nil {
+	query := ""
+	if scope == RuntimeScopeApp {
+		query = "?scope=app"
+	}
+	if err := cpGetJSON("/variables/get/p/"+path+query, &out); err != nil {
 		return "", err
 	}
 	return out.Value, nil
+}
+
+func (Variables) Set(path, value string, options RuntimeMutationOptions) (RuntimeMutationResult, error) {
+	return runtimeMutation("/variables/p/"+path, struct {
+		Value string `json:"value"`
+		RuntimeMutationOptions
+	}{value, options})
 }
 
 // Resources resolves resources (jsonb) from the control plane; the body IS the resource.
 type Resources struct{}
 
 func (Resources) Get(path string) (any, error) {
+	return Resources{}.GetScoped(RuntimeScopeWorkspace, path)
+}
+
+func (Resources) GetScoped(scope RuntimeScope, path string) (any, error) {
 	var v any
-	if err := cpGetJSON("/resources/get/p/"+path, &v); err != nil {
+	query := ""
+	if scope == RuntimeScopeApp {
+		query = "?scope=app"
+	}
+	if err := cpGetJSON("/resources/get/p/"+path+query, &v); err != nil {
 		return nil, err
 	}
 	return v, nil
+}
+
+func (Resources) Set(path string, value any, resourceType string, options RuntimeMutationOptions) (RuntimeMutationResult, error) {
+	return runtimeMutation("/resources/p/"+path, struct {
+		Value        any    `json:"value"`
+		ResourceType string `json:"resourceType"`
+		RuntimeMutationOptions
+	}{value, resourceType, options})
+}
+
+func runtimeMutation(path string, body any) (RuntimeMutationResult, error) {
+	data, err := json.Marshal(body)
+	if err != nil {
+		return RuntimeMutationResult{}, err
+	}
+	response, err := cpDo(http.MethodPut, path, bytes.NewReader(data))
+	if err != nil {
+		return RuntimeMutationResult{}, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return RuntimeMutationResult{}, fmt.Errorf("runtime configuration write failed: %s", response.Status)
+	}
+	var result RuntimeMutationResult
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		return RuntimeMutationResult{}, err
+	}
+	return result, nil
 }
 
 // Approval mints the approve/reject resume URLs for the approval step that immediately

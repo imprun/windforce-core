@@ -3,7 +3,7 @@ title: TypeScript App에서 런타임 비밀값 사용하기
 description: App에 암호화 코드를 넣지 않고 Secret Variable을 선언, 설정, 수용, 해석하는 개발자 가이드입니다.
 ---
 
-App 개발자는 암호화, 복호화 또는 암호문 전달을 구현하지 않습니다. App은 어떤 설정이 민감한지와 접근 가능한 런타임 경로의 최대 범위를 선언하고, 운영자는 Secret Variable 평문을 한 번 기록한 뒤 Resource와 InputConfig에는 `$var:` 또는 `$res:` 참조만 저장합니다. 저장 암호화, Admission 검증, Job 고정, 실행 시점 해석, 감사와 마스킹은 Core의 책임입니다.
+App 개발자는 암호화, 복호화 또는 암호문 전달을 구현하지 않습니다. App은 어떤 설정이 민감한지와 접근 가능한 런타임 경로의 최대 범위를 선언합니다. 운영자는 초기값을 프로비저닝할 수 있고 App은 Release에 정확히 고정된 자기 App 범위 경로만 갱신할 수 있습니다. Resource와 InputConfig에는 평문 대신 `$var:` 또는 `$res:` 참조를 저장합니다. 저장 암호화, Admission 검증, Job 고정, 실행 시점 해석, 감사와 마스킹은 Core의 책임입니다.
 
 [English](../../guides/runtime-secrets-typescript.md)
 
@@ -41,7 +41,7 @@ Manifest는 일반 입력 스키마, 운영자 설정 스키마와 런타임 경
       "outputSchema": "deliver.output.schema.json",
       "operatorSettingsSchema": "deliver.settings.schema.json",
       "runtimeAccess": {
-        "variables": ["secrets/partner-token"]
+        "variables": [{"scope": "app", "path": "secrets/partner-token"}]
       }
     }
   }
@@ -106,7 +106,7 @@ Content-Type: application/json
   "action_key": "deliver",
   "client_id": "<client-id>",
   "config": {
-    "partnerToken": "$var:secrets/partner-token"
+    "partnerToken": "$var@app:secrets/partner-token"
   },
   "locked_keys": ["partnerToken"]
 }
@@ -162,11 +162,39 @@ Resource에는 평문 대신 정확한 참조를 넣을 수 있습니다.
 ```json
 {
   "endpoint": "https://partner.example",
-  "token": "$var:secrets/partner-token"
+  "token": "$var@app:secrets/partner-token"
 }
 ```
 
 `$res:partners/acme`를 저장하는 입력 필드는 input schema에서 `$res:` 문자열을 허용해야 하며, 그 필드 자체를 `x-windforce-secret`으로 표시하면 안 됩니다. 민감 필드는 정확한 Secret Variable `$var:` 참조만 허용합니다. 허용된 Resource 내부의 Secret Variable은 Runtime Resolver가 재귀적으로 해석합니다.
+
+## App 범위 런타임 갱신과 후속 읽기
+
+Action은 변경할 수 없는 Release가 정확한 경로와 Secret 저장 등급을 고정한 경우에만 작은 App 범위 값을 능동적으로 갱신할 수 있습니다.
+
+```json
+{
+  "runtimeAccess": {
+    "variables": [{"scope":"app","path":"sessions/playwright"}],
+    "writeVariables": [{"scope":"app","path":"sessions/playwright","storage":"secret"}],
+    "writeResources": [{"scope":"app","path":"sessions/meta"}]
+  }
+}
+```
+
+```ts
+const variable = await ctx.variables.set("sessions/playwright", JSON.stringify(storageState), {
+  operationId: `variable-${ctx.job.id}`,
+});
+await ctx.resources.set(
+  "sessions/meta",
+  { storageState: "$var@app:sessions/playwright" },
+  "browser-session@1",
+  { operationId: `resource-${ctx.job.id}` },
+);
+```
+
+`operationId`가 같은 정확한 재시도는 최초 revision을 돌려주며 비교 후 교체가 필요하면 `expectedRevision`을 추가합니다. Resource 쓰기로 새 권한을 심을 수는 없습니다. 모든 내부 참조는 그 Job에 고정된 읽기 폐포 안에 이미 있어야 합니다. 이후 Action도 `ctx.variables.get(..., "app")` 또는 `ctx.resources.get(..., "app")`를 호출하려면 Variable과 Resource 경로를 독립적으로 선언해야 합니다. Core는 해석된 Secret을 digest로 Worker에 알리고, Worker는 값을 후속 Action에 넘기기 전에 동적 로그·결과 마스킹에 등록합니다.
 
 ## 로컬 Worker와 원격 Worker
 
@@ -181,4 +209,4 @@ Bun과 Git을 사용할 수 있는 환경에서 저장소의 정확한 예제를
 go test ./internal/server -run TestTypeScriptRuntimeSecretsGuideE2E -count=1 -v
 ```
 
-이 테스트는 민감한 운영자 필드에 평문을 넣으면 거부되는지, 올바른 `$var:` 참조가 허용되는지, 잠긴 비밀 필드를 호출자가 덮어쓸 수 없는지, 저장 상태에 Secret Variable 평문이 없는지, 로컬과 원격 Worker가 발행된 TypeScript 예제를 해석된 값으로 실행하는지를 검증합니다.
+이 테스트는 민감한 운영자 필드에 평문을 넣으면 거부되는지, 올바른 `$var:` 참조가 허용되는지, 잠긴 비밀 필드를 호출자가 덮어쓸 수 없는지, 저장 상태에 Secret Variable 평문이 없는지, 로컬과 원격 Worker가 발행된 TypeScript 예제를 실행하는지를 검증합니다. 이어서 대표적인 Playwright `storageState`로 별도 `refresh`와 `consume` Job을 실행하고, 후속 읽기에서 쿠키와 local-storage 비밀값이 영속 로그나 Run 결과로 유출되지 않는지 증명합니다.

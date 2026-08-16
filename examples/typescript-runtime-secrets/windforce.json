@@ -8,7 +8,32 @@
       "outputSchema": "deliver.output.schema.json",
       "operatorSettingsSchema": "deliver.settings.schema.json",
       "runtimeAccess": {
-        "variables": ["secrets/partner-token"]
+        "variables": [
+          {"scope": "app", "path": "secrets/partner-token"}
+        ]
+      }
+    },
+    "refresh": {
+      "runtimeAccess": {
+        "variables": [
+          {"scope": "app", "path": "sessions/playwright"}
+        ],
+        "writeVariables": [
+          {"scope": "app", "path": "sessions/playwright", "storage": "secret"}
+        ],
+        "writeResources": [
+          {"scope": "app", "path": "sessions/meta"}
+        ]
+      }
+    },
+    "consume": {
+      "runtimeAccess": {
+        "variables": [
+          {"scope": "app", "path": "sessions/playwright"}
+        ],
+        "resources": [
+          {"scope": "app", "path": "sessions/meta"}
+        ]
       }
     }
   }
