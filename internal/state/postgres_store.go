@@ -663,11 +663,17 @@ WHERE candidate.state=$1
         WHERE running.state='running'
           AND COALESCE(NULLIF(running.payload->>'workspace', ''), NULLIF(running.payload->'deployment'->>'workspace', ''), 'default') = claim.workspace_id
           AND COALESCE(running.payload->'executionLimits'->'concurrency', '[]'::jsonb) @>
-            jsonb_build_array(jsonb_build_object(
-              'policyId', limit_pin->>'policyId',
-              'scope', limit_pin->>'scope',
-              'keyDigest', limit_pin->>'keyDigest'
-            ))
+            jsonb_build_array(
+              jsonb_build_object(
+                'policyId', limit_pin->>'policyId',
+                'scope', limit_pin->>'scope',
+                'keyDigest', limit_pin->>'keyDigest'
+              ) || CASE
+                WHEN COALESCE(limit_pin->>'shapeFingerprint', '') <> ''
+                THEN jsonb_build_object('shapeFingerprint', limit_pin->>'shapeFingerprint')
+                ELSE '{}'::jsonb
+              END
+            )
       ) >= (limit_pin->>'maxConcurrent')::integer
   )
   AND NOT EXISTS (
@@ -685,6 +691,7 @@ WHERE candidate.state=$1
         WHERE rate_bucket.workspace_id = claim.workspace_id
           AND rate_bucket.scope = rate_pin->>'scope'
           AND rate_bucket.policy_id = rate_pin->>'policyId'
+          AND rate_bucket.shape_fingerprint = COALESCE(rate_pin->>'shapeFingerprint', '')
           AND rate_bucket.key_digest = rate_pin->>'keyDigest'
           AND rate_bucket.window_seconds = (rate_pin->>'windowSeconds')::integer
           AND rate_bucket.window_start <= CURRENT_TIMESTAMP
@@ -757,6 +764,7 @@ SELECT EXISTS (
         ON rate_bucket.workspace_id = claim.workspace_id
        AND rate_bucket.scope = rate_pin->>'scope'
        AND rate_bucket.policy_id = rate_pin->>'policyId'
+       AND rate_bucket.shape_fingerprint = COALESCE(rate_pin->>'shapeFingerprint', '')
        AND rate_bucket.key_digest = rate_pin->>'keyDigest'
        AND rate_bucket.window_seconds = (rate_pin->>'windowSeconds')::integer
       WHERE rate_bucket.window_start <= CURRENT_TIMESTAMP
@@ -818,30 +826,53 @@ type postgresClaimLimitResult struct {
 func postgresClaimLimitsReached(ctx context.Context, tx pgx.Tx, candidate Job) (postgresClaimLimitResult, error) {
 	workspaceID := normalizedJobWorkspace("", candidate)
 	appKey := jobAppKey(candidate)
-	appLimit, appLimited := jobMaxConcurrent(candidate)
-	lockKeys := make([]string, 0, len(candidate.Payload.ExecutionLimits.Concurrency)+len(candidate.Payload.ExecutionLimits.Rate)+1)
-	if appLimited && appKey != "" {
+	lockKeySet := make(map[string]struct{}, len(candidate.Payload.ExecutionLimits.Concurrency)*2+len(candidate.Payload.ExecutionLimits.Rate)*2+2)
+	addLock := func(lockKey string) {
+		if lockKey != "" {
+			lockKeySet[lockKey] = struct{}{}
+		}
+	}
+	if appKey != "" {
 		// Preserve the legacy maxConcurrent advisory-lock identity so mixed
-		// Core versions remain coordinated during a rolling upgrade.
-		lockKeys = append(lockKeys, appKey)
+		// Core versions remain coordinated during a rolling upgrade. It is
+		// always acquired because an implicit operator allowance can make an
+		// otherwise unlimited App finite.
+		addLock(appKey)
+	}
+	for _, requirement := range candidateExecutionPolicyRequirements(candidate) {
+		addLock(executionLimitPolicyLockKey(requirement.Key))
 	}
 	for _, limit := range candidate.Payload.ExecutionLimits.Concurrency {
 		if !validKeyedConcurrencyPin(limit) {
 			return postgresClaimLimitResult{Reached: true}, nil
 		}
-		lockKeys = append(lockKeys, "keyed:"+limit.Scope+":"+limit.PolicyID+":"+limit.KeyDigest)
+		addLock("keyed:" + limit.Scope + ":" + limit.PolicyID + ":" + limit.ShapeFingerprint + ":" + limit.KeyDigest)
 	}
 	for _, limit := range candidate.Payload.ExecutionLimits.Rate {
 		if !validKeyedRatePin(limit) {
 			return postgresClaimLimitResult{Reached: true}, nil
 		}
-		lockKeys = append(lockKeys, "rate:"+limit.Scope+":"+limit.PolicyID+":"+limit.KeyDigest+":"+fmt.Sprint(limit.WindowSeconds))
+		addLock("rate:" + limit.Scope + ":" + limit.PolicyID + ":" + limit.ShapeFingerprint + ":" + limit.KeyDigest + ":" + fmt.Sprint(limit.WindowSeconds))
+	}
+	lockKeys := make([]string, 0, len(lockKeySet))
+	for lockKey := range lockKeySet {
+		lockKeys = append(lockKeys, lockKey)
 	}
 	sort.Strings(lockKeys)
 	for _, lockKey := range lockKeys {
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))`, workspaceID, lockKey); err != nil {
 			return postgresClaimLimitResult{}, err
 		}
+	}
+	// The policy read must happen after every shared identity lock. A policy
+	// mutation that commits first is therefore visible to this claim.
+	policies, err := postgresExecutionPoliciesForCandidate(ctx, tx, candidate)
+	if err != nil {
+		return postgresClaimLimitResult{}, err
+	}
+	appLimit, appLimited, appValid := effectiveAppConcurrencyLimit(candidate, policies)
+	if !appValid {
+		return postgresClaimLimitResult{Reached: true}, nil
 	}
 	if appLimited && appKey != "" {
 		running, err := postgresRunningJobsForApp(ctx, tx, workspaceID, appKey)
@@ -853,11 +884,15 @@ func postgresClaimLimitsReached(ctx context.Context, tx pgx.Tx, candidate Job) (
 		}
 	}
 	for _, limit := range candidate.Payload.ExecutionLimits.Concurrency {
+		effectiveLimit, valid := effectiveKeyedConcurrencyLimit(candidate, limit, policies)
+		if !valid {
+			return postgresClaimLimitResult{Reached: true}, nil
+		}
 		running, err := postgresRunningJobsForKeyedConcurrency(ctx, tx, workspaceID, limit)
 		if err != nil {
 			return postgresClaimLimitResult{}, err
 		}
-		if running >= int(limit.MaxConcurrent) {
+		if running >= effectiveLimit {
 			return postgresClaimLimitResult{Reached: true}, nil
 		}
 	}
@@ -866,7 +901,7 @@ func postgresClaimLimitsReached(ctx context.Context, tx pgx.Tx, candidate Job) (
 		if err != nil {
 			return postgresClaimLimitResult{}, err
 		}
-		reached, err := postgresRateLimitsReached(ctx, tx, candidate, rateNow)
+		reached, err := postgresRateLimitsReached(ctx, tx, candidate, rateNow, policies)
 		if err != nil {
 			return postgresClaimLimitResult{}, err
 		}
@@ -881,11 +916,15 @@ func postgresClaimLimitsReached(ctx context.Context, tx pgx.Tx, candidate Job) (
 }
 
 func postgresRunningJobsForKeyedConcurrency(ctx context.Context, tx pgx.Tx, workspaceID string, limit KeyedConcurrencyLimitPin) (int, error) {
-	match, err := json.Marshal([]map[string]string{{
+	matchFields := map[string]string{
 		"policyId":  limit.PolicyID,
 		"scope":     limit.Scope,
 		"keyDigest": limit.KeyDigest,
-	}})
+	}
+	if limit.ShapeFingerprint != "" {
+		matchFields["shapeFingerprint"] = limit.ShapeFingerprint
+	}
+	match, err := json.Marshal([]map[string]string{matchFields})
 	if err != nil {
 		return 0, err
 	}

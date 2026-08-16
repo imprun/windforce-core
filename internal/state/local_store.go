@@ -1256,6 +1256,12 @@ func ensureSnapshot(snapshot *Snapshot) {
 	if snapshot.WorkerGroupRunStates == nil {
 		snapshot.WorkerGroupRunStates = map[string]WorkerGroupRunState{}
 	}
+	if snapshot.ExecutionLimitPolicies == nil {
+		snapshot.ExecutionLimitPolicies = map[string]ExecutionLimitPolicy{}
+	}
+	if snapshot.ExecutionLimitAudits == nil {
+		snapshot.ExecutionLimitAudits = map[string][]ExecutionLimitPolicyAudit{}
+	}
 	if snapshot.ExecutionRateBuckets == nil {
 		snapshot.ExecutionRateBuckets = map[string]ExecutionRateBucket{}
 	}

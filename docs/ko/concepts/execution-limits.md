@@ -14,6 +14,34 @@ Windforce Core는 함께 적용되는 세 단계의 실행 제한을 제공합�
 모든 제한은 Worker가 Job을 가져가는 시점에 적용됩니다. 제한에 걸린 Job은
 큐에 남고 기다리는 동안 Worker 슬롯을 사용하지 않습니다.
 
+## 릴리스 상한과 운영 허용량
+
+Release 선언은 변경할 수 없는 안전 상한입니다. Core는 새 Release를 게시하지
+않고 한 Cell의 용량을 낮춰야 하는 운영자를 위해 변경 가능한
+`ExecutionLimitPolicy`도 저장합니다. 콘솔에서는 이 값을 **운영 허용량**으로
+표시합니다. claim은 호환되는 두 값 중 작은 값을 강제합니다.
+
+```text
+실제 적용값 = min(고정된 릴리스 상한, 현재 운영 허용량)
+```
+
+운영 허용량은 1 이상의 정수여야 하며 0은 일시 중지 명령이 아닙니다. 허용량을
+삭제하면 Release 상한으로 돌아가며 Release 안전 제한을 끄지는 않습니다.
+저장된 허용량보다 Release 상한이 낮아져도 운영 설정을 자동 수정하지 않고 낮은
+Release 상한을 실제로 적용합니다.
+
+v1에서 Release에 `maxConcurrent`가 없어도 운영 허용량을 둘 수 있는 예외는 App
+전체 동시성뿐입니다. 키가 항상 workspace와 App이어서 Core가 안정적인 암시적
+모양을 만들 수 있기 때문입니다. 키 기반 동시성과 rate 허용량은 정확히 일치하는
+Release 모양이 있어야 합니다. 키 없는 App 전체 rate, Action 전체 무키 제한,
+상용 청구 quota, 여러 Cell을 아우르는 전역 quota는 이 계약의 범위가 아닙니다.
+
+정책 모양에는 workspace, App, 선택적 Action, scope, 정책 ID, 종류, 순서가 있는
+입력 pointer, 고정 rate window가 포함됩니다. 숫자 상한은 포함하지 않습니다.
+Core는 하나의 버전 있는 SHA-256 모양 fingerprint를 Release 사전 검사 오류,
+저장 정책, Run/Job pin, read-back, 충돌 응답에 공통으로 사용합니다. 운영 API와
+콘솔에는 원본 pointer 값을 노출하지 않습니다.
+
 ## 키 제한 선언
 
 App의 여러 Action이 용량을 공유해야 하면 App 수준에 `executionLimits`를
@@ -63,11 +91,12 @@ flowchart TD
     C --> D["선언된 JSON Pointer 값 조회"]
     D --> E["스칼라 구성요소 정규화"]
     E --> F["Workspace 키로 HMAC"]
-    F --> G["정책 ID, revision, digest, 예산과 윈도우를 Run과 Job에 고정"]
+    F --> G["정책 ID, 모양 fingerprint, digest, 상한과 윈도우를 Run과 Job에 고정"]
     G --> H["Local 또는 PostgreSQL 큐"]
-    H --> I["동시성과 현재 rate 예산을 원자적으로 검사"]
-    I -->|"모든 제한 허용"| J["rate 시도 소비, Worker lease 생성과 실행"]
-    I -->|"제한에 걸림"| K["Job이 큐에 대기"]
+    H --> I["후보 정책 identity를 잠그고 현재 운영 허용량 조회"]
+    I --> L["실제 동시성과 rate 예산을 원자적으로 검사"]
+    L -->|"모든 제한 허용"| J["rate 시도 소비, Worker lease 생성과 실행"]
+    L -->|"제한에 걸림"| K["Job이 큐에 대기"]
 ```
 
 Core는 제한 pin에 HMAC digest만 저장하고 인덱싱합니다. 선택한 원본 값은
@@ -98,8 +127,41 @@ HMAC은 저장된 제한 상태에서 낮은 엔트로피 값을 추측하기 �
 - retry 또는 복구된 Job은 다시 claim될 때 rate 시도를 하나 더 소비합니다.
 - HumanTask hold는 프로세스와 lease를 유지하므로 용량을 계속 사용합니다.
 - suspend와 retry는 Run에 저장된 안전한 pin을 다시 사용합니다.
+- 대기 작업과 retry 또는 resume 뒤의 다음 claim은 현재 호환되는 운영 허용량을
+  사용합니다. 제한을 낮춰도 이미 실행 중인 Job은 중단하지 않습니다.
 - queue-demand 관측은 동시성 제한에 막힌 Job과 현재 윈도우의 남은 rate
   예산을 초과하는 시도를 증설 수요에서 제외합니다.
+
+## Release 전환과 read-back
+
+저장된 키 기반 운영 허용량의 모양을 제거하거나 바꾸는 forward publication은
+거부합니다. 숫자 상한만 바뀌면 fingerprint가 같으므로 허용합니다. rollback은
+차단하지 않습니다. 호환되지 않는 허용량은 활성 Release 기준으로 dormant인 파생
+뷰가 되지만 삭제하지 않으며, 이전 모양에 고정된 대기 Job에는 계속 적용합니다.
+
+Control API는 세 가지 뷰를 분리합니다.
+
+- `desired`: revision, operation ID, 호환 상태, 감사 provenance가 있는 저장된
+  운영 정책
+- `observed`: 활성 Release의 모양과 상한
+- `enforced`: 활성 Release의 실제 적용값과 이전 Release에서 남은 대기·실행
+  Job의 fingerprint 및 고정 상한별 그룹
+
+각 active 또는 residual 적용 그룹에는 `over_allowance_drain`이 있습니다. 같은
+불투명 키에서 실행 중인 Job 수가 실제 동시성 제한보다 많을 때만 참입니다. 서로
+다른 불투명 키를 합산해 잘못된 drain 상태로 표시하지 않습니다. 실행 중인 Job은
+끝날 수 있고 같은 키의 새 claim은 그동안 대기합니다.
+
+변경 요청은 optimistic revision과 `operation_id`를 사용합니다. 같은 operation과
+payload를 다시 보내면 감사 기록을 중복 생성하지 않고 원래 revision을 반환합니다.
+같은 ID를 다른 payload에 재사용하면 충돌입니다. Provisioning export에는 정책이
+포함되며 정책 resource는 호환성 사전 검사를 거쳐 한 batch로 적용합니다. 삭제는
+항상 명시해야 합니다.
+
+Reconciler는 `/api/w/{workspace}/system/info`에서 이 계약을 탐색합니다.
+`capabilities.execution_limit_policy`와
+`capabilities.execution_limit_shape` 값은 모두 `v1`입니다. 이전 Core에서
+capability가 없는 상태는 빈 정책 목록과 같지 않습니다.
 
 ## 고정 윈도우 동작
 
@@ -129,3 +191,6 @@ backend와 `consumed` 또는 `blocked` 결과만 보고합니다. workspace, App
 키 동시성은 [ADR 0033](../../adr/0033-pin-and-enforce-opaque-key-concurrency.md),
 고정 윈도우 rate 의미와 실패 동작은
 [ADR 0041](../../adr/0041-pin-and-enforce-opaque-key-fixed-window-rate.md)을 참고하십시오.
+운영 정책, rollback, fingerprint, read-back 결정은
+[ADR 0042](../../adr/0042-enforce-operator-execution-limit-policies-at-claim.md)를
+참고하십시오.

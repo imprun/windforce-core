@@ -16,10 +16,14 @@ func postgresCurrentRateTime(ctx context.Context, tx pgx.Tx) (time.Time, error) 
 	return now.UTC(), nil
 }
 
-func postgresRateLimitsReached(ctx context.Context, tx pgx.Tx, candidate Job, now time.Time) (bool, error) {
+func postgresRateLimitsReached(ctx context.Context, tx pgx.Tx, candidate Job, now time.Time, policies executionLimitPolicyLookup) (bool, error) {
 	workspaceID := normalizedJobWorkspace("", candidate)
 	for _, limit := range candidate.Payload.ExecutionLimits.Rate {
 		if !validKeyedRatePin(limit) {
+			return true, nil
+		}
+		effectiveLimit, valid := effectiveKeyedRateLimit(candidate, limit, policies)
+		if !valid {
 			return true, nil
 		}
 		start, _ := rateWindow(now, limit.WindowSeconds)
@@ -28,15 +32,15 @@ func postgresRateLimitsReached(ctx context.Context, tx pgx.Tx, candidate Job, no
 		err := tx.QueryRow(ctx, `
 SELECT window_start, consumed
 FROM execution_rate_bucket
-WHERE workspace_id=$1 AND scope=$2 AND policy_id=$3 AND key_digest=$4 AND window_seconds=$5
-`, workspaceID, limit.Scope, limit.PolicyID, limit.KeyDigest, limit.WindowSeconds).Scan(&bucketStart, &consumed)
+WHERE workspace_id=$1 AND scope=$2 AND policy_id=$3 AND shape_fingerprint=$4 AND key_digest=$5 AND window_seconds=$6
+`, workspaceID, limit.Scope, limit.PolicyID, limit.ShapeFingerprint, limit.KeyDigest, limit.WindowSeconds).Scan(&bucketStart, &consumed)
 		if errors.Is(err, pgx.ErrNoRows) {
 			continue
 		}
 		if err != nil {
 			return false, err
 		}
-		if bucketStart.UTC().Equal(start) && consumed >= limit.MaxAttempts {
+		if bucketStart.UTC().Equal(start) && consumed >= effectiveLimit {
 			return true, nil
 		}
 	}
@@ -49,11 +53,11 @@ func postgresConsumeRateLimits(ctx context.Context, tx pgx.Tx, candidate Job, no
 		start, end := rateWindow(now, limit.WindowSeconds)
 		if _, err := tx.Exec(ctx, `
 INSERT INTO execution_rate_bucket (
-    workspace_id, scope, policy_id, key_digest, window_seconds,
+    workspace_id, scope, policy_id, shape_fingerprint, key_digest, window_seconds,
     window_start, window_end, consumed, updated_at
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, 1, $8)
-ON CONFLICT (workspace_id, scope, policy_id, key_digest, window_seconds)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, $9)
+ON CONFLICT (workspace_id, scope, policy_id, shape_fingerprint, key_digest, window_seconds)
 DO UPDATE SET
     window_start = EXCLUDED.window_start,
     window_end = EXCLUDED.window_end,
@@ -63,7 +67,7 @@ DO UPDATE SET
         ELSE 1
     END,
     updated_at = EXCLUDED.updated_at
-`, workspaceID, limit.Scope, limit.PolicyID, limit.KeyDigest, limit.WindowSeconds, start, end, now); err != nil {
+`, workspaceID, limit.Scope, limit.PolicyID, limit.ShapeFingerprint, limit.KeyDigest, limit.WindowSeconds, start, end, now); err != nil {
 			return err
 		}
 	}
@@ -72,7 +76,7 @@ DO UPDATE SET
 
 func postgresCurrentRateBuckets(ctx context.Context, tx pgx.Tx, observedAt time.Time) (map[string]ExecutionRateBucket, error) {
 	rows, err := tx.Query(ctx, `
-SELECT workspace_id, scope, policy_id, key_digest, window_seconds, window_start, window_end, consumed
+SELECT workspace_id, scope, policy_id, shape_fingerprint, key_digest, window_seconds, window_start, window_end, consumed
 FROM execution_rate_bucket
 WHERE window_end > $1
 `, observedAt)
@@ -86,7 +90,7 @@ WHERE window_end > $1
 		var limit KeyedRateLimitPin
 		var bucket ExecutionRateBucket
 		if err := rows.Scan(
-			&workspaceID, &limit.Scope, &limit.PolicyID, &limit.KeyDigest, &limit.WindowSeconds,
+			&workspaceID, &limit.Scope, &limit.PolicyID, &limit.ShapeFingerprint, &limit.KeyDigest, &limit.WindowSeconds,
 			&bucket.WindowStart, &bucket.WindowEnd, &bucket.Consumed,
 		); err != nil {
 			return nil, err

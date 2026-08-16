@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/imprun/windforce-core/internal/executionlimit"
 	"github.com/imprun/windforce-core/internal/gitsource"
 	"github.com/imprun/windforce-core/internal/state"
 )
@@ -155,6 +156,68 @@ func TestExportRedactsSensitiveProvisioningValues(t *testing.T) {
 	}
 	if !containsAny(text, "redacted: true") {
 		t.Fatalf("export did not include redaction marker:\n%s", text)
+	}
+}
+
+func TestExecutionLimitPolicyProvisioningIsAtomicAndRoundTrips(t *testing.T) {
+	ctx := context.Background()
+	store := state.NewLocalStore(filepath.Join(t.TempDir(), "state.json"))
+	implicitFingerprint, err := executionlimit.AppConcurrencyFingerprint("default", "orders")
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyedFingerprint, err := executionlimit.Fingerprint(executionlimit.Shape{
+		WorkspaceID: "default", AppKey: "orders", Scope: executionlimit.ScopeApp,
+		PolicyID: "account", Kind: executionlimit.KindConcurrency, InputPointers: []string{"/account"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := func(name string, policyID string, fingerprint string, allowance int32) Document {
+		return Document{
+			APIVersion: APIVersion, Kind: "ExecutionLimitPolicy", Metadata: Metadata{Name: name},
+			Spec: Spec{AppKey: "orders", Scope: executionlimit.ScopeApp, PolicyID: policyID, LimitKind: executionlimit.KindConcurrency, ShapeFingerprint: fingerprint, Allowance: allowance},
+		}
+	}
+	duplicate := []Document{
+		doc("first", executionlimit.ImplicitAppConcurrencyPolicyID, implicitFingerprint, 1),
+		doc("second", executionlimit.ImplicitAppConcurrencyPolicyID, implicitFingerprint, 2),
+	}
+	if _, err := (Service{Store: store}).Apply(ctx, duplicate, Options{Workspace: "default", Actor: "tester"}); err == nil {
+		t.Fatal("duplicate policy import succeeded")
+	}
+	policies, err := store.ListExecutionLimitPolicies(ctx, "default", "orders")
+	if err != nil || len(policies) != 0 {
+		t.Fatalf("failed import partially applied policies=%#v err=%v", policies, err)
+	}
+	docs := []Document{
+		doc("app-capacity", executionlimit.ImplicitAppConcurrencyPolicyID, implicitFingerprint, 2),
+		doc("account-capacity", "account", keyedFingerprint, 1),
+	}
+	result, err := (Service{Store: store}).Apply(ctx, docs, Options{Workspace: "default", Actor: "tester"})
+	if err != nil || len(result.Applied) != 2 {
+		t.Fatalf("apply = %#v err=%v", result, err)
+	}
+	exported, err := (Service{Store: store}).Export(ctx, "default", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	policyDocs := make([]Document, 0)
+	for _, exportedDoc := range exported {
+		if exportedDoc.Kind == "ExecutionLimitPolicy" {
+			policyDocs = append(policyDocs, exportedDoc)
+		}
+	}
+	if len(policyDocs) != 2 {
+		t.Fatalf("exported policies = %#v", policyDocs)
+	}
+	restored := state.NewLocalStore(filepath.Join(t.TempDir(), "state.json"))
+	if _, err := (Service{Store: restored}).Apply(ctx, policyDocs, Options{Workspace: "default", Actor: "restore"}); err != nil {
+		t.Fatal(err)
+	}
+	restoredPolicies, err := restored.ListExecutionLimitPolicies(ctx, "default", "orders")
+	if err != nil || len(restoredPolicies) != 2 || restoredPolicies[0].ShapeFingerprint == "" || restoredPolicies[1].ShapeFingerprint == "" {
+		t.Fatalf("restored policies = %#v err=%v", restoredPolicies, err)
 	}
 }
 

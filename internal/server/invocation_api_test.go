@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -14,9 +15,92 @@ import (
 
 	"github.com/imprun/windforce-core/internal/contract"
 	executionpkg "github.com/imprun/windforce-core/internal/execution"
+	"github.com/imprun/windforce-core/internal/executionlimit"
 	"github.com/imprun/windforce-core/internal/state"
 	"github.com/imprun/windforce-core/internal/telemetry"
 )
+
+func TestInvocationIdempotencyReplayKeepsPinnedRunUnderCurrentClaimPolicy(t *testing.T) {
+	ctx := context.Background()
+	store := state.NewLocalStore(filepath.Join(t.TempDir(), "state.json"))
+	if _, err := store.CreateWorkspace(ctx, "ws-replay", "Replay", "admin"); err != nil {
+		t.Fatal(err)
+	}
+	deployment := contract.Deployment{
+		Workspace: "ws-replay", App: "echo", Commit: "commit-replay", BundleDigest: testExecutionBundleDigest,
+		Actions: map[string]contract.Action{"run": {Action: "run", Entrypoint: "main.py", InputSchemaBody: json.RawMessage(`{"type":"object"}`)}},
+	}
+	if _, err := store.PublishRelease(ctx, deployment, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	fingerprint, err := executionlimit.AppConcurrencyFingerprint("ws-replay", "echo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocker := state.NewRun("api", "replay-blocker", "echo", "run", deployment, json.RawMessage(`{}`))
+	blocker.ExecutionLimits = state.ExecutionLimitPins{AppConcurrency: &state.AppConcurrencyLimitPin{
+		PolicyID: executionlimit.ImplicitAppConcurrencyPolicyID, ShapeFingerprint: fingerprint,
+	}}
+	blockerJob := state.NewActionJob(blocker, nil)
+	blockerJob.ID = "job-replay-blocker"
+	if err := store.CreateRunAndEnqueue(ctx, blocker, blockerJob); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := store.ClaimJob(ctx, "worker-replay-blocker", time.Minute); err != nil {
+		t.Fatal(err)
+	}
+
+	server := httptest.NewServer(New(Config{Store: store, Catalog: store, AdminToken: "admin-secret"}))
+	defer server.Close()
+	invoke := func() invocationRunView {
+		request, err := http.NewRequest(http.MethodPost, server.URL+"/api/v1/workspaces/ws-replay/runs", bytes.NewBufferString(`{"app":"echo","action":"run","input":{}}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		request.Header.Set("authorization", "Bearer admin-secret")
+		request.Header.Set("content-type", "application/json")
+		request.Header.Set("idempotency-key", "same-replay")
+		response, err := http.DefaultClient.Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer response.Body.Close()
+		if response.StatusCode != http.StatusCreated && response.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(response.Body)
+			t.Fatalf("invoke status=%d body=%s", response.StatusCode, body)
+		}
+		var view invocationRunView
+		if err := json.NewDecoder(response.Body).Decode(&view); err != nil {
+			t.Fatal(err)
+		}
+		return view
+	}
+	created := invoke()
+	replayed := invoke()
+	if replayed.RunID != created.RunID || !replayed.Replayed {
+		t.Fatalf("replay=%#v created=%#v", replayed, created)
+	}
+	if _, _, err := store.MutateExecutionLimitPolicy(ctx, state.MutateExecutionLimitPolicyRequest{
+		Policy: state.ExecutionLimitPolicy{
+			ExecutionLimitPolicyKey: state.ExecutionLimitPolicyKey{
+				WorkspaceID: "ws-replay", AppKey: "echo", Scope: executionlimit.ScopeApp,
+				PolicyID: executionlimit.ImplicitAppConcurrencyPolicyID, Kind: executionlimit.KindConcurrency,
+			},
+			ShapeFingerprint: fingerprint, Allowance: 1,
+		},
+		ExpectedRevision: 0, OperationID: "tighten-after-replay",
+		RequestFingerprint: "tighten-after-replay-request", Actor: "test",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := store.ClaimJob(ctx, "worker-replayed-run", time.Minute); !errors.Is(err, state.ErrNoQueuedJob) {
+		t.Fatalf("claim replayed queued Run under current allowance err=%v, want ErrNoQueuedJob", err)
+	}
+	queued, _, found, err := store.GetJobByRunID(ctx, "ws-replay", created.RunID)
+	if err != nil || !found || queued.State != state.JobQueued || queued.Payload.ExecutionLimits.AppConcurrency == nil || queued.Payload.ExecutionLimits.AppConcurrency.ShapeFingerprint != fingerprint {
+		t.Fatalf("replayed queued job=%#v found=%v err=%v", queued, found, err)
+	}
+}
 
 func TestInvocationAPIPrincipalAuthorizationAndIdempotency(t *testing.T) {
 	ctx := context.Background()

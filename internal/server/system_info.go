@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/imprun/windforce-core/internal/contract"
+	"github.com/imprun/windforce-core/internal/executionlimit"
 )
 
 type systemInfoResponse struct {
@@ -13,6 +14,7 @@ type systemInfoResponse struct {
 	Planes        map[string]bool        `json:"planes"`
 	Backends      map[string]bool        `json:"backends"`
 	Auth          map[string]bool        `json:"auth"`
+	Capabilities  map[string]string      `json:"capabilities"`
 	RuntimeConfig map[string]interface{} `json:"runtime_config"`
 }
 
@@ -75,6 +77,10 @@ func (h *Handler) handleSystemInfo(w http.ResponseWriter, r *http.Request, works
 			"job_token_configured":    h.jobTokenSecret != "",
 			"secret_key_configured":   h.secretKey != "" && h.secretKey != DefaultSecretKey,
 			"previous_secret_key":     h.secretKeyPrevious != "",
+		},
+		Capabilities: map[string]string{
+			"execution_limit_policy": "v1",
+			"execution_limit_shape":  executionlimit.FingerprintVersion,
 		},
 		RuntimeConfig: map[string]interface{}{
 			"wait_ms":               waitMilliseconds,

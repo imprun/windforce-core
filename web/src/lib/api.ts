@@ -268,6 +268,7 @@ export type ExecutionLimits = {
 export type KeyedConcurrencyLimitPin = {
   policy_id: string;
   policy_revision: string;
+  shape_fingerprint?: string;
   scope: string;
   key_digest: string;
   max_concurrent: number;
@@ -276,6 +277,7 @@ export type KeyedConcurrencyLimitPin = {
 export type KeyedRateLimitPin = {
   policy_id: string;
   policy_revision: string;
+  shape_fingerprint?: string;
   scope: string;
   key_digest: string;
   max_attempts: number;
@@ -283,8 +285,81 @@ export type KeyedRateLimitPin = {
 };
 
 export type ExecutionLimitPins = {
+  app_concurrency?: {
+    policy_id: string;
+    shape_fingerprint: string;
+    max_concurrent?: number;
+  };
   concurrency?: KeyedConcurrencyLimitPin[];
   rate?: KeyedRateLimitPin[];
+};
+
+export type ExecutionLimitShape = {
+  workspace_id: string;
+  app_key: string;
+  action_key?: string;
+  scope: "app" | "action";
+  policy_id: string;
+  kind: "concurrency" | "rate";
+  shape_fingerprint: string;
+  release_ceiling: number | null;
+  window_seconds?: number;
+};
+
+export type ExecutionLimitPolicy = Omit<ExecutionLimitShape, "release_ceiling"> & {
+  operator_allowance: number | null;
+  revision: number;
+  operation_id: string;
+  status: "applied" | "dormant" | "deleted";
+  observed_shape_fingerprint?: string;
+  updated_by?: string;
+  updated_at: string;
+};
+
+export type EnforcedExecutionLimit = ExecutionLimitShape & {
+  operator_allowance: number | null;
+  effective_limit: number | null;
+  policy_revision?: number;
+  status: "release_ceiling" | "operator_allowance";
+  over_allowance_drain: boolean;
+};
+
+export type ExecutionLimitResidual = ExecutionLimitShape & {
+  operator_allowance: number | null;
+  effective_limit: number | null;
+  policy_revision?: number;
+  queued: number;
+  running: number;
+  over_allowance_drain: boolean;
+};
+
+export type ExecutionLimitPolicyReadback = {
+  workspace_id: string;
+  app_key: string;
+  desired: { items: ExecutionLimitPolicy[] };
+  observed: { commit_sha: string; items: ExecutionLimitShape[] };
+  enforced: {
+    active_release: EnforcedExecutionLimit[];
+    residual_cohorts: ExecutionLimitResidual[];
+  };
+};
+
+export type ExecutionLimitPolicyMutationPayload = {
+  scope: "app" | "action";
+  action_key?: string;
+  policy_id: string;
+  kind: "concurrency" | "rate";
+  shape_fingerprint: string;
+  allowance?: number;
+  window_seconds?: number;
+  expected_revision: number;
+  operation_id: string;
+  reason?: string;
+};
+
+export type ExecutionLimitPolicyMutationResult = {
+  policy: ExecutionLimitPolicy;
+  replayed: boolean;
 };
 
 export type AppDetail = {
@@ -659,6 +734,7 @@ export type SystemInfo = {
   planes: Record<string, boolean>;
   backends: Record<string, boolean>;
   auth: Record<string, boolean>;
+  capabilities?: Record<string, string>;
   runtime_config: Record<string, unknown>;
 };
 
@@ -1186,6 +1262,30 @@ export class WindforceApi {
         ? `${appPath}/actions/${encodeURIComponent(actionKey)}/execution-demand`
         : `${appPath}/execution-demand`,
     );
+  }
+
+  executionLimitPolicies(appKey: string): Promise<ExecutionLimitPolicyReadback> {
+    return this.request(`/apps/${encodeURIComponent(appKey)}/execution-limit-policies`);
+  }
+
+  putExecutionLimitPolicy(
+    appKey: string,
+    payload: ExecutionLimitPolicyMutationPayload,
+  ): Promise<ExecutionLimitPolicyMutationResult> {
+    return this.request(`/apps/${encodeURIComponent(appKey)}/execution-limit-policies`, {
+      method: "PUT",
+      body: payload,
+    });
+  }
+
+  deleteExecutionLimitPolicy(
+    appKey: string,
+    payload: ExecutionLimitPolicyMutationPayload,
+  ): Promise<ExecutionLimitPolicyMutationResult> {
+    return this.request(`/apps/${encodeURIComponent(appKey)}/execution-limit-policies`, {
+      method: "DELETE",
+      body: payload,
+    });
   }
 
   appHistory(appKey: string): Promise<HistoryItem[]> {
