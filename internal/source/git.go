@@ -231,18 +231,51 @@ func (c GitClient) run(ctx context.Context, dir string, args ...string) (string,
 }
 
 func (GitCommandRunner) Run(ctx context.Context, dir string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd := exec.CommandContext(ctx, "git", isolatedGitCommandArgs(args)...)
 	hideGitCommandWindow(cmd)
 	cmd.Dir = dir
 	if cmd.Dir == "" {
 		cmd.Dir = os.TempDir()
 	}
-	cmd.Env = append(cmd.Environ(), "GIT_TERMINAL_PROMPT=0")
+	cmd.Env = isolatedGitEnvironment(cmd.Environ())
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("git %s: %w: %s", redact(strings.Join(args, " ")), err, redact(strings.TrimSpace(string(out))))
 	}
 	return string(out), nil
+}
+
+func isolatedGitCommandArgs(args []string) []string {
+	isolated := []string{
+		"-c", "credential.helper=",
+		"-c", "credential.interactive=never",
+		"-c", "core.askPass=",
+		"-c", "http.extraHeader=",
+	}
+	return append(isolated, args...)
+}
+
+func isolatedGitEnvironment(environment []string) []string {
+	blocked := map[string]struct{}{
+		"GCM_INTERACTIVE":     {},
+		"GIT_ASKPASS":         {},
+		"GIT_TERMINAL_PROMPT": {},
+		"SSH_ASKPASS":         {},
+	}
+	isolated := make([]string, 0, len(environment)+len(blocked))
+	for _, entry := range environment {
+		key, _, _ := strings.Cut(entry, "=")
+		if _, found := blocked[strings.ToUpper(key)]; found {
+			continue
+		}
+		isolated = append(isolated, entry)
+	}
+	return append(isolated,
+		"GCM_INTERACTIVE=never",
+		"GIT_ASKPASS=",
+		"GIT_TERMINAL_PROMPT=0",
+		"SSH_ASKPASS=",
+	)
 }
 
 func redact(value string) string {

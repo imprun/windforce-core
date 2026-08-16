@@ -3,10 +3,14 @@ package source
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -111,6 +115,73 @@ func TestGitCommandRunnerRedactsFailedCommand(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "https://[REDACTED]@git.example.test/group/project.git") {
 		t.Fatalf("error does not contain redacted URL: %v", err)
+	}
+}
+
+func TestGitCommandRunnerDisablesImplicitHostCredentials(t *testing.T) {
+	args := isolatedGitCommandArgs([]string{"ls-remote", "https://git.example.test/group/project.git"})
+	wantPrefix := []string{
+		"-c", "credential.helper=",
+		"-c", "credential.interactive=never",
+		"-c", "core.askPass=",
+		"-c", "http.extraHeader=",
+	}
+	if len(args) < len(wantPrefix) || strings.Join(args[:len(wantPrefix)], "\x00") != strings.Join(wantPrefix, "\x00") {
+		t.Fatalf("isolated git args = %#v, want prefix %#v", args, wantPrefix)
+	}
+
+	environment := isolatedGitEnvironment([]string{
+		"PATH=/usr/bin",
+		"GIT_ASKPASS=host-helper",
+		"git_terminal_prompt=1",
+		"SSH_ASKPASS=host-ssh-helper",
+		"GCM_INTERACTIVE=always",
+	})
+	joined := strings.Join(environment, "\n")
+	for _, forbidden := range []string{"host-helper", "host-ssh-helper", "GCM_INTERACTIVE=always", "git_terminal_prompt=1"} {
+		if strings.Contains(joined, forbidden) {
+			t.Fatalf("isolated git environment retained %q: %#v", forbidden, environment)
+		}
+	}
+	for _, required := range []string{"GCM_INTERACTIVE=never", "GIT_ASKPASS=", "GIT_TERMINAL_PROMPT=0", "SSH_ASKPASS="} {
+		if !strings.Contains(joined, required) {
+			t.Fatalf("isolated git environment missing %q: %#v", required, environment)
+		}
+	}
+}
+
+func TestGitCommandRunnerDoesNotUseConfiguredCredentialHelper(t *testing.T) {
+	var authenticated atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "" {
+			authenticated.Store(true)
+			_, _ = w.Write([]byte(strings.Repeat("a", 40) + "\trefs/heads/main\n"))
+			return
+		}
+		w.Header().Set("WWW-Authenticate", `Basic realm="private"`)
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer server.Close()
+
+	credentialURL, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	credentialURL.User = url.UserPassword("host-user", "host-secret")
+	credentialFile := filepath.Join(t.TempDir(), "credentials")
+	if err := os.WriteFile(credentialFile, []byte(credentialURL.String()+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_CONFIG_COUNT", "1")
+	t.Setenv("GIT_CONFIG_KEY_0", "credential.helper")
+	t.Setenv("GIT_CONFIG_VALUE_0", "store --file="+filepath.ToSlash(credentialFile))
+
+	_, err = GitCommandRunner{}.Run(context.Background(), "", "ls-remote", "--heads", server.URL+"/private.git")
+	if err == nil {
+		t.Fatal("unauthenticated ls-remote unexpectedly succeeded")
+	}
+	if authenticated.Load() {
+		t.Fatal("Git command used a credential from the configured host helper")
 	}
 }
 

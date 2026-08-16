@@ -1966,8 +1966,8 @@ func TestCanonicalControlPlaneOpenAPIExposesSchemaDiscovery(t *testing.T) {
 			t.Fatalf("probe request schema missing %s: %#v", field, probeRequest)
 		}
 	}
-	if probeRequest["subpath"] == nil || registerRequest["placement_policy"] == nil {
-		t.Fatalf("placement-aware git source schemas are incomplete: register=%#v probe=%#v", registerRequest, probeRequest)
+	if probeRequest["subpath"] == nil || registerRequest["placement_policy"] != nil {
+		t.Fatalf("access-only git source schemas are inconsistent: register=%#v probe=%#v", registerRequest, probeRequest)
 	}
 	placementPatch := schemas["ExecutionPlacementPatch"].(map[string]any)
 	placementPatchProperties := placementPatch["properties"].(map[string]any)
@@ -1977,23 +1977,26 @@ func TestCanonicalControlPlaneOpenAPIExposesSchemaDiscovery(t *testing.T) {
 	}
 	assertSchemaFields("AppView", []string{"required_labels", "required_labels_override", "effective_route_tag", "effective_required_labels"})
 	assertSchemaFields("AppAction", []string{"required_labels", "required_labels_override", "effective_route_tag", "effective_required_labels"})
-	manifestPlacement := schemas["ManifestPlacementPreview"].(map[string]any)["properties"].(map[string]any)
-	manifestActionPlacement := schemas["ManifestActionPlacementPreview"].(map[string]any)["properties"].(map[string]any)
-	if manifestPlacement["worker_tag"] == nil || manifestPlacement["route_tag"] != nil ||
-		manifestActionPlacement["worker_tag"] == nil || manifestActionPlacement["route_tag"] != nil {
-		t.Fatalf("placement previews must expose worker_tag, not gateway-like route_tag: app=%#v action=%#v", manifestPlacement, manifestActionPlacement)
+	if schemas["ManifestPlacementPreview"] != nil || schemas["ManifestActionPlacementPreview"] != nil {
+		t.Fatalf("registration OpenAPI must not expose manifest placement previews")
 	}
 	if probeRequest["access_token"] == nil || probeRequest["creds_ref"] == nil {
 		t.Fatalf("probe request schema = %#v", probeRequest)
 	}
 	probeResult := schemas["GitSourceProbeResult"].(map[string]any)["properties"].(map[string]any)
-	for _, field := range []string{"reachable", "branch", "branch_exists", "branches", "error", "manifest"} {
+	for _, field := range []string{"reachable", "branch", "branch_exists", "branches", "code", "error"} {
 		if probeResult[field] == nil {
 			t.Fatalf("probe result schema missing %s: %#v", field, probeResult)
 		}
 	}
-	if probeResult["commit"] != nil {
-		t.Fatalf("probe result schema must match canonical response without commit: %#v", probeResult)
+	if probeResult["commit"] != nil || probeResult["manifest"] != nil {
+		t.Fatalf("probe result schema must be access-only: %#v", probeResult)
+	}
+	gitSourceError := schemas["GitSourceError"].(map[string]any)["properties"].(map[string]any)
+	for _, field := range []string{"code", "error", "check"} {
+		if gitSourceError[field] == nil {
+			t.Fatalf("git source error schema missing %s: %#v", field, gitSourceError)
+		}
 	}
 	deployRequest := schemas["DeployGitSourceRequest"].(map[string]any)["properties"].(map[string]any)
 	for _, field := range []string{"confirm", "message"} {
@@ -2590,10 +2593,7 @@ func TestCanonicalRegisterGitSourceRejectsInvalidSubpathBeforePersisting(t *test
 	tempDir := t.TempDir()
 	repoDir := createTestGitSourceRepo(t, tempDir, "repo", "")
 	registry := gitsource.NewFileRegistry(filepath.Join(tempDir, "git-sources.json"))
-	handler := New(Config{
-		Syncer:     &syncer.Syncer{CloneRoot: tempDir},
-		GitSources: registry,
-	})
+	handler := New(Config{GitSources: registry})
 	server := httptest.NewServer(handler)
 	defer server.Close()
 
@@ -2607,9 +2607,16 @@ func TestCanonicalRegisterGitSourceRejectsInvalidSubpathBeforePersisting(t *test
 		t.Fatal(err)
 	}
 	defer registerResp.Body.Close()
-	if registerResp.StatusCode != http.StatusUnprocessableEntity {
+	if registerResp.StatusCode != http.StatusBadRequest {
 		body, _ := io.ReadAll(registerResp.Body)
-		t.Fatalf("register status = %d, want %d: %s", registerResp.StatusCode, http.StatusUnprocessableEntity, body)
+		t.Fatalf("register status = %d, want %d: %s", registerResp.StatusCode, http.StatusBadRequest, body)
+	}
+	var invalidSubpathBody map[string]string
+	if err := json.NewDecoder(registerResp.Body).Decode(&invalidSubpathBody); err != nil {
+		t.Fatal(err)
+	}
+	if invalidSubpathBody["code"] != gitSourceErrorSubpathInvalid {
+		t.Fatalf("invalid subpath response = %#v", invalidSubpathBody)
 	}
 	snapshot, err := registry.Load(context.Background())
 	if err != nil {
@@ -2617,6 +2624,51 @@ func TestCanonicalRegisterGitSourceRejectsInvalidSubpathBeforePersisting(t *test
 	}
 	if len(snapshot.Sources) != 0 {
 		t.Fatalf("registered sources = %#v, want none", snapshot.Sources)
+	}
+}
+
+func TestCanonicalGitSourceAccessFailureIsStructuredAndSanitized(t *testing.T) {
+	privateRepo := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("WWW-Authenticate", `Basic realm="private"`)
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer privateRepo.Close()
+
+	registry := gitsource.NewFileRegistry(filepath.Join(t.TempDir(), "git-sources.json"))
+	server := httptest.NewServer(New(Config{GitSources: registry}))
+	defer server.Close()
+	payload := `{"name":"private-source","repo_url":"` + privateRepo.URL + `/repo.git","branch":"main"}`
+
+	probeResp, err := http.Post(server.URL+"/api/w/ws-a/git_sources/probe", "application/json", strings.NewReader(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer probeResp.Body.Close()
+	var probe map[string]any
+	if err := json.NewDecoder(probeResp.Body).Decode(&probe); err != nil {
+		t.Fatal(err)
+	}
+	if probeResp.StatusCode != http.StatusOK || probe["reachable"] != false || probe["code"] != gitSourceErrorRepositoryUnreachable {
+		t.Fatalf("probe response = %d %#v", probeResp.StatusCode, probe)
+	}
+	if message, _ := probe["error"].(string); strings.Contains(message, "fatal:") || strings.Contains(message, privateRepo.URL) {
+		t.Fatalf("probe leaked Git diagnostics: %q", message)
+	}
+
+	registerResp, err := http.Post(server.URL+"/api/w/ws-a/git_sources", "application/json", strings.NewReader(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer registerResp.Body.Close()
+	var register map[string]any
+	if err := json.NewDecoder(registerResp.Body).Decode(&register); err != nil {
+		t.Fatal(err)
+	}
+	if registerResp.StatusCode != http.StatusUnprocessableEntity || register["code"] != gitSourceErrorRepositoryUnreachable {
+		t.Fatalf("register response = %d %#v", registerResp.StatusCode, register)
+	}
+	if snapshot, err := registry.Load(context.Background()); err != nil || len(snapshot.Sources) != 0 {
+		t.Fatalf("failed registration persisted source: %#v err=%v", snapshot.Sources, err)
 	}
 }
 
@@ -2696,7 +2748,7 @@ func TestCanonicalRegisterGitSourceRequiresExistingBranch(t *testing.T) {
 	}
 }
 
-func TestCanonicalRegisterGitSourceValidatesManifestBeforePersisting(t *testing.T) {
+func TestCanonicalGitSourceSyncValidatesManifestAfterRegistration(t *testing.T) {
 	tempDir := t.TempDir()
 	repoDir := createTestGitSourceRepo(t, tempDir, "repo", "")
 	if err := os.WriteFile(filepath.Join(repoDir, "windforce.json"), []byte(`{"app":"bad-app","actions":{}}`), 0o644); err != nil {
@@ -2707,7 +2759,10 @@ func TestCanonicalRegisterGitSourceValidatesManifestBeforePersisting(t *testing.
 
 	registry := gitsource.NewFileRegistry(filepath.Join(tempDir, "git-sources.json"))
 	handler := New(Config{
-		Syncer:     &syncer.Syncer{CloneRoot: tempDir},
+		Syncer: &syncer.Syncer{
+			CloneRoot: filepath.Join(tempDir, "clone"),
+			Store:     bundle.NewLocalStore(filepath.Join(tempDir, "store")),
+		},
 		GitSources: registry,
 	})
 	server := httptest.NewServer(handler)
@@ -2725,17 +2780,45 @@ func TestCanonicalRegisterGitSourceValidatesManifestBeforePersisting(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusUnprocessableEntity {
+	if resp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(resp.Body)
-		t.Fatalf("register status = %d, want %d: %s", resp.StatusCode, http.StatusUnprocessableEntity, body)
+		_ = resp.Body.Close()
+		t.Fatalf("register status = %d, want %d: %s", resp.StatusCode, http.StatusCreated, body)
+	}
+	var registered canonicalGitSourceView
+	if err := json.NewDecoder(resp.Body).Decode(&registered); err != nil {
+		_ = resp.Body.Close()
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+
+	syncResp, err := http.Post(server.URL+"/api/w/ws-a/git_sources/"+fmt.Sprint(registered.ID)+"/sync", "application/json", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer syncResp.Body.Close()
+	if syncResp.StatusCode != http.StatusUnprocessableEntity {
+		body, _ := io.ReadAll(syncResp.Body)
+		t.Fatalf("sync status = %d, want %d: %s", syncResp.StatusCode, http.StatusUnprocessableEntity, body)
+	}
+	var syncError map[string]string
+	if err := json.NewDecoder(syncResp.Body).Decode(&syncError); err != nil {
+		t.Fatal(err)
+	}
+	if syncError["code"] != "git_source_contract_invalid" || syncError["check"] != "manifest" || syncError["error"] == "" {
+		t.Fatalf("sync validation response = %#v", syncError)
 	}
 	snapshot, err := registry.Load(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(snapshot.Sources) != 0 {
-		t.Fatalf("registered sources = %#v, want none", snapshot.Sources)
+	if len(snapshot.Sources) != 1 {
+		t.Fatalf("registered sources = %#v, want access-connected source", snapshot.Sources)
+	}
+	for _, source := range snapshot.Sources {
+		if source.AppKey != "" || source.LastSyncedCommit != nil {
+			t.Fatalf("failed sync mutated source identity: %#v", source)
+		}
 	}
 }
 

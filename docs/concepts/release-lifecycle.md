@@ -35,12 +35,9 @@ Registration records where app source comes from:
 - optional repository subpath used as the app root
 - credential reference managed by the Control Plane
 
-Before saving the source, registration verifies repository access, branch and
-subpath containment, `windforce.json`, referenced action schemas, and lockfile
-requirements. Registration does not create an active release.
+Before saving the source, registration verifies repository access, branch existence, and subpath containment. It does not clone the repository or read an App manifest. Registration does not create an active release.
 
-The app key is read from `windforce.json`; the repository source name is only an
-operator-facing alias. One should not be substituted for the other.
+The repository source name is an operator-facing alias. The App key is not known until Sync reads the configured manifest, so one should not be substituted for the other.
 
 ## 2. Sync source
 
@@ -49,7 +46,7 @@ Sync acquires the repository source operation lease and then:
 1. Resolves the repository credential inside the Control Plane.
 2. Fetches the configured branch and resolves its exact commit.
 3. Selects the configured subpath as the app root.
-4. Validates the manifest, schemas, entrypoint references, and lockfile.
+4. Loads the manifest selected by `--manifest-file` or `WINDFORCE_CORE_MANIFEST_FILE` (`windforce.json` by default), then validates the manifest, schemas, entrypoint references, and lockfile.
 5. Materializes an immutable source snapshot in the Source Store under the
    workspace, repository source ID, and commit.
 6. Saves an immutable release candidate and updates the source's last-synced

@@ -371,12 +371,14 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 			},
 			"post": map[string]any{
 				"operationId": "registerGitSource",
-				"summary":     "Validate and register a git source",
+				"summary":     "Check access and register a git source",
+				"description": "Checks repository reachability, the selected branch, and subpath syntax without cloning the repository or reading the app manifest. Sync performs app contract validation.",
 				"parameters":  []any{oapiWorkspaceParam(workspaceID)},
 				"requestBody": oapiJSONBody(oapiSchemaRef("RegisterGitSourceRequest"), true),
 				"responses": withErrors(map[string]any{
 					"201": oapiResponse("Registered git source.", oapiSchemaRef("GitSource")),
-				}, "400", "401", "403", "422"),
+					"422": oapiResponse("Repository access or registration boundary failure.", oapiSchemaRef("GitSourceError")),
+				}, "400", "401", "403"),
 			},
 		},
 		"/api/w/{workspace}/git_sources/probe": map[string]any{
@@ -410,7 +412,8 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 				"requestBody": oapiJSONBody(oapiSchemaRef("PatchGitSourceRequest"), true),
 				"responses": withErrors(map[string]any{
 					"200": oapiResponse("Updated git source.", oapiSchemaRef("GitSource")),
-				}, "400", "401", "403", "404", "422"),
+					"422": oapiResponse("Repository access failure.", oapiSchemaRef("GitSourceError")),
+				}, "400", "401", "403", "404"),
 			},
 			"delete": map[string]any{
 				"operationId": "deleteGitSource",
@@ -430,7 +433,8 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 				"requestBody": oapiJSONBody(oapiSchemaRef("SyncGitSourceRequest"), false),
 				"responses": withErrors(map[string]any{
 					"200": oapiResponse("Synchronized source revision and discovered actions.", oapiSchemaRef("GitSourceSyncResult")),
-				}, "400", "401", "403", "404", "409", "422"),
+					"422": oapiResponse("App source contract validation failure.", oapiSchemaRef("GitSourceError")),
+				}, "400", "401", "403", "404", "409"),
 			},
 		},
 		"/api/w/{workspace}/git_sources/{gitSourceId}/deploy": map[string]any{
@@ -1850,12 +1854,11 @@ func controlPlaneSchemas() map[string]any {
 		"RegisterGitSourceRequest": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"name":             oapiStringSchema(),
-				"repo_url":         oapiStringSchema(),
-				"branch":           oapiStringSchema(),
-				"subpath":          oapiStringSchema(),
-				"creds_ref":        oapiStringSchema(),
-				"placement_policy": oapiSchemaRef("ExecutionPlacementPatch"),
+				"name":      oapiStringSchema(),
+				"repo_url":  oapiStringSchema(),
+				"branch":    oapiStringSchema(),
+				"subpath":   oapiStringSchema(),
+				"creds_ref": oapiStringSchema(),
 			},
 			"required": []any{"name", "repo_url"},
 		},
@@ -1909,32 +1912,29 @@ func controlPlaneSchemas() map[string]any {
 				"branch":        oapiStringSchema(),
 				"branch_exists": oapiBooleanSchema(),
 				"branches":      stringArray,
-				"error":         oapiStringSchema(),
-				"manifest":      oapiSchemaRef("ManifestPlacementPreview"),
+				"code": oapiStringEnumSchema(
+					gitSourceErrorBranchNotFound,
+					gitSourceErrorRepositoryUnreachable,
+				),
+				"error": oapiStringSchema(),
 			},
 			"required": []any{"reachable", "branches"},
 		},
-		"ManifestPlacementPreview": map[string]any{
+		"GitSourceError": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"app_key":         oapiStringSchema(),
-				"worker_tag":      oapiStringSchema(),
-				"required_labels": stringArray,
-				"actions": map[string]any{
-					"type":  "array",
-					"items": oapiSchemaRef("ManifestActionPlacementPreview"),
-				},
+				"code": oapiStringEnumSchema(
+					gitSourceErrorBranchNotFound,
+					"git_source_contract_invalid",
+					gitSourceErrorCredentialUnavailable,
+					gitSourceErrorPlacementAfterSync,
+					gitSourceErrorRepositoryUnreachable,
+					gitSourceErrorSubpathInvalid,
+				),
+				"error": oapiStringSchema(),
+				"check": oapiStringEnumSchema("manifest", "lockfile", "schema"),
 			},
-			"required": []any{"app_key", "worker_tag", "required_labels", "actions"},
-		},
-		"ManifestActionPlacementPreview": map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"action_key":      oapiStringSchema(),
-				"worker_tag":      oapiStringSchema(),
-				"required_labels": stringArray,
-			},
-			"required": []any{"action_key", "worker_tag", "required_labels"},
+			"required": []any{"code", "error"},
 		},
 		"GitSourceSyncResult": map[string]any{
 			"type": "object",

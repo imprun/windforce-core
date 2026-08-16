@@ -27,15 +27,15 @@ Dark mode keeps the green runtime identity while separating the shell, work surf
 
 ## Register an app
 
-Register App validates the configured canonical manifest, previews its App identity and execution-placement defaults, and can store an initial operator policy.
+Register App checks repository access and the selected branch without reading the App manifest. Sync validates the configured manifest and identifies the App.
 
 ![Register an app](../assets/ui/register-app.png)
 
 1. Click Register App in the Apps view.
 2. Enter the app name, repository URL, branch, and optional subpath.
 3. Pick a git auth method or reference an existing credential variable path.
-4. Use Probe repository to confirm reachability and preview the configured canonical manifest.
-5. Optionally override the release worker tag or required labels. Core stores these values independently from later Releases.
+4. Use Probe repository to confirm reachability and branch existence.
+5. Register the source, run Sync, then configure execution placement from the identified App when needed.
 
 ## Use the console in Korean
 

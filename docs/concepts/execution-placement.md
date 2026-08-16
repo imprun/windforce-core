@@ -41,20 +41,13 @@ For required labels, Core uses the first configured override:
 `null` clears an override and resumes inheritance. `[]` is different: it is an
 explicit override requiring no labels.
 
-## Registration
+## Registration and Sync
 
-The Register App dialog probes the configured canonical manifest before it
-saves a Git source. The probe returns the App key and release placement defaults;
-only then does the dialog offer an optional initial operator policy. When
-present, registration sends it as `placement_policy` and Core stores it against
-the probed App identity before the first Release. A later Release supplies new
-defaults but does not replace this policy.
+The Register App dialog checks repository access and branch existence before it saves a Git source. It does not clone the repository or read the configured manifest, so the App identity and release placement defaults do not exist at this stage.
 
-The new probe preview calls the manifest value `worker_tag`. Existing App and
-Action endpoints retain `tag`, `tag_override`, and `effective_route_tag` as wire
-names for compatibility. The Console presents all of these values as **Worker
-tag** under **Execution placement**; they do not configure an HTTP or gateway
-route.
+Sync reads the configured manifest and returns the App key. After that successful Sync, operators set an App or Action policy through the execution-placement UI or API below. A later Release supplies new defaults but does not replace this policy.
+
+Existing App and Action endpoints retain `tag`, `tag_override`, and `effective_route_tag` as wire names for compatibility. The Console presents all of these values as **Worker tag** under **Execution placement**; they do not configure an HTTP or gateway route.
 
 ## Operator API
 

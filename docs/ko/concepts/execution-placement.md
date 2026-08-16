@@ -41,18 +41,13 @@ flowchart TD
 `null`은 재정의를 지우고 다음 기본값을 상속한다는 뜻입니다. `[]`는 다릅니다.
 레이블을 하나도 요구하지 않는다는 명시적 재정의입니다.
 
-## 앱 등록
+## 앱 등록과 동기화
 
-앱 등록 대화상자는 Git 소스를 저장하기 전에 구성된 canonical manifest를
-검사합니다. 검사 응답에서 App 키와 릴리스 실행 배치 기본값이 확인된 뒤에만 최초
-운영 정책을 선택할 수 있습니다. 선택한 값은 등록 요청의 `placement_policy`로
-전달되며 Core는 첫 Release 전부터 확인된 App 식별자에 정책을 저장합니다. 이후
-Release가 새 기본값을 제공해도 이 정책은 바뀌지 않습니다.
+앱 등록 대화상자는 Git 소스를 저장하기 전에 저장소 접근과 브랜치 존재 여부를 확인합니다. 이 단계에서는 저장소를 clone하거나 구성된 manifest를 읽지 않으므로 App 식별자와 릴리스 실행 배치 기본값이 아직 존재하지 않습니다.
 
-새 검사 미리보기에서는 manifest 값을 `worker_tag`라고 부릅니다. 기존 App·Action
-API의 `tag`, `tag_override`, `effective_route_tag`는 호환성을 위해 wire name으로
-유지합니다. Console에서는 이 값들을 모두 **실행 배치**의 **워커 태그**로 표시하며,
-HTTP 또는 게이트웨이 경로를 설정하는 값이 아닙니다.
+동기화가 구성된 manifest를 읽고 App 키를 반환합니다. 동기화에 성공한 뒤 아래 실행 배치 UI 또는 API에서 App이나 Action 정책을 설정합니다. 이후 Release가 새 기본값을 제공해도 이 정책은 바뀌지 않습니다.
+
+기존 App·Action API의 `tag`, `tag_override`, `effective_route_tag`는 호환성을 위해 wire name으로 유지합니다. Console에서는 이 값들을 모두 **실행 배치**의 **워커 태그**로 표시하며 HTTP 또는 게이트웨이 경로를 설정하는 값이 아닙니다.
 
 ## 운영 API
 

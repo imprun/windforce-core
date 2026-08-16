@@ -184,20 +184,17 @@ export type ProbeResult = {
   branch?: string;
   branch_exists?: boolean;
   branches?: string[];
+  code?: GitSourceErrorCode;
   error?: string;
-  manifest?: ManifestRoutingPreview;
 };
 
-export type ManifestRoutingPreview = {
-  app_key: string;
-  worker_tag: string;
-  required_labels: string[];
-  actions: Array<{
-    action_key: string;
-    worker_tag: string;
-    required_labels: string[];
-  }>;
-};
+export type GitSourceErrorCode =
+  | "git_source_branch_not_found"
+  | "git_source_contract_invalid"
+  | "git_source_credential_unavailable"
+  | "git_source_placement_requires_sync"
+  | "git_source_repository_unreachable"
+  | "git_source_subpath_invalid";
 
 export type SourceSyncResult = {
   commit: string;
@@ -997,7 +994,6 @@ export type RegisterSourcePayload = {
   branch?: string;
   subpath?: string;
   creds_ref?: string;
-  placement_policy?: RoutingPolicyPatch;
 };
 
 export type PatchSourcePayload = {
