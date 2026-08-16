@@ -53,6 +53,15 @@ func (h *Handler) syncGitSourceRevision(w http.ResponseWriter, r *http.Request, 
 		Token:       token,
 	})
 	if err != nil {
+		var validationError *syncer.ValidationError
+		if errors.As(err, &validationError) {
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{
+				"code":  "git_source_contract_invalid",
+				"error": validationError.Detail,
+				"check": validationError.Check,
+			})
+			return catalog.ReleaseCandidate{}, false
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return catalog.ReleaseCandidate{}, false
 	}

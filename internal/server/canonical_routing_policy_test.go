@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -17,25 +17,19 @@ import (
 	"github.com/imprun/windforce-core/internal/contract"
 	"github.com/imprun/windforce-core/internal/gitsource"
 	"github.com/imprun/windforce-core/internal/state"
-	"github.com/imprun/windforce-core/internal/syncer"
 )
 
-type failingInitialPlacementCatalog struct {
-	*catalog.FileCatalog
-}
-
-func (c *failingInitialPlacementCatalog) SetInitialAppRoutingPolicy(context.Context, string, string, catalog.RoutingPolicyPatch) (catalog.RoutingPolicy, error) {
-	return catalog.RoutingPolicy{}, errors.New("injected placement failure")
-}
-
-func TestRegisterGitSourcePreviewsManifestAndStoresInitialRoutingPolicy(t *testing.T) {
+func TestRegisterGitSourceChecksAccessWithoutReadingManifest(t *testing.T) {
 	tempDir := t.TempDir()
 	repoDir := createTestGitSourceRepo(t, tempDir, "repo", "apps/echo")
-	fileCatalog := catalog.NewFileCatalog(filepath.Join(tempDir, "catalog.json"))
+	if err := os.WriteFile(filepath.Join(repoDir, "apps", "echo", "windforce.json"), []byte("not-json\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runTestGit(t, repoDir, "add", "apps/echo/windforce.json")
+	runTestGit(t, repoDir, "commit", "-m", "break manifest")
+	registry := gitsource.NewFileRegistry(filepath.Join(tempDir, "git-sources.json"))
 	httpServer := httptest.NewServer(New(Config{
-		Catalog:    fileCatalog,
-		Syncer:     &syncer.Syncer{CloneRoot: filepath.Join(tempDir, "clone")},
-		GitSources: gitsource.NewFileRegistry(filepath.Join(tempDir, "git-sources.json")),
+		GitSources: registry,
 	}))
 	defer httpServer.Close()
 
@@ -55,22 +49,12 @@ func TestRegisterGitSourcePreviewsManifestAndStoresInitialRoutingPolicy(t *testi
 	if probeResp.StatusCode != http.StatusOK {
 		t.Fatalf("probe status = %d", probeResp.StatusCode)
 	}
-	var probe struct {
-		Manifest struct {
-			AppKey         string          `json:"app_key"`
-			WorkerTag      string          `json:"worker_tag"`
-			LegacyRouteTag json.RawMessage `json:"route_tag"`
-			Actions        []struct {
-				WorkerTag string `json:"worker_tag"`
-			} `json:"actions"`
-		} `json:"manifest"`
-	}
+	var probe map[string]any
 	if err := json.NewDecoder(probeResp.Body).Decode(&probe); err != nil {
 		t.Fatal(err)
 	}
-	if probe.Manifest.AppKey != "echo" || probe.Manifest.WorkerTag != "default" || probe.Manifest.LegacyRouteTag != nil ||
-		len(probe.Manifest.Actions) != 1 || probe.Manifest.Actions[0].WorkerTag != "default" {
-		t.Fatalf("manifest preview = %#v", probe.Manifest)
+	if probe["reachable"] != true || probe["branch_exists"] != true || probe["manifest"] != nil {
+		t.Fatalf("access-only probe = %#v", probe)
 	}
 
 	registerPayload, err := json.Marshal(map[string]any{
@@ -78,10 +62,6 @@ func TestRegisterGitSourcePreviewsManifestAndStoresInitialRoutingPolicy(t *testi
 		"repo_url": filepath.ToSlash(repoDir),
 		"branch":   "main",
 		"subpath":  "apps/echo",
-		"placement_policy": map[string]any{
-			"tag_override":             "browser",
-			"required_labels_override": []string{},
-		},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -94,24 +74,20 @@ func TestRegisterGitSourcePreviewsManifestAndStoresInitialRoutingPolicy(t *testi
 	if registerResp.StatusCode != http.StatusCreated {
 		t.Fatalf("register status = %d", registerResp.StatusCode)
 	}
-	policy, err := fileCatalog.GetRoutingPolicy(context.Background(), "ws-a", "echo")
+	registered, err := registry.Get(context.Background(), "ws-a", "source-a")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if policy.RouteTagOverride == nil || *policy.RouteTagOverride != "browser" ||
-		policy.RequiredLabelsOverride == nil || len(*policy.RequiredLabelsOverride) != 0 {
-		t.Fatalf("initial routing policy = %#v", policy)
+	if registered.AppKey != "" || registered.LastSyncedCommit != nil {
+		t.Fatalf("registration must not materialize app identity: %#v", registered)
 	}
 }
 
-func TestRegisterGitSourceRollsBackSourceWhenInitialPlacementFails(t *testing.T) {
+func TestRegisterGitSourceRejectsPlacementUntilAfterSync(t *testing.T) {
 	tempDir := t.TempDir()
 	repoDir := createTestGitSourceRepo(t, tempDir, "repo", "apps/echo")
 	registry := gitsource.NewFileRegistry(filepath.Join(tempDir, "git-sources.json"))
-	fileCatalog := catalog.NewFileCatalog(filepath.Join(tempDir, "catalog.json"))
 	httpServer := httptest.NewServer(New(Config{
-		Catalog:    &failingInitialPlacementCatalog{FileCatalog: fileCatalog},
-		Syncer:     &syncer.Syncer{CloneRoot: filepath.Join(tempDir, "clone")},
 		GitSources: registry,
 	}))
 	defer httpServer.Close()
@@ -133,15 +109,22 @@ func TestRegisterGitSourceRollsBackSourceWhenInitialPlacementFails(t *testing.T)
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusInternalServerError {
-		t.Fatalf("register status = %d, want 500", resp.StatusCode)
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("register status = %d, want 422", resp.StatusCode)
+	}
+	var response map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	if response["code"] != gitSourceErrorPlacementAfterSync {
+		t.Fatalf("register response = %#v", response)
 	}
 	snapshot, err := registry.Load(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(snapshot.Sources) != 0 {
-		t.Fatalf("git source survived failed initial placement: %#v", snapshot.Sources)
+		t.Fatalf("git source survived rejected initial placement: %#v", snapshot.Sources)
 	}
 }
 

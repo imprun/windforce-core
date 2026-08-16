@@ -2347,35 +2347,6 @@ textarea {
   padding-top: var(--space-3);
 }
 
-.registrationRoutingPolicy {
-  display: grid;
-  gap: var(--space-4);
-  margin-top: var(--space-4);
-  padding: var(--space-4);
-  border: 1px solid var(--border);
-  border-radius: var(--shape-radius-md);
-  background: var(--surface-2);
-}
-
-.registrationRoutingHeader {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: var(--space-4);
-}
-
-.registrationRoutingHeader > div {
-  display: grid;
-  gap: var(--space-1);
-}
-
-.registrationRoutingHeader p {
-  max-width: 34rem;
-  margin: 0;
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-}
-
 /* ---------- forms ---------- */
 
 .formGrid {
@@ -3608,10 +3579,6 @@ textarea {
     border-left: 0;
     border-top: 1px solid var(--border);
     padding: var(--space-3) 0 0;
-  }
-
-  .registrationRoutingHeader {
-    display: grid;
   }
 
   .auditFilters {

@@ -495,14 +495,10 @@ export const en = {
   "registerApp.registered": "Registered {{name}}.",
   "registerApp.sampleCreated": "Created sample app {{app}}.",
   "registerApp.subtitle":
-    "Point at the repository source that builds this app. Registration validates access, branch, and the configured canonical manifest before saving.",
+    "Connect the repository source that builds this app. Registration checks repository access and the branch; Sync validates the configured app manifest.",
   "registerApp.sourceName": "Source name",
   "registerApp.sourceNameHint":
     "Repository source alias. The app key itself comes from the configured canonical manifest.",
-  "registerApp.manifestPreview": "Manifest app identity",
-  "registerApp.initialRoutingPolicy": "Initial execution placement",
-  "registerApp.initialRoutingHint":
-    "The repository probe found the canonical App identity. Optional overrides are stored by Core and survive later releases.",
   "registerApp.repositoryURL": "Repository URL",
   "registerApp.subpathHint":
     "Repository directory used as the app root. Leave empty for the repo root.",
@@ -929,9 +925,20 @@ export const en = {
   "release.rollingBack": "Rolling back…",
   "release.rollback": "Rollback release",
   "repository.unreachable": "Repository is not reachable.",
+  "repository.unreachableWithCredential":
+    "Repository access failed. For a private repository, select Git authentication and verify that the credential can read the repository.",
   "repository.reachable": "Repository reachable. Branch {{branch}}",
   "repository.branchExists": "exists",
   "repository.branchNotFound": "was not found",
+  "repository.branchNotFoundDetailed":
+    "The selected branch was not found. Check the branch name and repository access.",
+  "repository.invalidSubpath":
+    "Subpath must be a relative directory inside the repository and cannot contain '..'.",
+  "repository.credentialUnavailable":
+    "The Git credential could not be loaded. Check the workspace credential path.",
+  "repository.placementAfterSync":
+    "Execution placement can be configured after Sync identifies the app.",
+  "repository.contractInvalid": "App manifest validation failed during Sync: {{detail}}",
   "repository.remoteBranches": " Remote branches: {{branches}}.",
   "repository.credentialConfigured": "Credential configured",
   "repository.public": "Public repository",
@@ -2171,14 +2178,10 @@ export const ko = {
   "registerApp.registered": "{{name}}을(를) 등록했습니다.",
   "registerApp.sampleCreated": "샘플 앱 {{app}}을(를) 생성했습니다.",
   "registerApp.subtitle":
-    "이 앱을 빌드하는 저장소 소스를 지정합니다. 저장하기 전에 접근, 브랜치 및 구성된 정규 manifest를 검증합니다.",
+    "이 앱을 빌드하는 저장소 소스를 연결합니다. 등록 시 저장소 접근과 브랜치만 확인하고, 동기화할 때 구성된 앱 manifest를 검증합니다.",
   "registerApp.sourceName": "소스 이름",
   "registerApp.sourceNameHint":
     "저장소 소스 별칭입니다. 앱 키는 구성된 정규 manifest에서 가져옵니다.",
-  "registerApp.manifestPreview": "Manifest 앱 식별자",
-  "registerApp.initialRoutingPolicy": "최초 실행 배치",
-  "registerApp.initialRoutingHint":
-    "저장소 검사에서 정규 앱 식별자를 확인했습니다. 선택한 재정의는 Core에 저장되어 이후 릴리스에도 유지됩니다.",
   "registerApp.repositoryURL": "저장소 URL",
   "registerApp.subpathHint":
     "앱 루트로 사용할 저장소 디렉터리입니다. 저장소 루트를 사용하려면 비워 두세요.",
@@ -2595,9 +2598,19 @@ export const ko = {
   "release.rollingBack": "롤백 중…",
   "release.rollback": "릴리스 롤백",
   "repository.unreachable": "저장소에 연결할 수 없습니다.",
+  "repository.unreachableWithCredential":
+    "저장소에 접근할 수 없습니다. 비공개 저장소라면 Git 인증을 선택하고 자격 증명에 저장소 읽기 권한이 있는지 확인하세요.",
   "repository.reachable": "저장소에 연결되었습니다. 브랜치 {{branch}}",
   "repository.branchExists": "가 존재합니다",
   "repository.branchNotFound": "를 찾지 못했습니다",
+  "repository.branchNotFoundDetailed":
+    "선택한 브랜치를 찾지 못했습니다. 브랜치 이름과 저장소 접근 권한을 확인하세요.",
+  "repository.invalidSubpath":
+    "하위 경로는 저장소 내부의 상대 디렉터리여야 하며 '..'을 포함할 수 없습니다.",
+  "repository.credentialUnavailable":
+    "Git 자격 증명을 불러오지 못했습니다. 워크스페이스 자격 증명 경로를 확인하세요.",
+  "repository.placementAfterSync": "동기화로 앱을 식별한 뒤 실행 배치를 설정할 수 있습니다.",
+  "repository.contractInvalid": "동기화 중 앱 manifest 검증에 실패했습니다: {{detail}}",
   "repository.remoteBranches": " 원격 브랜치: {{branches}}.",
   "repository.credentialConfigured": "자격 증명 설정됨",
   "repository.public": "공개 저장소",

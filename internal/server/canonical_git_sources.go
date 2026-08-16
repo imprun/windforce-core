@@ -12,12 +12,10 @@ import (
 	"time"
 	"unicode"
 
-	catalogpkg "github.com/imprun/windforce-core/internal/catalog"
 	"github.com/imprun/windforce-core/internal/contract"
 	gitsourcepkg "github.com/imprun/windforce-core/internal/gitsource"
 	"github.com/imprun/windforce-core/internal/sampleapp"
 	sourcepkg "github.com/imprun/windforce-core/internal/source"
-	"github.com/imprun/windforce-core/internal/syncer"
 )
 
 type gitCredentialRequest struct {
@@ -45,7 +43,13 @@ type canonicalGitSourceSyncRequest struct {
 	ExpectedCamel  string `json:"expectedCommit"`
 }
 
-const sourceValidationTimeout = 2 * time.Minute
+const (
+	gitSourceErrorBranchNotFound        = "git_source_branch_not_found"
+	gitSourceErrorCredentialUnavailable = "git_source_credential_unavailable"
+	gitSourceErrorPlacementAfterSync    = "git_source_placement_requires_sync"
+	gitSourceErrorRepositoryUnreachable = "git_source_repository_unreachable"
+	gitSourceErrorSubpathInvalid        = "git_source_subpath_invalid"
+)
 
 func (h *Handler) handleCanonicalGitSources(w http.ResponseWriter, r *http.Request, workspaceID string) {
 	snapshot, ok := h.loadGitSourceSnapshot(w, r)
@@ -111,6 +115,15 @@ func (h *Handler) handleCanonicalRegisterGitSource(w http.ResponseWriter, r *htt
 		writeError(w, http.StatusBadRequest, "name and repo_url required")
 		return
 	}
+	if request.PlacementPolicy != nil {
+		writeGitSourceError(
+			w,
+			http.StatusUnprocessableEntity,
+			gitSourceErrorPlacementAfterSync,
+			"execution placement can be configured after the source has been synchronized",
+		)
+		return
+	}
 	if branch == "" {
 		branch = "main"
 	}
@@ -122,78 +135,23 @@ func (h *Handler) handleCanonicalRegisterGitSource(w http.ResponseWriter, r *htt
 		Subpath:   subpath,
 		TokenEnv:  credsRef,
 	}
+	if err := contract.ValidateSourceSubpath(subpath); err != nil {
+		writeGitSourceError(w, http.StatusBadRequest, gitSourceErrorSubpathInvalid, "subpath must be a relative path inside the repository")
+		return
+	}
 	validationToken, err := h.resolveGitSourceCreds(r.Context(), workspaceID, credsRef)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeGitSourceError(w, http.StatusUnprocessableEntity, gitSourceErrorCredentialUnavailable, "Git credential could not be loaded")
 		return
 	}
-	deployment, ok := h.validateGitSourceContract(w, r, source, validationToken)
+	if !h.requireGitSourceAccess(w, r, source, validationToken) {
+		return
+	}
+	created, ok := h.createGitSource(w, r, source)
 	if !ok {
 		return
 	}
-	var initialPolicyPatch *catalogpkg.RoutingPolicyPatch
-	var initializer interface {
-		GetRoutingPolicy(context.Context, string, string) (catalogpkg.RoutingPolicy, error)
-		SetInitialAppRoutingPolicy(context.Context, string, string, catalogpkg.RoutingPolicyPatch) (catalogpkg.RoutingPolicy, error)
-	}
-	var previousPolicy catalogpkg.RoutingPolicy
-	if request.PlacementPolicy != nil {
-		patch, parsed := parseCanonicalRoutingPolicyPatch(w, *request.PlacementPolicy)
-		if !parsed {
-			return
-		}
-		patch.Actor = requestActorSubject(r)
-		initialPolicyPatch = &patch
-		var supported bool
-		initializer, supported = h.catalog.(interface {
-			GetRoutingPolicy(context.Context, string, string) (catalogpkg.RoutingPolicy, error)
-			SetInitialAppRoutingPolicy(context.Context, string, string, catalogpkg.RoutingPolicyPatch) (catalogpkg.RoutingPolicy, error)
-		})
-		if !supported {
-			writeError(w, http.StatusNotImplemented, "initial execution placement is not supported")
-			return
-		}
-		previousPolicy, err = initializer.GetRoutingPolicy(r.Context(), workspaceID, deployment.App)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-	}
-	source, ok = h.createGitSource(w, r, source)
-	if !ok {
-		return
-	}
-	if initialPolicyPatch != nil {
-		updated, err := initializer.SetInitialAppRoutingPolicy(r.Context(), workspaceID, deployment.App, *initialPolicyPatch)
-		if err != nil {
-			if rollbackErr := h.rollbackGitSourceRegistration(r.Context(), workspaceID, source.ID); rollbackErr != nil {
-				writeError(w, http.StatusInternalServerError, fmt.Sprintf("store initial execution placement: %v; roll back git source: %v", err, rollbackErr))
-				return
-			}
-			h.recordAudit(r, workspaceID, source.ID, deployment.App, "source_registration_rolled_back", "initial execution placement could not be stored")
-			writeError(w, http.StatusInternalServerError, fmt.Sprintf("store initial execution placement: %v", err))
-			return
-		}
-		h.recordAudit(r, workspaceID, source.ID, deployment.App, "execution_placement_updated", routingPolicyMutationDetail("app", "", previousPolicy, updated))
-	}
-	writeJSON(w, http.StatusCreated, newCanonicalGitSourceView(source))
-}
-
-func (h *Handler) rollbackGitSourceRegistration(ctx context.Context, workspaceID string, sourceID string) error {
-	deleter, ok := h.gitSources.(interface {
-		Delete(context.Context, string, string) (bool, error)
-	})
-	if !ok {
-		return errors.New("git source delete is not supported")
-	}
-	deleted, err := deleter.Delete(ctx, workspaceID, sourceID)
-	if err != nil {
-		return err
-	}
-	if !deleted {
-		return errors.New("git source disappeared before rollback")
-	}
-	return nil
+	writeJSON(w, http.StatusCreated, newCanonicalGitSourceView(created))
 }
 
 func (h *Handler) createGitSource(w http.ResponseWriter, r *http.Request, source gitsourcepkg.Source) (gitsourcepkg.Source, bool) {
@@ -261,10 +219,14 @@ func (h *Handler) handleCanonicalProbeGitSource(w http.ResponseWriter, r *http.R
 	if token == "" {
 		resolved, err := h.resolveGitSourceCreds(r.Context(), workspaceID, request.CredsRef)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
+			writeGitSourceError(w, http.StatusUnprocessableEntity, gitSourceErrorCredentialUnavailable, "Git credential could not be loaded")
 			return
 		}
 		token = resolved
+	}
+	if err := contract.ValidateSourceSubpath(strings.TrimSpace(request.Subpath)); err != nil {
+		writeGitSourceError(w, http.StatusBadRequest, gitSourceErrorSubpathInvalid, "subpath must be a relative path inside the repository")
+		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), probeTimeout)
 	defer cancel()
@@ -272,7 +234,8 @@ func (h *Handler) handleCanonicalProbeGitSource(w http.ResponseWriter, r *http.R
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"reachable": false,
-			"error":     err.Error(),
+			"code":      gitSourceErrorRepositoryUnreachable,
+			"error":     "repository cannot be reached with the provided Git credential",
 			"branches":  []string{},
 		})
 		return
@@ -288,17 +251,8 @@ func (h *Handler) handleCanonicalProbeGitSource(w http.ResponseWriter, r *http.R
 		"branch_exists": branchExists,
 		"branches":      branches,
 	}
-	if branchExists && h.syncer != nil {
-		deployment, ok := h.validateGitSourceContract(w, r, gitsourcepkg.Source{
-			Workspace: workspaceID,
-			RepoURL:   strings.TrimSpace(request.RepoURL),
-			Branch:    branch,
-			Subpath:   strings.TrimSpace(request.Subpath),
-		}, token)
-		if !ok {
-			return
-		}
-		result["manifest"] = newCanonicalManifestRoutingPreview(deployment)
+	if !branchExists {
+		result["code"] = gitSourceErrorBranchNotFound
 	}
 	writeJSON(w, http.StatusOK, result)
 }
@@ -410,13 +364,17 @@ func (h *Handler) handleCanonicalPatchGitSource(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusConflict, "repository URL and subpath are locked after the first release")
 		return
 	}
-	if gitSourcePatchRequiresValidation(existing, candidate) {
+	if err := contract.ValidateSourceSubpath(candidate.Subpath); err != nil {
+		writeGitSourceError(w, http.StatusBadRequest, gitSourceErrorSubpathInvalid, "subpath must be a relative path inside the repository")
+		return
+	}
+	if gitSourcePatchRequiresAccessCheck(existing, candidate) {
 		token, err := h.resolveGitSourceCreds(r.Context(), workspaceID, candidate.TokenEnv)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
+			writeGitSourceError(w, http.StatusUnprocessableEntity, gitSourceErrorCredentialUnavailable, "Git credential could not be loaded")
 			return
 		}
-		if _, ok := h.validateGitSourceContract(w, r, candidate, token); !ok {
+		if !h.requireGitSourceAccess(w, r, candidate, token) {
 			return
 		}
 	}
@@ -461,10 +419,9 @@ func applyGitSourcePatch(source gitsourcepkg.Source, patch gitsourcepkg.Patch) g
 	return source
 }
 
-func gitSourcePatchRequiresValidation(before gitsourcepkg.Source, after gitsourcepkg.Source) bool {
+func gitSourcePatchRequiresAccessCheck(before gitsourcepkg.Source, after gitsourcepkg.Source) bool {
 	return before.RepoURL != after.RepoURL ||
 		before.Branch != after.Branch ||
-		before.Subpath != after.Subpath ||
 		before.TokenEnv != after.TokenEnv
 }
 
@@ -637,12 +594,8 @@ func newDeploymentOperationID() string {
 	return fmt.Sprintf("%d", time.Now().UTC().UnixNano())
 }
 
-func (h *Handler) validateGitSourceContract(w http.ResponseWriter, r *http.Request, source gitsourcepkg.Source, token string) (contract.Deployment, bool) {
-	if h.syncer == nil {
-		writeError(w, http.StatusServiceUnavailable, "source validation is not configured")
-		return contract.Deployment{}, false
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), sourceValidationTimeout)
+func (h *Handler) requireGitSourceAccess(w http.ResponseWriter, r *http.Request, source gitsourcepkg.Source, token string) bool {
+	ctx, cancel := context.WithTimeout(r.Context(), probeTimeout)
 	defer cancel()
 	branch := strings.TrimSpace(source.Branch)
 	if branch == "" {
@@ -650,27 +603,18 @@ func (h *Handler) validateGitSourceContract(w http.ResponseWriter, r *http.Reque
 	}
 	branches, err := sourcepkg.ListRemoteBranches(ctx, strings.TrimSpace(source.RepoURL), token)
 	if err != nil {
-		writeError(w, http.StatusUnprocessableEntity, "repository is not reachable: "+err.Error())
-		return contract.Deployment{}, false
+		writeGitSourceError(w, http.StatusUnprocessableEntity, gitSourceErrorRepositoryUnreachable, "repository cannot be reached with the provided Git credential")
+		return false
 	}
 	if !stringSliceContains(branches, branch) {
-		writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf("branch %q was not found in repository", branch))
-		return contract.Deployment{}, false
+		writeGitSourceError(w, http.StatusUnprocessableEntity, gitSourceErrorBranchNotFound, fmt.Sprintf("branch %q was not found in repository", branch))
+		return false
 	}
-	s := *h.syncer
-	deployment, err := s.Validate(ctx, syncer.Source{
-		Workspace:   source.Workspace,
-		GitSourceID: source.ID,
-		RepoURL:     source.RepoURL,
-		Branch:      branch,
-		Subpath:     source.Subpath,
-		Token:       token,
-	})
-	if err != nil {
-		writeError(w, http.StatusUnprocessableEntity, "source contract validation failed: "+err.Error())
-		return contract.Deployment{}, false
-	}
-	return deployment, true
+	return true
+}
+
+func writeGitSourceError(w http.ResponseWriter, status int, code string, message string) {
+	writeJSON(w, status, map[string]string{"code": code, "error": message})
 }
 
 func (h *Handler) resolveGitSourceCreds(ctx context.Context, workspaceID string, credsRef string) (string, error) {

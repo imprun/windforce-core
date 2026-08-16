@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { DefinitionList, Field, Modal, Panel, ProbeNotice, SelectControl } from "../components/ui";
-import { errorMessage, type GitSource, type ProbeResult } from "../lib/api";
+import type { GitSource, ProbeResult } from "../lib/api";
 import { useApp } from "../lib/app-context";
 import { formatTime, shortSHA } from "../lib/format";
 import { type GitAuthMethod, gitCredentialSecretValue } from "../lib/git-credential";
@@ -10,6 +10,7 @@ import {
   reconnectCredentialPath,
   repositoryAccessLabel,
   repositoryLocationLocked,
+  sourceErrorMessage,
 } from "../lib/repository-settings";
 import { useRouter } from "../lib/router";
 import { translate } from "../shared/i18n";
@@ -45,7 +46,7 @@ export function RepositorySettings({
         }),
       );
     } catch (cause) {
-      setError(errorMessage(cause));
+      setError(sourceErrorMessage(cause));
     } finally {
       setProbing(false);
     }
@@ -59,7 +60,7 @@ export function RepositorySettings({
       notify("ok", translate("repository.removed", { name: source.name }));
       navigate("/");
     } catch (cause) {
-      notify("error", errorMessage(cause));
+      notify("error", sourceErrorMessage(cause));
     }
   }
 
@@ -230,7 +231,7 @@ function RenameSourceDialog({ source, onClose, onChanged }: RepositoryDialogProp
       notify("ok", translate("repository.renamed", { name: nextName }));
       onChanged();
     } catch (cause) {
-      setError(errorMessage(cause));
+      setError(sourceErrorMessage(cause));
     } finally {
       setBusy(false);
     }
@@ -280,7 +281,7 @@ function ChangeBranchDialog({ source, onClose, onChanged }: RepositoryDialogProp
       setProbe(result);
       setVerifiedBranch(branch.trim());
     } catch (cause) {
-      setError(errorMessage(cause));
+      setError(sourceErrorMessage(cause));
     } finally {
       setBusy(false);
     }
@@ -294,7 +295,7 @@ function ChangeBranchDialog({ source, onClose, onChanged }: RepositoryDialogProp
       notify("ok", translate("repository.trackingBranch", { branch: branch.trim() }));
       onChanged();
     } catch (cause) {
-      setError(errorMessage(cause));
+      setError(sourceErrorMessage(cause));
     } finally {
       setBusy(false);
     }
@@ -363,7 +364,7 @@ function ChangeLocationDialog({ source, onClose, onChanged }: RepositoryDialogPr
       setProbe(result);
       setVerifiedLocation(location);
     } catch (cause) {
-      setError(errorMessage(cause));
+      setError(sourceErrorMessage(cause));
     } finally {
       setBusy(false);
     }
@@ -377,7 +378,7 @@ function ChangeLocationDialog({ source, onClose, onChanged }: RepositoryDialogPr
       notify("ok", translate("repository.locationChanged"));
       onChanged();
     } catch (cause) {
-      setError(errorMessage(cause));
+      setError(sourceErrorMessage(cause));
     } finally {
       setBusy(false);
     }
@@ -468,7 +469,7 @@ function ReconnectCredentialDialog({ source, onClose, onChanged }: RepositoryDia
       setProbe(result);
       setVerified(probePassed(result));
     } catch (cause) {
-      setError(errorMessage(cause));
+      setError(sourceErrorMessage(cause));
     } finally {
       setBusy(false);
     }
@@ -494,7 +495,7 @@ function ReconnectCredentialDialog({ source, onClose, onChanged }: RepositoryDia
       }
       onChanged();
     } catch (cause) {
-      setError(errorMessage(cause));
+      setError(sourceErrorMessage(cause));
     } finally {
       setBusy(false);
     }

@@ -3,6 +3,7 @@ import { Dialog as DialogPrimitive, Select as SelectPrimitive } from "radix-ui";
 import { type ReactNode, useState } from "react";
 import type { ProbeResult } from "../lib/api";
 import { formatJSON } from "../lib/format";
+import { probeErrorMessage } from "../lib/repository-settings";
 import { translate } from "../shared/i18n";
 
 const emptySelectValue = "__imprun_empty_select_value__";
@@ -353,9 +354,7 @@ export function Sheet({
 
 export function ProbeNotice({ probe, branch }: { probe: ProbeResult; branch: string }) {
   if (!probe.reachable) {
-    return (
-      <div className="inlineNotice error">{probe.error || translate("repository.unreachable")}</div>
-    );
+    return <div className="inlineNotice error">{probeErrorMessage(probe)}</div>;
   }
   const branchName = probe.branch || branch;
   const branches = probe.branches?.length
@@ -364,7 +363,7 @@ export function ProbeNotice({ probe, branch }: { probe: ProbeResult; branch: str
       })
     : "";
   return (
-    <div className="inlineNotice ok">
+    <div className={`inlineNotice ${probe.branch_exists ? "ok" : "error"}`}>
       {translate("repository.reachable", { branch: branchName })}{" "}
       {probe.branch_exists
         ? translate("repository.branchExists")

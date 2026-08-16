@@ -49,6 +49,20 @@ type Syncer struct {
 	ManifestFile string
 }
 
+type ValidationError struct {
+	Check  string
+	Detail string
+	Err    error
+}
+
+func (e *ValidationError) Error() string {
+	return e.Err.Error()
+}
+
+func (e *ValidationError) Unwrap() error {
+	return e.Err
+}
+
 type inspectedSource struct {
 	repoDir    string
 	sourceDir  string
@@ -125,16 +139,17 @@ func (s *Syncer) inspect(ctx context.Context, src Source) (inspectedSource, erro
 
 	app, err := manifest.Load(sourceDir, s.ManifestFile)
 	if err != nil {
-		return inspectedSource{}, err
+		return inspectedSource{}, newValidationError("manifest", "the app manifest is invalid", err)
 	}
 	if err := checkLockfile(sourceDir); err != nil {
-		return inspectedSource{}, err
+		return inspectedSource{}, newValidationError("lockfile", "the dependency lockfile is invalid", err)
 	}
 	if src.App != "" && src.App != app.App {
-		return inspectedSource{}, fmt.Errorf("source app %q does not match manifest app %q", src.App, app.App)
+		err := fmt.Errorf("source app %q does not match manifest app %q", src.App, app.App)
+		return inspectedSource{}, newValidationError("manifest", err.Error(), err)
 	}
 	if err := materializeActionSchemas(sourceDir, &app); err != nil {
-		return inspectedSource{}, err
+		return inspectedSource{}, newValidationError("schema", "an action schema is invalid", err)
 	}
 
 	updatedAt := time.Now().UTC()
@@ -180,6 +195,15 @@ func (s *Syncer) inspect(ctx context.Context, src Source) (inspectedSource, erro
 	prepared.deployment = deployment
 	keepPrepared = true
 	return prepared, nil
+}
+
+func newValidationError(check string, fallback string, err error) *ValidationError {
+	detail := err.Error()
+	var pathError *os.PathError
+	if errors.As(err, &pathError) {
+		detail = fallback
+	}
+	return &ValidationError{Check: check, Detail: detail, Err: err}
 }
 
 func optionalTrimmedString(value *string) *string {

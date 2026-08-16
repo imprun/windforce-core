@@ -346,46 +346,6 @@ type canonicalActionView struct {
 	EffectiveRequiredLabels []string `json:"effective_required_labels"`
 }
 
-type canonicalManifestRoutingPreview struct {
-	AppKey         string                                  `json:"app_key"`
-	RouteTag       string                                  `json:"worker_tag"`
-	RequiredLabels []string                                `json:"required_labels"`
-	Actions        []canonicalManifestActionRoutingPreview `json:"actions"`
-}
-
-type canonicalManifestActionRoutingPreview struct {
-	ActionKey      string   `json:"action_key"`
-	RouteTag       string   `json:"worker_tag"`
-	RequiredLabels []string `json:"required_labels"`
-}
-
-func newCanonicalManifestRoutingPreview(deployment contract.Deployment) canonicalManifestRoutingPreview {
-	appLabels := deployment.RequiredLabels
-	if appLabels == nil {
-		appLabels = deployment.RequiredCapabilities
-	}
-	preview := canonicalManifestRoutingPreview{
-		AppKey:         deployment.App,
-		RouteTag:       contract.EffectiveRouteTagForApp(deployment),
-		RequiredLabels: append([]string{}, appLabels...),
-		Actions:        make([]canonicalManifestActionRoutingPreview, 0, len(deployment.Actions)),
-	}
-	keys := make([]string, 0, len(deployment.Actions))
-	for key := range deployment.Actions {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		action := deployment.Actions[key]
-		preview.Actions = append(preview.Actions, canonicalManifestActionRoutingPreview{
-			ActionKey:      key,
-			RouteTag:       contract.EffectiveRouteTagForAction(deployment, action),
-			RequiredLabels: contract.EffectiveRequiredLabels(deployment, action),
-		})
-	}
-	return preview
-}
-
 type canonicalWorkerTagsView struct {
 	Tags         []canonicalTagLiveness `json:"tags"`
 	DedicatedTag *string                `json:"dedicated_tag"`

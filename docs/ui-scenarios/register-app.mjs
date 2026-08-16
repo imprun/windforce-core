@@ -3,14 +3,14 @@ export default {
   id: "register-app",
   title: "Register an app",
   description:
-    "Register App validates the configured canonical manifest, previews its App identity and execution-placement defaults, and can store an initial operator policy.",
+    "Register App checks repository access and the selected branch without reading the App manifest. Sync validates the configured manifest and identifies the App.",
   screenshot: "docs/assets/ui/register-app.png",
   guide: [
     "Click Register App in the Apps view.",
     "Enter the app name, repository URL, branch, and optional subpath.",
     "Pick a git auth method or reference an existing credential variable path.",
-    "Use Probe repository to confirm reachability and preview the configured canonical manifest.",
-    "Optionally override the release worker tag or required labels. Core stores these values independently from later Releases.",
+    "Use Probe repository to confirm reachability and branch existence.",
+    "Register the source, run Sync, then configure execution placement from the identified App when needed.",
   ],
   async run({ page, capture, api }) {
     const sources = await api("/git_sources");
@@ -26,7 +26,7 @@ export default {
       sample.repo_url,
     );
     await page.click('[data-ui-guide="probe-app-repository"]');
-    await page.waitForSelector(".registrationRoutingPolicy");
+    await page.waitForSelector("#registerAppDialog .inlineNotice.ok");
     await capture(this.id);
   },
 };

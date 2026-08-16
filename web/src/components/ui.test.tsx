@@ -2,7 +2,7 @@
 
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
-import { ConfirmDialog, SelectControl } from "./ui";
+import { ConfirmDialog, ProbeNotice, SelectControl } from "./ui";
 
 describe("SelectControl", () => {
   test("uses the shared accessible popup primitive instead of a native select", () => {
@@ -73,5 +73,25 @@ describe("SelectControl", () => {
     expect((confirmButton as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(confirmButton);
     expect(onConfirm).toHaveBeenCalledOnce();
+  });
+});
+
+describe("ProbeNotice", () => {
+  test("renders a missing branch as an error instead of a successful probe", () => {
+    const { container } = render(
+      <ProbeNotice
+        branch="missing"
+        probe={{
+          reachable: true,
+          branch: "missing",
+          branch_exists: false,
+          branches: ["main"],
+          code: "git_source_branch_not_found",
+        }}
+      />,
+    );
+
+    expect(container.querySelector(".inlineNotice.error")).not.toBeNull();
+    expect(container.querySelector(".inlineNotice.ok")).toBeNull();
   });
 });

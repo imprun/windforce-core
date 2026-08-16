@@ -1,9 +1,10 @@
 import { Check, RefreshCw, Rocket } from "lucide-react";
 import { useState } from "react";
-import { errorMessage, type GitSource, type SourceSyncResult } from "../lib/api";
+import type { GitSource, SourceSyncResult } from "../lib/api";
 import { useApp } from "../lib/app-context";
 import { shortSHA } from "../lib/format";
 import { releaseActionState } from "../lib/release-actions";
+import { sourceErrorMessage } from "../lib/repository-settings";
 import { translate } from "../shared/i18n";
 
 export function SourceReleaseActions({
@@ -61,7 +62,7 @@ export function SourceReleaseActions({
       }
       onSynced?.(result);
     } catch (cause) {
-      notify("error", errorMessage(cause));
+      notify("error", sourceErrorMessage(cause));
     } finally {
       setSyncing(false);
     }
