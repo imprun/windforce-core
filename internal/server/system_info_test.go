@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/imprun/windforce-core/internal/executionlimit"
 	"github.com/imprun/windforce-core/internal/state"
 )
 
@@ -41,12 +42,13 @@ func TestSystemInfoExposesSafeServiceConfiguration(t *testing.T) {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
 	var body struct {
-		Service       string          `json:"service"`
-		Workspace     string          `json:"workspace"`
-		Ready         bool            `json:"ready"`
-		Planes        map[string]bool `json:"planes"`
-		Backends      map[string]bool `json:"backends"`
-		Auth          map[string]bool `json:"auth"`
+		Service       string            `json:"service"`
+		Workspace     string            `json:"workspace"`
+		Ready         bool              `json:"ready"`
+		Planes        map[string]bool   `json:"planes"`
+		Backends      map[string]bool   `json:"backends"`
+		Auth          map[string]bool   `json:"auth"`
+		Capabilities  map[string]string `json:"capabilities"`
 		RuntimeConfig struct {
 			WaitMS              float64 `json:"wait_ms"`
 			ManagedWorkspaces   bool    `json:"managed_workspaces"`
@@ -70,6 +72,9 @@ func TestSystemInfoExposesSafeServiceConfiguration(t *testing.T) {
 	}
 	if !body.Auth["admin_token_configured"] || !body.Auth["worker_token_configured"] || !body.Auth["job_token_configured"] {
 		t.Fatalf("auth = %#v", body.Auth)
+	}
+	if body.Capabilities["execution_limit_policy"] != "v1" || body.Capabilities["execution_limit_shape"] != executionlimit.FingerprintVersion {
+		t.Fatalf("capabilities = %#v", body.Capabilities)
 	}
 	if body.RuntimeConfig.WaitMS != 250 {
 		t.Fatalf("wait_ms = %#v", body.RuntimeConfig.WaitMS)

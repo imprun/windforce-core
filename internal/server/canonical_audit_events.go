@@ -114,6 +114,14 @@ func (h *Handler) handleCanonicalAuditEvents(w http.ResponseWriter, r *http.Requ
 		for _, record := range secretAudit {
 			events = append(events, newSecretAccessAuditEvent(record))
 		}
+		executionLimitAudit, err := h.store.ListExecutionLimitPolicyAudit(r.Context(), workspaceID, "")
+		if err != nil {
+			writeStateError(w, err)
+			return
+		}
+		for _, record := range executionLimitAudit {
+			events = append(events, newExecutionLimitPolicyAuditEvent(record))
+		}
 		if webhookStore, ok := h.store.(webhook.Store); ok {
 			webhookAudit, err := webhookStore.ListAudit(r.Context(), workspaceID)
 			if err != nil {
@@ -166,6 +174,17 @@ func newSecretAccessAuditEvent(record state.SecretAccessAudit) canonicalAuditEve
 		Source:            record.Source,
 		Actor:             "runtime",
 		CreatedAt:         record.CreatedAt,
+	}
+}
+
+func newExecutionLimitPolicyAuditEvent(record state.ExecutionLimitPolicyAudit) canonicalAuditEvent {
+	detail := fmt.Sprintf("%s %s policy %s at revision %d", record.Scope, record.ExecutionLimitPolicyKey.Kind, record.PolicyID, record.Revision)
+	return canonicalAuditEvent{
+		ID: "execution-limit:" + record.ID, Category: "execution_limits",
+		Kind:    "execution_limit_policy_" + record.EventKind,
+		Summary: canonicalAuditSummary("execution_limits", record.EventKind), Detail: detail,
+		AppKey: record.AppKey, ActionKey: record.ActionKey,
+		Actor: firstNonEmpty(record.Actor, "system"), CreatedAt: record.CreatedAt,
 	}
 }
 
@@ -337,7 +356,7 @@ func parseCanonicalAuditQuery(r *http.Request) (canonicalAuditQuery, error) {
 		Limit:    100,
 	}
 	if query.Category != "" {
-		validCategories := map[string]bool{"workspace": true, "repository": true, "execution_placement": true, "release": true, "client": true, "input_settings": true, "runtime_configuration": true, "webhook": true}
+		validCategories := map[string]bool{"workspace": true, "repository": true, "execution_placement": true, "execution_limits": true, "release": true, "client": true, "input_settings": true, "runtime_configuration": true, "webhook": true}
 		if !validCategories[query.Category] {
 			return canonicalAuditQuery{}, fmt.Errorf("invalid audit category")
 		}
@@ -410,39 +429,44 @@ func canonicalAuditEventMatches(event canonicalAuditEvent, query canonicalAuditQ
 
 func canonicalAuditSummary(category string, kind string) string {
 	labels := map[string]string{
-		"source_registered":             "Repository source registered",
-		"settings_changed":              "Repository settings changed",
-		"source_deleted":                "Repository source removed",
-		"execution_placement_updated":   "Execution placement updated",
-		"route_tag_override":            "Worker tag changed",
-		"release_published":             "Release published",
-		"release_rolled_back":           "Release rolled back",
-		"created":                       "Client registered",
-		"updated":                       "Client updated",
-		"deleted":                       "Client removed",
-		"invocation_policy_updated":     "Client invocation access updated",
-		"input_settings_set":            "Input settings updated",
-		"input_settings_deleted":        "Input settings removed",
-		"secret_resolved":               "Secret variable resolved",
-		"webhook_subscription_created":  "Webhook subscription created",
-		"webhook_subscription_updated":  "Webhook subscription updated",
-		"webhook_subscription_disabled": "Webhook subscription disabled",
-		"webhook_subscription_enabled":  "Webhook subscription enabled",
-		"webhook_subscription_deleted":  "Webhook subscription deleted",
-		"webhook_test_requested":        "Webhook test queued",
-		"webhook_delivery_retried":      "Webhook delivery retried",
-		"workspace_created":             "Workspace created",
-		"workspace_updated":             "Workspace updated",
-		"workspace_archived":            "Workspace archived",
-		"workspace_token_created":       "Workspace token created",
-		"workspace_token_rotated":       "Workspace token rotated",
-		"workspace_token_revoked":       "Workspace token revoked",
+		"source_registered":              "Repository source registered",
+		"settings_changed":               "Repository settings changed",
+		"source_deleted":                 "Repository source removed",
+		"execution_placement_updated":    "Execution placement updated",
+		"route_tag_override":             "Worker tag changed",
+		"release_published":              "Release published",
+		"release_rolled_back":            "Release rolled back",
+		"created":                        "Client registered",
+		"updated":                        "Client updated",
+		"deleted":                        "Client removed",
+		"invocation_policy_updated":      "Client invocation access updated",
+		"input_settings_set":             "Input settings updated",
+		"input_settings_deleted":         "Input settings removed",
+		"secret_resolved":                "Secret variable resolved",
+		"webhook_subscription_created":   "Webhook subscription created",
+		"webhook_subscription_updated":   "Webhook subscription updated",
+		"webhook_subscription_disabled":  "Webhook subscription disabled",
+		"webhook_subscription_enabled":   "Webhook subscription enabled",
+		"webhook_subscription_deleted":   "Webhook subscription deleted",
+		"webhook_test_requested":         "Webhook test queued",
+		"webhook_delivery_retried":       "Webhook delivery retried",
+		"workspace_created":              "Workspace created",
+		"workspace_updated":              "Workspace updated",
+		"workspace_archived":             "Workspace archived",
+		"workspace_token_created":        "Workspace token created",
+		"workspace_token_rotated":        "Workspace token rotated",
+		"workspace_token_revoked":        "Workspace token revoked",
+		"execution_limit_policy_created": "Execution allowance created",
+		"execution_limit_policy_updated": "Execution allowance updated",
+		"execution_limit_policy_deleted": "Execution allowance removed",
 	}
 	lookup := kind
 	if category == "input_settings" {
 		lookup = "input_settings_" + kind
 	} else if category == "workspace" {
 		lookup = "workspace_" + kind
+	} else if category == "execution_limits" {
+		lookup = "execution_limit_policy_" + kind
 	}
 	if label := labels[lookup]; label != "" {
 		return label

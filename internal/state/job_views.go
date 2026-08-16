@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/imprun/windforce-core/internal/contract"
+	"github.com/imprun/windforce-core/internal/executionlimit"
 )
 
 type jobRunRecord struct {
@@ -271,6 +272,12 @@ func jobAppKey(job Job) string {
 }
 
 func jobMaxConcurrent(job Job) (int, bool) {
+	if pin := job.Payload.ExecutionLimits.AppConcurrency; pin != nil {
+		if pin.MaxConcurrent == nil || *pin.MaxConcurrent <= 0 {
+			return 0, false
+		}
+		return int(*pin.MaxConcurrent), true
+	}
 	deployment := job.Payload.PinnedDeployment()
 	if deployment.MaxConcurrent == nil || *deployment.MaxConcurrent <= 0 {
 		return 0, false
@@ -279,11 +286,15 @@ func jobMaxConcurrent(job Job) (int, bool) {
 }
 
 func maxConcurrentReached(snapshot *Snapshot, candidate Job) bool {
-	if keyedConcurrencyReached(snapshot, candidate) {
+	policies := executionLimitPolicyLookupFromSnapshot(snapshot)
+	if keyedConcurrencyReached(snapshot, candidate, policies) {
 		return true
 	}
-	limit, ok := jobMaxConcurrent(candidate)
-	if !ok {
+	limit, limited, valid := effectiveAppConcurrencyLimit(candidate, policies)
+	if !valid {
+		return true
+	}
+	if !limited {
 		return false
 	}
 	workspaceID := normalizedJobWorkspace("", candidate)
@@ -303,9 +314,13 @@ func maxConcurrentReached(snapshot *Snapshot, candidate Job) bool {
 	return running >= limit
 }
 
-func keyedConcurrencyReached(snapshot *Snapshot, candidate Job) bool {
+func keyedConcurrencyReached(snapshot *Snapshot, candidate Job, policies executionLimitPolicyLookup) bool {
 	for _, limit := range candidate.Payload.ExecutionLimits.Concurrency {
 		if !validKeyedConcurrencyPin(limit) {
+			return true
+		}
+		effectiveLimit, valid := effectiveKeyedConcurrencyLimit(candidate, limit, policies)
+		if !valid {
 			return true
 		}
 		running := 0
@@ -317,7 +332,7 @@ func keyedConcurrencyReached(snapshot *Snapshot, candidate Job) bool {
 				running++
 			}
 		}
-		if running >= int(limit.MaxConcurrent) {
+		if running >= effectiveLimit {
 			return true
 		}
 	}
@@ -327,6 +342,7 @@ func keyedConcurrencyReached(snapshot *Snapshot, candidate Job) bool {
 func validKeyedConcurrencyPin(limit KeyedConcurrencyLimitPin) bool {
 	return strings.TrimSpace(limit.PolicyID) != "" &&
 		validExecutionLimitDigest(limit.PolicyRevision, "sha256:") &&
+		(limit.ShapeFingerprint == "" || executionlimit.IsFingerprint(limit.ShapeFingerprint)) &&
 		(limit.Scope == ExecutionLimitScopeApp || limit.Scope == ExecutionLimitScopeAction) &&
 		validExecutionLimitDigest(limit.KeyDigest, "hmac-sha256:") &&
 		limit.MaxConcurrent > 0
@@ -342,7 +358,8 @@ func validExecutionLimitDigest(value string, prefix string) bool {
 
 func jobHasKeyedConcurrencyPin(job Job, candidate KeyedConcurrencyLimitPin) bool {
 	for _, running := range job.Payload.ExecutionLimits.Concurrency {
-		if running.PolicyID == candidate.PolicyID && running.Scope == candidate.Scope && running.KeyDigest == candidate.KeyDigest {
+		shapeMatches := candidate.ShapeFingerprint == "" || running.ShapeFingerprint == candidate.ShapeFingerprint
+		if shapeMatches && running.PolicyID == candidate.PolicyID && running.Scope == candidate.Scope && running.KeyDigest == candidate.KeyDigest {
 			return true
 		}
 	}

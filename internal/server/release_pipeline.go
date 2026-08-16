@@ -110,6 +110,12 @@ func (h *Handler) deployLatestGitSourceRevision(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusConflict, err.Error())
 		return catalog.ReleasePublication{}, false
 	}
+	if err := h.validateExecutionLimitPolicyCompatibility(operationCtx, candidate.Deployment); err != nil {
+		if !writeExecutionLimitPreflightError(w, err) {
+			writeError(w, http.StatusInternalServerError, err.Error())
+		}
+		return catalog.ReleasePublication{}, false
+	}
 	if h.executionBundles == nil {
 		writeError(w, http.StatusServiceUnavailable, "execution bundle manager is not configured")
 		return catalog.ReleasePublication{}, false

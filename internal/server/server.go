@@ -528,6 +528,22 @@ func (h *Handler) handleAPI(w http.ResponseWriter, r *http.Request) bool {
 		h.handleCanonicalAppOpenAPI(w, r, parts[2], parts[4])
 		return true
 	}
+	if len(parts) == 6 && parts[0] == "api" && parts[1] == "w" && parts[3] == "apps" && parts[5] == "execution-limit-policies" && r.Method == http.MethodGet {
+		h.handleCanonicalExecutionLimitPolicies(w, r, parts[2], parts[4])
+		return true
+	}
+	if len(parts) == 6 && parts[0] == "api" && parts[1] == "w" && parts[3] == "apps" && parts[5] == "execution-limit-policies" && r.Method == http.MethodPut {
+		h.handleCanonicalMutateExecutionLimitPolicy(w, r, parts[2], parts[4], false)
+		return true
+	}
+	if len(parts) == 6 && parts[0] == "api" && parts[1] == "w" && parts[3] == "apps" && parts[5] == "execution-limit-policies" && r.Method == http.MethodDelete {
+		h.handleCanonicalMutateExecutionLimitPolicy(w, r, parts[2], parts[4], true)
+		return true
+	}
+	if len(parts) == 6 && parts[0] == "api" && parts[1] == "w" && parts[3] == "apps" && parts[5] == "execution-limit-policy-audit" && r.Method == http.MethodGet {
+		h.handleCanonicalExecutionLimitPolicyAudit(w, r, parts[2], parts[4])
+		return true
+	}
 	if len(parts) == 6 && parts[0] == "api" && parts[1] == "w" && parts[3] == "apps" && parts[5] == "input-configs" && r.Method == http.MethodGet {
 		h.handleCanonicalAppInputConfigs(w, r, parts[2], parts[4])
 		return true

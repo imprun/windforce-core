@@ -90,17 +90,17 @@ The app detail Overview keeps immutable release defaults separate from effective
 4. Follow the effective worker tag to the separate Placement tab when you need to inspect or edit worker selection.
 5. Use the tabs for repository settings, release history, and action schemas.
 
-## Review release execution limits
+## Adjust execution limits
 
-The Execution limits tab shows immutable App and Action keyed-concurrency and fixed-window rate policies from the active release.
+The Execution limits tab separates Release safety ceilings, Cell operating allowances, and effective claim-time values.
 
-![Review release execution limits](../assets/ui/execution-limits.png)
+![Adjust execution limits](../assets/ui/execution-limits.png)
 
 1. Open an App and choose Execution limits.
-2. Review App-scoped policies shared by every Action.
-3. Compare concurrency capacity and fixed-window attempt budgets without exposing resolved key values.
-4. Review Action-scoped policies and JSON Pointer key inputs.
-5. Edit the source manifest and publish a new release when the policy must change.
+2. Compare the Release safety ceiling, operating allowance, and effective value.
+3. Enter a positive allowance to lower this Cell's capacity without publishing a Release.
+4. Use Release default to remove the allowance without disabling the Release safety limit.
+5. Review previous-Release cohorts separately after rollback.
 
 ## Review App and Action execution candidates
 
@@ -116,23 +116,23 @@ App placement keeps current eligible capacity separate from queued Runs whose ex
 
 ## Review execution limits in dark mode
 
-Dark mode preserves policy hierarchy, identifiers, and diagnostic boundaries without introducing a separate palette.
+Dark mode preserves the Release, operator, and effective-value hierarchy without introducing a separate palette.
 
 ![Review execution limits in dark mode](../assets/ui/execution-limits-dark.png)
 
 1. Open an App and choose Execution limits.
 2. Switch the Core console to dark mode.
-3. Confirm limit types, policy IDs, capacities, windows, JSON Pointers, and release guidance remain legible.
+3. Confirm safety ceilings, operating allowances, effective values, and previous-Release cohorts remain legible.
 
 ## Review execution limits on a narrow screen
 
-Policy tables become labelled records on a narrow screen so type, scope, capacity or rate window, and key inputs remain comparable.
+Policy tables become labelled records so ceiling, allowance, effective value, and actions remain usable on a narrow screen.
 
 ![Review execution limits on a narrow screen](../assets/ui/execution-limits-mobile.png)
 
 1. Open an App and choose 실행 제한 on a narrow screen.
-2. Review the App policy as a labelled record.
-3. Continue to Action policies without horizontal table scrolling.
+2. Review App-wide and Action-specific limits as labelled records.
+3. Apply or remove an operating allowance without horizontal table scrolling.
 
 ## Configure execution placement
 

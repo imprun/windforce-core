@@ -24,7 +24,7 @@ func (s *LocalStore) QueueDemandSnapshot(ctx context.Context, selectors []QueueD
 		for _, job := range snapshot.Jobs {
 			jobs = append(jobs, job)
 		}
-		result = buildQueueDemandSnapshotWithRates(snapshot.StoreEpoch, snapshot.SnapshotRevision, currentUTC(s.leaseNow), jobs, selectors, snapshot.ExecutionRateBuckets)
+		result = buildQueueDemandSnapshotWithPolicies(snapshot.StoreEpoch, snapshot.SnapshotRevision, currentUTC(s.leaseNow), jobs, selectors, snapshot.ExecutionRateBuckets, executionLimitPolicyLookupFromSnapshot(&snapshot))
 		return nil
 	})
 	return result, err

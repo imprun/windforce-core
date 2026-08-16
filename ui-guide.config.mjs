@@ -157,6 +157,7 @@ export default {
         body: { confirm: true, message: "UI guide release" },
       });
       await waitForWebhookDelivery(api, webhook.subscription.id);
+      await seedExecutionLimitPolicies(api);
       await seedTriggers(api, this.baseUrl);
       await advanceSampleRepository(exec);
     }
@@ -385,11 +386,13 @@ async function seedWorkerGroupInventory(api) {
 
 async function seedQueuedExecutionDemand(api, apiToken) {
   const actorHeaders = { "x-windforce-actor": "ui-guide@example.test" };
-  await api("/apps/echo", {
-    method: "PATCH",
-    headers: actorHeaders,
-    body: { required_labels_override: ["queued-no-capacity"] },
-  });
+  await retryLocalStateWrite(() =>
+    api("/apps/echo", {
+      method: "PATCH",
+      headers: actorHeaders,
+      body: { required_labels_override: ["queued-no-capacity"] },
+    }),
+  );
   try {
     const response = await fetch(`http://127.0.0.1:${port}/api/v1/workspaces/default/runs`, {
       method: "POST",
@@ -400,10 +403,53 @@ async function seedQueuedExecutionDemand(api, apiToken) {
       throw new Error(`queued demand seed failed: HTTP ${response.status} ${await response.text()}`);
     }
   } finally {
-    await api("/apps/echo", {
-      method: "PATCH",
-      headers: actorHeaders,
-      body: { required_labels_override: null },
+    await retryLocalStateWrite(() =>
+      api("/apps/echo", {
+        method: "PATCH",
+        headers: actorHeaders,
+        body: { required_labels_override: null },
+      }),
+    );
+  }
+}
+
+async function retryLocalStateWrite(operation) {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      const transientWindowsRename = /rename|access is denied|used by another process/i.test(
+        error?.message || "",
+      );
+      if (!transientWindowsRename || attempt === 9) throw error;
+      await sleep(100 * (attempt + 1));
+    }
+  }
+}
+
+async function seedExecutionLimitPolicies(api) {
+  const readback = await api("/apps/echo/execution-limit-policies");
+  const selected = readback.observed.items.filter(
+    (shape) =>
+      shape.policy_id === "app-concurrency" ||
+      (shape.scope === "app" && shape.policy_id === "message-rate"),
+  );
+  for (const [index, shape] of selected.entries()) {
+    await api("/apps/echo/execution-limit-policies", {
+      method: "PUT",
+      headers: { "x-windforce-actor": "ui-guide@example.test" },
+      body: {
+        scope: shape.scope,
+        action_key: shape.action_key,
+        policy_id: shape.policy_id,
+        kind: shape.kind,
+        shape_fingerprint: shape.shape_fingerprint,
+        allowance: shape.policy_id === "app-concurrency" ? 3 : 80,
+        window_seconds: shape.window_seconds,
+        expected_revision: 0,
+        operation_id: `ui-guide-execution-limit-${index + 1}`,
+        reason: "Document the Core operating-allowance workflow",
+      },
     });
   }
 }

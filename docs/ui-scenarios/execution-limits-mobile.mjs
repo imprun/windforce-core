@@ -3,13 +3,13 @@ export default {
   id: "execution-limits-mobile",
   title: "Review execution limits on a narrow screen",
   description:
-    "Policy tables become labelled records on a narrow screen so type, scope, capacity or rate window, and key inputs remain comparable.",
+    "Policy tables become labelled records so ceiling, allowance, effective value, and actions remain usable on a narrow screen.",
   screenshot: "docs/assets/ui/execution-limits-mobile.png",
   viewport: { width: 390, height: 1500 },
   guide: [
     "Open an App and choose 실행 제한 on a narrow screen.",
-    "Review the App policy as a labelled record.",
-    "Continue to Action policies without horizontal table scrolling.",
+    "Review App-wide and Action-specific limits as labelled records.",
+    "Apply or remove an operating allowance without horizontal table scrolling.",
   ],
   async run({ page, capture }) {
     await page.goto();
@@ -18,7 +18,7 @@ export default {
     await page.waitForSelector("#appList .tableRow");
     await page.click("#appList .cellTitle");
     await page.click(".tabBar .tab[href$='/execution-limits']");
-    await page.waitForSelector('[data-ui-guide="app-execution-limits"]');
+    await page.waitForSelector('[data-ui-guide="execution-limit-policies"]');
     await capture(this.id);
   },
 };

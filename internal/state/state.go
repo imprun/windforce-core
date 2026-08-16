@@ -176,8 +176,9 @@ type JobPayload struct {
 // ExecutionLimitPins are the safe, immutable execution-limit decisions made
 // during Admission. Raw key components and JSON pointers are not stored here.
 type ExecutionLimitPins struct {
-	Concurrency []KeyedConcurrencyLimitPin `json:"concurrency,omitempty"`
-	Rate        []KeyedRateLimitPin        `json:"rate,omitempty"`
+	AppConcurrency *AppConcurrencyLimitPin    `json:"appConcurrency,omitempty"`
+	Concurrency    []KeyedConcurrencyLimitPin `json:"concurrency,omitempty"`
+	Rate           []KeyedRateLimitPin        `json:"rate,omitempty"`
 }
 
 const (
@@ -185,24 +186,35 @@ const (
 	ExecutionLimitScopeAction = "action"
 )
 
+// AppConcurrencyLimitPin is the stable implicit App-wide shape. A nil release
+// ceiling means the Release declared no maxConcurrent; an operator allowance
+// may still provide a finite claim-time capacity for this shape.
+type AppConcurrencyLimitPin struct {
+	PolicyID         string `json:"policyId"`
+	ShapeFingerprint string `json:"shapeFingerprint"`
+	MaxConcurrent    *int32 `json:"maxConcurrent,omitempty"`
+}
+
 // KeyedConcurrencyLimitPin is a per-Run opaque concurrency key.
 type KeyedConcurrencyLimitPin struct {
-	PolicyID       string `json:"policyId"`
-	PolicyRevision string `json:"policyRevision"`
-	Scope          string `json:"scope"`
-	KeyDigest      string `json:"keyDigest"`
-	MaxConcurrent  int32  `json:"maxConcurrent"`
+	PolicyID         string `json:"policyId"`
+	PolicyRevision   string `json:"policyRevision"`
+	ShapeFingerprint string `json:"shapeFingerprint,omitempty"`
+	Scope            string `json:"scope"`
+	KeyDigest        string `json:"keyDigest"`
+	MaxConcurrent    int32  `json:"maxConcurrent"`
 }
 
 // KeyedRateLimitPin is a per-Run opaque fixed-window attempt budget. A
 // successful Job claim consumes one attempt and consumption is never refunded.
 type KeyedRateLimitPin struct {
-	PolicyID       string `json:"policyId"`
-	PolicyRevision string `json:"policyRevision"`
-	Scope          string `json:"scope"`
-	KeyDigest      string `json:"keyDigest"`
-	MaxAttempts    int32  `json:"maxAttempts"`
-	WindowSeconds  int32  `json:"windowSeconds"`
+	PolicyID         string `json:"policyId"`
+	PolicyRevision   string `json:"policyRevision"`
+	ShapeFingerprint string `json:"shapeFingerprint,omitempty"`
+	Scope            string `json:"scope"`
+	KeyDigest        string `json:"keyDigest"`
+	MaxAttempts      int32  `json:"maxAttempts"`
+	WindowSeconds    int32  `json:"windowSeconds"`
 }
 
 // ExecutionRateBucket is the persisted consumption for one opaque rate key's
@@ -803,6 +815,8 @@ type Snapshot struct {
 	WorkerLeaseIdentities  map[string]WorkerLeaseIdentity         `json:"workerLeaseIdentities,omitempty"`
 	WorkerCredentials      map[string]WorkerCredential            `json:"workerCredentials,omitempty"`
 	WorkerGroupRunStates   map[string]WorkerGroupRunState         `json:"workerGroupRunStates,omitempty"`
+	ExecutionLimitPolicies map[string]ExecutionLimitPolicy        `json:"executionLimitPolicies,omitempty"`
+	ExecutionLimitAudits   map[string][]ExecutionLimitPolicyAudit `json:"executionLimitAudits,omitempty"`
 	ExecutionRateBuckets   map[string]ExecutionRateBucket         `json:"executionRateBuckets,omitempty"`
 	Workspaces             map[string]Workspace                   `json:"workspaces"`
 	WorkspaceKeys          map[string]WorkspaceKey                `json:"workspaceKeys,omitempty"`
@@ -832,6 +846,12 @@ type Store interface {
 	ListJobs(ctx context.Context, query JobListQuery) ([]JobListItem, error)
 	JobSummary(ctx context.Context, workspaceID string, recent time.Duration) (JobSummary, error)
 	QueueDemandSnapshot(ctx context.Context, selectors []QueueDemandSelector) (QueueDemandSnapshot, error)
+	ListExecutionLimitPolicies(ctx context.Context, workspaceID string, appKey string) ([]ExecutionLimitPolicy, error)
+	GetExecutionLimitPolicy(ctx context.Context, key ExecutionLimitPolicyKey) (ExecutionLimitPolicy, error)
+	MutateExecutionLimitPolicy(ctx context.Context, request MutateExecutionLimitPolicyRequest) (ExecutionLimitPolicy, bool, error)
+	MutateExecutionLimitPolicies(ctx context.Context, requests []MutateExecutionLimitPolicyRequest) ([]ExecutionLimitPolicyMutationResult, error)
+	ListExecutionLimitPolicyAudit(ctx context.Context, workspaceID string, appKey string) ([]ExecutionLimitPolicyAudit, error)
+	ListExecutionLimitResiduals(ctx context.Context, workspaceID string, appKey string) ([]ExecutionLimitResidual, error)
 	RequeueQueuedJobsForApp(ctx context.Context, spec RequeueAppSpec) (int64, error)
 	GetHumanTask(ctx context.Context, taskID string) (HumanTask, error)
 	CreateHeldHumanTask(ctx context.Context, task HumanTask) (HumanTask, bool, error)
@@ -1039,10 +1059,16 @@ func NewActionJob(run Run, input json.RawMessage) Job {
 }
 
 func cloneExecutionLimitPins(pins ExecutionLimitPins) ExecutionLimitPins {
-	return ExecutionLimitPins{
+	cloned := ExecutionLimitPins{
 		Concurrency: append([]KeyedConcurrencyLimitPin(nil), pins.Concurrency...),
 		Rate:        append([]KeyedRateLimitPin(nil), pins.Rate...),
 	}
+	if pins.AppConcurrency != nil {
+		appPin := *pins.AppConcurrency
+		appPin.MaxConcurrent = cloneInt32Pointer(pins.AppConcurrency.MaxConcurrent)
+		cloned.AppConcurrency = &appPin
+	}
+	return cloned
 }
 
 const defaultActorSubject = "system"

@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/imprun/windforce-core/internal/contract"
+	"github.com/imprun/windforce-core/internal/executionlimit"
 	"github.com/imprun/windforce-core/internal/state"
 )
 
@@ -45,17 +46,28 @@ func resolveExecutionLimitPins(ctx context.Context, store Store, workspaceID str
 	if err != nil {
 		return state.ExecutionLimitPins{}, fmt.Errorf("active release action execution limits: %w", err)
 	}
-	if len(appLimits.Concurrency)+len(actionLimits.Concurrency)+len(appLimits.Rate)+len(actionLimits.Rate) == 0 {
-		return state.ExecutionLimitPins{}, nil
-	}
-	digester, ok := store.(executionKeyDigester)
-	if !ok {
-		return state.ExecutionLimitPins{}, errors.New("state store does not support execution-limit key derivation")
+	appFingerprint, err := executionlimit.AppConcurrencyFingerprint(workspaceID, appKey)
+	if err != nil {
+		return state.ExecutionLimitPins{}, fmt.Errorf("implicit app concurrency shape: %w", err)
 	}
 
 	pins := state.ExecutionLimitPins{
+		AppConcurrency: &state.AppConcurrencyLimitPin{
+			PolicyID:         executionlimit.ImplicitAppConcurrencyPolicyID,
+			ShapeFingerprint: appFingerprint,
+			MaxConcurrent:    cloneExecutionLimitInt32(deployment.MaxConcurrent),
+		},
 		Concurrency: make([]state.KeyedConcurrencyLimitPin, 0, len(appLimits.Concurrency)+len(actionLimits.Concurrency)),
 		Rate:        make([]state.KeyedRateLimitPin, 0, len(appLimits.Rate)+len(actionLimits.Rate)),
+	}
+	keyedCount := len(appLimits.Concurrency) + len(actionLimits.Concurrency) + len(appLimits.Rate) + len(actionLimits.Rate)
+	var digester executionKeyDigester
+	if keyedCount > 0 {
+		var ok bool
+		digester, ok = store.(executionKeyDigester)
+		if !ok {
+			return state.ExecutionLimitPins{}, errors.New("state store does not support execution-limit key derivation")
+		}
 	}
 	seen := make(map[string]struct{}, cap(pins.Concurrency))
 	appendLimits := func(scope string, limits []contract.KeyedConcurrencyLimit) error {
@@ -74,12 +86,21 @@ func resolveExecutionLimitPins(ctx context.Context, store Store, workspaceID str
 			if err != nil {
 				return fmt.Errorf("derive concurrency limit %q key digest: %w", limit.ID, err)
 			}
+			shapeFingerprint, err := executionlimit.Fingerprint(executionlimit.Shape{
+				WorkspaceID: workspaceID, AppKey: appKey, ActionKey: actionKey,
+				Scope: scope, PolicyID: limit.ID, Kind: executionlimit.KindConcurrency,
+				InputPointers: limit.InputPointers,
+			})
+			if err != nil {
+				return fmt.Errorf("concurrency limit %q shape: %w", limit.ID, err)
+			}
 			pins.Concurrency = append(pins.Concurrency, state.KeyedConcurrencyLimitPin{
-				PolicyID:       limit.ID,
-				PolicyRevision: concurrencyLimitRevision(limit),
-				Scope:          scope,
-				KeyDigest:      digest,
-				MaxConcurrent:  limit.MaxConcurrent,
+				PolicyID:         limit.ID,
+				PolicyRevision:   concurrencyLimitRevision(limit),
+				ShapeFingerprint: shapeFingerprint,
+				Scope:            scope,
+				KeyDigest:        digest,
+				MaxConcurrent:    limit.MaxConcurrent,
 			})
 		}
 		return nil
@@ -107,13 +128,22 @@ func resolveExecutionLimitPins(ctx context.Context, store Store, workspaceID str
 			if err != nil {
 				return fmt.Errorf("derive rate limit %q key digest: %w", limit.ID, err)
 			}
+			shapeFingerprint, err := executionlimit.Fingerprint(executionlimit.Shape{
+				WorkspaceID: workspaceID, AppKey: appKey, ActionKey: actionKey,
+				Scope: scope, PolicyID: limit.ID, Kind: executionlimit.KindRate,
+				InputPointers: limit.InputPointers, WindowSeconds: limit.WindowSeconds,
+			})
+			if err != nil {
+				return fmt.Errorf("rate limit %q shape: %w", limit.ID, err)
+			}
 			pins.Rate = append(pins.Rate, state.KeyedRateLimitPin{
-				PolicyID:       limit.ID,
-				PolicyRevision: rateLimitRevision(limit),
-				Scope:          scope,
-				KeyDigest:      digest,
-				MaxAttempts:    limit.MaxAttempts,
-				WindowSeconds:  limit.WindowSeconds,
+				PolicyID:         limit.ID,
+				PolicyRevision:   rateLimitRevision(limit),
+				ShapeFingerprint: shapeFingerprint,
+				Scope:            scope,
+				KeyDigest:        digest,
+				MaxAttempts:      limit.MaxAttempts,
+				WindowSeconds:    limit.WindowSeconds,
 			})
 		}
 		return nil
@@ -131,6 +161,14 @@ func resolveExecutionLimitPins(ctx context.Context, store Store, workspaceID str
 		pins.Rate = nil
 	}
 	return pins, nil
+}
+
+func cloneExecutionLimitInt32(value *int32) *int32 {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	return &copy
 }
 
 func resolveConcurrencyKeyMaterial(root any, limit contract.KeyedConcurrencyLimit) ([]byte, error) {

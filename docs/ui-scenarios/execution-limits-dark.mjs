@@ -3,12 +3,12 @@ export default {
   id: "execution-limits-dark",
   title: "Review execution limits in dark mode",
   description:
-    "Dark mode preserves policy hierarchy, identifiers, and diagnostic boundaries without introducing a separate palette.",
+    "Dark mode preserves the Release, operator, and effective-value hierarchy without introducing a separate palette.",
   screenshot: "docs/assets/ui/execution-limits-dark.png",
   guide: [
     "Open an App and choose Execution limits.",
     "Switch the Core console to dark mode.",
-    "Confirm limit types, policy IDs, capacities, windows, JSON Pointers, and release guidance remain legible.",
+    "Confirm safety ceilings, operating allowances, effective values, and previous-Release cohorts remain legible.",
   ],
   async run({ page, capture }) {
     await page.goto();
@@ -17,7 +17,7 @@ export default {
     await page.waitForSelector("#appList .tableRow");
     await page.click("#appList .cellTitle");
     await page.click(".tabBar .tab[href$='/execution-limits']");
-    await page.waitForSelector('[data-ui-guide="app-execution-limits"]');
+    await page.waitForSelector('[data-ui-guide="execution-limit-policies"]');
     await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
     await capture(this.id);
   },

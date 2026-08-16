@@ -2687,19 +2687,43 @@ textarea {
 
 /* ---------- release-owned execution limits ---------- */
 
+.executionLimitPolicyView {
+  display: grid;
+  gap: var(--space-6);
+}
+
 .executionLimitsIntro {
   display: grid;
-  gap: var(--space-2);
-  margin-bottom: var(--space-6);
+  gap: var(--space-3);
   padding: var(--space-4);
   border-left: 3px solid var(--primary);
   background: var(--surface-2);
 }
 
-.executionLimitsIntro > div {
-  display: flex;
-  align-items: center;
+.executionLimitSummary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-3);
+}
+
+.executionLimitMetric {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+}
+
+.executionLimitMetric span {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+}
+
+.executionLimitMetric strong {
+  color: var(--text-primary);
+  font-size: 1.25rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .executionLimitsIntro p {
@@ -2736,12 +2760,17 @@ textarea {
 
 .executionLimitTable {
   margin: 0;
+  min-width: 860px;
 }
 
 .executionLimitCapacity {
   display: block;
   font-size: 1rem;
   font-variant-numeric: tabular-nums;
+}
+
+.executionLimitCapacity.isEffective {
+  color: var(--primary);
 }
 
 .executionLimitAction,
@@ -2756,6 +2785,31 @@ textarea {
   gap: var(--space-2);
 }
 
+.executionLimitAllowanceField {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 8.5rem;
+}
+
+.executionLimitAllowanceField input {
+  width: 100%;
+  min-width: 0;
+  max-width: 10rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.executionLimitActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.executionLimitCohort {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+}
+
 .executionLimitsEmpty {
   margin: 0;
   padding: var(--space-4);
@@ -2766,10 +2820,13 @@ textarea {
 }
 
 @media (max-width: 700px) {
-  .executionLimitsIntro > div,
   .executionLimitSectionHeader {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .executionLimitSummary {
+    grid-template-columns: 1fr;
   }
 
   .executionLimitTable thead {
@@ -2783,6 +2840,10 @@ textarea {
     display: block;
     min-width: 0;
     width: 100%;
+  }
+
+  .executionLimitTable {
+    min-width: 0;
   }
 
   .executionLimitTable tr {

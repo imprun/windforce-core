@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/imprun/windforce-core/internal/contract"
+	"github.com/imprun/windforce-core/internal/executionlimit"
 	"github.com/imprun/windforce-core/internal/state"
 )
 
@@ -50,6 +51,22 @@ func TestResolveExecutionLimitPinsUsesOpaqueWorkspaceScopedDigests(t *testing.T)
 	}
 	if len(first.Concurrency) != 2 {
 		t.Fatalf("pins = %#v, want app and action pins", first.Concurrency)
+	}
+	if first.AppConcurrency == nil || !executionlimit.IsFingerprint(first.AppConcurrency.ShapeFingerprint) || first.AppConcurrency.MaxConcurrent != nil {
+		t.Fatalf("implicit app concurrency pin = %#v", first.AppConcurrency)
+	}
+	if first.AppConcurrency.ShapeFingerprint == otherWorkspace.AppConcurrency.ShapeFingerprint {
+		t.Fatal("implicit app concurrency shape must be workspace scoped")
+	}
+	for _, pin := range first.Concurrency {
+		if !executionlimit.IsFingerprint(pin.ShapeFingerprint) {
+			t.Fatalf("concurrency pin lacks shape fingerprint: %#v", pin)
+		}
+	}
+	for _, pin := range first.Rate {
+		if !executionlimit.IsFingerprint(pin.ShapeFingerprint) {
+			t.Fatalf("rate pin lacks shape fingerprint: %#v", pin)
+		}
 	}
 	if first.Concurrency[0].Scope != state.ExecutionLimitScopeApp || first.Concurrency[1].Scope != state.ExecutionLimitScopeAction {
 		t.Fatalf("pin scopes = %#v", first.Concurrency)
@@ -142,7 +159,7 @@ func TestResolveExecutionLimitPinsDoesNotRequireDigesterWithoutLimits(t *testing
 	if err != nil {
 		t.Fatalf("resolve empty limits: %v", err)
 	}
-	if len(pins.Concurrency) != 0 || len(pins.Rate) != 0 {
-		t.Fatalf("pins = %#v, want empty", pins)
+	if len(pins.Concurrency) != 0 || len(pins.Rate) != 0 || pins.AppConcurrency == nil || !executionlimit.IsFingerprint(pins.AppConcurrency.ShapeFingerprint) {
+		t.Fatalf("pins = %#v, want only the implicit app concurrency shape", pins)
 	}
 }

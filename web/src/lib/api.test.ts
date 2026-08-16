@@ -171,6 +171,68 @@ describe("WindforceApi client invocation policy", () => {
   });
 });
 
+describe("WindforceApi execution-limit policies", () => {
+  test("uses one app-scoped endpoint for read, apply, and explicit delete", async () => {
+    const originalFetch = globalThis.fetch;
+    const requests: Array<{ url: string; method: string; body: string }> = [];
+    globalThis.fetch = (async (input, init) => {
+      requests.push({
+        url: String(input),
+        method: init?.method || "GET",
+        body: String(init?.body || ""),
+      });
+      return new Response("{}", {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch;
+    const payload = {
+      scope: "app" as const,
+      policy_id: "app-concurrency",
+      kind: "concurrency" as const,
+      shape_fingerprint: `elfp:v1:sha256:${"a".repeat(64)}`,
+      allowance: 3,
+      expected_revision: 0,
+      operation_id: "limit-op-1",
+    };
+    try {
+      const api = new WindforceApi({ workspace: "ops", token: "", actor: "operator" });
+      await api.executionLimitPolicies("orders/v2");
+      await api.putExecutionLimitPolicy("orders/v2", payload);
+      await api.deleteExecutionLimitPolicy("orders/v2", {
+        ...payload,
+        allowance: undefined,
+        expected_revision: 1,
+        operation_id: "limit-op-2",
+      });
+      expect(requests).toEqual([
+        {
+          url: "/api/w/ops/apps/orders%2Fv2/execution-limit-policies",
+          method: "GET",
+          body: "",
+        },
+        {
+          url: "/api/w/ops/apps/orders%2Fv2/execution-limit-policies",
+          method: "PUT",
+          body: JSON.stringify(payload),
+        },
+        {
+          url: "/api/w/ops/apps/orders%2Fv2/execution-limit-policies",
+          method: "DELETE",
+          body: JSON.stringify({
+            ...payload,
+            allowance: undefined,
+            expected_revision: 1,
+            operation_id: "limit-op-2",
+          }),
+        },
+      ]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
 describe("WindforceApi job log streaming", () => {
   test("keeps incomplete SSE blocks and decodes multiline data", () => {
     const split = splitSSEBlocks(

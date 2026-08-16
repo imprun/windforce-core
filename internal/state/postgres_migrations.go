@@ -78,13 +78,14 @@ CREATE TABLE IF NOT EXISTS execution_rate_bucket (
     workspace_id   TEXT NOT NULL,
     scope          TEXT NOT NULL,
     policy_id      TEXT NOT NULL,
+    shape_fingerprint TEXT NOT NULL DEFAULT '',
     key_digest     TEXT NOT NULL,
     window_seconds INTEGER NOT NULL,
     window_start   TIMESTAMPTZ NOT NULL,
     window_end     TIMESTAMPTZ NOT NULL,
     consumed       INTEGER NOT NULL,
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (workspace_id, scope, policy_id, key_digest, window_seconds),
+    PRIMARY KEY (workspace_id, scope, policy_id, shape_fingerprint, key_digest, window_seconds),
     CHECK (scope IN ('app', 'action')),
     CHECK (policy_id <> ''),
     CHECK (key_digest <> ''),
@@ -95,6 +96,73 @@ CREATE TABLE IF NOT EXISTS execution_rate_bucket (
 
 CREATE INDEX IF NOT EXISTS execution_rate_bucket_expiry_idx
     ON execution_rate_bucket (window_end);
+
+ALTER TABLE execution_rate_bucket
+    ADD COLUMN IF NOT EXISTS shape_fingerprint TEXT NOT NULL DEFAULT '';
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conrelid = 'execution_rate_bucket'::regclass
+          AND contype = 'p'
+          AND pg_get_constraintdef(oid) LIKE '%shape_fingerprint%'
+    ) THEN
+        ALTER TABLE execution_rate_bucket DROP CONSTRAINT IF EXISTS execution_rate_bucket_pkey;
+        ALTER TABLE execution_rate_bucket
+            ADD PRIMARY KEY (workspace_id, scope, policy_id, shape_fingerprint, key_digest, window_seconds);
+    END IF;
+END $$;
+
+CREATE TABLE IF NOT EXISTS execution_limit_policy (
+    workspace_id       TEXT NOT NULL,
+    app_key            TEXT NOT NULL,
+    action_key         TEXT NOT NULL DEFAULT '',
+    scope              TEXT NOT NULL,
+    policy_id          TEXT NOT NULL,
+    kind               TEXT NOT NULL,
+    shape_fingerprint  TEXT NOT NULL,
+    allowance          INTEGER NOT NULL DEFAULT 0,
+    window_seconds     INTEGER NOT NULL DEFAULT 0,
+    revision           BIGINT NOT NULL,
+    deleted            BOOLEAN NOT NULL DEFAULT false,
+    operation_id       TEXT NOT NULL,
+    request_fingerprint TEXT NOT NULL,
+    updated_by         TEXT NOT NULL DEFAULT '',
+    updated_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (workspace_id, app_key, action_key, scope, policy_id, kind),
+    CHECK (scope IN ('app', 'action')),
+    CHECK (kind IN ('concurrency', 'rate')),
+    CHECK (revision > 0),
+    CHECK ((deleted AND allowance = 0) OR (NOT deleted AND allowance > 0)),
+    CHECK ((kind = 'concurrency' AND window_seconds = 0) OR (kind = 'rate' AND window_seconds > 0))
+);
+
+CREATE INDEX IF NOT EXISTS execution_limit_policy_app_idx
+    ON execution_limit_policy (workspace_id, app_key, deleted, scope, action_key, kind, policy_id);
+
+CREATE TABLE IF NOT EXISTS execution_limit_policy_audit (
+    id                 TEXT PRIMARY KEY,
+    workspace_id       TEXT NOT NULL,
+    app_key            TEXT NOT NULL,
+    action_key         TEXT NOT NULL DEFAULT '',
+    scope              TEXT NOT NULL,
+    policy_id          TEXT NOT NULL,
+    kind               TEXT NOT NULL,
+    event_kind         TEXT NOT NULL,
+    shape_fingerprint  TEXT NOT NULL,
+    previous_allowance INTEGER,
+    allowance          INTEGER,
+    revision           BIGINT NOT NULL,
+    operation_id       TEXT NOT NULL,
+    reason             TEXT NOT NULL DEFAULT '',
+    actor              TEXT NOT NULL DEFAULT '',
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS execution_limit_policy_audit_app_idx
+    ON execution_limit_policy_audit (workspace_id, app_key, created_at, id);
 
 CREATE TABLE IF NOT EXISTS human_tasks (
     id TEXT PRIMARY KEY,

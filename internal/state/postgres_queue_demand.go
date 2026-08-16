@@ -46,8 +46,12 @@ WHERE singleton = TRUE
 	if err != nil {
 		return QueueDemandSnapshot{}, err
 	}
+	policies, err := postgresAllExecutionPolicies(ctx, tx)
+	if err != nil {
+		return QueueDemandSnapshot{}, err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return QueueDemandSnapshot{}, err
 	}
-	return buildQueueDemandSnapshotWithRates(storeEpoch, revision, observedAt, jobs, selectors, rateBuckets), nil
+	return buildQueueDemandSnapshotWithPolicies(storeEpoch, revision, observedAt, jobs, selectors, rateBuckets, policies), nil
 }

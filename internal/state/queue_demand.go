@@ -46,6 +46,10 @@ func buildQueueDemandSnapshot(storeEpoch string, revision int64, observedAt time
 }
 
 func buildQueueDemandSnapshotWithRates(storeEpoch string, revision int64, observedAt time.Time, jobs []Job, selectors []QueueDemandSelector, rateBuckets map[string]ExecutionRateBucket) QueueDemandSnapshot {
+	return buildQueueDemandSnapshotWithPolicies(storeEpoch, revision, observedAt, jobs, selectors, rateBuckets, nil)
+}
+
+func buildQueueDemandSnapshotWithPolicies(storeEpoch string, revision int64, observedAt time.Time, jobs []Job, selectors []QueueDemandSelector, rateBuckets map[string]ExecutionRateBucket, policies executionLimitPolicyLookup) QueueDemandSnapshot {
 	observedAt = observedAt.UTC()
 	items := make([]QueueDemand, 0, len(selectors))
 	baseRunning := activeRunningByApp(jobs, observedAt)
@@ -92,13 +96,14 @@ func buildQueueDemandSnapshotWithRates(storeEpoch string, revision int64, observ
 		rateUsage := cloneDemandCounts(baseRateUsage)
 		for _, candidate := range candidates {
 			appKey := demandAppKey(candidate)
-			if limit, limited := jobMaxConcurrent(candidate); limited && appKey != "" && running[appKey] >= limit {
+			appLimit, appLimited, appValid := effectiveAppConcurrencyLimit(candidate, policies)
+			if !appValid || (appLimited && appKey != "" && running[appKey] >= appLimit) {
 				continue
 			}
-			if demandKeyedConcurrencyReached(candidate, keyedRunning) {
+			if demandKeyedConcurrencyReached(candidate, keyedRunning, policies) {
 				continue
 			}
-			if demandRateLimitsReached(candidate, rateUsage) {
+			if demandRateLimitsReached(candidate, rateUsage, policies) {
 				continue
 			}
 			if appKey != "" {
@@ -146,9 +151,10 @@ func activeRunningByKeyedConcurrency(jobs []Job, observedAt time.Time) map[strin
 	return counts
 }
 
-func demandKeyedConcurrencyReached(candidate Job, running map[string]int) bool {
+func demandKeyedConcurrencyReached(candidate Job, running map[string]int, policies executionLimitPolicyLookup) bool {
 	for _, limit := range candidate.Payload.ExecutionLimits.Concurrency {
-		if !validKeyedConcurrencyPin(limit) || running[keyedConcurrencyCountKey(candidate, limit)] >= int(limit.MaxConcurrent) {
+		effectiveLimit, valid := effectiveKeyedConcurrencyLimit(candidate, limit, policies)
+		if !validKeyedConcurrencyPin(limit) || !valid || running[keyedConcurrencyCountKey(candidate, limit)] >= effectiveLimit {
 			return true
 		}
 	}
@@ -156,7 +162,7 @@ func demandKeyedConcurrencyReached(candidate Job, running map[string]int) bool {
 }
 
 func keyedConcurrencyCountKey(job Job, limit KeyedConcurrencyLimitPin) string {
-	return normalizedJobWorkspace("", job) + "\x00" + limit.Scope + "\x00" + limit.PolicyID + "\x00" + limit.KeyDigest
+	return normalizedJobWorkspace("", job) + "\x00" + limit.Scope + "\x00" + limit.PolicyID + "\x00" + limit.ShapeFingerprint + "\x00" + limit.KeyDigest
 }
 
 func normalizeQueueDemandSelector(selector QueueDemandSelector) QueueDemandSelector {

@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/imprun/windforce-core/internal/contract"
+	"github.com/imprun/windforce-core/internal/executionlimit"
 	"github.com/imprun/windforce-core/internal/gitsource"
 	"github.com/imprun/windforce-core/internal/state"
 	"gopkg.in/yaml.v3"
@@ -41,6 +42,12 @@ type Spec struct {
 	ClientKey        ValueSource           `json:"clientKey,omitempty" yaml:"clientKey,omitempty"`
 	ExternalKey      ValueSource           `json:"externalKey,omitempty" yaml:"externalKey,omitempty"`
 	InvocationPolicy *InvocationPolicySpec `json:"invocationPolicy,omitempty" yaml:"invocationPolicy,omitempty"`
+	Scope            string                `json:"scope,omitempty" yaml:"scope,omitempty"`
+	PolicyID         string                `json:"policyId,omitempty" yaml:"policyId,omitempty"`
+	LimitKind        string                `json:"limitKind,omitempty" yaml:"limitKind,omitempty"`
+	ShapeFingerprint string                `json:"shapeFingerprint,omitempty" yaml:"shapeFingerprint,omitempty"`
+	Allowance        int32                 `json:"allowance,omitempty" yaml:"allowance,omitempty"`
+	WindowSeconds    int32                 `json:"windowSeconds,omitempty" yaml:"windowSeconds,omitempty"`
 
 	Method     string      `json:"method,omitempty" yaml:"method,omitempty"`
 	StorageRef string      `json:"storageRef,omitempty" yaml:"storageRef,omitempty"`
@@ -187,6 +194,11 @@ func (s Service) Apply(ctx context.Context, docs []Document, options Options) (R
 	result := Result{}
 	credentials := map[string]string{}
 	clients := map[string]state.Client{}
+	policyResults, err := s.applyExecutionLimitPolicyDocuments(ctx, docs, options)
+	if err != nil {
+		return result, err
+	}
+	result.Applied = append(result.Applied, policyResults...)
 
 	for _, doc := range docs {
 		if doc.Kind != "GitCredential" {
@@ -227,6 +239,8 @@ func (s Service) Apply(ctx context.Context, docs []Document, options Options) (R
 	for _, doc := range docs {
 		switch doc.Kind {
 		case "GitCredential":
+			continue
+		case "ExecutionLimitPolicy":
 			continue
 		case "Client":
 			client, action, err := s.applyClient(ctx, doc, options)
@@ -308,6 +322,22 @@ func (s Service) Export(ctx context.Context, workspace string, includeValues boo
 				InvocationPolicy: &InvocationPolicySpec{
 					Mode: policy.Mode, AllowedTargets: append([]string{}, policy.AllowedTargets...),
 				},
+			},
+		})
+	}
+	policies, err := s.Store.ListExecutionLimitPolicies(ctx, workspace, "")
+	if err != nil {
+		return nil, err
+	}
+	for _, policy := range policies {
+		docs = append(docs, Document{
+			APIVersion: APIVersion,
+			Kind:       "ExecutionLimitPolicy",
+			Metadata:   Metadata{Name: resourceName(policy.AppKey, policy.Kind+"-"+policy.PolicyID)},
+			Spec: Spec{
+				AppKey: policy.AppKey, ActionKey: policy.ActionKey, Scope: policy.Scope,
+				PolicyID: policy.PolicyID, LimitKind: policy.Kind, ShapeFingerprint: policy.ShapeFingerprint,
+				Allowance: policy.Allowance, WindowSeconds: policy.WindowSeconds,
 			},
 		})
 	}
@@ -405,6 +435,100 @@ func (s Service) exportInputSettings(ctx context.Context, workspace string, incl
 		})
 	}
 	return docs, nil
+}
+
+func (s Service) applyExecutionLimitPolicyDocuments(ctx context.Context, docs []Document, options Options) ([]AppliedResource, error) {
+	existing, err := s.Store.ListExecutionLimitPolicies(ctx, options.Workspace, "")
+	if err != nil {
+		return nil, err
+	}
+	existingByKey := make(map[string]state.ExecutionLimitPolicy, len(existing))
+	for _, policy := range existing {
+		existingByKey[provisioningExecutionLimitPolicyKey(policy.ExecutionLimitPolicyKey)] = policy
+	}
+	type pendingPolicy struct {
+		doc     Document
+		request state.MutateExecutionLimitPolicyRequest
+	}
+	pending := make([]pendingPolicy, 0)
+	results := make([]AppliedResource, 0)
+	for _, doc := range docs {
+		if doc.Kind != "ExecutionLimitPolicy" {
+			continue
+		}
+		key, keyErr := state.NormalizeExecutionLimitPolicyKey(state.ExecutionLimitPolicyKey{
+			WorkspaceID: options.Workspace, AppKey: doc.Spec.AppKey, ActionKey: doc.Spec.ActionKey,
+			Scope: doc.Spec.Scope, PolicyID: doc.Spec.PolicyID, Kind: doc.Spec.LimitKind,
+		})
+		if keyErr != nil {
+			return nil, resourceError(doc, keyErr)
+		}
+		if key.PolicyID == executionlimit.ImplicitAppConcurrencyPolicyID && key.Scope == executionlimit.ScopeApp && key.Kind == executionlimit.KindConcurrency {
+			expected, fingerprintErr := executionlimit.AppConcurrencyFingerprint(key.WorkspaceID, key.AppKey)
+			if fingerprintErr != nil || expected != strings.TrimSpace(doc.Spec.ShapeFingerprint) {
+				return nil, resourceError(doc, errors.New("implicit App concurrency shapeFingerprint does not match appKey"))
+			}
+		}
+		current, found := existingByKey[provisioningExecutionLimitPolicyKey(key)]
+		if found && current.ShapeFingerprint != strings.TrimSpace(doc.Spec.ShapeFingerprint) {
+			return nil, resourceError(doc, errors.New("existing policy has a different shapeFingerprint; delete it explicitly before importing a replacement"))
+		}
+		if found && current.Allowance == doc.Spec.Allowance && current.WindowSeconds == doc.Spec.WindowSeconds {
+			results = append(results, AppliedResource{Kind: doc.Kind, Name: doc.Metadata.Name, Action: "unchanged", Detail: key.AppKey + "/" + key.PolicyID})
+			continue
+		}
+		expectedRevision := int64(0)
+		if found {
+			expectedRevision = current.Revision
+		}
+		policy := state.ExecutionLimitPolicy{
+			ExecutionLimitPolicyKey: key, ShapeFingerprint: strings.TrimSpace(doc.Spec.ShapeFingerprint),
+			Allowance: doc.Spec.Allowance, WindowSeconds: doc.Spec.WindowSeconds,
+		}
+		seed, _ := json.Marshal(struct {
+			Policy           state.ExecutionLimitPolicy `json:"policy"`
+			ExpectedRevision int64                      `json:"expectedRevision"`
+		}{policy, expectedRevision})
+		request := state.MutateExecutionLimitPolicyRequest{
+			Policy: policy, ExpectedRevision: expectedRevision,
+			OperationID: stableID("provision_limit", string(seed)), RequestFingerprint: stableID("request", string(seed)),
+			Actor: options.Actor, Reason: "declarative provisioning import",
+		}
+		if _, normalizeErr := state.NormalizeExecutionLimitPolicyMutation(request); normalizeErr != nil {
+			return nil, resourceError(doc, normalizeErr)
+		}
+		pending = append(pending, pendingPolicy{doc: doc, request: request})
+	}
+	if options.DryRun {
+		for _, item := range pending {
+			results = append(results, AppliedResource{Kind: item.doc.Kind, Name: item.doc.Metadata.Name, Action: "validated", Detail: item.request.Policy.AppKey + "/" + item.request.Policy.PolicyID})
+		}
+		return results, nil
+	}
+	requests := make([]state.MutateExecutionLimitPolicyRequest, len(pending))
+	for index, item := range pending {
+		requests[index] = item.request
+	}
+	mutations, err := s.Store.MutateExecutionLimitPolicies(ctx, requests)
+	if err != nil {
+		if len(pending) > 0 {
+			return nil, resourceError(pending[0].doc, err)
+		}
+		return nil, err
+	}
+	for index, mutation := range mutations {
+		action := "stored"
+		if mutation.Replayed {
+			action = "unchanged"
+		}
+		item := pending[index]
+		results = append(results, AppliedResource{Kind: item.doc.Kind, Name: item.doc.Metadata.Name, Action: action, Detail: mutation.Policy.AppKey + "/" + mutation.Policy.PolicyID})
+	}
+	return results, nil
+}
+
+func provisioningExecutionLimitPolicyKey(key state.ExecutionLimitPolicyKey) string {
+	return strings.Join([]string{key.WorkspaceID, key.AppKey, key.ActionKey, key.Scope, key.PolicyID, key.Kind}, "\x1f")
 }
 
 func EncodeYAML(docs []Document) ([]byte, error) {
