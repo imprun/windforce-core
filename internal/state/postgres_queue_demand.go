@@ -42,8 +42,12 @@ WHERE singleton = TRUE
 	if err := rows.Err(); err != nil {
 		return QueueDemandSnapshot{}, err
 	}
+	rateBuckets, err := postgresCurrentRateBuckets(ctx, tx, observedAt)
+	if err != nil {
+		return QueueDemandSnapshot{}, err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return QueueDemandSnapshot{}, err
 	}
-	return buildQueueDemandSnapshot(storeEpoch, revision, observedAt, jobs, selectors), nil
+	return buildQueueDemandSnapshotWithRates(storeEpoch, revision, observedAt, jobs, selectors, rateBuckets), nil
 }

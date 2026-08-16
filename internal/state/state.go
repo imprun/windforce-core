@@ -177,6 +177,7 @@ type JobPayload struct {
 // during Admission. Raw key components and JSON pointers are not stored here.
 type ExecutionLimitPins struct {
 	Concurrency []KeyedConcurrencyLimitPin `json:"concurrency,omitempty"`
+	Rate        []KeyedRateLimitPin        `json:"rate,omitempty"`
 }
 
 const (
@@ -191,6 +192,25 @@ type KeyedConcurrencyLimitPin struct {
 	Scope          string `json:"scope"`
 	KeyDigest      string `json:"keyDigest"`
 	MaxConcurrent  int32  `json:"maxConcurrent"`
+}
+
+// KeyedRateLimitPin is a per-Run opaque fixed-window attempt budget. A
+// successful Job claim consumes one attempt and consumption is never refunded.
+type KeyedRateLimitPin struct {
+	PolicyID       string `json:"policyId"`
+	PolicyRevision string `json:"policyRevision"`
+	Scope          string `json:"scope"`
+	KeyDigest      string `json:"keyDigest"`
+	MaxAttempts    int32  `json:"maxAttempts"`
+	WindowSeconds  int32  `json:"windowSeconds"`
+}
+
+// ExecutionRateBucket is the persisted consumption for one opaque rate key's
+// current epoch-aligned fixed window.
+type ExecutionRateBucket struct {
+	WindowStart time.Time `json:"windowStart"`
+	WindowEnd   time.Time `json:"windowEnd"`
+	Consumed    int32     `json:"consumed"`
 }
 
 type Job struct {
@@ -783,6 +803,7 @@ type Snapshot struct {
 	WorkerLeaseIdentities  map[string]WorkerLeaseIdentity         `json:"workerLeaseIdentities,omitempty"`
 	WorkerCredentials      map[string]WorkerCredential            `json:"workerCredentials,omitempty"`
 	WorkerGroupRunStates   map[string]WorkerGroupRunState         `json:"workerGroupRunStates,omitempty"`
+	ExecutionRateBuckets   map[string]ExecutionRateBucket         `json:"executionRateBuckets,omitempty"`
 	Workspaces             map[string]Workspace                   `json:"workspaces"`
 	WorkspaceKeys          map[string]WorkspaceKey                `json:"workspaceKeys,omitempty"`
 	WorkspaceTokens        map[string]map[string]WorkspaceToken   `json:"workspaceTokens"`
@@ -1020,6 +1041,7 @@ func NewActionJob(run Run, input json.RawMessage) Job {
 func cloneExecutionLimitPins(pins ExecutionLimitPins) ExecutionLimitPins {
 	return ExecutionLimitPins{
 		Concurrency: append([]KeyedConcurrencyLimitPin(nil), pins.Concurrency...),
+		Rate:        append([]KeyedRateLimitPin(nil), pins.Rate...),
 	}
 }
 

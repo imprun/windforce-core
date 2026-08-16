@@ -1831,6 +1831,18 @@ func TestCanonicalControlPlaneOpenAPIExposesSchemaDiscovery(t *testing.T) {
 		"tag_override", "timeout_s", "required_capabilities", "updated_at",
 		"effective_capabilities", "effective_route_tag",
 	})
+	assertSchemaFields("KeyedRateLimit", []string{"id", "max_attempts", "window_seconds", "input_pointers"})
+	assertSchemaFields("PinnedKeyedRateLimit", []string{"policy_id", "policy_revision", "scope", "key_digest", "max_attempts", "window_seconds"})
+	assertSchemaFields("ExecutionLimits", []string{"concurrency", "rate"})
+	assertSchemaFields("ExecutionLimitPins", []string{"concurrency", "rate"})
+	rateWindowSchema := schemas["KeyedRateLimit"].(map[string]any)["properties"].(map[string]any)["window_seconds"].(map[string]any)
+	if rateWindowSchema["minimum"] != float64(contract.MinRateWindowSeconds) || rateWindowSchema["maximum"] != float64(contract.MaxRateWindowSeconds) {
+		t.Fatalf("KeyedRateLimit.window_seconds bounds = %#v", rateWindowSchema)
+	}
+	rateItems := schemas["ExecutionLimits"].(map[string]any)["properties"].(map[string]any)["rate"].(map[string]any)["items"].(map[string]any)
+	if rateItems["$ref"] != "#/components/schemas/KeyedRateLimit" {
+		t.Fatalf("ExecutionLimits.rate items = %#v", rateItems)
+	}
 	assertSchemaRef := func(owner string, schema map[string]any, field string, want string) {
 		t.Helper()
 		properties := schema["properties"].(map[string]any)
@@ -2836,7 +2848,10 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 		"scriptLang": "typescript",
 		"timeout": 120,
 		"maxConcurrent": 2,
-		"executionLimits": {"concurrency": [{"id": "message", "maxConcurrent": 1, "inputPointers": ["/message"]}]},
+		"executionLimits": {
+			"concurrency": [{"id": "message", "maxConcurrent": 1, "inputPointers": ["/message"]}],
+			"rate": [{"id": "message-rate", "maxAttempts": 3, "windowSeconds": 60, "inputPointers": ["/message"]}]
+		},
 		"capabilities": ["browser"],
 		"actions": {
 			"echo": {
@@ -3309,6 +3324,8 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 		appBody.App.Entrypoint != "main.ts" || appBody.App.ScriptLang != "typescript" ||
 		appBody.App.TimeoutS != 120 || appBody.App.MaxConcurrent == nil || *appBody.App.MaxConcurrent != 2 ||
 		len(appBody.App.ExecutionLimits.Concurrency) != 1 || appBody.App.ExecutionLimits.Concurrency[0].ID != "message" ||
+		len(appBody.App.ExecutionLimits.Rate) != 1 || appBody.App.ExecutionLimits.Rate[0].ID != "message-rate" ||
+		appBody.App.ExecutionLimits.Rate[0].MaxAttempts != 3 || appBody.App.ExecutionLimits.Rate[0].WindowSeconds != 60 ||
 		!reflect.DeepEqual(appBody.App.RequiredCapabilities, []string{"browser"}) || appBody.App.EffectiveRouteTag != "default" ||
 		appBody.App.UpdatedAt.IsZero() ||
 		len(appBody.Actions) != 1 || appBody.Actions[0].ActionKey != "echo" || appBody.Actions[0].DisplayName != "Echo message" ||
@@ -3348,7 +3365,11 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 
 	runBody := admitTestRun(t, stateStore, server.URL, "ws-a", "echo", "echo", `{"message":"hello"}`)
 	admittedJob := testJobForRun(t, stateStore, runBody.RunID)
-	if len(admittedJob.Payload.ExecutionLimits.Concurrency) != 1 || strings.Contains(string(mustRaw(admittedJob.Payload.ExecutionLimits)), "hello") {
+	if len(admittedJob.Payload.ExecutionLimits.Concurrency) != 1 ||
+		len(admittedJob.Payload.ExecutionLimits.Rate) != 1 ||
+		admittedJob.Payload.ExecutionLimits.Rate[0].MaxAttempts != 3 ||
+		admittedJob.Payload.ExecutionLimits.Rate[0].WindowSeconds != 60 ||
+		strings.Contains(string(mustRaw(admittedJob.Payload.ExecutionLimits)), "hello") {
 		t.Fatalf("admitted execution-limit pins = %#v", admittedJob.Payload.ExecutionLimits)
 	}
 	statusResp, err := http.Get(server.URL + "/api/w/ws-a/jobs/" + admittedJob.ID)
@@ -3381,6 +3402,11 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 		statusBody.Tag != "default" ||
 		len(statusBody.ExecutionLimits.Concurrency) != 1 ||
 		!strings.HasPrefix(statusBody.ExecutionLimits.Concurrency[0].KeyDigest, "hmac-sha256:") ||
+		len(statusBody.ExecutionLimits.Rate) != 1 ||
+		statusBody.ExecutionLimits.Rate[0].PolicyID != "message-rate" ||
+		!strings.HasPrefix(statusBody.ExecutionLimits.Rate[0].KeyDigest, "hmac-sha256:") ||
+		statusBody.ExecutionLimits.Rate[0].MaxAttempts != 3 ||
+		statusBody.ExecutionLimits.Rate[0].WindowSeconds != 60 ||
 		statusBody.CreatedBy != "operator:admin" ||
 		statusBody.PermissionedAs != "operator:admin" {
 		t.Fatalf("status body = %#v input_schema:%s output_schema:%s input:%s", statusBody, statusBody.InputSchema, statusBody.OutputSchema, statusBody.Input)

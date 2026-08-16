@@ -185,3 +185,28 @@ func TestQueueDemandExcludesJobsBlockedByKeyedConcurrency(t *testing.T) {
 		t.Fatalf("keyed queue demand = %#v, want only the different key eligible", snapshot.Items)
 	}
 }
+
+func TestQueueDemandExcludesAttemptsBeyondCurrentRateBudget(t *testing.T) {
+	observedAt := time.Date(2026, 8, 15, 0, 0, 30, 0, time.UTC)
+	pin := keyedRatePin("vendor", strings.Repeat("f", 64), 2, 60)
+	job := func(id string, createdAt time.Time) Job {
+		return Job{
+			ID: id, State: JobQueued, CreatedAt: createdAt,
+			Payload: JobPayload{
+				Workspace: "ws-a", App: "echo", Action: "run", Tag: "default",
+				ExecutionLimits: ExecutionLimitPins{Rate: []KeyedRateLimitPin{pin}},
+			},
+		}
+	}
+	start, end := rateWindow(observedAt, pin.WindowSeconds)
+	buckets := map[string]ExecutionRateBucket{
+		rateBucketKey("ws-a", pin): {WindowStart: start, WindowEnd: end, Consumed: 1},
+	}
+	snapshot := buildQueueDemandSnapshotWithRates("epoch", 1, observedAt, []Job{
+		job("queued-first", observedAt),
+		job("queued-second", observedAt.Add(time.Second)),
+	}, []QueueDemandSelector{{Key: "default", WorkspaceID: "ws-a", Tags: []string{"default"}}}, buckets)
+	if len(snapshot.Items) != 1 || snapshot.Items[0].Eligible != 1 || snapshot.Items[0].Queued != 1 {
+		t.Fatalf("rate-limited queue demand = %#v, want one remaining attempt", snapshot.Items)
+	}
+}

@@ -8,7 +8,7 @@ export default {
   guide: [
     "Open an App and choose Execution limits.",
     "Switch the Core console to dark mode.",
-    "Confirm policy IDs, capacities, JSON Pointers, and release guidance remain legible.",
+    "Confirm limit types, policy IDs, capacities, windows, JSON Pointers, and release guidance remain legible.",
   ],
   async run({ page, capture }) {
     await page.goto();

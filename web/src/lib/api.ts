@@ -253,8 +253,16 @@ export type KeyedConcurrencyLimit = {
   input_pointers: string[];
 };
 
+export type KeyedRateLimit = {
+  id: string;
+  max_attempts: number;
+  window_seconds: number;
+  input_pointers: string[];
+};
+
 export type ExecutionLimits = {
   concurrency?: KeyedConcurrencyLimit[];
+  rate?: KeyedRateLimit[];
 };
 
 export type KeyedConcurrencyLimitPin = {
@@ -265,8 +273,18 @@ export type KeyedConcurrencyLimitPin = {
   max_concurrent: number;
 };
 
+export type KeyedRateLimitPin = {
+  policy_id: string;
+  policy_revision: string;
+  scope: string;
+  key_digest: string;
+  max_attempts: number;
+  window_seconds: number;
+};
+
 export type ExecutionLimitPins = {
   concurrency?: KeyedConcurrencyLimitPin[];
+  rate?: KeyedRateLimitPin[];
 };
 
 export type AppDetail = {

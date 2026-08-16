@@ -329,6 +329,12 @@ func TestParseNormalizesAppAndActionExecutionLimits(t *testing.T) {
 				"id": "account",
 				"maxConcurrent": 2,
 				"inputPointers": ["/account/id"]
+			}],
+			"rate": [{
+				"id": "vendor-api",
+				"maxAttempts": 100,
+				"windowSeconds": 60,
+				"inputPointers": ["/account/id"]
 			}]
 		},
 		"actions": {
@@ -349,6 +355,9 @@ func TestParseNormalizesAppAndActionExecutionLimits(t *testing.T) {
 	if got := app.ExecutionLimits.Concurrency; len(got) != 1 || got[0].ID != "account" || got[0].InputPointers[0] != "/account/id" {
 		t.Fatalf("app execution limits = %#v", got)
 	}
+	if got := app.ExecutionLimits.Rate; len(got) != 1 || got[0].ID != "vendor-api" || got[0].MaxAttempts != 100 || got[0].WindowSeconds != 60 {
+		t.Fatalf("app rate limits = %#v", got)
+	}
 	if got := app.Actions["run"].ExecutionLimits.Concurrency; len(got) != 1 || got[0].ID != "egress" || got[0].InputPointers[0] != "/egress~1name" {
 		t.Fatalf("action execution limits = %#v", got)
 	}
@@ -363,6 +372,20 @@ func TestParseRejectsInvalidExecutionLimits(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := Parse([]byte(`{"app":"echo","entrypoint":"main.ts","executionLimits":{"concurrency":[` + limit + `]},"actions":{"run":{}}}`))
+			if err == nil || !strings.Contains(err.Error(), "executionLimits") {
+				t.Fatalf("Parse error = %v, want executionLimits validation", err)
+			}
+		})
+	}
+	for name, limit := range map[string]string{
+		"missing pointers": `{"id":"vendor","maxAttempts":1,"windowSeconds":60,"inputPointers":[]}`,
+		"invalid pointer":  `{"id":"vendor","maxAttempts":1,"windowSeconds":60,"inputPointers":["account"]}`,
+		"invalid budget":   `{"id":"vendor","maxAttempts":0,"windowSeconds":60,"inputPointers":["/account"]}`,
+		"invalid window":   `{"id":"vendor","maxAttempts":1,"windowSeconds":0,"inputPointers":["/account"]}`,
+		"window too large": `{"id":"vendor","maxAttempts":1,"windowSeconds":86401,"inputPointers":["/account"]}`,
+	} {
+		t.Run("rate "+name, func(t *testing.T) {
+			_, err := Parse([]byte(`{"app":"echo","entrypoint":"main.ts","executionLimits":{"rate":[` + limit + `]},"actions":{"run":{}}}`))
 			if err == nil || !strings.Contains(err.Error(), "executionLimits") {
 				t.Fatalf("Parse error = %v, want executionLimits validation", err)
 			}

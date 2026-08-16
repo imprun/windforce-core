@@ -28,7 +28,11 @@ const (
 	CapabilityBrowser = "browser"
 
 	MaxKeyedConcurrencyLimits   = 8
-	MaxConcurrencyInputPointers = 8
+	MaxKeyedRateLimits          = 8
+	MaxExecutionInputPointers   = 8
+	MaxConcurrencyInputPointers = MaxExecutionInputPointers
+	MinRateWindowSeconds        = 1
+	MaxRateWindowSeconds        = 86400
 	MaxConcurrencyPointerBytes  = 256
 )
 
@@ -153,6 +157,7 @@ type Action struct {
 // Admission resolves each declaration to opaque pins before a Job is stored.
 type ExecutionLimits struct {
 	Concurrency []KeyedConcurrencyLimit `json:"concurrency,omitempty"`
+	Rate        []KeyedRateLimit        `json:"rate,omitempty"`
 }
 
 // KeyedConcurrencyLimit caps leased Jobs that resolve to the same opaque key.
@@ -163,6 +168,15 @@ type KeyedConcurrencyLimit struct {
 	InputPointers []string `json:"inputPointers"`
 }
 
+// KeyedRateLimit caps successful execution-attempt claims that resolve to the
+// same opaque key inside one epoch-aligned fixed window.
+type KeyedRateLimit struct {
+	ID            string   `json:"id"`
+	MaxAttempts   int32    `json:"maxAttempts"`
+	WindowSeconds int32    `json:"windowSeconds"`
+	InputPointers []string `json:"inputPointers"`
+}
+
 // NormalizeExecutionLimits validates and defensively copies release-owned
 // execution-limit declarations. Pointer syntax is checked here; values are
 // resolved only after Admission has produced the effective input.
@@ -170,7 +184,13 @@ func NormalizeExecutionLimits(limits ExecutionLimits) (ExecutionLimits, error) {
 	if len(limits.Concurrency) > MaxKeyedConcurrencyLimits {
 		return ExecutionLimits{}, fmt.Errorf("concurrency declares %d limits; maximum is %d", len(limits.Concurrency), MaxKeyedConcurrencyLimits)
 	}
-	normalized := ExecutionLimits{Concurrency: make([]KeyedConcurrencyLimit, 0, len(limits.Concurrency))}
+	if len(limits.Rate) > MaxKeyedRateLimits {
+		return ExecutionLimits{}, fmt.Errorf("rate declares %d limits; maximum is %d", len(limits.Rate), MaxKeyedRateLimits)
+	}
+	normalized := ExecutionLimits{
+		Concurrency: make([]KeyedConcurrencyLimit, 0, len(limits.Concurrency)),
+		Rate:        make([]KeyedRateLimit, 0, len(limits.Rate)),
+	}
 	ids := make(map[string]struct{}, len(limits.Concurrency))
 	for _, item := range limits.Concurrency {
 		item.ID = strings.TrimSpace(item.ID)
@@ -204,6 +224,43 @@ func NormalizeExecutionLimits(limits ExecutionLimits) (ExecutionLimits, error) {
 	}
 	if len(normalized.Concurrency) == 0 {
 		normalized.Concurrency = nil
+	}
+	rateIDs := make(map[string]struct{}, len(limits.Rate))
+	for _, item := range limits.Rate {
+		item.ID = strings.TrimSpace(item.ID)
+		if !labelPattern.MatchString(item.ID) {
+			return ExecutionLimits{}, fmt.Errorf("rate limit id %q is invalid", item.ID)
+		}
+		if _, exists := rateIDs[item.ID]; exists {
+			return ExecutionLimits{}, fmt.Errorf("rate limit id %q is duplicated", item.ID)
+		}
+		rateIDs[item.ID] = struct{}{}
+		if item.MaxAttempts <= 0 {
+			return ExecutionLimits{}, fmt.Errorf("rate limit %q maxAttempts must be positive", item.ID)
+		}
+		if item.WindowSeconds < MinRateWindowSeconds || item.WindowSeconds > MaxRateWindowSeconds {
+			return ExecutionLimits{}, fmt.Errorf("rate limit %q windowSeconds must be between %d and %d", item.ID, MinRateWindowSeconds, MaxRateWindowSeconds)
+		}
+		if len(item.InputPointers) == 0 || len(item.InputPointers) > MaxExecutionInputPointers {
+			return ExecutionLimits{}, fmt.Errorf("rate limit %q inputPointers must contain between 1 and %d entries", item.ID, MaxExecutionInputPointers)
+		}
+		pointers := make([]string, 0, len(item.InputPointers))
+		seenPointers := make(map[string]struct{}, len(item.InputPointers))
+		for _, pointer := range item.InputPointers {
+			if err := ValidateInputJSONPointer(pointer); err != nil {
+				return ExecutionLimits{}, fmt.Errorf("rate limit %q input pointer: %w", item.ID, err)
+			}
+			if _, exists := seenPointers[pointer]; exists {
+				return ExecutionLimits{}, fmt.Errorf("rate limit %q input pointer %q is duplicated", item.ID, pointer)
+			}
+			seenPointers[pointer] = struct{}{}
+			pointers = append(pointers, pointer)
+		}
+		item.InputPointers = pointers
+		normalized.Rate = append(normalized.Rate, item)
+	}
+	if len(normalized.Rate) == 0 {
+		normalized.Rate = nil
 	}
 	return normalized, nil
 }
@@ -362,13 +419,23 @@ func PinExecutionDeployment(deployment Deployment, actionKey string) Deployment 
 }
 
 func cloneExecutionLimits(limits ExecutionLimits) ExecutionLimits {
-	cloned := ExecutionLimits{Concurrency: make([]KeyedConcurrencyLimit, len(limits.Concurrency))}
+	cloned := ExecutionLimits{
+		Concurrency: make([]KeyedConcurrencyLimit, len(limits.Concurrency)),
+		Rate:        make([]KeyedRateLimit, len(limits.Rate)),
+	}
 	for index, limit := range limits.Concurrency {
 		cloned.Concurrency[index] = limit
 		cloned.Concurrency[index].InputPointers = append([]string(nil), limit.InputPointers...)
 	}
+	for index, limit := range limits.Rate {
+		cloned.Rate[index] = limit
+		cloned.Rate[index].InputPointers = append([]string(nil), limit.InputPointers...)
+	}
 	if len(cloned.Concurrency) == 0 {
 		cloned.Concurrency = nil
+	}
+	if len(cloned.Rate) == 0 {
+		cloned.Rate = nil
 	}
 	return cloned
 }

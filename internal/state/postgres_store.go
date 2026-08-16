@@ -47,6 +47,7 @@ type PostgresStore struct {
 	SecretKey         string
 	SecretKeyPrevious string
 	leaseNow          nowFunc
+	executionMetrics  *executionMetrics
 	databaseURL       string
 	humanTaskSignals  humanTaskSignalHub
 	humanTaskListen   sync.Once
@@ -70,13 +71,18 @@ func OpenPostgresStore(ctx context.Context, databaseURL string) (*PostgresStore,
 	}
 	listenerContext, listenerCancel := context.WithCancel(context.Background())
 	store := &PostgresStore{
-		pool:            pool,
-		databaseURL:     databaseURL,
-		listenerContext: listenerContext,
-		listenerCancel:  listenerCancel,
-		listenerReady:   make(chan struct{}),
+		pool:             pool,
+		executionMetrics: newExecutionMetrics(),
+		databaseURL:      databaseURL,
+		listenerContext:  listenerContext,
+		listenerCancel:   listenerCancel,
+		listenerReady:    make(chan struct{}),
 	}
 	return store, nil
+}
+
+func (s *PostgresStore) executionMetricsState() (*executionMetrics, string) {
+	return s.executionMetrics, "postgres"
 }
 
 func (s *PostgresStore) Close() {
@@ -445,6 +451,7 @@ func (s *PostgresStore) ClaimJobForWorkerScope(ctx context.Context, workerID str
 	requestedLabels := NormalizeWorkerScope(labels)
 	var claimed Job
 	var lease Lease
+	rateBlockedCandidates := 0
 	err := s.withTx(ctx, func(tx pgx.Tx) error {
 		now := currentUTC(s.leaseNow)
 		registeredTags, registeredLabels, leaseIdentity, err := postgresRegisteredWorkerClaim(
@@ -495,17 +502,29 @@ WHERE state='running' AND lease_expires_at < $1 AND canceled_by IS NULL
 		}
 		var selected Job
 		for _, candidate := range candidates {
-			reached, err := postgresMaxConcurrentReached(ctx, tx, candidate)
+			result, err := postgresClaimLimitsReached(ctx, tx, candidate)
 			if err != nil {
 				return err
 			}
-			if reached {
+			if result.RateBlocked {
+				rateBlockedCandidates++
+			}
+			if result.Reached {
 				continue
 			}
 			selected = candidate
 			break
 		}
 		if selected.ID == "" {
+			if rateBlockedCandidates == 0 {
+				blocked, err := postgresRateBlockedCandidateExists(ctx, tx, allowedTags, offeredLabels, NormalizeWorkerScope(workspaceIDs))
+				if err != nil {
+					return err
+				}
+				if blocked {
+					rateBlockedCandidates = 1
+				}
+			}
 			return ErrNoQueuedJob
 		}
 		var leaseIdentityJSON json.RawMessage
@@ -543,8 +562,14 @@ WHERE id=$3 AND state IN ($4, $5)
 		lease = Lease{JobID: job.ID, WorkerID: workerID, ExpiresAt: expiresAt, Attempt: job.Attempt, AcquiredAt: now, Identity: leaseIdentity}
 		return nil
 	})
+	if errors.Is(err, ErrNoQueuedJob) && rateBlockedCandidates > 0 {
+		s.executionMetrics.observeRateClaims(executionRateOutcomeBlocked, 1)
+	}
 	if err != nil {
 		return Job{}, Lease{}, err
+	}
+	if len(claimed.Payload.ExecutionLimits.Rate) > 0 {
+		s.executionMetrics.observeRateClaims(executionRateOutcomeConsumed, 1)
 	}
 	return claimed, lease, nil
 }
@@ -645,6 +670,28 @@ WHERE candidate.state=$1
             ))
       ) >= (limit_pin->>'maxConcurrent')::integer
   )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM jsonb_array_elements(COALESCE(candidate.payload->'executionLimits'->'rate', '[]'::jsonb)) AS rate_pin
+    WHERE
+      COALESCE(NULLIF(rate_pin->>'maxAttempts', '')::integer, 0) <= 0
+      OR COALESCE(NULLIF(rate_pin->>'windowSeconds', '')::integer, 0) NOT BETWEEN 1 AND 86400
+      OR NULLIF(rate_pin->>'policyId', '') IS NULL
+      OR NULLIF(rate_pin->>'scope', '') IS NULL
+      OR NULLIF(rate_pin->>'keyDigest', '') IS NULL
+      OR EXISTS (
+        SELECT 1
+        FROM execution_rate_bucket AS rate_bucket
+        WHERE rate_bucket.workspace_id = claim.workspace_id
+          AND rate_bucket.scope = rate_pin->>'scope'
+          AND rate_bucket.policy_id = rate_pin->>'policyId'
+          AND rate_bucket.key_digest = rate_pin->>'keyDigest'
+          AND rate_bucket.window_seconds = (rate_pin->>'windowSeconds')::integer
+          AND rate_bucket.window_start <= CURRENT_TIMESTAMP
+          AND rate_bucket.window_end > CURRENT_TIMESTAMP
+          AND rate_bucket.consumed >= (rate_pin->>'maxAttempts')::integer
+      )
+  )
 ORDER BY candidate.priority ASC, candidate.created_at ASC, candidate.id ASC
 LIMIT $5
 FOR UPDATE OF candidate SKIP LOCKED
@@ -670,6 +717,55 @@ FOR UPDATE OF candidate SKIP LOCKED
 		return nil, err
 	}
 	return candidates, nil
+}
+
+func postgresRateBlockedCandidateExists(
+	ctx context.Context,
+	tx pgx.Tx,
+	allowedTags map[string]struct{},
+	offeredLabels map[string]struct{},
+	workspaceIDs []string,
+) (bool, error) {
+	tags := claimFilterValues(allowedTags)
+	labels := claimFilterValues(offeredLabels)
+	workspaceIDs = NormalizeWorkerScope(workspaceIDs)
+	var blocked bool
+	err := tx.QueryRow(ctx, `
+SELECT EXISTS (
+  SELECT 1
+  FROM jobs AS candidate
+  CROSS JOIN LATERAL (
+    SELECT COALESCE(NULLIF(candidate.payload->>'workspace', ''), NULLIF(candidate.payload->'deployment'->>'workspace', ''), 'default') AS workspace_id
+  ) AS claim
+  WHERE candidate.state=$1
+    AND (cardinality($4::text[]) = 0 OR claim.workspace_id = ANY($4::text[]))
+    AND (
+      cardinality($2::text[]) = 0
+      OR NULLIF(btrim(candidate.payload->>'tag'), '') = ANY($2::text[])
+      OR NULLIF(btrim(candidate.payload->>'tag'), '') IS NULL
+    )
+    AND (
+      CASE
+        WHEN candidate.payload ? 'requiredLabels' THEN COALESCE(candidate.payload->'requiredLabels', '[]'::jsonb)
+        ELSE COALESCE(candidate.payload->'requiredCapabilities', '[]'::jsonb)
+      END
+    ) <@ to_jsonb($3::text[])
+    AND EXISTS (
+      SELECT 1
+      FROM jsonb_array_elements(COALESCE(candidate.payload->'executionLimits'->'rate', '[]'::jsonb)) AS rate_pin
+      JOIN execution_rate_bucket AS rate_bucket
+        ON rate_bucket.workspace_id = claim.workspace_id
+       AND rate_bucket.scope = rate_pin->>'scope'
+       AND rate_bucket.policy_id = rate_pin->>'policyId'
+       AND rate_bucket.key_digest = rate_pin->>'keyDigest'
+       AND rate_bucket.window_seconds = (rate_pin->>'windowSeconds')::integer
+      WHERE rate_bucket.window_start <= CURRENT_TIMESTAMP
+        AND rate_bucket.window_end > CURRENT_TIMESTAMP
+        AND rate_bucket.consumed >= (rate_pin->>'maxAttempts')::integer
+    )
+)
+`, string(JobQueued), tags, labels, workspaceIDs).Scan(&blocked)
+	return blocked, err
 }
 
 func claimFilterValues(values map[string]struct{}) []string {
@@ -714,11 +810,16 @@ RETURNING canceled_by, canceled_reason
 	return result, err
 }
 
-func postgresMaxConcurrentReached(ctx context.Context, tx pgx.Tx, candidate Job) (bool, error) {
+type postgresClaimLimitResult struct {
+	Reached     bool
+	RateBlocked bool
+}
+
+func postgresClaimLimitsReached(ctx context.Context, tx pgx.Tx, candidate Job) (postgresClaimLimitResult, error) {
 	workspaceID := normalizedJobWorkspace("", candidate)
 	appKey := jobAppKey(candidate)
 	appLimit, appLimited := jobMaxConcurrent(candidate)
-	lockKeys := make([]string, 0, len(candidate.Payload.ExecutionLimits.Concurrency)+1)
+	lockKeys := make([]string, 0, len(candidate.Payload.ExecutionLimits.Concurrency)+len(candidate.Payload.ExecutionLimits.Rate)+1)
 	if appLimited && appKey != "" {
 		// Preserve the legacy maxConcurrent advisory-lock identity so mixed
 		// Core versions remain coordinated during a rolling upgrade.
@@ -726,35 +827,57 @@ func postgresMaxConcurrentReached(ctx context.Context, tx pgx.Tx, candidate Job)
 	}
 	for _, limit := range candidate.Payload.ExecutionLimits.Concurrency {
 		if !validKeyedConcurrencyPin(limit) {
-			return true, nil
+			return postgresClaimLimitResult{Reached: true}, nil
 		}
 		lockKeys = append(lockKeys, "keyed:"+limit.Scope+":"+limit.PolicyID+":"+limit.KeyDigest)
+	}
+	for _, limit := range candidate.Payload.ExecutionLimits.Rate {
+		if !validKeyedRatePin(limit) {
+			return postgresClaimLimitResult{Reached: true}, nil
+		}
+		lockKeys = append(lockKeys, "rate:"+limit.Scope+":"+limit.PolicyID+":"+limit.KeyDigest+":"+fmt.Sprint(limit.WindowSeconds))
 	}
 	sort.Strings(lockKeys)
 	for _, lockKey := range lockKeys {
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))`, workspaceID, lockKey); err != nil {
-			return false, err
+			return postgresClaimLimitResult{}, err
 		}
 	}
 	if appLimited && appKey != "" {
 		running, err := postgresRunningJobsForApp(ctx, tx, workspaceID, appKey)
 		if err != nil {
-			return false, err
+			return postgresClaimLimitResult{}, err
 		}
 		if running >= appLimit {
-			return true, nil
+			return postgresClaimLimitResult{Reached: true}, nil
 		}
 	}
 	for _, limit := range candidate.Payload.ExecutionLimits.Concurrency {
 		running, err := postgresRunningJobsForKeyedConcurrency(ctx, tx, workspaceID, limit)
 		if err != nil {
-			return false, err
+			return postgresClaimLimitResult{}, err
 		}
 		if running >= int(limit.MaxConcurrent) {
-			return true, nil
+			return postgresClaimLimitResult{Reached: true}, nil
 		}
 	}
-	return false, nil
+	if len(candidate.Payload.ExecutionLimits.Rate) > 0 {
+		rateNow, err := postgresCurrentRateTime(ctx, tx)
+		if err != nil {
+			return postgresClaimLimitResult{}, err
+		}
+		reached, err := postgresRateLimitsReached(ctx, tx, candidate, rateNow)
+		if err != nil {
+			return postgresClaimLimitResult{}, err
+		}
+		if reached {
+			return postgresClaimLimitResult{Reached: true, RateBlocked: true}, nil
+		}
+		if err := postgresConsumeRateLimits(ctx, tx, candidate, rateNow); err != nil {
+			return postgresClaimLimitResult{}, err
+		}
+	}
+	return postgresClaimLimitResult{}, nil
 }
 
 func postgresRunningJobsForKeyedConcurrency(ctx context.Context, tx pgx.Tx, workspaceID string, limit KeyedConcurrencyLimitPin) (int, error) {

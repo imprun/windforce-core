@@ -1,15 +1,17 @@
 ---
 title: Execution limits
-description: App-wide and opaque-key concurrency enforced atomically across Workers in one Core Cell.
+description: App-wide, opaque-key concurrency, and opaque-key fixed-window rate limits enforced atomically across Workers in one Core Cell.
 ---
 
-Windforce Core has two concurrency layers:
+Windforce Core has three cumulative execution-limit layers:
 
 - `maxConcurrent` caps all running Jobs for one workspace and App.
 - `executionLimits.concurrency` caps running Jobs that resolve to the same
   App-defined opaque key.
+- `executionLimits.rate` caps claimed attempts for the same App-defined opaque
+  key in a UTC epoch-aligned fixed window.
 
-Both are enforced when a Worker claims a Job. A blocked Job remains queued; no
+All are enforced when a Worker claims a Job. A blocked Job remains queued; no
 Worker slot is consumed while it waits.
 
 ## Declare a keyed limit
@@ -27,6 +29,14 @@ Place `executionLimits` at App scope to share capacity across the App's Actions:
         "maxConcurrent": 2,
         "inputPointers": ["/account_id", "/egress/id"]
       }
+    ],
+    "rate": [
+      {
+        "id": "account-egress",
+        "maxAttempts": 120,
+        "windowSeconds": 60,
+        "inputPointers": ["/account_id", "/egress/id"]
+      }
     ]
   },
   "actions": {
@@ -35,8 +45,8 @@ Place `executionLimits` at App scope to share capacity across the App's Actions:
 }
 ```
 
-Place the same shape inside an Action to limit only that Action. App and Action
-limits are cumulative, and `maxConcurrent` still applies when present.
+Place either declaration inside an Action to limit only that Action. App and
+Action limits are cumulative, and `maxConcurrent` still applies when present.
 
 `inputPointers` are RFC 6901 JSON Pointers into the effective input after Core
 has merged workspace, App, Action, and client InputConfig. Every selected value
@@ -52,11 +62,11 @@ flowchart TD
     C --> D["Read declared JSON Pointer values"]
     D --> E["Canonicalize scalar components"]
     E --> F["Workspace-key HMAC"]
-    F --> G["Pin policy ID, revision, digest, and maximum on Run and Job"]
+    F --> G["Pin policy ID, revision, digest, budget, and window on Run and Job"]
     G --> H["Local or PostgreSQL queue"]
-    H --> I["Atomic claim checks App and keyed capacity"]
-    I -->|"capacity available"| J["Worker lease and execution"]
-    I -->|"capacity full"| K["Job remains queued"]
+    H --> I["Atomic claim checks concurrency and current rate budget"]
+    I -->|"all limits allow"| J["Consume rate attempt, create Worker lease, execute"]
+    I -->|"a limit blocks"| K["Job remains queued"]
 ```
 
 Core stores and indexes only the HMAC digest. It does not persist the selected
@@ -64,8 +74,8 @@ raw values in the limiter pin. The effective Run input follows the normal
 encrypted-at-rest input contract.
 
 Authorized Job status responses expose the safe `execution_limits` pins with
-policy ID, revision, scope, digest, and maximum for diagnosis. They never expose
-the selected raw key components.
+policy ID, revision, scope, digest, maximum, and rate window for diagnosis. They
+never expose the selected raw key components.
 
 ## Choosing the key
 
@@ -83,10 +93,25 @@ lock it through operator InputConfig.
 
 - A running lease consumes capacity.
 - Completion or lease-expiry recovery releases capacity.
+- A successful claim consumes one rate attempt. Completion, failure,
+  cancellation, lease expiry, retry, and recovery do not refund it.
+- A retry or recovered Job consumes another rate attempt when it is claimed.
 - A HumanTask hold continues to consume capacity because the process and lease
   stay alive.
 - Suspend and retry reuse the safe pins stored on the Run.
-- Queue-demand observation excludes Jobs currently blocked by these limits.
+- Queue-demand observation excludes Jobs currently blocked by concurrency and
+  does not count attempts beyond the remaining current-window rate budget.
+
+## Fixed-window behavior
+
+For `windowSeconds: 60`, Core groups attempts into UTC epoch-aligned one-minute
+windows. The budget resets at the next boundary; Core does not use a timer tied
+to one server process. Local mode uses the Store's injected clock and
+PostgreSQL mode uses the database clock inside the claim transaction.
+
+A fixed window can allow a burst approaching twice the configured maximum
+across a boundary. This is an explicit v1 tradeoff. Sliding-window and token
+bucket semantics are not implied by this contract.
 
 ## Boundaries
 
@@ -94,9 +119,14 @@ The atomic boundary is one Core Cell and its database. A hosted control plane
 owns cross-Cell global quotas and WorkerPool operations. Domain services own
 success-rate and target-health decisions.
 
-Rate limits are deliberately not simulated with concurrency counters. The
-separate rate contract remains tracked by
-[#212](https://github.com/imprun/windforce-core/issues/212).
+Rate limits use durable attempt buckets and never reuse or refund concurrency
+counters. Rate is an execution safety primitive, not a commercial billing or
+cross-Cell quota system.
 
-See [ADR 0033](../adr/0033-pin-and-enforce-opaque-key-concurrency.md) for the
-full decision and failure semantics.
+The `/metrics` counter `windforce_execution_rate_claims_total`
+reports only the Store backend and `consumed` or `blocked` outcome. It does not
+label workspace, App, policy, or opaque key identities.
+
+See [ADR 0033](../adr/0033-pin-and-enforce-opaque-key-concurrency.md) for keyed
+concurrency and [ADR 0041](../adr/0041-pin-and-enforce-opaque-key-fixed-window-rate.md)
+for fixed-window rate semantics and failure behavior.

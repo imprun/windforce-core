@@ -92,14 +92,15 @@ The app detail Overview keeps immutable release defaults separate from effective
 
 ## Review release execution limits
 
-The Execution limits tab shows immutable App and Action keyed-concurrency policies from the active release.
+The Execution limits tab shows immutable App and Action keyed-concurrency and fixed-window rate policies from the active release.
 
 ![Review release execution limits](../assets/ui/execution-limits.png)
 
 1. Open an App and choose Execution limits.
 2. Review App-scoped policies shared by every Action.
-3. Review Action-scoped policies, capacities, and JSON Pointer key inputs.
-4. Edit the source manifest and publish a new release when the policy must change.
+3. Compare concurrency capacity and fixed-window attempt budgets without exposing resolved key values.
+4. Review Action-scoped policies and JSON Pointer key inputs.
+5. Edit the source manifest and publish a new release when the policy must change.
 
 ## Review App and Action execution candidates
 
@@ -121,11 +122,11 @@ Dark mode preserves policy hierarchy, identifiers, and diagnostic boundaries wit
 
 1. Open an App and choose Execution limits.
 2. Switch the Core console to dark mode.
-3. Confirm policy IDs, capacities, JSON Pointers, and release guidance remain legible.
+3. Confirm limit types, policy IDs, capacities, windows, JSON Pointers, and release guidance remain legible.
 
 ## Review execution limits on a narrow screen
 
-Policy tables become labelled records on a narrow screen so scope, capacity, and key inputs remain comparable.
+Policy tables become labelled records on a narrow screen so type, scope, capacity or rate window, and key inputs remain comparable.
 
 ![Review execution limits on a narrow screen](../assets/ui/execution-limits-mobile.png)
 

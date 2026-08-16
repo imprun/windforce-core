@@ -1,16 +1,25 @@
 import { Panel } from "../components/ui";
 import { actionDisplayName } from "../lib/action-label";
-import type { ActionView, AppDetail, KeyedConcurrencyLimit } from "../lib/api";
+import type {
+  ActionView,
+  AppDetail,
+  ExecutionLimits,
+  KeyedConcurrencyLimit,
+  KeyedRateLimit,
+} from "../lib/api";
 import { translate } from "../shared/i18n";
 
 type ActionLimitRow = {
   actionKey: string;
   actionName: string;
-  limit: KeyedConcurrencyLimit;
-};
+} & ExecutionLimitRow;
+
+export type ExecutionLimitRow =
+  | { kind: "concurrency"; limit: KeyedConcurrencyLimit }
+  | { kind: "rate"; limit: KeyedRateLimit };
 
 export function ExecutionLimitsPanel({ detail }: { detail: AppDetail }) {
-  const appLimits = concurrencyLimits(detail.app.execution_limits);
+  const appLimits = executionLimitRows(detail.app.execution_limits);
   const actionRows = actionExecutionLimitRows(detail.actions);
   const total = appLimits.length + actionRows.length;
 
@@ -55,6 +64,7 @@ export function ExecutionLimitsPanel({ detail }: { detail: AppDetail }) {
               <thead>
                 <tr>
                   <th>{translate("executionLimits.action")}</th>
+                  <th>{translate("executionLimits.type")}</th>
                   <th>{translate("executionLimits.policy")}</th>
                   <th>{translate("executionLimits.capacity")}</th>
                   <th>{translate("executionLimits.keyInput")}</th>
@@ -62,14 +72,14 @@ export function ExecutionLimitsPanel({ detail }: { detail: AppDetail }) {
               </thead>
               <tbody>
                 {actionRows.map((row) => (
-                  <tr key={`${row.actionKey}:${row.limit.id}`}>
+                  <tr key={`${row.actionKey}:${row.kind}:${row.limit.id}`}>
                     <td data-label={translate("executionLimits.action")}>
                       <div className="executionLimitAction">
                         <span className="cellTitle">{row.actionName}</span>
                         <span className="cellSub mono">{row.actionKey}</span>
                       </div>
                     </td>
-                    <LimitCells limit={row.limit} />
+                    <LimitCells row={row} />
                   </tr>
                 ))}
               </tbody>
@@ -92,7 +102,7 @@ function ExecutionLimitSection({
   title: string;
   description: string;
   empty: string;
-  limits: KeyedConcurrencyLimit[];
+  limits: ExecutionLimitRow[];
 }) {
   return (
     <section className="executionLimitSection" aria-labelledby="appExecutionLimitsTitle">
@@ -110,15 +120,16 @@ function ExecutionLimitSection({
           <table className="table executionLimitTable" data-ui-guide="app-execution-limits">
             <thead>
               <tr>
+                <th>{translate("executionLimits.type")}</th>
                 <th>{translate("executionLimits.policy")}</th>
                 <th>{translate("executionLimits.capacity")}</th>
                 <th>{translate("executionLimits.keyInput")}</th>
               </tr>
             </thead>
             <tbody>
-              {limits.map((limit) => (
-                <tr key={limit.id}>
-                  <LimitCells limit={limit} />
+              {limits.map((row) => (
+                <tr key={`${row.kind}:${row.limit.id}`}>
+                  <LimitCells row={row} />
                 </tr>
               ))}
             </tbody>
@@ -131,21 +142,32 @@ function ExecutionLimitSection({
   );
 }
 
-function LimitCells({ limit }: { limit: KeyedConcurrencyLimit }) {
+function LimitCells({ row }: { row: ExecutionLimitRow }) {
   return (
     <>
+      <td data-label={translate("executionLimits.type")}>
+        <span className="badge badge-neutral">{translate(`executionLimits.type.${row.kind}`)}</span>
+      </td>
       <td data-label={translate("executionLimits.policy")}>
-        <code className="mono">{limit.id}</code>
+        <code className="mono">{row.limit.id}</code>
       </td>
       <td data-label={translate("executionLimits.capacity")}>
         <span className="executionLimitCapacityValue">
-          <strong className="executionLimitCapacity mono">{limit.max_concurrent}</strong>
-          <span className="cellSub">{translate("executionLimits.concurrentRuns")}</span>
+          <strong className="executionLimitCapacity mono">
+            {row.kind === "concurrency" ? row.limit.max_concurrent : row.limit.max_attempts}
+          </strong>
+          <span className="cellSub">
+            {row.kind === "concurrency"
+              ? translate("executionLimits.concurrentRuns")
+              : translate("executionLimits.attemptsPerWindow", {
+                  seconds: row.limit.window_seconds,
+                })}
+          </span>
         </span>
       </td>
       <td data-label={translate("executionLimits.keyInput")}>
         <div className="executionLimitPointers">
-          {limit.input_pointers.map((pointer) => (
+          {row.limit.input_pointers.map((pointer) => (
             <code className="badge badge-neutral mono" key={pointer}>
               {pointer}
             </code>
@@ -162,6 +184,21 @@ export function concurrencyLimits(
   return limits?.concurrency || [];
 }
 
+export function rateLimits(
+  limits: AppDetail["app"]["execution_limits"] | ActionView["execution_limits"],
+): KeyedRateLimit[] {
+  return limits?.rate || [];
+}
+
+export function executionLimitRows(limits?: ExecutionLimits): ExecutionLimitRow[] {
+  return [
+    ...concurrencyLimits(limits).map(
+      (limit): ExecutionLimitRow => ({ kind: "concurrency", limit }),
+    ),
+    ...rateLimits(limits).map((limit): ExecutionLimitRow => ({ kind: "rate", limit })),
+  ];
+}
+
 export function actionExecutionLimitRows(actions: ActionView[]): ActionLimitRow[] {
   return [...actions]
     .sort((left, right) =>
@@ -169,10 +206,10 @@ export function actionExecutionLimitRows(actions: ActionView[]): ActionLimitRow[
     )
     .flatMap((action) => {
       const displayName = actionDisplayName(action.display_name);
-      return concurrencyLimits(action.execution_limits).map((limit) => ({
+      return executionLimitRows(action.execution_limits).map((row) => ({
         actionKey: action.action_key,
         actionName: displayName || action.action_key,
-        limit,
+        ...row,
       }));
     });
 }

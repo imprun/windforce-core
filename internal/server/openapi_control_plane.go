@@ -1072,11 +1072,23 @@ func controlPlaneSchemas() map[string]any {
 			},
 			"required": []any{"id", "max_concurrent", "input_pointers"},
 		},
+		"KeyedRateLimit": map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"properties": map[string]any{
+				"id":             oapiStringSchema(),
+				"max_attempts":   map[string]any{"type": "integer", "minimum": 1},
+				"window_seconds": map[string]any{"type": "integer", "minimum": contract.MinRateWindowSeconds, "maximum": contract.MaxRateWindowSeconds},
+				"input_pointers": map[string]any{"type": "array", "minItems": 1, "maxItems": contract.MaxExecutionInputPointers, "items": oapiStringSchema()},
+			},
+			"required": []any{"id", "max_attempts", "window_seconds", "input_pointers"},
+		},
 		"ExecutionLimits": map[string]any{
 			"type":                 "object",
 			"additionalProperties": false,
 			"properties": map[string]any{
 				"concurrency": map[string]any{"type": "array", "maxItems": contract.MaxKeyedConcurrencyLimits, "items": oapiSchemaRef("KeyedConcurrencyLimit")},
+				"rate":        map[string]any{"type": "array", "maxItems": contract.MaxKeyedRateLimits, "items": oapiSchemaRef("KeyedRateLimit")},
 			},
 		},
 		"PinnedKeyedConcurrencyLimit": map[string]any{
@@ -1091,11 +1103,25 @@ func controlPlaneSchemas() map[string]any {
 			},
 			"required": []any{"policy_id", "policy_revision", "scope", "key_digest", "max_concurrent"},
 		},
+		"PinnedKeyedRateLimit": map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"properties": map[string]any{
+				"policy_id":       oapiStringSchema(),
+				"policy_revision": oapiStringSchema(),
+				"scope":           oapiStringEnumSchema("app", "action"),
+				"key_digest":      oapiStringSchema(),
+				"max_attempts":    map[string]any{"type": "integer", "minimum": 1},
+				"window_seconds":  map[string]any{"type": "integer", "minimum": contract.MinRateWindowSeconds, "maximum": contract.MaxRateWindowSeconds},
+			},
+			"required": []any{"policy_id", "policy_revision", "scope", "key_digest", "max_attempts", "window_seconds"},
+		},
 		"ExecutionLimitPins": map[string]any{
 			"type":                 "object",
 			"additionalProperties": false,
 			"properties": map[string]any{
 				"concurrency": map[string]any{"type": "array", "items": oapiSchemaRef("PinnedKeyedConcurrencyLimit")},
+				"rate":        map[string]any{"type": "array", "items": oapiSchemaRef("PinnedKeyedRateLimit")},
 			},
 		},
 		"RuntimeAccess": map[string]any{
