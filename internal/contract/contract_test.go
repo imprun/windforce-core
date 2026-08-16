@@ -1,11 +1,93 @@
 package contract
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestRuntimeAccessAcceptsLegacyAndScopedTargets(t *testing.T) {
+	var access RuntimeAccess
+	if err := json.Unmarshal([]byte(`{
+		"variables":[" legacy/token ",{"scope":"app","path":" session/token "}],
+		"resources":[{"scope":"workspace","path":" database/main "},{"scope":"app","path":"session/profile"}],
+		"writeVariables":[{"scope":"app","path":"session/token","storage":"secret"}],
+		"writeResources":[{"scope":"app","path":"session/profile"}]
+	}`), &access); err != nil {
+		t.Fatal(err)
+	}
+
+	normalized, err := NormalizeRuntimeAccess(access)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(normalized.Variables, []string{"legacy/token"}) {
+		t.Fatalf("legacy variables = %#v", normalized.Variables)
+	}
+	if !reflect.DeepEqual(normalized.VariableTargets, []RuntimeConfigTarget{{Scope: RuntimeConfigScopeApp, Path: "session/token"}}) {
+		t.Fatalf("variable targets = %#v", normalized.VariableTargets)
+	}
+	if !reflect.DeepEqual(normalized.ResourceTargets, []RuntimeConfigTarget{
+		{Scope: RuntimeConfigScopeWorkspace, Path: "database/main"},
+		{Scope: RuntimeConfigScopeApp, Path: "session/profile"},
+	}) {
+		t.Fatalf("resource targets = %#v", normalized.ResourceTargets)
+	}
+	if !reflect.DeepEqual(normalized.WriteVariables, []RuntimeVariableWriteTarget{{
+		RuntimeConfigTarget: RuntimeConfigTarget{Scope: RuntimeConfigScopeApp, Path: "session/token"},
+		Storage:             RuntimeVariableStorageSecret,
+	}}) {
+		t.Fatalf("write variables = %#v", normalized.WriteVariables)
+	}
+
+	encoded, err := json.Marshal(normalized)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), `"variables":["legacy/token",{"scope":"app","path":"session/token"}]`) {
+		t.Fatalf("encoded runtime access = %s", encoded)
+	}
+}
+
+func TestNormalizeRuntimeAccessRejectsInvalidWriteAuthority(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		access RuntimeAccess
+		want   string
+	}{
+		{
+			name: "workspace write",
+			access: RuntimeAccess{WriteResources: []RuntimeConfigTarget{{
+				Scope: RuntimeConfigScopeWorkspace,
+				Path:  "database/main",
+			}}},
+			want: "app scope",
+		},
+		{
+			name: "missing storage",
+			access: RuntimeAccess{WriteVariables: []RuntimeVariableWriteTarget{{
+				RuntimeConfigTarget: RuntimeConfigTarget{Scope: RuntimeConfigScopeApp, Path: "session/token"},
+			}}},
+			want: "storage",
+		},
+		{
+			name: "implicit structured scope",
+			access: RuntimeAccess{VariableTargets: []RuntimeConfigTarget{{
+				Path: "session/token",
+			}}},
+			want: "scope",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := NormalizeRuntimeAccess(test.access)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("NormalizeRuntimeAccess() error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
 
 func TestNormalizeScriptLanguage(t *testing.T) {
 	for _, test := range []struct {

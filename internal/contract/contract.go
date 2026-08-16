@@ -2,6 +2,7 @@ package contract
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path"
 	"path/filepath"
@@ -288,12 +289,167 @@ func ValidateInputJSONPointer(pointer string) error {
 	return nil
 }
 
-// RuntimeAccess is the release-owned allowlist for Action SDK lookups.
-// Admission augments it with references discovered in the effective input and
-// pins the result on the Job. Values are never pinned here.
+type RuntimeConfigScope string
+
+const (
+	RuntimeConfigScopeWorkspace RuntimeConfigScope = "workspace"
+	RuntimeConfigScopeApp       RuntimeConfigScope = "app"
+)
+
+type RuntimeVariableStorage string
+
+const (
+	RuntimeVariableStoragePlain  RuntimeVariableStorage = "plain"
+	RuntimeVariableStorageSecret RuntimeVariableStorage = "secret"
+)
+
+// RuntimeConfigTarget is an exact runtime-configuration target. Structured
+// manifest entries must always state their scope; only legacy strings imply
+// workspace scope.
+type RuntimeConfigTarget struct {
+	Scope RuntimeConfigScope `json:"scope"`
+	Path  string             `json:"path"`
+}
+
+// RuntimeVariableWriteTarget pins both the target and its storage class. An
+// Action cannot choose or downgrade the class at runtime.
+type RuntimeVariableWriteTarget struct {
+	RuntimeConfigTarget
+	Storage RuntimeVariableStorage `json:"storage"`
+}
+
+type RuntimeConfigReference struct {
+	Kind  string
+	Scope RuntimeConfigScope
+	Path  string
+	// Explicit distinguishes @workspace/@app syntax from legacy workspace
+	// references so publication archives can retain author intent.
+	Explicit bool
+}
+
+// ParseRuntimeConfigReference preserves the legacy workspace-scoped grammar
+// and accepts only the new explicit scope forms. Unknown strings are ordinary
+// values rather than references.
+func ParseRuntimeConfigReference(value string) (RuntimeConfigReference, bool, error) {
+	for _, candidate := range []struct {
+		prefix   string
+		kind     string
+		scope    RuntimeConfigScope
+		explicit bool
+	}{
+		{prefix: "$var@workspace:", kind: "var", scope: RuntimeConfigScopeWorkspace, explicit: true},
+		{prefix: "$res@workspace:", kind: "res", scope: RuntimeConfigScopeWorkspace, explicit: true},
+		{prefix: "$var@app:", kind: "var", scope: RuntimeConfigScopeApp, explicit: true},
+		{prefix: "$res@app:", kind: "res", scope: RuntimeConfigScopeApp, explicit: true},
+		{prefix: "$var:", kind: "var", scope: RuntimeConfigScopeWorkspace},
+		{prefix: "$res:", kind: "res", scope: RuntimeConfigScopeWorkspace},
+	} {
+		if !strings.HasPrefix(value, candidate.prefix) {
+			continue
+		}
+		path := strings.TrimSpace(strings.TrimPrefix(value, candidate.prefix))
+		if path == "" {
+			return RuntimeConfigReference{}, true, errors.New("runtime configuration reference path is required")
+		}
+		normalized, err := NormalizeRuntimeConfigPath(path)
+		if err != nil {
+			return RuntimeConfigReference{}, true, err
+		}
+		return RuntimeConfigReference{Kind: candidate.kind, Scope: candidate.scope, Path: normalized, Explicit: candidate.explicit}, true, nil
+	}
+	return RuntimeConfigReference{}, false, nil
+}
+
+// RuntimeAccess is the release-owned allowlist for Action SDK lookups and
+// mutations. Admission augments reads with trusted workspace references and
+// pins the complete result on the Job. Values are never pinned here.
+//
+// Variables and Resources retain legacy string entries so old Releases remain
+// workspace-scoped forever. VariableTargets and ResourceTargets contain only
+// the new explicit structured entries. MarshalJSON combines each pair into the
+// public heterogeneous arrays.
 type RuntimeAccess struct {
-	Variables []string `json:"variables,omitempty"`
-	Resources []string `json:"resources,omitempty"`
+	Variables       []string                     `json:"-"`
+	Resources       []string                     `json:"-"`
+	VariableTargets []RuntimeConfigTarget        `json:"-"`
+	ResourceTargets []RuntimeConfigTarget        `json:"-"`
+	WriteVariables  []RuntimeVariableWriteTarget `json:"-"`
+	WriteResources  []RuntimeConfigTarget        `json:"-"`
+}
+
+func (a RuntimeAccess) MarshalJSON() ([]byte, error) {
+	variables := make([]any, 0, len(a.Variables)+len(a.VariableTargets))
+	for _, item := range a.Variables {
+		variables = append(variables, item)
+	}
+	for _, item := range a.VariableTargets {
+		variables = append(variables, item)
+	}
+	resources := make([]any, 0, len(a.Resources)+len(a.ResourceTargets))
+	for _, item := range a.Resources {
+		resources = append(resources, item)
+	}
+	for _, item := range a.ResourceTargets {
+		resources = append(resources, item)
+	}
+	return json.Marshal(struct {
+		Variables      []any                        `json:"variables,omitempty"`
+		Resources      []any                        `json:"resources,omitempty"`
+		WriteVariables []RuntimeVariableWriteTarget `json:"writeVariables,omitempty"`
+		WriteResources []RuntimeConfigTarget        `json:"writeResources,omitempty"`
+	}{
+		Variables:      variables,
+		Resources:      resources,
+		WriteVariables: a.WriteVariables,
+		WriteResources: a.WriteResources,
+	})
+}
+
+func (a *RuntimeAccess) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		Variables      []json.RawMessage            `json:"variables"`
+		Resources      []json.RawMessage            `json:"resources"`
+		WriteVariables []RuntimeVariableWriteTarget `json:"writeVariables"`
+		WriteResources []RuntimeConfigTarget        `json:"writeResources"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	variables, variableTargets, err := decodeRuntimeConfigTargets(raw.Variables)
+	if err != nil {
+		return fmt.Errorf("variables: %w", err)
+	}
+	resources, resourceTargets, err := decodeRuntimeConfigTargets(raw.Resources)
+	if err != nil {
+		return fmt.Errorf("resources: %w", err)
+	}
+	*a = RuntimeAccess{
+		Variables:       variables,
+		Resources:       resources,
+		VariableTargets: variableTargets,
+		ResourceTargets: resourceTargets,
+		WriteVariables:  raw.WriteVariables,
+		WriteResources:  raw.WriteResources,
+	}
+	return nil
+}
+
+func decodeRuntimeConfigTargets(items []json.RawMessage) ([]string, []RuntimeConfigTarget, error) {
+	legacy := make([]string, 0, len(items))
+	targets := make([]RuntimeConfigTarget, 0, len(items))
+	for _, item := range items {
+		var value string
+		if err := json.Unmarshal(item, &value); err == nil {
+			legacy = append(legacy, value)
+			continue
+		}
+		var target RuntimeConfigTarget
+		if err := json.Unmarshal(item, &target); err != nil {
+			return nil, nil, fmt.Errorf("entry must be a legacy path string or scoped target")
+		}
+		targets = append(targets, target)
+	}
+	return legacy, targets, nil
 }
 
 func NormalizeRuntimeAccess(access RuntimeAccess) (RuntimeAccess, error) {
@@ -305,10 +461,109 @@ func NormalizeRuntimeAccess(access RuntimeAccess) (RuntimeAccess, error) {
 	if err != nil {
 		return RuntimeAccess{}, fmt.Errorf("resources: %w", err)
 	}
-	if len(variables)+len(resources) > 256 {
+	variableTargets, err := normalizeRuntimeConfigTargets(access.VariableTargets, false)
+	if err != nil {
+		return RuntimeAccess{}, fmt.Errorf("variables: %w", err)
+	}
+	resourceTargets, err := normalizeRuntimeConfigTargets(access.ResourceTargets, false)
+	if err != nil {
+		return RuntimeAccess{}, fmt.Errorf("resources: %w", err)
+	}
+	writeVariables, err := normalizeRuntimeVariableWriteTargets(access.WriteVariables)
+	if err != nil {
+		return RuntimeAccess{}, fmt.Errorf("writeVariables: %w", err)
+	}
+	writeResources, err := normalizeRuntimeConfigTargets(access.WriteResources, true)
+	if err != nil {
+		return RuntimeAccess{}, fmt.Errorf("writeResources: %w", err)
+	}
+	variableTargets = removeLegacyWorkspaceTargets(variables, variableTargets)
+	resourceTargets = removeLegacyWorkspaceTargets(resources, resourceTargets)
+	if len(variables)+len(resources)+len(variableTargets)+len(resourceTargets)+len(writeVariables)+len(writeResources) > 256 {
 		return RuntimeAccess{}, fmt.Errorf("runtime access exceeds 256 paths")
 	}
-	return RuntimeAccess{Variables: variables, Resources: resources}, nil
+	return RuntimeAccess{
+		Variables:       variables,
+		Resources:       resources,
+		VariableTargets: variableTargets,
+		ResourceTargets: resourceTargets,
+		WriteVariables:  writeVariables,
+		WriteResources:  writeResources,
+	}, nil
+}
+
+func CloneRuntimeAccess(access RuntimeAccess) RuntimeAccess {
+	return RuntimeAccess{
+		Variables:       append([]string(nil), access.Variables...),
+		Resources:       append([]string(nil), access.Resources...),
+		VariableTargets: append([]RuntimeConfigTarget(nil), access.VariableTargets...),
+		ResourceTargets: append([]RuntimeConfigTarget(nil), access.ResourceTargets...),
+		WriteVariables:  append([]RuntimeVariableWriteTarget(nil), access.WriteVariables...),
+		WriteResources:  append([]RuntimeConfigTarget(nil), access.WriteResources...),
+	}
+}
+
+func normalizeRuntimeConfigTargets(values []RuntimeConfigTarget, requireApp bool) ([]RuntimeConfigTarget, error) {
+	seen := map[string]bool{}
+	result := make([]RuntimeConfigTarget, 0, len(values))
+	for _, value := range values {
+		if value.Scope != RuntimeConfigScopeWorkspace && value.Scope != RuntimeConfigScopeApp {
+			return nil, fmt.Errorf("target scope must be workspace or app")
+		}
+		if requireApp && value.Scope != RuntimeConfigScopeApp {
+			return nil, fmt.Errorf("runtime writes require app scope")
+		}
+		path, err := NormalizeRuntimeConfigPath(value.Path)
+		if err != nil {
+			return nil, err
+		}
+		key := string(value.Scope) + "\x00" + path
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		result = append(result, RuntimeConfigTarget{Scope: value.Scope, Path: path})
+	}
+	return result, nil
+}
+
+func normalizeRuntimeVariableWriteTargets(values []RuntimeVariableWriteTarget) ([]RuntimeVariableWriteTarget, error) {
+	seen := map[string]RuntimeVariableStorage{}
+	result := make([]RuntimeVariableWriteTarget, 0, len(values))
+	for _, value := range values {
+		targets, err := normalizeRuntimeConfigTargets([]RuntimeConfigTarget{value.RuntimeConfigTarget}, true)
+		if err != nil {
+			return nil, err
+		}
+		if value.Storage != RuntimeVariableStoragePlain && value.Storage != RuntimeVariableStorageSecret {
+			return nil, fmt.Errorf("storage must be plain or secret")
+		}
+		key := string(targets[0].Scope) + "\x00" + targets[0].Path
+		if current, ok := seen[key]; ok {
+			if current != value.Storage {
+				return nil, fmt.Errorf("target %q declares conflicting storage classes", targets[0].Path)
+			}
+			continue
+		}
+		seen[key] = value.Storage
+		result = append(result, RuntimeVariableWriteTarget{RuntimeConfigTarget: targets[0], Storage: value.Storage})
+	}
+	return result, nil
+}
+
+func removeLegacyWorkspaceTargets(legacy []string, targets []RuntimeConfigTarget) []RuntimeConfigTarget {
+	seen := make(map[string]bool, len(legacy))
+	for _, item := range legacy {
+		seen[item] = true
+	}
+	result := targets[:0]
+	for _, target := range targets {
+		if target.Scope == RuntimeConfigScopeWorkspace && seen[target.Path] {
+			continue
+		}
+		result = append(result, target)
+	}
+	return result
 }
 
 func NormalizeRuntimeConfigPath(value string) (string, error) {
@@ -403,8 +658,7 @@ func PinExecutionDeployment(deployment Deployment, actionKey string) Deployment 
 	pinned.Actions = make(map[string]Action, 1)
 	if action, ok := deployment.Actions[actionKey]; ok {
 		action.Command = append([]string(nil), action.Command...)
-		action.RuntimeAccess.Variables = append([]string(nil), action.RuntimeAccess.Variables...)
-		action.RuntimeAccess.Resources = append([]string(nil), action.RuntimeAccess.Resources...)
+		action.RuntimeAccess = CloneRuntimeAccess(action.RuntimeAccess)
 		action.InputSchemaBody = append(json.RawMessage(nil), action.InputSchemaBody...)
 		action.OutputSchemaBody = append(json.RawMessage(nil), action.OutputSchemaBody...)
 		action.OperatorSettingsSchemaBody = append(json.RawMessage(nil), action.OperatorSettingsSchemaBody...)

@@ -12,10 +12,10 @@ import (
 func TestValidateSecretReferencesRequiresSecretVariable(t *testing.T) {
 	ctx := context.Background()
 	store := state.NewLocalStore(t.TempDir() + "/state.json")
-	if err := store.SetVariable(ctx, "ws-a", "shop", "secrets/token", "ciphertext", true, ""); err != nil {
+	if err := store.SetVariable(ctx, "ws-a", "", "secrets/token", "ciphertext", true, ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SetVariable(ctx, "ws-a", "shop", "plain/token", "visible", false, ""); err != nil {
+	if err := store.SetVariable(ctx, "ws-a", "", "plain/token", "visible", false, ""); err != nil {
 		t.Fatal(err)
 	}
 	resolver := New(store, nil)

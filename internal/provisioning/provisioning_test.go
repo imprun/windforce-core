@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/imprun/windforce-core/internal/contract"
 	"github.com/imprun/windforce-core/internal/executionlimit"
 	"github.com/imprun/windforce-core/internal/gitsource"
 	"github.com/imprun/windforce-core/internal/state"
@@ -317,6 +318,105 @@ func TestExportedRedactedProvisioningCanRoundTrip(t *testing.T) {
 	}
 	if string(values["PLAIN"]) != `"visible"` {
 		t.Fatalf("redacted PLAIN was not preserved: %s", values["PLAIN"])
+	}
+}
+
+func TestAppOwnedResourceProvisioningRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	source := state.NewLocalStore(filepath.Join(t.TempDir(), "source.json"))
+	typeSchema := state.ResourceType{Name: "connection", Version: "1", Schema: json.RawMessage(`{"type":"object","required":["url"],"properties":{"url":{"type":"string"}}}`)}
+	if err := source.SetResourceType(ctx, "default", typeSchema); err != nil {
+		t.Fatal(err)
+	}
+	if err := source.SetResourceScoped(ctx, "default", "shop", "primary", json.RawMessage(`{"url":"https://app.invalid"}`), "connection@1", "App connection"); err != nil {
+		t.Fatal(err)
+	}
+	docs, err := (Service{Store: source}).Export(ctx, "default", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var resourceDoc Document
+	for _, doc := range docs {
+		if doc.Kind == "Resource" {
+			resourceDoc = doc
+			break
+		}
+	}
+	if resourceDoc.Kind == "" || resourceDoc.Spec.AppScope != "shop" || resourceDoc.Spec.ResourceType != "connection@1" {
+		t.Fatalf("exported Resource = %#v", resourceDoc)
+	}
+
+	destination := state.NewLocalStore(filepath.Join(t.TempDir(), "destination.json"))
+	if err := destination.SetResourceType(ctx, "default", typeSchema); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (Service{Store: destination}).Apply(ctx, []Document{resourceDoc}, Options{Workspace: "default"}); err != nil {
+		t.Fatal(err)
+	}
+	resource, found, err := destination.GetResourceScoped(ctx, "default", contract.RuntimeConfigScopeApp, "shop", "primary")
+	if err != nil || !found {
+		t.Fatalf("round-tripped Resource: found=%v err=%v", found, err)
+	}
+	if resource.OwnerScope != contract.RuntimeConfigScopeApp || resource.Revision != 1 {
+		t.Fatalf("round-tripped Resource = %#v", resource)
+	}
+	var gotValue map[string]any
+	if json.Unmarshal(resource.Value, &gotValue) != nil || gotValue["url"] != "https://app.invalid" {
+		t.Fatalf("round-tripped Resource value = %s", resource.Value)
+	}
+}
+
+func TestRuntimeConfigProvisioningBatchRollsBackOnLaterFailure(t *testing.T) {
+	ctx := context.Background()
+	store := state.NewLocalStore(filepath.Join(t.TempDir(), "state.json"))
+	docs := []Document{
+		{APIVersion: APIVersion, Kind: "Variable", Metadata: Metadata{Name: "first"}, Spec: Spec{Path: "first", AppScope: "shop", Value: ValueSource{Value: stringPtr("value")}}},
+		{APIVersion: APIVersion, Kind: "Resource", Metadata: Metadata{Name: "invalid"}, Spec: Spec{Path: "invalid", AppScope: "shop", ResourceValue: map[string]any{"ok": true}}},
+	}
+	if _, err := (Service{Store: store}).Apply(ctx, docs, Options{Workspace: "default", Actor: "test"}); err == nil {
+		t.Fatal("Apply succeeded with an untyped App Resource")
+	}
+	if _, found, err := store.GetVariableScoped(ctx, "default", contract.RuntimeConfigScopeApp, "shop", "first"); err != nil || found {
+		t.Fatalf("first Variable survived failed batch: found=%v err=%v", found, err)
+	}
+}
+
+func TestRuntimeConfigProvisioningDryRunUsesStoreValidationWithoutWriting(t *testing.T) {
+	ctx := context.Background()
+	store := state.NewLocalStore(filepath.Join(t.TempDir(), "state.json"))
+	invalid := []Document{
+		{APIVersion: APIVersion, Kind: "Variable", Metadata: Metadata{Name: "first"}, Spec: Spec{Path: "first", AppScope: "shop", Value: ValueSource{Value: stringPtr("value")}}},
+		{APIVersion: APIVersion, Kind: "Resource", Metadata: Metadata{Name: "invalid"}, Spec: Spec{Path: "invalid", AppScope: "shop", ResourceValue: map[string]any{"ok": true}}},
+	}
+	if _, err := (Service{Store: store}).Apply(ctx, invalid, Options{Workspace: "default", Actor: "test", DryRun: true}); err == nil {
+		t.Fatal("dry-run succeeded with an untyped App Resource")
+	}
+	valid := invalid[:1]
+	if _, err := (Service{Store: store}).Apply(ctx, valid, Options{Workspace: "default", Actor: "test", DryRun: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, found, err := store.GetVariableScoped(ctx, "default", contract.RuntimeConfigScopeApp, "shop", "first"); err != nil || found {
+		t.Fatalf("dry-run wrote Variable: found=%v err=%v", found, err)
+	}
+}
+
+func TestAppRuntimeLifecycleProvisioningPreservesRevision(t *testing.T) {
+	ctx := context.Background()
+	source := state.NewLocalStore(filepath.Join(t.TempDir(), "source.json"))
+	if _, err := source.SetAppRuntimeLifecycle(ctx, state.SetAppRuntimeLifecycleRequest{WorkspaceID: "default", AppKey: "shop", State: state.AppRuntimeTombstoned, Actor: "operator", Reason: "retiring"}); err != nil {
+		t.Fatal(err)
+	}
+	docs, err := (Service{Store: source}).Export(ctx, "default", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	destination := state.NewLocalStore(filepath.Join(t.TempDir(), "destination.json"))
+	if _, err := (Service{Store: destination}).Apply(ctx, docs, Options{Workspace: "default", Actor: "restore"}); err != nil {
+		t.Fatal(err)
+	}
+	lifecycle, err := destination.GetAppRuntimeLifecycle(ctx, "default", "shop")
+	if err != nil || lifecycle.State != state.AppRuntimeTombstoned || lifecycle.Revision != 1 || lifecycle.Reason != "retiring" {
+		t.Fatalf("restored lifecycle = %#v err=%v", lifecycle, err)
 	}
 }
 

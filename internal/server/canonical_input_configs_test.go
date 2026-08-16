@@ -88,7 +88,7 @@ func TestCanonicalInputConfigLifecycleAndExecutionAdmission(t *testing.T) {
 	do(http.MethodPut, "/api/w/ws-a/apps/shop/input-configs", `{"config":{"region":"kr"},"locked_keys":[]}`, http.StatusOK, nil)
 	do(http.MethodPut, "/api/w/ws-a/apps/shop/input-configs", `{"config":{"_SCRAPING_RUNTIME":{"authSession":{"serviceUrl":"http://example.invalid"}}},"locked_keys":[]}`, http.StatusBadRequest, nil)
 	do(http.MethodPut, "/api/w/ws-a/apps/shop/input-configs", `{"action_key":"orders","client_id":"`+client.ID+`","config":{"tenant":"server-only","token":"plaintext"},"locked_keys":["tenant","token"]}`, http.StatusBadRequest, nil)
-	do(http.MethodPut, "/api/w/ws-a/apps/shop/input-configs", `{"action_key":"orders","client_id":"`+client.ID+`","config":{"tenant":"server-only","token":"$var:secrets/api-token"},"locked_keys":["tenant","token"]}`, http.StatusOK, nil)
+	do(http.MethodPut, "/api/w/ws-a/apps/shop/input-configs", `{"action_key":"orders","client_id":"`+client.ID+`","config":{"tenant":"server-only","token":"$var@app:secrets/api-token"},"locked_keys":["tenant","token"]}`, http.StatusOK, nil)
 	do(http.MethodPut, "/api/w/ws-a/apps/shop/input-configs", `{"config":{},"locked_keys":["missing"]}`, http.StatusBadRequest, nil)
 
 	var appConfigs []state.InputConfig

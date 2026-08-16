@@ -197,6 +197,27 @@ App and action schemas stay in context while an operator reviews values for one 
 2. Select an app-caller scope.
 3. Open a settings row to review its JSON values and locked keys.
 
+## Manage App-owned runtime configuration
+
+The App detail keeps exact App-owned Variables and Resources together with graceful retirement, emergency revoke, audit, and purge controls.
+
+![Manage App-owned runtime configuration](../assets/ui/app-runtime-configuration.png)
+
+1. Open a released App and choose Runtime configuration.
+2. Review the active lifecycle state and revision before changing access.
+3. Manage only the Variables and typed Resources owned by this exact App scope.
+4. Use retirement before purge; reserve emergency revoke and force purge for incident response.
+
+## Review App runtime configuration in Korean dark mobile mode
+
+Lifecycle state, App-owned values, and destructive controls remain readable in Korean on a narrow dark surface.
+
+![Review App runtime configuration in Korean dark mobile mode](../assets/ui/app-runtime-configuration-korean-dark-mobile.png)
+
+1. Switch the console to Korean and open an App's 실행 구성 tab.
+2. Review lifecycle state and exact App-owned values on a narrow screen.
+3. Confirm retirement, emergency revoke, and purge remain distinguishable without relying on color alone.
+
 ## Publish a release
 
 Publish Release prepares the latest synchronized source and publishes it as the worker-visible contract, recorded with the audit actor.

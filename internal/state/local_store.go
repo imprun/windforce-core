@@ -440,12 +440,21 @@ func (s *LocalStore) SetVariable(ctx context.Context, workspaceID string, appKey
 		if snapshot.Variables[workspaceID] == nil {
 			snapshot.Variables[workspaceID] = map[string]Variable{}
 		}
-		snapshot.Variables[workspaceID][variableKey(appKey, path)] = Variable{
+		key := variableKey(appKey, path)
+		current := snapshot.Variables[workspaceID][key]
+		scope := contract.RuntimeConfigScopeWorkspace
+		if appKey != "" {
+			scope = contract.RuntimeConfigScopeApp
+		}
+		snapshot.Variables[workspaceID][key] = Variable{
+			OwnerScope:  scope,
 			AppKey:      appKey,
 			Path:        path,
 			Value:       value,
 			IsSecret:    isSecret,
 			Description: description,
+			Revision:    max(current.Revision+1, 1),
+			UpdatedAt:   now.UTC(),
 		}
 		return nil
 	})
@@ -486,6 +495,10 @@ func (s *LocalStore) DeleteVariable(ctx context.Context, workspaceID string, app
 }
 
 func (s *LocalStore) SetResource(ctx context.Context, workspaceID string, path string, value json.RawMessage, resourceType string, description string) error {
+	return s.SetResourceScoped(ctx, workspaceID, "", path, value, resourceType, description)
+}
+
+func (s *LocalStore) SetResourceScoped(ctx context.Context, workspaceID string, appKey string, path string, value json.RawMessage, resourceType string, description string) error {
 	normalizedPath, err := contract.NormalizeRuntimeConfigPath(path)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidState, err)
@@ -498,6 +511,14 @@ func (s *LocalStore) SetResource(ctx context.Context, workspaceID string, path s
 		return errors.New("resource value is not valid JSON")
 	}
 	workspaceID = contract.NormalizeWorkspace(workspaceID)
+	appKey = strings.TrimSpace(appKey)
+	ownerScope := contract.RuntimeConfigScopeWorkspace
+	if appKey != "" {
+		ownerScope = contract.RuntimeConfigScopeApp
+		if resourceType == "" {
+			return fmt.Errorf("%w: App-owned Resource requires a versioned resource type", ErrInvalidState)
+		}
+	}
 	if resourceType != "" {
 		name, version, err := resourceconfig.ParseTypeReference(resourceType)
 		if err != nil {
@@ -518,12 +539,35 @@ func (s *LocalStore) SetResource(ctx context.Context, workspaceID string, path s
 		if snapshot.Resources[workspaceID] == nil {
 			snapshot.Resources[workspaceID] = map[string]Resource{}
 		}
-		snapshot.Resources[workspaceID][path] = Resource{
+		key := resourceKey(appKey, path)
+		current := snapshot.Resources[workspaceID][key]
+		snapshot.Resources[workspaceID][key] = Resource{
+			OwnerScope:   ownerScope,
+			AppKey:       appKey,
 			Path:         path,
 			Value:        cloneRaw(value),
 			ResourceType: resourceType,
 			Description:  description,
+			Revision:     max(current.Revision+1, 1),
+			UpdatedAt:    now.UTC(),
 		}
+		return nil
+	})
+}
+
+func (s *LocalStore) DeleteResourceScoped(ctx context.Context, workspaceID string, appKey string, path string) error {
+	workspaceID = contract.NormalizeWorkspace(workspaceID)
+	appKey = strings.TrimSpace(appKey)
+	normalizedPath, err := contract.NormalizeRuntimeConfigPath(path)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidState, err)
+	}
+	return s.update(ctx, func(snapshot *Snapshot, _ time.Time) error {
+		key := resourceKey(appKey, normalizedPath)
+		if _, found := snapshot.Resources[workspaceID][key]; !found {
+			return ErrNotFound
+		}
+		delete(snapshot.Resources[workspaceID], key)
 		return nil
 	})
 }
@@ -534,7 +578,7 @@ func (s *LocalStore) GetResource(ctx context.Context, workspaceID string, path s
 		return Resource{}, false, err
 	}
 	workspaceID = contract.NormalizeWorkspace(workspaceID)
-	resource, ok := snapshot.Resources[workspaceID][path]
+	resource, ok := snapshot.Resources[workspaceID][resourceKey("", path)]
 	resource.Value = cloneRaw(resource.Value)
 	return resource, ok, nil
 }
@@ -585,7 +629,7 @@ func (s *LocalStore) ClaimJobForWorkerScope(ctx context.Context, workerID string
 			if !workspaceAllowed {
 				_, workspaceAllowed = allowedWorkspaces[workerJobWorkspace(job)]
 			}
-			if job.State == JobQueued && workspaceAllowed && claimAllowed(job, allowedTags, offeredLabels) {
+			if job.State == JobQueued && workspaceAllowed && appRuntimeAllowsNewAttempt(snapshot, job) && claimAllowed(job, allowedTags, offeredLabels) {
 				ids = append(ids, id)
 			}
 		}
@@ -1189,6 +1233,19 @@ func ensureSnapshot(snapshot *Snapshot) {
 	if snapshot.Resources == nil {
 		snapshot.Resources = map[string]map[string]Resource{}
 	}
+	if snapshot.RuntimeConfigOperations == nil {
+		snapshot.RuntimeConfigOperations = map[string]RuntimeConfigOperation{}
+	}
+	if snapshot.RuntimeConfigAudits == nil {
+		snapshot.RuntimeConfigAudits = map[string][]RuntimeConfigAudit{}
+	}
+	if snapshot.AppRuntimeLifecycles == nil {
+		snapshot.AppRuntimeLifecycles = map[string]AppRuntimeLifecycle{}
+	}
+	if snapshot.AppRuntimeLifecycleAudits == nil {
+		snapshot.AppRuntimeLifecycleAudits = map[string][]AppRuntimeLifecycleAudit{}
+	}
+	normalizeLocalRuntimeConfiguration(snapshot)
 	if snapshot.ResourceTypes == nil {
 		snapshot.ResourceTypes = map[string]map[string]ResourceType{}
 	}
@@ -1326,7 +1383,17 @@ func migrateLocalClientTokens(snapshot *Snapshot) {
 }
 
 func variableKey(appKey string, path string) string {
-	return appKey + "\x00" + path
+	if strings.TrimSpace(appKey) == "" {
+		return runtimeConfigObjectKey(contract.RuntimeConfigScopeWorkspace, "", path)
+	}
+	return runtimeConfigObjectKey(contract.RuntimeConfigScopeApp, appKey, path)
+}
+
+func resourceKey(appKey string, path string) string {
+	if strings.TrimSpace(appKey) == "" {
+		return runtimeConfigObjectKey(contract.RuntimeConfigScopeWorkspace, "", path)
+	}
+	return runtimeConfigObjectKey(contract.RuntimeConfigScopeApp, appKey, path)
 }
 
 func (s *LocalStore) requeueExpiredJobs(ctx context.Context, snapshot *Snapshot, now time.Time) error {

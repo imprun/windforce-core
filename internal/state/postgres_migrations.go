@@ -266,6 +266,113 @@ CREATE TABLE IF NOT EXISTS resource_type (
     PRIMARY KEY (workspace_id, name, version)
 );
 
+CREATE TABLE IF NOT EXISTS runtime_variable (
+    workspace_id TEXT NOT NULL,
+    owner_scope TEXT NOT NULL CHECK (owner_scope IN ('workspace', 'app')),
+    app_key TEXT NOT NULL DEFAULT '',
+    path TEXT NOT NULL,
+    value TEXT NOT NULL,
+    is_secret BOOLEAN NOT NULL DEFAULT false,
+    description TEXT NOT NULL DEFAULT '',
+    revision BIGINT NOT NULL CHECK (revision > 0),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (workspace_id, owner_scope, app_key, path),
+    CHECK ((owner_scope = 'workspace' AND app_key = '') OR (owner_scope = 'app' AND app_key <> ''))
+);
+
+CREATE TABLE IF NOT EXISTS runtime_resource (
+    workspace_id TEXT NOT NULL,
+    owner_scope TEXT NOT NULL CHECK (owner_scope IN ('workspace', 'app')),
+    app_key TEXT NOT NULL DEFAULT '',
+    path TEXT NOT NULL,
+    value JSONB NOT NULL,
+    resource_type TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    revision BIGINT NOT NULL CHECK (revision > 0),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (workspace_id, owner_scope, app_key, path),
+    CHECK ((owner_scope = 'workspace' AND app_key = '') OR (owner_scope = 'app' AND app_key <> ''))
+);
+
+CREATE TABLE IF NOT EXISTS runtime_config_operation (
+    workspace_id TEXT NOT NULL,
+    job_id TEXT NOT NULL,
+    attempt INTEGER NOT NULL CHECK (attempt > 0),
+    operation_id TEXT NOT NULL,
+    request_fingerprint TEXT NOT NULL,
+    object_kind TEXT NOT NULL CHECK (object_kind IN ('variable', 'resource')),
+    app_key TEXT NOT NULL,
+    path TEXT NOT NULL,
+    revision BIGINT NOT NULL CHECK (revision > 0),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (workspace_id, job_id, attempt, operation_id)
+);
+
+CREATE INDEX IF NOT EXISTS runtime_config_operation_attempt_idx
+    ON runtime_config_operation(workspace_id, job_id, attempt);
+
+CREATE TABLE IF NOT EXISTS runtime_config_audit (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL,
+    owner_scope TEXT NOT NULL CHECK (owner_scope IN ('workspace', 'app')),
+    app_key TEXT NOT NULL DEFAULT '',
+    path TEXT NOT NULL,
+    object_kind TEXT NOT NULL CHECK (object_kind IN ('variable', 'resource')),
+    storage TEXT NOT NULL DEFAULT '',
+    revision BIGINT NOT NULL CHECK (revision > 0),
+    operation_id TEXT NOT NULL DEFAULT '',
+    job_id TEXT NOT NULL DEFAULT '',
+    attempt INTEGER NOT NULL DEFAULT 0,
+    actor TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS runtime_config_audit_owner_idx
+    ON runtime_config_audit(workspace_id, app_key, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS app_runtime_lifecycle (
+    workspace_id TEXT NOT NULL,
+    app_key TEXT NOT NULL CHECK (app_key <> ''),
+    state TEXT NOT NULL CHECK (state IN ('active', 'tombstoned', 'revoked')),
+    reason TEXT NOT NULL DEFAULT '',
+    actor TEXT NOT NULL,
+    revision BIGINT NOT NULL CHECK (revision > 0),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (workspace_id, app_key)
+);
+
+CREATE TABLE IF NOT EXISTS app_runtime_lifecycle_audit (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL,
+    app_key TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('active', 'tombstoned', 'revoked')),
+    reason TEXT NOT NULL DEFAULT '',
+    actor TEXT NOT NULL,
+    revision BIGINT NOT NULL,
+    purged BOOLEAN NOT NULL DEFAULT false,
+    forced BOOLEAN NOT NULL DEFAULT false,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS app_runtime_lifecycle_audit_owner_idx
+    ON app_runtime_lifecycle_audit(workspace_id, app_key, created_at DESC);
+
+INSERT INTO runtime_variable (
+    workspace_id, owner_scope, app_key, path, value, is_secret, description, revision, updated_at
+)
+SELECT workspace_id,
+       CASE WHEN app_key = '' THEN 'workspace' ELSE 'app' END,
+       app_key, path, value, is_secret, description, 1, now()
+FROM variable
+ON CONFLICT (workspace_id, owner_scope, app_key, path) DO NOTHING;
+
+INSERT INTO runtime_resource (
+    workspace_id, owner_scope, app_key, path, value, resource_type, description, revision, updated_at
+)
+SELECT workspace_id, 'workspace', '', path, value, resource_type, description, 1, now()
+FROM resource
+ON CONFLICT (workspace_id, owner_scope, app_key, path) DO NOTHING;
+
 CREATE TABLE IF NOT EXISTS secret_access_audit (
     id BIGSERIAL PRIMARY KEY,
     workspace_id TEXT NOT NULL,

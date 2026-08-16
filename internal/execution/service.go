@@ -33,6 +33,9 @@ type Store interface {
 	GetClient(ctx context.Context, workspaceID string, id string) (state.Client, error)
 	GetVariable(ctx context.Context, workspaceID string, appKey string, path string) (state.Variable, bool, error)
 	GetResource(ctx context.Context, workspaceID string, path string) (state.Resource, bool, error)
+	GetVariableScoped(ctx context.Context, workspaceID string, scope contract.RuntimeConfigScope, appKey string, path string) (state.Variable, bool, error)
+	GetResourceScoped(ctx context.Context, workspaceID string, scope contract.RuntimeConfigScope, appKey string, path string) (state.Resource, bool, error)
+	GetAppRuntimeLifecycle(ctx context.Context, workspaceID string, appKey string) (state.AppRuntimeLifecycle, error)
 	ResolveInput(ctx context.Context, workspaceID string, appKey string, actionKey string, clientID string, request json.RawMessage) (json.RawMessage, error)
 }
 
@@ -225,6 +228,13 @@ func (s *AdmissionService) CreateRun(ctx context.Context, request CreateRunReque
 		if found {
 			return replayAdmission(existingRun, existingJob, fingerprint)
 		}
+	}
+	lifecycle, err := s.store.GetAppRuntimeLifecycle(ctx, request.Workspace, request.App)
+	if err != nil {
+		return Admission{}, &Fault{Kind: FaultInternal, Message: "could not resolve App runtime lifecycle", Err: err}
+	}
+	if lifecycle.State != state.AppRuntimeActive {
+		return Admission{}, &Fault{Kind: FaultForbidden, Message: "App is not accepting new runs"}
 	}
 	if principal.Kind != "" && !principal.AllowsTarget(request.App, request.Action) {
 		return Admission{}, &Fault{Kind: FaultForbidden, Message: "principal is not allowed to invoke this app/action"}

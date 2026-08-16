@@ -335,16 +335,26 @@ const ctx = {
     debug: (...a) => console.log(...a),
   },
   variables: {
-    async get(p) {
-      const r = await api("GET", "/variables/get/p/" + p)
+    async get(p, scope = "workspace") {
+      const r = await api("GET", "/variables/get/p/" + p + (scope === "app" ? "?scope=app" : ""))
       if (!r.ok) throw new Error("variables.get(" + p + ") failed: " + r.status)
       return (await r.json()).value
     },
+    async set(p, value, options) {
+      const r = await api("PUT", "/variables/p/" + p, { value, ...options })
+      if (!r.ok) throw new Error("variables.set(" + p + ") failed: " + r.status)
+      return r.json()
+    },
   },
   resources: {
-    async get(p) {
-      const r = await api("GET", "/resources/get/p/" + p)
+    async get(p, scope = "workspace") {
+      const r = await api("GET", "/resources/get/p/" + p + (scope === "app" ? "?scope=app" : ""))
       if (!r.ok) throw new Error("resources.get(" + p + ") failed: " + r.status)
+      return r.json()
+    },
+    async set(p, value, resourceType, options) {
+      const r = await api("PUT", "/resources/p/" + p, { value, resourceType, ...options })
+      if (!r.ok) throw new Error("resources.set(" + p + ") failed: " + r.status)
       return r.json()
     },
   },
@@ -492,18 +502,38 @@ def _api(method, path, body=None):
 
 
 class _Variables:
-    async def get(self, path):
-        status, raw = await asyncio.to_thread(_api, "GET", "/variables/get/p/" + path)
+    async def get(self, path, scope="workspace"):
+        suffix = "?scope=app" if scope == "app" else ""
+        status, raw = await asyncio.to_thread(_api, "GET", "/variables/get/p/" + path + suffix)
         if status < 200 or status >= 300:
             raise RuntimeError("variables.get(" + path + ") failed: " + str(status))
         return json.loads(raw).get("value")
 
+    async def set(self, path, value, options):
+        body = {"value": value, "operationId": options["operation_id"]}
+        if "expected_revision" in options:
+            body["expectedRevision"] = options["expected_revision"]
+        status, raw = await asyncio.to_thread(_api, "PUT", "/variables/p/" + path, body)
+        if status < 200 or status >= 300:
+            raise RuntimeError("variables.set(" + path + ") failed: " + str(status))
+        return json.loads(raw)
+
 
 class _Resources:
-    async def get(self, path):
-        status, raw = await asyncio.to_thread(_api, "GET", "/resources/get/p/" + path)
+    async def get(self, path, scope="workspace"):
+        suffix = "?scope=app" if scope == "app" else ""
+        status, raw = await asyncio.to_thread(_api, "GET", "/resources/get/p/" + path + suffix)
         if status < 200 or status >= 300:
             raise RuntimeError("resources.get(" + path + ") failed: " + str(status))
+        return json.loads(raw)
+
+    async def set(self, path, value, resource_type, options):
+        body = {"value": value, "resourceType": resource_type, "operationId": options["operation_id"]}
+        if "expected_revision" in options:
+            body["expectedRevision"] = options["expected_revision"]
+        status, raw = await asyncio.to_thread(_api, "PUT", "/resources/p/" + path, body)
+        if status < 200 or status >= 300:
+            raise RuntimeError("resources.set(" + path + ") failed: " + str(status))
         return json.loads(raw)
 
 

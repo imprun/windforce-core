@@ -3,7 +3,7 @@ title: Use runtime secrets from a TypeScript App
 description: Declare, configure, admit, and resolve a Secret Variable without putting encryption logic in application code.
 ---
 
-Application developers do not encrypt, decrypt, or transport ciphertext. An App declares which settings are sensitive and the maximum runtime paths it may access; an operator writes a Secret Variable once and stores only `$var:` or `$res:` references in Resources and InputConfig. Core owns encryption at rest, admission validation, job pinning, execution-time resolution, audit, and masking.
+Application developers do not encrypt, decrypt, or transport ciphertext. An App declares which settings are sensitive and the maximum runtime paths it may access. An operator can provision initial values, and an App can refresh only its exact Release-pinned App-owned paths. Resources and InputConfig store `$var:` or `$res:` references instead of plaintext. Core owns encryption at rest, admission validation, job pinning, execution-time resolution, audit, and masking.
 
 [한국어](../ko/guides/runtime-secrets-typescript.md)
 
@@ -41,7 +41,7 @@ The manifest fixes the ordinary input schema, the operator-owned settings schema
       "outputSchema": "deliver.output.schema.json",
       "operatorSettingsSchema": "deliver.settings.schema.json",
       "runtimeAccess": {
-        "variables": ["secrets/partner-token"]
+        "variables": [{"scope": "app", "path": "secrets/partner-token"}]
       }
     }
   }
@@ -106,7 +106,7 @@ Content-Type: application/json
   "action_key": "deliver",
   "client_id": "<client-id>",
   "config": {
-    "partnerToken": "$var:secrets/partner-token"
+    "partnerToken": "$var@app:secrets/partner-token"
   },
   "locked_keys": ["partnerToken"]
 }
@@ -162,11 +162,39 @@ A Resource may contain exact references instead of plaintext:
 ```json
 {
   "endpoint": "https://partner.example",
-  "token": "$var:secrets/partner-token"
+  "token": "$var@app:secrets/partner-token"
 }
 ```
 
 An input field that stores `$res:partners/acme` must allow the `$res:` string in its input schema and must not itself be marked `x-windforce-secret`. A field marked sensitive accepts only an exact Secret Variable `$var:` reference; the Runtime Resolver still resolves Secret Variables nested inside an allowed Resource recursively.
+
+## App-owned runtime refresh and later reads
+
+An Action may actively refresh a small App-owned value only when its immutable Release pins the exact path and Secret storage class:
+
+```json
+{
+  "runtimeAccess": {
+    "variables": [{"scope":"app","path":"sessions/playwright"}],
+    "writeVariables": [{"scope":"app","path":"sessions/playwright","storage":"secret"}],
+    "writeResources": [{"scope":"app","path":"sessions/meta"}]
+  }
+}
+```
+
+```ts
+const variable = await ctx.variables.set("sessions/playwright", JSON.stringify(storageState), {
+  operationId: `variable-${ctx.job.id}`,
+});
+await ctx.resources.set(
+  "sessions/meta",
+  { storageState: "$var@app:sessions/playwright" },
+  "browser-session@1",
+  { operationId: `resource-${ctx.job.id}` },
+);
+```
+
+`operationId` makes an exact retry return the original revision; `expectedRevision` may be added for compare-and-swap. A Resource write cannot plant new authority: every nested reference must already be in that Job's pinned read closure. A later Action must independently declare the Variable and Resource paths before `ctx.variables.get(..., "app")` or `ctx.resources.get(..., "app")` succeeds. Core identifies the resolved Secret to the Worker by digest, and the Worker registers it for dynamic log/result masking before releasing the value to that later Action.
 
 ## Local and remote workers
 
@@ -181,4 +209,4 @@ Run the exact example contract test with Bun and Git available:
 go test ./internal/server -run TestTypeScriptRuntimeSecretsGuideE2E -count=1 -v
 ```
 
-The test proves that plaintext is rejected for a sensitive operator field, the correct `$var:` reference is accepted, a locked secret cannot be overridden, state at rest does not contain the Secret Variable plaintext, and both local and remote workers execute the published TypeScript example with the resolved value.
+The test proves that plaintext is rejected for a sensitive operator field, the correct `$var:` reference is accepted, a locked secret cannot be overridden, state at rest does not contain Secret Variable plaintext, and both local and remote workers execute the published TypeScript example. It then runs separate `refresh` and `consume` Jobs with representative Playwright `storageState` data and proves that the later read cannot leak cookie or local-storage secrets through persisted logs or the Run result.

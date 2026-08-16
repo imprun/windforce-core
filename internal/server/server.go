@@ -322,6 +322,18 @@ func (h *Handler) handleAPI(w http.ResponseWriter, r *http.Request) bool {
 		h.handleJobSummary(w, r, parts[2])
 		return true
 	}
+	if len(parts) == 6 && parts[0] == "api" && parts[1] == "w" && parts[3] == "apps" && parts[5] == "runtime-lifecycle" {
+		h.handleAppRuntimeLifecycle(w, r, parts[2], parts[4])
+		return true
+	}
+	if len(parts) == 7 && parts[0] == "api" && parts[1] == "w" && parts[3] == "apps" && parts[5] == "runtime-lifecycle" && parts[6] == "audit" && r.Method == http.MethodGet {
+		h.handleAppRuntimeLifecycleAudit(w, r, parts[2], parts[4])
+		return true
+	}
+	if len(parts) == 6 && parts[0] == "api" && parts[1] == "w" && parts[3] == "apps" && parts[5] == "runtime-config" && r.Method == http.MethodDelete {
+		h.handlePurgeAppRuntimeConfig(w, r, parts[2], parts[4])
+		return true
+	}
 	if len(parts) == 4 && parts[0] == "api" && parts[1] == "w" && parts[3] == "variables" && r.Method == http.MethodGet {
 		h.handleListVariables(w, r, parts[2])
 		return true
@@ -352,6 +364,10 @@ func (h *Handler) handleAPI(w http.ResponseWriter, r *http.Request) bool {
 		h.handleDeleteVariable(w, r, parts[2], joinPathParts(parts, 5))
 		return true
 	}
+	if len(parts) >= 6 && parts[0] == "api" && parts[1] == "w" && parts[3] == "variables" && parts[4] == "p" && r.Method == http.MethodPut {
+		h.handleRuntimeSetVariable(w, r, parts[2], joinPathParts(parts, 5))
+		return true
+	}
 	if len(parts) == 4 && parts[0] == "api" && parts[1] == "w" && parts[3] == "resources" && r.Method == http.MethodPost {
 		h.handleSetResource(w, r, parts[2])
 		return true
@@ -362,6 +378,10 @@ func (h *Handler) handleAPI(w http.ResponseWriter, r *http.Request) bool {
 	}
 	if len(parts) >= 6 && parts[0] == "api" && parts[1] == "w" && parts[3] == "resources" && parts[4] == "p" && r.Method == http.MethodDelete {
 		h.handleDeleteResource(w, r, parts[2], joinPathParts(parts, 5))
+		return true
+	}
+	if len(parts) >= 6 && parts[0] == "api" && parts[1] == "w" && parts[3] == "resources" && parts[4] == "p" && r.Method == http.MethodPut {
+		h.handleRuntimeSetResource(w, r, parts[2], joinPathParts(parts, 5))
 		return true
 	}
 	if len(parts) == 4 && parts[0] == "api" && parts[1] == "w" && parts[3] == "openapi.json" && r.Method == http.MethodGet {
@@ -949,6 +969,9 @@ func isJobSDKCallback(r *http.Request) bool {
 		return true
 	}
 	if r.Method == http.MethodGet && strings.Contains(path, "/resources/get/p/") {
+		return true
+	}
+	if r.Method == http.MethodPut && (strings.Contains(path, "/variables/p/") || strings.Contains(path, "/resources/p/")) {
 		return true
 	}
 	if r.Method == http.MethodPost && strings.HasSuffix(path, "/flow/resume-urls") {

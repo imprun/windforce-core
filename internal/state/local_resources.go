@@ -27,10 +27,10 @@ func (s *LocalStore) DeleteResource(ctx context.Context, workspaceID string, pat
 	workspaceID = contract.NormalizeWorkspace(workspaceID)
 	path = strings.TrimSpace(path)
 	return s.update(ctx, func(snapshot *Snapshot, _ time.Time) error {
-		if _, found := snapshot.Resources[workspaceID][path]; !found {
+		if _, found := snapshot.Resources[workspaceID][resourceKey("", path)]; !found {
 			return ErrNotFound
 		}
-		delete(snapshot.Resources[workspaceID], path)
+		delete(snapshot.Resources[workspaceID], resourceKey("", path))
 		return nil
 	})
 }

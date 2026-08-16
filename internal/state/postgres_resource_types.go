@@ -71,7 +71,7 @@ func (s *PostgresStore) DeleteResourceType(ctx context.Context, workspaceID stri
 	var used bool
 	if err := s.pool.QueryRow(ctx, `
 SELECT EXISTS (
-    SELECT 1 FROM resource
+    SELECT 1 FROM runtime_resource
     WHERE workspace_id=$1 AND (
         resource_type=$2 OR ($3='1' AND resource_type=$4)
     )

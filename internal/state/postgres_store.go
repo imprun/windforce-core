@@ -502,6 +502,13 @@ WHERE state='running' AND lease_expires_at < $1 AND canceled_by IS NULL
 		}
 		var selected Job
 		for _, candidate := range candidates {
+			active, err := postgresAppRuntimeActive(ctx, tx, workerJobWorkspace(candidate), candidate.Payload.App)
+			if err != nil {
+				return err
+			}
+			if !active {
+				continue
+			}
 			result, err := postgresClaimLimitsReached(ctx, tx, candidate)
 			if err != nil {
 				return err

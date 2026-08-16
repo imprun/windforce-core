@@ -515,12 +515,9 @@ func (h *Handler) newCanonicalActionModel(schemaReader *canonicalSchemaReader, d
 		RequiredCapabilities:   cloneStringSlicePtr(action.Capabilities),
 		RequiredLabels:         canonicalActionManifestLabels(action),
 		RequiredLabelsOverride: cloneStringSlicePointer(action.RequiredLabelsOverride),
-		RuntimeAccess: contract.RuntimeAccess{
-			Variables: append([]string{}, action.RuntimeAccess.Variables...),
-			Resources: append([]string{}, action.RuntimeAccess.Resources...),
-		},
-		ExecutionLimits: newCanonicalExecutionLimits(action.ExecutionLimits),
-		UpdatedAt:       canonicalActionUpdatedAt(deployment, action),
+		RuntimeAccess:          contract.CloneRuntimeAccess(action.RuntimeAccess),
+		ExecutionLimits:        newCanonicalExecutionLimits(action.ExecutionLimits),
+		UpdatedAt:              canonicalActionUpdatedAt(deployment, action),
 	}, nil
 }
 

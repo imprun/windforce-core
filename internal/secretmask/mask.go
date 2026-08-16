@@ -1,7 +1,6 @@
 package secretmask
 
 import (
-	"bytes"
 	"encoding/json"
 	"sort"
 	"sync"
@@ -32,12 +31,7 @@ func Normalize(values []string) [][]byte {
 }
 
 func Bytes(value []byte, secrets []string) []byte {
-	patterns := Normalize(secrets)
-	masked := append([]byte(nil), value...)
-	marks := make([]bool, len(masked))
-	markMatches(masked, marks, patterns)
-	applyMarks(masked, marks)
-	return masked
+	return NewRegistry(secrets).Bytes(value)
 }
 
 func String(value string, secrets []string) string {
@@ -47,23 +41,26 @@ func String(value string, secrets []string) string {
 // Stream delays at most max-secret-length minus one bytes so a secret split
 // across arbitrary process log chunks is still masked before emission.
 type Stream struct {
-	mu       sync.Mutex
-	patterns [][]byte
-	maxLen   int
-	raw      []byte
-	marks    []bool
-	emit     func([]byte)
+	mu         sync.Mutex
+	registry   *Registry
+	raw        []byte
+	deltas     []int32
+	state      int32
+	scanned    int
+	generation uint64
+	emit       func([]byte)
 }
 
 func NewStream(secrets []string, emit func([]byte)) *Stream {
-	patterns := Normalize(secrets)
-	maxLen := 1
-	for _, pattern := range patterns {
-		if len(pattern) > maxLen {
-			maxLen = len(pattern)
-		}
+	return NewRegistryStream(NewRegistry(secrets), emit)
+
+}
+
+func NewRegistryStream(registry *Registry, emit func([]byte)) *Stream {
+	if registry == nil {
+		registry = NewRegistry(nil)
 	}
-	return &Stream{patterns: patterns, maxLen: maxLen, emit: emit}
+	return &Stream{registry: registry, emit: emit}
 }
 
 func (s *Stream) Write(chunk []byte) {
@@ -73,9 +70,20 @@ func (s *Stream) Write(chunk []byte) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.raw = append(s.raw, chunk...)
-	s.marks = append(s.marks, make([]bool, len(chunk))...)
-	markMatches(s.raw, s.marks, s.patterns)
-	keep := s.maxLen - 1
+	if len(s.deltas) == 0 {
+		s.deltas = make([]int32, len(s.raw)+1)
+	} else {
+		s.deltas = append(s.deltas, make([]int32, len(chunk))...)
+	}
+	matcher, maxLen, generation := s.registry.snapshot()
+	if generation != s.generation {
+		s.state, s.scanned, s.generation = 0, 0, generation
+	}
+	s.state = matcher.scan(s.raw[s.scanned:], s.state, s.scanned, func(start, end int) {
+		markRange(s.deltas, start, end)
+	})
+	s.scanned = len(s.raw)
+	keep := maxLen - 1
 	if len(s.raw) <= keep {
 		return
 	}
@@ -88,7 +96,14 @@ func (s *Stream) Flush() {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	markMatches(s.raw, s.marks, s.patterns)
+	matcher, _, generation := s.registry.snapshot()
+	if generation != s.generation {
+		s.state, s.scanned, s.generation = 0, 0, generation
+	}
+	s.state = matcher.scan(s.raw[s.scanned:], s.state, s.scanned, func(start, end int) {
+		markRange(s.deltas, start, end)
+	})
+	s.scanned = len(s.raw)
 	s.emitPrefix(len(s.raw))
 }
 
@@ -97,37 +112,46 @@ func (s *Stream) emitPrefix(size int) {
 		return
 	}
 	output := append([]byte(nil), s.raw[:size]...)
-	applyMarks(output, s.marks[:size])
+	active := applyRangeMarks(output, s.deltas[:size+1])
 	if s.emit != nil {
 		s.emit(output)
 	}
 	s.raw = append(s.raw[:0], s.raw[size:]...)
-	s.marks = append(s.marks[:0], s.marks[size:]...)
-}
-
-func markMatches(value []byte, marks []bool, patterns [][]byte) {
-	for _, pattern := range patterns {
-		if len(pattern) == 0 || len(pattern) > len(value) {
-			continue
-		}
-		for offset := 0; offset <= len(value)-len(pattern); {
-			index := bytes.Index(value[offset:], pattern)
-			if index < 0 {
-				break
-			}
-			start := offset + index
-			for position := start; position < start+len(pattern); position++ {
-				marks[position] = true
-			}
-			offset = start + 1
-		}
+	s.deltas = append(s.deltas[:0], s.deltas[size:]...)
+	if len(s.deltas) == 0 {
+		s.deltas = []int32{active}
+	} else {
+		s.deltas[0] += active
+	}
+	s.scanned -= size
+	if s.scanned < 0 {
+		s.scanned = 0
 	}
 }
 
-func applyMarks(value []byte, marks []bool) {
+func markRange(deltas []int32, start, end int) {
+	if start < 0 {
+		start = 0
+	}
+	if end > len(deltas)-1 {
+		end = len(deltas) - 1
+	}
+	if start >= end {
+		return
+	}
+	deltas[start]++
+	deltas[end]--
+}
+
+func applyRangeMarks(value []byte, deltas []int32) int32 {
+	var active int32
 	for index := range value {
-		if index < len(marks) && marks[index] {
+		if index < len(deltas) {
+			active += deltas[index]
+		}
+		if active > 0 {
 			value[index] = replacementByte
 		}
 	}
+	return active
 }

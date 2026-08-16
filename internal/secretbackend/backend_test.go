@@ -2,6 +2,7 @@ package secretbackend
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	wfcrypto "github.com/imprun/windforce-core/internal/crypto"
@@ -63,6 +64,60 @@ func TestDatabaseBindsCiphertextToWorkspaceKindAndPath(t *testing.T) {
 		if _, err := backend.Resolve(context.Background(), changed, stored); err == nil {
 			t.Fatalf("ciphertext resolved for changed reference %#v", changed)
 		}
+	}
+}
+
+func TestRuntimeCandidateEnvelopePreservesBoundReference(t *testing.T) {
+	wrapped, version, err := wfcrypto.NewWrappedDEK("instance-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend := NewDatabase(staticKeys{key: wrapped, version: version}, "instance-secret", "")
+	base := Reference{WorkspaceID: "ws-a", Kind: "variable-app", Path: "shop/sessions/playwright"}
+	candidateID := "0123456789abcdef0123456789abcdef"
+	candidate := base
+	candidate.Path += "/" + candidateID
+	stored, err := backend.Store(context.Background(), candidate, "session-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealed, err := SealRuntimeCandidate(candidateID, stored)
+	if err != nil {
+		t.Fatal(err)
+	}
+	openedReference, openedStored, err := OpenRuntimeCandidate(base, sealed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if openedReference != candidate || openedStored != stored {
+		t.Fatalf("opened reference=%#v stored=%q", openedReference, openedStored)
+	}
+	plaintext, err := backend.Resolve(context.Background(), openedReference, openedStored)
+	if err != nil || plaintext != "session-secret" {
+		t.Fatalf("resolved=%q err=%v", plaintext, err)
+	}
+	if _, _, err := OpenRuntimeCandidate(base, runtimeCandidatePrefix+"invalid:payload"); err == nil {
+		t.Fatal("malformed runtime candidate envelope was accepted")
+	}
+}
+
+func TestRuntimeCandidateEnvelopeFitsTwoMiBStorageBound(t *testing.T) {
+	backend := NewDatabase(nil, "instance-secret", "")
+	reference := Reference{
+		WorkspaceID: "ws-a",
+		Kind:        "variable-app",
+		Path:        "shop/sessions/playwright/0123456789abcdef0123456789abcdef",
+	}
+	stored, err := backend.Store(context.Background(), reference, strings.Repeat("x", 1<<20))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealed, err := SealRuntimeCandidate("0123456789abcdef0123456789abcdef", stored)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sealed) > 2<<20 {
+		t.Fatalf("sealed maximum Secret = %d bytes, exceeds storage bound", len(sealed))
 	}
 }
 

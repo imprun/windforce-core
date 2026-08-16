@@ -406,18 +406,25 @@ type JobSummary struct {
 }
 
 type Variable struct {
-	AppKey      string `json:"app_key"`
-	Path        string `json:"path"`
-	Value       string `json:"value"`
-	IsSecret    bool   `json:"is_secret"`
-	Description string `json:"description"`
+	OwnerScope  contract.RuntimeConfigScope `json:"owner_scope"`
+	AppKey      string                      `json:"app_key,omitempty"`
+	Path        string                      `json:"path"`
+	Value       string                      `json:"value"`
+	IsSecret    bool                        `json:"is_secret"`
+	Description string                      `json:"description"`
+	Revision    int64                       `json:"revision"`
+	UpdatedAt   time.Time                   `json:"updated_at"`
 }
 
 type Resource struct {
-	Path         string          `json:"path"`
-	Value        json.RawMessage `json:"value"`
-	ResourceType string          `json:"resource_type"`
-	Description  string          `json:"description"`
+	OwnerScope   contract.RuntimeConfigScope `json:"owner_scope"`
+	AppKey       string                      `json:"app_key,omitempty"`
+	Path         string                      `json:"path"`
+	Value        json.RawMessage             `json:"value"`
+	ResourceType string                      `json:"resource_type"`
+	Description  string                      `json:"description"`
+	Revision     int64                       `json:"revision"`
+	UpdatedAt    time.Time                   `json:"updated_at"`
 }
 
 type ResourceType struct {
@@ -779,49 +786,53 @@ type JobLogUpdate struct {
 }
 
 type Snapshot struct {
-	StoreEpoch             string                                 `json:"storeEpoch,omitempty"`
-	SnapshotRevision       int64                                  `json:"snapshotRevision,omitempty"`
-	Sequence               int64                                  `json:"sequence"`
-	Runs                   map[string]Run                         `json:"runs"`
-	Jobs                   map[string]Job                         `json:"jobs"`
-	HumanTasks             map[string]HumanTask                   `json:"humanTasks"`
-	Events                 []RunEvent                             `json:"events"`
-	JobLogs                map[string]JobLog                      `json:"jobLogs"`
-	JobState               map[string]map[string]json.RawMessage  `json:"jobState"`
-	Variables              map[string]map[string]Variable         `json:"variables"`
-	Resources              map[string]map[string]Resource         `json:"resources"`
-	ResourceTypes          map[string]map[string]ResourceType     `json:"resourceTypes"`
-	Clients                map[string]map[string]Client           `json:"clients"`
-	ClientAudits           map[string][]ClientAudit               `json:"clientAudits"`
-	ClientTokenVersion     int                                    `json:"clientTokenVersion,omitempty"`
-	ServicePrincipals      map[string]map[string]ServicePrincipal `json:"servicePrincipals"`
-	ServicePrincipalAudits map[string][]ServicePrincipalAudit     `json:"servicePrincipalAudits"`
-	InputConfigs           map[string]map[string]InputConfig      `json:"inputConfigs"`
-	InputConfigAudits      map[string][]InputConfigAudit          `json:"inputConfigAudits"`
-	SecretAccessAudits     map[string][]SecretAccessAudit         `json:"secretAccessAudits,omitempty"`
-	LegacyClients          map[string]map[string]Client           `json:"apiClients,omitempty"`
-	LegacyClientAudits     map[string][]ClientAudit               `json:"apiClientAudits,omitempty"`
-	ReleaseCatalog         catalog.Snapshot                       `json:"releaseCatalog"`
-	WebhookSubscriptions   map[string]WebhookSubscriptionRecord   `json:"webhookSubscriptions"`
-	ControlPlaneEvents     map[string]controlevent.Envelope       `json:"controlPlaneEvents"`
-	WebhookDeliveries      map[string]webhook.Delivery            `json:"webhookDeliveries"`
-	WebhookAudits          map[string][]webhook.Audit             `json:"webhookAudits"`
-	Triggers               map[string]TriggerRecord               `json:"triggers"`
-	TriggerAudits          map[string][]TriggerAudit              `json:"triggerAudits"`
-	TriggerDeliveries      map[string]TriggerDelivery             `json:"triggerDeliveries"`
-	HTTPRouteBindings      map[string]HTTPRouteBinding            `json:"httpRouteBindings"`
-	HTTPRouteBindingAudits map[string][]HTTPRouteBindingAudit     `json:"httpRouteBindingAudits"`
-	Workers                map[string]WorkerRecord                `json:"workers,omitempty"`
-	WorkerLeaseIdentities  map[string]WorkerLeaseIdentity         `json:"workerLeaseIdentities,omitempty"`
-	WorkerCredentials      map[string]WorkerCredential            `json:"workerCredentials,omitempty"`
-	WorkerGroupRunStates   map[string]WorkerGroupRunState         `json:"workerGroupRunStates,omitempty"`
-	ExecutionLimitPolicies map[string]ExecutionLimitPolicy        `json:"executionLimitPolicies,omitempty"`
-	ExecutionLimitAudits   map[string][]ExecutionLimitPolicyAudit `json:"executionLimitAudits,omitempty"`
-	ExecutionRateBuckets   map[string]ExecutionRateBucket         `json:"executionRateBuckets,omitempty"`
-	Workspaces             map[string]Workspace                   `json:"workspaces"`
-	WorkspaceKeys          map[string]WorkspaceKey                `json:"workspaceKeys,omitempty"`
-	WorkspaceTokens        map[string]map[string]WorkspaceToken   `json:"workspaceTokens"`
-	WorkspaceAudits        []WorkspaceAudit                       `json:"workspaceAudits"`
+	StoreEpoch                string                                 `json:"storeEpoch,omitempty"`
+	SnapshotRevision          int64                                  `json:"snapshotRevision,omitempty"`
+	Sequence                  int64                                  `json:"sequence"`
+	Runs                      map[string]Run                         `json:"runs"`
+	Jobs                      map[string]Job                         `json:"jobs"`
+	HumanTasks                map[string]HumanTask                   `json:"humanTasks"`
+	Events                    []RunEvent                             `json:"events"`
+	JobLogs                   map[string]JobLog                      `json:"jobLogs"`
+	JobState                  map[string]map[string]json.RawMessage  `json:"jobState"`
+	Variables                 map[string]map[string]Variable         `json:"variables"`
+	Resources                 map[string]map[string]Resource         `json:"resources"`
+	RuntimeConfigOperations   map[string]RuntimeConfigOperation      `json:"runtimeConfigOperations,omitempty"`
+	RuntimeConfigAudits       map[string][]RuntimeConfigAudit        `json:"runtimeConfigAudits,omitempty"`
+	AppRuntimeLifecycles      map[string]AppRuntimeLifecycle         `json:"appRuntimeLifecycles,omitempty"`
+	AppRuntimeLifecycleAudits map[string][]AppRuntimeLifecycleAudit  `json:"appRuntimeLifecycleAudits,omitempty"`
+	ResourceTypes             map[string]map[string]ResourceType     `json:"resourceTypes"`
+	Clients                   map[string]map[string]Client           `json:"clients"`
+	ClientAudits              map[string][]ClientAudit               `json:"clientAudits"`
+	ClientTokenVersion        int                                    `json:"clientTokenVersion,omitempty"`
+	ServicePrincipals         map[string]map[string]ServicePrincipal `json:"servicePrincipals"`
+	ServicePrincipalAudits    map[string][]ServicePrincipalAudit     `json:"servicePrincipalAudits"`
+	InputConfigs              map[string]map[string]InputConfig      `json:"inputConfigs"`
+	InputConfigAudits         map[string][]InputConfigAudit          `json:"inputConfigAudits"`
+	SecretAccessAudits        map[string][]SecretAccessAudit         `json:"secretAccessAudits,omitempty"`
+	LegacyClients             map[string]map[string]Client           `json:"apiClients,omitempty"`
+	LegacyClientAudits        map[string][]ClientAudit               `json:"apiClientAudits,omitempty"`
+	ReleaseCatalog            catalog.Snapshot                       `json:"releaseCatalog"`
+	WebhookSubscriptions      map[string]WebhookSubscriptionRecord   `json:"webhookSubscriptions"`
+	ControlPlaneEvents        map[string]controlevent.Envelope       `json:"controlPlaneEvents"`
+	WebhookDeliveries         map[string]webhook.Delivery            `json:"webhookDeliveries"`
+	WebhookAudits             map[string][]webhook.Audit             `json:"webhookAudits"`
+	Triggers                  map[string]TriggerRecord               `json:"triggers"`
+	TriggerAudits             map[string][]TriggerAudit              `json:"triggerAudits"`
+	TriggerDeliveries         map[string]TriggerDelivery             `json:"triggerDeliveries"`
+	HTTPRouteBindings         map[string]HTTPRouteBinding            `json:"httpRouteBindings"`
+	HTTPRouteBindingAudits    map[string][]HTTPRouteBindingAudit     `json:"httpRouteBindingAudits"`
+	Workers                   map[string]WorkerRecord                `json:"workers,omitempty"`
+	WorkerLeaseIdentities     map[string]WorkerLeaseIdentity         `json:"workerLeaseIdentities,omitempty"`
+	WorkerCredentials         map[string]WorkerCredential            `json:"workerCredentials,omitempty"`
+	WorkerGroupRunStates      map[string]WorkerGroupRunState         `json:"workerGroupRunStates,omitempty"`
+	ExecutionLimitPolicies    map[string]ExecutionLimitPolicy        `json:"executionLimitPolicies,omitempty"`
+	ExecutionLimitAudits      map[string][]ExecutionLimitPolicyAudit `json:"executionLimitAudits,omitempty"`
+	ExecutionRateBuckets      map[string]ExecutionRateBucket         `json:"executionRateBuckets,omitempty"`
+	Workspaces                map[string]Workspace                   `json:"workspaces"`
+	WorkspaceKeys             map[string]WorkspaceKey                `json:"workspaceKeys,omitempty"`
+	WorkspaceTokens           map[string]map[string]WorkspaceToken   `json:"workspaceTokens"`
+	WorkspaceAudits           []WorkspaceAudit                       `json:"workspaceAudits"`
 }
 
 type Store interface {
@@ -872,10 +883,23 @@ type Store interface {
 	GetVariable(ctx context.Context, workspaceID string, appKey string, path string) (Variable, bool, error)
 	GetVariableExact(ctx context.Context, workspaceID string, appKey string, path string) (Variable, bool, error)
 	DeleteVariable(ctx context.Context, workspaceID string, appKey string, path string) error
+	GetVariableScoped(ctx context.Context, workspaceID string, scope contract.RuntimeConfigScope, appKey string, path string) (Variable, bool, error)
+	MutateRuntimeVariable(ctx context.Context, request RuntimeVariableMutationRequest) (RuntimeConfigMutationResult, error)
 	ListResources(ctx context.Context, workspaceID string) ([]Resource, error)
 	SetResource(ctx context.Context, workspaceID string, path string, value json.RawMessage, resourceType string, description string) error
+	SetResourceScoped(ctx context.Context, workspaceID string, appKey string, path string, value json.RawMessage, resourceType string, description string) error
 	GetResource(ctx context.Context, workspaceID string, path string) (Resource, bool, error)
 	DeleteResource(ctx context.Context, workspaceID string, path string) error
+	DeleteResourceScoped(ctx context.Context, workspaceID string, appKey string, path string) error
+	GetResourceScoped(ctx context.Context, workspaceID string, scope contract.RuntimeConfigScope, appKey string, path string) (Resource, bool, error)
+	MutateRuntimeResource(ctx context.Context, request RuntimeResourceMutationRequest) (RuntimeConfigMutationResult, error)
+	ListRuntimeConfigAudit(ctx context.Context, workspaceID string, appKey string) ([]RuntimeConfigAudit, error)
+	ListAppRuntimeLifecycles(ctx context.Context, workspaceID string) ([]AppRuntimeLifecycle, error)
+	GetAppRuntimeLifecycle(ctx context.Context, workspaceID string, appKey string) (AppRuntimeLifecycle, error)
+	SetAppRuntimeLifecycle(ctx context.Context, request SetAppRuntimeLifecycleRequest) (AppRuntimeLifecycle, error)
+	PurgeAppRuntimeConfig(ctx context.Context, request PurgeAppRuntimeConfigRequest) error
+	ListAppRuntimeLifecycleAudit(ctx context.Context, workspaceID string, appKey string) ([]AppRuntimeLifecycleAudit, error)
+	ApplyRuntimeConfigProvisioningBatch(ctx context.Context, batch RuntimeConfigProvisioningBatch) error
 	ListResourceTypes(ctx context.Context, workspaceID string) ([]ResourceType, error)
 	SetResourceType(ctx context.Context, workspaceID string, resourceType ResourceType) error
 	GetResourceType(ctx context.Context, workspaceID string, name string, version string) (ResourceType, bool, error)
@@ -1043,17 +1067,14 @@ func NewActionJob(run Run, input json.RawMessage) Job {
 			OutputSchema:          outputSchema,
 			Input:                 cloneRaw(input),
 			InputConfigResolved:   run.InputConfigResolved,
-			RuntimeAccess: contract.RuntimeAccess{
-				Variables: append([]string{}, actionSpec.RuntimeAccess.Variables...),
-				Resources: append([]string{}, actionSpec.RuntimeAccess.Resources...),
-			},
-			CorrelationID:  run.CorrelationID,
-			Env:            append([]string(nil), run.Env...),
-			CreatedBy:      actorCreatedBy(run),
-			PermissionedAs: actorPermissionedAs(run),
-			ClientID:       run.ClientID,
-			PrincipalKind:  run.PrincipalKind,
-			PrincipalID:    run.PrincipalID,
+			RuntimeAccess:         contract.CloneRuntimeAccess(actionSpec.RuntimeAccess),
+			CorrelationID:         run.CorrelationID,
+			Env:                   append([]string(nil), run.Env...),
+			CreatedBy:             actorCreatedBy(run),
+			PermissionedAs:        actorPermissionedAs(run),
+			ClientID:              run.ClientID,
+			PrincipalKind:         run.PrincipalKind,
+			PrincipalID:           run.PrincipalID,
 		},
 	}
 }

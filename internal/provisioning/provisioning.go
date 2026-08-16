@@ -55,11 +55,16 @@ type Spec struct {
 	Password   ValueSource `json:"password,omitempty" yaml:"password,omitempty"`
 	Token      ValueSource `json:"token,omitempty" yaml:"token,omitempty"`
 
-	Path        string      `json:"path,omitempty" yaml:"path,omitempty"`
-	AppScope    string      `json:"appScope,omitempty" yaml:"appScope,omitempty"`
-	Value       ValueSource `json:"value,omitempty" yaml:"value,omitempty"`
-	Secret      bool        `json:"secret,omitempty" yaml:"secret,omitempty"`
-	Description string      `json:"description,omitempty" yaml:"description,omitempty"`
+	Path          string                `json:"path,omitempty" yaml:"path,omitempty"`
+	AppScope      string                `json:"appScope,omitempty" yaml:"appScope,omitempty"`
+	Value         ValueSource           `json:"value,omitempty" yaml:"value,omitempty"`
+	Secret        bool                  `json:"secret,omitempty" yaml:"secret,omitempty"`
+	Description   string                `json:"description,omitempty" yaml:"description,omitempty"`
+	ResourceType  string                `json:"resourceType,omitempty" yaml:"resourceType,omitempty"`
+	ResourceValue any                   `json:"resourceValue,omitempty" yaml:"resourceValue,omitempty"`
+	Revision      int64                 `json:"revision,omitempty" yaml:"revision,omitempty"`
+	RuntimeState  state.AppRuntimeState `json:"runtimeState,omitempty" yaml:"runtimeState,omitempty"`
+	Reason        string                `json:"reason,omitempty" yaml:"reason,omitempty"`
 
 	Repository Repository     `json:"repository,omitempty" yaml:"repository,omitempty"`
 	Config     map[string]any `json:"config,omitempty" yaml:"config,omitempty"`
@@ -199,6 +204,16 @@ func (s Service) Apply(ctx context.Context, docs []Document, options Options) (R
 		return result, err
 	}
 	result.Applied = append(result.Applied, policyResults...)
+	runtimeBatch, runtimeResults, err := s.runtimeConfigProvisioningBatch(ctx, docs, options)
+	if err != nil {
+		return result, err
+	}
+	if len(runtimeBatch.Variables) != 0 || len(runtimeBatch.Resources) != 0 || len(runtimeBatch.Lifecycles) != 0 {
+		if err := s.Store.ApplyRuntimeConfigProvisioningBatch(ctx, runtimeBatch); err != nil {
+			return result, err
+		}
+	}
+	result.Applied = append(result.Applied, runtimeResults...)
 
 	for _, doc := range docs {
 		if doc.Kind != "GitCredential" {
@@ -250,11 +265,11 @@ func (s Service) Apply(ctx context.Context, docs []Document, options Options) (R
 			clients[doc.Metadata.Name] = client
 			result.Applied = append(result.Applied, AppliedResource{Kind: doc.Kind, Name: doc.Metadata.Name, Action: action, Detail: client.ID})
 		case "Variable":
-			action, detail, err := s.applyVariable(ctx, doc, options)
-			if err != nil {
-				return result, resourceError(doc, err)
-			}
-			result.Applied = append(result.Applied, AppliedResource{Kind: doc.Kind, Name: doc.Metadata.Name, Action: action, Detail: detail})
+			continue
+		case "Resource":
+			continue
+		case "AppRuntimeLifecycle":
+			continue
 		case "AppSource":
 			action, detail, err := s.applyAppSource(ctx, doc, options, credentials)
 			if err != nil {
@@ -366,8 +381,40 @@ func (s Service) Export(ctx context.Context, workspace string, includeValues boo
 				Value:       value,
 				Secret:      variable.IsSecret,
 				Description: variable.Description,
+				Revision:    variable.Revision,
 			},
 		})
+	}
+	resources, err := s.Store.ListResources(ctx, workspace)
+	if err != nil {
+		return nil, err
+	}
+	sort.Slice(resources, func(i, j int) bool {
+		if resources[i].AppKey != resources[j].AppKey {
+			return resources[i].AppKey < resources[j].AppKey
+		}
+		return resources[i].Path < resources[j].Path
+	})
+	for _, resource := range resources {
+		var value any
+		if len(resource.Value) != 0 && json.Unmarshal(resource.Value, &value) != nil {
+			return nil, fmt.Errorf("Resource %s has invalid JSON", resource.Path)
+		}
+		docs = append(docs, Document{
+			APIVersion: APIVersion,
+			Kind:       "Resource",
+			Metadata:   Metadata{Name: resourceName(resource.AppKey, resource.Path)},
+			Spec: Spec{Path: resource.Path, AppScope: resource.AppKey, ResourceType: resource.ResourceType,
+				ResourceValue: value, Description: resource.Description, Revision: resource.Revision},
+		})
+	}
+	lifecycles, err := s.Store.ListAppRuntimeLifecycles(ctx, workspace)
+	if err != nil {
+		return nil, err
+	}
+	for _, lifecycle := range lifecycles {
+		docs = append(docs, Document{APIVersion: APIVersion, Kind: "AppRuntimeLifecycle", Metadata: Metadata{Name: lifecycle.AppKey},
+			Spec: Spec{AppKey: lifecycle.AppKey, RuntimeState: lifecycle.State, Reason: lifecycle.Reason, Revision: lifecycle.Revision}})
 	}
 	inputDocs, err := s.exportInputSettings(ctx, workspace, includeValues)
 	if err != nil {
@@ -671,6 +718,109 @@ func (s Service) applyVariable(ctx context.Context, doc Document, options Option
 		}
 	}
 	if err := s.Store.SetVariable(ctx, options.Workspace, doc.Spec.AppScope, path, value, doc.Spec.Secret, doc.Spec.Description); err != nil {
+		return "", "", err
+	}
+	return "stored", path, nil
+}
+
+func (s Service) runtimeConfigProvisioningBatch(ctx context.Context, docs []Document, options Options) (state.RuntimeConfigProvisioningBatch, []AppliedResource, error) {
+	batch := state.RuntimeConfigProvisioningBatch{WorkspaceID: options.Workspace, Actor: options.Actor, DryRun: options.DryRun}
+	results := []AppliedResource{}
+	seen := map[string]struct{}{}
+	for _, doc := range docs {
+		switch doc.Kind {
+		case "Variable":
+			path := strings.TrimSpace(firstNonEmpty(doc.Spec.Path, doc.Metadata.Name))
+			if path == "" {
+				return batch, results, resourceError(doc, errors.New("variable path is required"))
+			}
+			key := "variable\x00" + doc.Spec.AppScope + "\x00" + path
+			if _, duplicate := seen[key]; duplicate {
+				return batch, results, resourceError(doc, errors.New("duplicate Variable"))
+			}
+			seen[key] = struct{}{}
+			value, isSecret := "", doc.Spec.Secret
+			if valueSourceIsRedacted(doc.Spec.Value) {
+				existing, err := s.existingVariable(ctx, options.Workspace, doc.Spec.AppScope, path)
+				if err != nil {
+					return batch, results, resourceError(doc, fmt.Errorf("redacted variable requires existing value for %q: %w", path, err))
+				}
+				value, isSecret = existing.Value, existing.IsSecret || doc.Spec.Secret
+			} else {
+				var err error
+				value, err = resolveString(doc.Spec.Value)
+				if err != nil {
+					return batch, results, resourceError(doc, err)
+				}
+				if isSecret && s.Encrypt != nil {
+					value, err = s.Encrypt(ctx, options.Workspace, value)
+					if err != nil {
+						return batch, results, resourceError(doc, err)
+					}
+				}
+			}
+			batch.Variables = append(batch.Variables, state.ProvisionedRuntimeVariable{AppKey: doc.Spec.AppScope, Path: path,
+				Value: value, IsSecret: isSecret, Description: doc.Spec.Description, Revision: doc.Spec.Revision})
+			results = append(results, AppliedResource{Kind: doc.Kind, Name: doc.Metadata.Name, Action: dryRunAction(options, "stored"), Detail: path})
+		case "Resource":
+			path := strings.TrimSpace(firstNonEmpty(doc.Spec.Path, doc.Metadata.Name))
+			if path == "" {
+				return batch, results, resourceError(doc, errors.New("resource path is required"))
+			}
+			key := "resource\x00" + doc.Spec.AppScope + "\x00" + path
+			if _, duplicate := seen[key]; duplicate {
+				return batch, results, resourceError(doc, errors.New("duplicate Resource"))
+			}
+			seen[key] = struct{}{}
+			value := doc.Spec.ResourceValue
+			if value == nil {
+				value = map[string]any{}
+			}
+			raw, err := json.Marshal(value)
+			if err != nil {
+				return batch, results, resourceError(doc, fmt.Errorf("resource value: %w", err))
+			}
+			batch.Resources = append(batch.Resources, state.ProvisionedRuntimeResource{AppKey: doc.Spec.AppScope, Path: path,
+				Value: raw, ResourceType: strings.TrimSpace(doc.Spec.ResourceType), Description: doc.Spec.Description, Revision: doc.Spec.Revision})
+			results = append(results, AppliedResource{Kind: doc.Kind, Name: doc.Metadata.Name, Action: dryRunAction(options, "stored"), Detail: path})
+		case "AppRuntimeLifecycle":
+			appKey := strings.TrimSpace(firstNonEmpty(doc.Spec.AppKey, doc.Metadata.Name))
+			if appKey == "" {
+				return batch, results, resourceError(doc, errors.New("App key is required"))
+			}
+			key := "lifecycle\x00" + appKey
+			if _, duplicate := seen[key]; duplicate {
+				return batch, results, resourceError(doc, errors.New("duplicate AppRuntimeLifecycle"))
+			}
+			seen[key] = struct{}{}
+			batch.Lifecycles = append(batch.Lifecycles, state.ProvisionedAppRuntimeLifecycle{AppKey: appKey,
+				State: doc.Spec.RuntimeState, Reason: doc.Spec.Reason, Revision: doc.Spec.Revision})
+			results = append(results, AppliedResource{Kind: doc.Kind, Name: doc.Metadata.Name, Action: dryRunAction(options, "stored"), Detail: appKey})
+		}
+	}
+	return batch, results, nil
+}
+
+func (s Service) applyResource(ctx context.Context, doc Document, options Options) (string, string, error) {
+	path := strings.TrimSpace(doc.Spec.Path)
+	if path == "" {
+		path = strings.TrimSpace(doc.Metadata.Name)
+	}
+	if path == "" {
+		return "", "", errors.New("resource path is required")
+	}
+	value := doc.Spec.ResourceValue
+	if value == nil {
+		value = map[string]any{}
+	}
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return "", "", fmt.Errorf("resource value: %w", err)
+	}
+	if options.DryRun {
+		return "validated", path, nil
+	}
+	if err := s.Store.SetResourceScoped(ctx, options.Workspace, doc.Spec.AppScope, path, raw, strings.TrimSpace(doc.Spec.ResourceType), doc.Spec.Description); err != nil {
 		return "", "", err
 	}
 	return "stored", path, nil

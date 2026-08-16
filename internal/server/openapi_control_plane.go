@@ -791,6 +791,35 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 				}, "400", "401", "403"),
 			},
 		},
+		"/api/w/{workspace}/apps/{app}/runtime-lifecycle": map[string]any{
+			"get": map[string]any{
+				"operationId": "getAppRuntimeLifecycle", "summary": "Get App runtime lifecycle",
+				"parameters": []any{oapiWorkspaceParam(workspaceID), oapiPathParam("app", "App key.")},
+				"responses":  withErrors(map[string]any{"200": oapiResponse("Lifecycle state.", oapiSchemaRef("AppRuntimeLifecycle"))}, "401", "403"),
+			},
+			"put": map[string]any{
+				"operationId": "setAppRuntimeLifecycle", "summary": "Activate, tombstone, or emergency revoke App runtime access",
+				"parameters":  []any{oapiWorkspaceParam(workspaceID), oapiPathParam("app", "App key.")},
+				"requestBody": oapiJSONBody(oapiSchemaRef("SetAppRuntimeLifecycleRequest"), true),
+				"responses":   withErrors(map[string]any{"200": oapiResponse("Updated lifecycle state.", oapiSchemaRef("AppRuntimeLifecycle"))}, "400", "401", "403", "409"),
+			},
+		},
+		"/api/w/{workspace}/apps/{app}/runtime-lifecycle/audit": map[string]any{
+			"get": map[string]any{
+				"operationId": "listAppRuntimeLifecycleAudit", "summary": "List App runtime lifecycle audit",
+				"parameters": []any{oapiWorkspaceParam(workspaceID), oapiPathParam("app", "App key.")},
+				"responses":  withErrors(map[string]any{"200": oapiResponse("Lifecycle audit.", map[string]any{"type": "object", "properties": map[string]any{"audits": map[string]any{"type": "array", "items": oapiSchemaRef("AppRuntimeLifecycleAudit")}}})}, "401", "403"),
+			},
+		},
+		"/api/w/{workspace}/apps/{app}/runtime-config": map[string]any{
+			"delete": map[string]any{
+				"operationId": "purgeAppRuntimeConfig", "summary": "Purge tombstoned or revoked App runtime configuration",
+				"description": "Purge is audited. force=true additionally requires X-Windforce-Confirm-Force-Purge equal to the App key.",
+				"parameters":  []any{oapiWorkspaceParam(workspaceID), oapiPathParam("app", "App key."), oapiQueryParam("force", "Allow purge while valid leases exist.", oapiBooleanSchema(), false)},
+				"requestBody": oapiJSONBody(map[string]any{"type": "object", "properties": map[string]any{"reason": oapiStringSchema()}}, false),
+				"responses":   withErrors(map[string]any{"204": map[string]any{"description": "Purged."}}, "400", "401", "403", "409"),
+			},
+		},
 		"/api/w/{workspace}/variables/get/p/{path}": map[string]any{
 			"get": map[string]any{
 				"operationId": "getVariable",
@@ -800,6 +829,7 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 					oapiWorkspaceParam(workspaceID),
 					oapiPathParam("path", "Variable path."),
 					oapiQueryParam("app", "Optional exact app key scope for console lookup.", oapiStringSchema(), false),
+					oapiQueryParam("scope", "Exact runtime scope. Job callbacks must pass workspace or app; operator calls infer app when app is supplied.", oapiStringEnumSchema("workspace", "app"), false),
 				},
 				"responses": withErrors(map[string]any{
 					"200": oapiResponse("Variable metadata. Secret values are omitted outside runtime callbacks.", oapiSchemaRef("VariableValueResponse")),
@@ -807,6 +837,16 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 			},
 		},
 		"/api/w/{workspace}/variables/p/{path}": map[string]any{
+			"put": map[string]any{
+				"operationId": "mutateRuntimeVariable",
+				"summary":     "Mutate an App-owned Variable from a live Job attempt",
+				"description": "Requires Job-bound authorization, an Admission-pinned exact target and storage class, operationId idempotency, and Worker mask registration for Secret writes.",
+				"parameters":  []any{oapiWorkspaceParam(workspaceID), oapiPathParam("path", "Pinned App-owned Variable path.")},
+				"requestBody": oapiJSONBody(oapiSchemaRef("RuntimeVariableMutationRequest"), true),
+				"responses": withErrors(map[string]any{
+					"200": oapiResponse("Mutation result, including the current revision and replay status.", oapiSchemaRef("RuntimeConfigMutationResult")),
+				}, "400", "401", "403", "409", "422"),
+			},
 			"delete": map[string]any{
 				"operationId": "deleteVariable",
 				"summary":     "Delete a variable by path",
@@ -877,20 +917,30 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 			},
 			"post": map[string]any{
 				"operationId": "setResource",
-				"summary":     "Set a JSON resource",
+				"summary":     "Set a workspace or App-owned JSON resource",
 				"parameters":  []any{oapiWorkspaceParam(workspaceID)},
 				"requestBody": oapiJSONBody(oapiSchemaRef("SetResourceRequest"), true),
 				"responses": withErrors(map[string]any{
-					"200": oapiResponse("Stored resource path.", oapiSchemaRef("PathResponse")),
+					"200": oapiResponse("Stored resource key.", oapiSchemaRef("ResourceSetResponse")),
 				}, "400", "401", "403"),
 			},
 		},
 		"/api/w/{workspace}/resources/p/{path}": map[string]any{
+			"put": map[string]any{
+				"operationId": "mutateRuntimeResource",
+				"summary":     "Mutate an App-owned Resource from a live Job attempt",
+				"description": "Requires Job-bound authorization, an Admission-pinned exact App Resource target, a versioned Resource schema, and operationId idempotency.",
+				"parameters":  []any{oapiWorkspaceParam(workspaceID), oapiPathParam("path", "Pinned App-owned Resource path.")},
+				"requestBody": oapiJSONBody(oapiSchemaRef("RuntimeResourceMutationRequest"), true),
+				"responses": withErrors(map[string]any{
+					"200": oapiResponse("Mutation result, including the current revision and replay status.", oapiSchemaRef("RuntimeConfigMutationResult")),
+				}, "400", "401", "403", "409", "422"),
+			},
 			"delete": map[string]any{
 				"operationId": "deleteResource",
 				"summary":     "Delete a resource by path",
 				"description": "The {path} segment represents the remaining path after /resources/p/ and may contain slashes.",
-				"parameters":  []any{oapiWorkspaceParam(workspaceID), oapiPathParam("path", "Resource path.")},
+				"parameters":  []any{oapiWorkspaceParam(workspaceID), oapiPathParam("path", "Resource path."), oapiQueryParam("app", "Optional app key for App-owned deletion.", oapiStringSchema(), false)},
 				"responses": withErrors(map[string]any{
 					"204": map[string]any{"description": "Deleted."},
 				}, "401", "403", "404"),
@@ -901,7 +951,12 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 				"operationId": "getResource",
 				"summary":     "Get a JSON resource by path",
 				"description": "The {path} segment represents the remaining path after /resources/get/p/ and may contain slashes.",
-				"parameters":  []any{oapiWorkspaceParam(workspaceID), oapiPathParam("path", "Resource path.")},
+				"parameters": []any{
+					oapiWorkspaceParam(workspaceID),
+					oapiPathParam("path", "Resource path."),
+					oapiQueryParam("app", "Optional exact app key scope for operator lookup.", oapiStringSchema(), false),
+					oapiQueryParam("scope", "Exact runtime scope. Job callbacks must pass workspace or app; operator calls infer app when app is supplied.", oapiStringEnumSchema("workspace", "app"), false),
+				},
 				"responses": withErrors(map[string]any{
 					"200": oapiResponse("Stored JSON with unresolved references for operators; Job callbacks receive the Admission-allowed resolved value.", oapiSchemaRef("JSONValue")),
 				}, "401", "403", "404"),
@@ -1534,7 +1589,7 @@ func controlPlaneSchemas() map[string]any {
 			"type": "object",
 			"properties": map[string]any{
 				"apiVersion": oapiStringSchema(),
-				"kind":       map[string]any{"type": "string", "enum": []any{"GitCredential", "AppSource", "Client", "Variable", "InputSettings"}},
+				"kind":       map[string]any{"type": "string", "enum": []any{"GitCredential", "AppSource", "Client", "ExecutionLimitPolicy", "Variable", "Resource", "AppRuntimeLifecycle", "InputSettings"}},
 				"metadata": map[string]any{
 					"type":       "object",
 					"properties": map[string]any{"name": oapiStringSchema()},
@@ -1559,6 +1614,11 @@ func controlPlaneSchemas() map[string]any {
 						"value":            oapiSchemaRef("ProvisioningValueSource"),
 						"secret":           oapiBooleanSchema(),
 						"description":      oapiStringSchema(),
+						"resourceType":     oapiStringSchema(),
+						"resourceValue":    oapiSchemaRef("JSONValue"),
+						"revision":         oapiIntegerSchema(),
+						"runtimeState":     oapiStringEnumSchema("active", "tombstoned", "revoked"),
+						"reason":           oapiStringSchema(),
 						"repository": map[string]any{
 							"type": "object",
 							"properties": map[string]any{
@@ -2251,16 +2311,50 @@ func controlPlaneSchemas() map[string]any {
 			"properties": map[string]any{"path": oapiStringSchema()},
 			"required":   []any{"path"},
 		},
+		"AppRuntimeLifecycle": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"workspaceId": oapiStringSchema(), "appKey": oapiStringSchema(),
+				"state":  map[string]any{"type": "string", "enum": []any{"active", "tombstoned", "revoked"}},
+				"reason": oapiStringSchema(), "actor": oapiStringSchema(),
+				"revision":  map[string]any{"type": "integer", "format": "int64"},
+				"updatedAt": map[string]any{"type": "string", "format": "date-time"},
+			},
+			"required": []any{"workspaceId", "appKey", "state", "actor", "revision", "updatedAt"},
+		},
+		"SetAppRuntimeLifecycleRequest": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"state":  map[string]any{"type": "string", "enum": []any{"active", "tombstoned", "revoked"}},
+				"reason": oapiStringSchema(), "expectedRevision": map[string]any{"type": "integer", "format": "int64", "minimum": 0},
+			},
+			"required": []any{"state"},
+		},
+		"AppRuntimeLifecycleAudit": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"workspaceId": oapiStringSchema(), "appKey": oapiStringSchema(),
+				"state":  map[string]any{"type": "string", "enum": []any{"active", "tombstoned", "revoked"}},
+				"reason": oapiStringSchema(), "actor": oapiStringSchema(),
+				"revision": map[string]any{"type": "integer", "format": "int64"},
+				"purged":   oapiBooleanSchema(), "forced": oapiBooleanSchema(),
+				"createdAt": map[string]any{"type": "string", "format": "date-time"},
+			},
+			"required": []any{"workspaceId", "appKey", "state", "actor", "revision", "createdAt"},
+		},
 		"Variable": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
+				"owner_scope": oapiStringEnumSchema("workspace", "app"),
 				"app_key":     oapiStringSchema(),
 				"path":        oapiStringSchema(),
 				"value":       oapiStringSchema(),
 				"is_secret":   oapiBooleanSchema(),
 				"description": oapiStringSchema(),
+				"revision":    oapiIntegerSchema(),
+				"updated_at":  oapiStringSchema(),
 			},
-			"required": []any{"app_key", "path", "value", "is_secret", "description"},
+			"required": []any{"owner_scope", "path", "value", "is_secret", "description", "revision", "updated_at"},
 		},
 		"SetVariableRequest": map[string]any{
 			"type": "object",
@@ -2304,12 +2398,16 @@ func controlPlaneSchemas() map[string]any {
 		"Resource": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
+				"owner_scope":   oapiStringEnumSchema("workspace", "app"),
+				"app_key":       oapiStringSchema(),
 				"path":          oapiStringSchema(),
 				"value":         oapiSchemaRef("JSONValue"),
 				"resource_type": oapiStringSchema(),
 				"description":   oapiStringSchema(),
+				"revision":      oapiIntegerSchema(),
+				"updated_at":    oapiStringSchema(),
 			},
-			"required": []any{"path", "value", "resource_type", "description"},
+			"required": []any{"owner_scope", "path", "value", "resource_type", "description", "revision", "updated_at"},
 		},
 		"SetResourceRequest": map[string]any{
 			"type": "object",
@@ -2318,8 +2416,46 @@ func controlPlaneSchemas() map[string]any {
 				"value":         oapiSchemaRef("JSONValue"),
 				"resource_type": oapiStringSchema(),
 				"description":   oapiStringSchema(),
+				"app_key":       oapiStringSchema(),
 			},
 			"required": []any{"path"},
+		},
+		"ResourceSetResponse": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"path":    oapiStringSchema(),
+				"app_key": oapiStringSchema(),
+			},
+			"required": []any{"path", "app_key"},
+		},
+		"RuntimeVariableMutationRequest": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"value":            oapiStringSchema(),
+				"operationId":      oapiStringSchema(),
+				"expectedRevision": oapiIntegerSchema(),
+			},
+			"required": []any{"value", "operationId"},
+		},
+		"RuntimeResourceMutationRequest": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"value":            oapiSchemaRef("JSONValue"),
+				"resourceType":     oapiStringSchema(),
+				"description":      oapiStringSchema(),
+				"operationId":      oapiStringSchema(),
+				"expectedRevision": oapiIntegerSchema(),
+			},
+			"required": []any{"value", "resourceType", "operationId"},
+		},
+		"RuntimeConfigMutationResult": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"path":     oapiStringSchema(),
+				"revision": oapiIntegerSchema(),
+				"replayed": oapiBooleanSchema(),
+			},
+			"required": []any{"path", "revision", "replayed"},
 		},
 		"JobPendingResponse": map[string]any{
 			"type": "object",

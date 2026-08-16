@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/imprun/windforce-core/internal/contract"
 )
 
 // ValidateSecretReferences enforces release-owned secret annotations without
@@ -21,26 +23,28 @@ func (r *Resolver) ValidateSecretReferences(
 	schema json.RawMessage,
 	input json.RawMessage,
 ) ([]string, error) {
-	paths, err := secretReferences(schema, input)
+	references, err := secretReferences(schema, input)
 	if err != nil {
 		return nil, err
 	}
-	for _, path := range paths {
-		variable, found, err := r.Store.GetVariable(ctx, workspaceID, appKey, path)
+	paths := make([]string, 0, len(references))
+	for _, reference := range references {
+		variable, found, err := r.Store.GetVariableScoped(ctx, workspaceID, reference.Scope, appKey, reference.Path)
 		if err != nil {
-			return nil, fmt.Errorf("read secret variable %q: %w", path, err)
+			return nil, fmt.Errorf("read secret variable %q: %w", reference.Path, err)
 		}
 		if !found {
-			return nil, fmt.Errorf("secret variable %q: %w", path, errors.New("not found"))
+			return nil, fmt.Errorf("secret variable %q: %w", reference.Path, errors.New("not found"))
 		}
 		if !variable.IsSecret {
-			return nil, fmt.Errorf("variable %q is not secret", path)
+			return nil, fmt.Errorf("variable %q is not secret", reference.Path)
 		}
+		paths = append(paths, reference.Path)
 	}
 	return paths, nil
 }
 
-func secretReferences(schema json.RawMessage, input json.RawMessage) ([]string, error) {
+func secretReferences(schema json.RawMessage, input json.RawMessage) ([]contract.RuntimeConfigReference, error) {
 	if len(strings.TrimSpace(string(schema))) == 0 {
 		return nil, nil
 	}
@@ -52,15 +56,20 @@ func secretReferences(schema json.RawMessage, input json.RawMessage) ([]string, 
 	if err := json.Unmarshal(input, &value); err != nil {
 		return nil, fmt.Errorf("decode input for secret reference validation: %w", err)
 	}
-	paths := map[string]struct{}{}
+	paths := map[string]contract.RuntimeConfigReference{}
 	if err := walkSecretSchema(root, root, value, "$", paths, map[string]bool{}, 0); err != nil {
 		return nil, err
 	}
-	result := make([]string, 0, len(paths))
-	for path := range paths {
-		result = append(result, path)
+	result := make([]contract.RuntimeConfigReference, 0, len(paths))
+	for _, reference := range paths {
+		result = append(result, reference)
 	}
-	sort.Strings(result)
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Scope == result[j].Scope {
+			return result[i].Path < result[j].Path
+		}
+		return result[i].Scope < result[j].Scope
+	})
 	return result, nil
 }
 
@@ -69,7 +78,7 @@ func walkSecretSchema(
 	schema any,
 	value any,
 	instancePath string,
-	paths map[string]struct{},
+	paths map[string]contract.RuntimeConfigReference,
 	refStack map[string]bool,
 	depth int,
 ) error {
@@ -100,14 +109,14 @@ func walkSecretSchema(
 		if !ok {
 			return fmt.Errorf("%s is secret and must be an exact $var reference", instancePath)
 		}
-		kind, path, isReference, err := parseReference(reference)
+		parsed, isReference, err := contract.ParseRuntimeConfigReference(reference)
 		if err != nil {
 			return fmt.Errorf("%s: %w", instancePath, err)
 		}
-		if !isReference || kind != "var" {
+		if !isReference || parsed.Kind != "var" {
 			return fmt.Errorf("%s is secret and must be an exact $var reference", instancePath)
 		}
-		paths[path] = struct{}{}
+		paths[string(parsed.Scope)+"\x00"+parsed.Path] = parsed
 		return nil
 	}
 

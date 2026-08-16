@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/imprun/windforce-core/internal/contract"
 )
 
 func TestParseFillsActionName(t *testing.T) {
@@ -590,6 +592,39 @@ func TestParseNormalizesRuntimeAccess(t *testing.T) {
 	if !reflect.DeepEqual(action.RuntimeAccess.Variables, []string{"credentials/token"}) ||
 		!reflect.DeepEqual(action.RuntimeAccess.Resources, []string{"database/main"}) {
 		t.Fatalf("runtime access = %#v", action.RuntimeAccess)
+	}
+}
+
+func TestParsePinsScopedRuntimeReadAndWriteAccess(t *testing.T) {
+	app, err := Parse([]byte(`{
+  "app": "echo",
+  "entrypoint": "main.ts",
+  "actions": {
+    "run": {
+      "runtimeAccess": {
+        "variables": [{"scope":"app","path":" session/token "}],
+        "resources": [{"scope":"workspace","path":" database/main "}],
+        "writeVariables": [{"scope":"app","path":"session/token","storage":"secret"}],
+        "writeResources": [{"scope":"app","path":"session/profile"}]
+      }
+    }
+  }
+}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	action := app.Actions["run"]
+	if !reflect.DeepEqual(action.RuntimeAccess.VariableTargets, []contract.RuntimeConfigTarget{{
+		Scope: contract.RuntimeConfigScopeApp,
+		Path:  "session/token",
+	}}) {
+		t.Fatalf("variable targets = %#v", action.RuntimeAccess.VariableTargets)
+	}
+	if !reflect.DeepEqual(action.RuntimeAccess.WriteVariables, []contract.RuntimeVariableWriteTarget{{
+		RuntimeConfigTarget: contract.RuntimeConfigTarget{Scope: contract.RuntimeConfigScopeApp, Path: "session/token"},
+		Storage:             contract.RuntimeVariableStorageSecret,
+	}}) {
+		t.Fatalf("write variables = %#v", action.RuntimeAccess.WriteVariables)
 	}
 }
 

@@ -407,7 +407,7 @@ describe("WindforceApi runtime configuration", () => {
       await api.resources();
       await api.resourceTypes();
       await api.deleteVariable("credentials/api key", "orders");
-      await api.deleteResource("database/main");
+      await api.deleteResource("database/main", "orders");
       await api.deleteResourceType("database", "1");
 
       expect(requests.map(({ url, method }) => [url, method])).toEqual([
@@ -415,9 +415,55 @@ describe("WindforceApi runtime configuration", () => {
         ["/api/w/ops/resources", "GET"],
         ["/api/w/ops/resource-types", "GET"],
         ["/api/w/ops/variables/p/credentials/api%20key?app=orders", "DELETE"],
-        ["/api/w/ops/resources/p/database/main", "DELETE"],
+        ["/api/w/ops/resources/p/database/main?app=orders", "DELETE"],
         ["/api/w/ops/resource-types/database/1", "DELETE"],
       ]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("uses App runtime lifecycle routes and sends explicit force-purge confirmation", async () => {
+    const requests: Array<{ url: string; method: string; headers: Headers; body: string }> = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input, init) => {
+      requests.push({
+        url: String(input),
+        method: init?.method || "GET",
+        headers: new Headers(init?.headers),
+        body: String(init?.body || ""),
+      });
+      return new Response(JSON.stringify({ state: "active", revision: 2, audits: [] }), {
+        status: 200,
+      });
+    }) as typeof fetch;
+    try {
+      const api = new WindforceApi({ workspace: "ops", token: "", actor: "operator" });
+      await api.appRuntimeLifecycle("orders app");
+      await api.setAppRuntimeLifecycle("orders app", {
+        state: "tombstoned",
+        reason: "retiring",
+        expectedRevision: 2,
+      });
+      await api.appRuntimeLifecycleAudit("orders app");
+      await api.purgeAppRuntimeConfig("orders app", { reason: "retired", force: true });
+
+      expect(requests.map(({ url, method }) => [url, method])).toEqual([
+        ["/api/w/ops/apps/orders%20app/runtime-lifecycle", "GET"],
+        ["/api/w/ops/apps/orders%20app/runtime-lifecycle", "PUT"],
+        ["/api/w/ops/apps/orders%20app/runtime-lifecycle/audit", "GET"],
+        ["/api/w/ops/apps/orders%20app/runtime-config?force=true", "DELETE"],
+      ]);
+      const lifecycleRequest = requests[1];
+      const purgeRequest = requests[3];
+      if (!lifecycleRequest || !purgeRequest)
+        throw new Error("expected lifecycle and purge requests");
+      expect(JSON.parse(lifecycleRequest.body)).toEqual({
+        state: "tombstoned",
+        reason: "retiring",
+        expectedRevision: 2,
+      });
+      expect(purgeRequest.headers.get("x-windforce-confirm-force-purge")).toBe("orders app");
     } finally {
       globalThis.fetch = originalFetch;
     }

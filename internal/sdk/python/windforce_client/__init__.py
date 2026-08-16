@@ -27,6 +27,7 @@ from typing import (
     Awaitable,
     Callable,
     Mapping,
+    NotRequired,
     Protocol,
     Sequence,
     TypedDict,
@@ -43,6 +44,8 @@ __all__ = [
     "Logger",
     "Variables",
     "Resources",
+    "RuntimeMutationOptions",
+    "RuntimeMutationResult",
     "State",
     "Http",
     "Approval",
@@ -61,6 +64,17 @@ Next = Callable[[], Awaitable[Any]]
 Middleware = Callable[["WindforceContext", Next], Awaitable[Any]]
 
 
+class RuntimeMutationOptions(TypedDict):
+    operation_id: str
+    expected_revision: NotRequired[int]
+
+
+class RuntimeMutationResult(TypedDict, total=False):
+    path: str
+    revision: int
+    replayed: bool
+
+
 @runtime_checkable
 class Logger(Protocol):
     def info(self, *args: Any) -> None: ...
@@ -71,12 +85,14 @@ class Logger(Protocol):
 
 @runtime_checkable
 class Variables(Protocol):
-    async def get(self, path: str) -> str: ...
+    async def get(self, path: str, scope: str = "workspace") -> str: ...
+    async def set(self, path: str, value: str, options: RuntimeMutationOptions) -> RuntimeMutationResult: ...
 
 
 @runtime_checkable
 class Resources(Protocol):
-    async def get(self, path: str) -> Any: ...
+    async def get(self, path: str, scope: str = "workspace") -> Any: ...
+    async def set(self, path: str, value: Any, resource_type: str, options: RuntimeMutationOptions) -> RuntimeMutationResult: ...
 
 
 @runtime_checkable

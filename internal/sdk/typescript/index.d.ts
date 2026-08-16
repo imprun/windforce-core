@@ -45,13 +45,30 @@ export interface WindforceContext {
     error(...args: unknown[]): void
     debug(...args: unknown[]): void
   }
-  variables: { get(path: string): Promise<string> }
-  resources: { get(path: string): Promise<unknown> }
+  variables: {
+    get(path: string, scope?: "workspace" | "app"): Promise<string>
+    set(path: string, value: string, options: RuntimeMutationOptions): Promise<RuntimeMutationResult>
+  }
+  resources: {
+    get(path: string, scope?: "workspace" | "app"): Promise<unknown>
+    set(path: string, value: unknown, resourceType: string, options: RuntimeMutationOptions): Promise<RuntimeMutationResult>
+  }
   state: { get(): Promise<unknown>; set(value: unknown): Promise<void> }
   http: { fetch: typeof fetch }
   human: { wait<T = unknown>(request: HumanTaskRequest): Promise<HumanTaskDecision<T>> }
   approval: { getResumeUrls(approver?: string): Promise<ResumeUrls> }
   flow: { resumeValue?: unknown }
+}
+
+export interface RuntimeMutationOptions {
+  operationId: string
+  expectedRevision?: number
+}
+
+export interface RuntimeMutationResult {
+  path: string
+  revision: number
+  replayed?: boolean
 }
 
 export interface AppConfig {
