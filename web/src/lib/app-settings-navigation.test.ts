@@ -10,6 +10,7 @@ describe("App settings navigation", () => {
   test("keeps the approved settings order", () => {
     expect(appSettingsTabKeys).toEqual([
       "repository",
+      "triggers",
       "input-settings",
       "runtime-config",
       "placement",
@@ -23,6 +24,7 @@ describe("App settings navigation", () => {
   });
 
   test("builds canonical settings routes without losing a selected Client", () => {
+    expect(appSettingsPath(7, "triggers")).toBe("/apps/7/settings/triggers");
     expect(appSettingsPath(7, "placement")).toBe("/apps/7/settings/placement");
     expect(appSettingsPath(7, "input-settings", "client", "client A")).toBe(
       "/apps/7/settings/input-settings/client/client%20A",
@@ -31,6 +33,7 @@ describe("App settings navigation", () => {
 
   test("recognizes only App settings tabs", () => {
     expect(isAppSettingsTabKey("runtime-config")).toBe(true);
+    expect(isAppSettingsTabKey("triggers")).toBe(true);
     expect(isAppSettingsTabKey("monitoring")).toBe(false);
   });
 });

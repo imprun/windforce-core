@@ -4,6 +4,7 @@ import { type TranslationKey, translate } from "../shared/i18n";
 
 export const appSettingsNavItems = [
   { key: "repository", labelKey: "audit.repository" as TranslationKey },
+  { key: "triggers", labelKey: "trigger.title" as TranslationKey },
   { key: "input-settings", labelKey: "audit.inputSettings" as TranslationKey },
   { key: "runtime-config", labelKey: "appDetail.tab.runtimeConfig" as TranslationKey },
   { key: "placement", labelKey: "appDetail.tab.placement" as TranslationKey },

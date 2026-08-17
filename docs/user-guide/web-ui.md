@@ -332,11 +332,11 @@ The one-time credential stays in a stable copy row and the copy button itself co
 
 ## Manage App Triggers
 
-The App Triggers tab keeps inbound Webhook, Schedule, and RabbitMQ sources beside the Action contract they invoke.
+The App settings area keeps inbound Webhook, Schedule, and RabbitMQ Triggers beside the Action contract they invoke.
 
 ![Manage App Triggers](../assets/ui/app-triggers.png)
 
-1. Open an App and choose Triggers.
+1. Open an App and choose App settings, then Triggers.
 2. Review each source kind, target Action, enablement state, and latest delivery outcome.
 3. Enable or disable a source without changing its configuration.
 4. Keep outbound release notifications in Settings → Webhooks.
@@ -370,7 +370,7 @@ Dark mode preserves clear separation between Trigger kinds, enablement, delivery
 ![Review App Triggers in dark mode](../assets/ui/app-triggers-dark.png)
 
 1. Switch the execution workspace to dark mode.
-2. Open an App and choose Triggers.
+2. Open an App and choose App settings, then Triggers.
 3. Confirm status text and icons remain distinguishable without relying on color alone.
 
 ## Resolve a HumanTask hold
@@ -413,7 +413,7 @@ A kind-aware editor configures the current App target and an explicit completion
 
 ![Add an inbound Trigger](../assets/ui/trigger-create.png)
 
-1. Choose Add trigger from the App Triggers tab.
+1. Choose App settings, then Triggers, and select Add trigger.
 2. Select Webhook, Schedule, or RabbitMQ and a target Action.
 3. Choose Poll, signed HTTP callback, RabbitMQ publish, or deliberate No output.
 4. Complete the kind-specific delivery and security fields.
@@ -435,7 +435,7 @@ A configured Router Provider reports the friendly URL and reconciliation state w
 
 ![Expose a Webhook Trigger through a public route](../assets/ui/trigger-public-route.png)
 
-1. Open an App, choose Triggers, and select a Webhook Trigger.
+1. Open an App, choose App settings, then Triggers, and select a Webhook Trigger.
 2. Use the canonical ingress for direct integrations in every deployment mode.
 3. When a Router Provider is configured, review the friendly public URL and its observed state.
 4. Add, edit, or delete the route independently from the Trigger definition.
@@ -460,7 +460,7 @@ The Trigger detail sheet fills a narrow viewport while configuration, delivery h
 
 ![Inspect a Trigger on a narrow screen](../assets/ui/trigger-detail-mobile.png)
 
-1. Open the App Triggers tab on a narrow screen.
+1. Open App settings, then Triggers, on a narrow screen.
 2. Choose a Trigger name to open its operational detail.
 3. Review the canonical ingress and provider-managed public route without exposing secret values.
 4. Scroll to inspect delivery and audit history.

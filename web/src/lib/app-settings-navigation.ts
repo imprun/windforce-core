@@ -1,5 +1,6 @@
 export const appSettingsTabKeys = [
   "repository",
+  "triggers",
   "input-settings",
   "runtime-config",
   "placement",

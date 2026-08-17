@@ -49,7 +49,6 @@ import { type TranslationKey, translate } from "../shared/i18n";
 const tabs = [
   { key: "overview", labelKey: "appDetail.tab.overview" as TranslationKey },
   { key: "docs", labelKey: "appDetail.tab.docs" as TranslationKey },
-  { key: "triggers", labelKey: "trigger.title" as TranslationKey },
   { key: "monitoring", labelKey: "navigation.monitoring" as TranslationKey },
   { key: "releases", labelKey: "appDetail.tab.releases" as TranslationKey },
   { key: "audit", labelKey: "navigation.audit" as TranslationKey },
@@ -209,10 +208,10 @@ export function AppDetailPage({
           actionKey={actionKey}
         />
       ) : null}
-      {activeTab === "triggers" && app && detail ? (
+      {activeTab === "settings" && activeSettingsTab === "triggers" && app && detail ? (
         <AppTriggers sourceID={sourceID} appKey={app.app_key} actions={detail.actions} />
       ) : null}
-      {activeTab === "triggers" && (!app || !detail) ? (
+      {activeTab === "settings" && activeSettingsTab === "triggers" && (!app || !detail) ? (
         <Panel title={translate("trigger.title")} subtitle={translate("appDetail.triggerHint")}>
           <EmptyState title={translate("trigger.publishFirst")}>
             <p>{translate("trigger.needsAction")}</p>

@@ -6,7 +6,7 @@ export default {
     "A kind-aware editor configures the current App target and an explicit completion output while keeping signing secrets and broker credentials write-only.",
   screenshot: "docs/assets/ui/trigger-create.png",
   guide: [
-    "Choose Add trigger from the App Triggers tab.",
+    "Choose App settings, then Triggers, and select Add trigger.",
     "Select Webhook, Schedule, or RabbitMQ and a target Action.",
     "Choose Poll, signed HTTP callback, RabbitMQ publish, or deliberate No output.",
     "Complete the kind-specific delivery and security fields.",
@@ -16,7 +16,8 @@ export default {
     await page.goto();
     await page.waitForSelector("#appList .tableRow");
     await page.click("#appList .cellTitle");
-    await page.clickText("Triggers");
+    await page.click('[data-ui-guide="app-settings"]');
+    await page.click(".tabBar .tab[href$='/settings/triggers']");
     await page.waitForSelector("#appTriggers tbody tr");
     await page.click("#addTriggerButton");
     await page.waitForSelector("#triggerEditorDialog");
