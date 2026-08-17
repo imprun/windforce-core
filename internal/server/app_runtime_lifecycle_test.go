@@ -16,6 +16,18 @@ func TestAppRuntimeLifecycleControlAPI(t *testing.T) {
 	server := httptest.NewServer(New(Config{Store: store}))
 	defer server.Close()
 
+	emptyAuditResponse, err := http.Get(server.URL + "/api/w/ws-a/apps/shop/runtime-lifecycle/audit")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer emptyAuditResponse.Body.Close()
+	var emptyAudit struct {
+		Audits []state.AppRuntimeLifecycleAudit `json:"audits"`
+	}
+	if json.NewDecoder(emptyAuditResponse.Body).Decode(&emptyAudit) != nil || emptyAudit.Audits == nil || len(emptyAudit.Audits) != 0 {
+		t.Fatalf("empty lifecycle audit = %#v", emptyAudit.Audits)
+	}
+
 	request, _ := http.NewRequest(http.MethodPut, server.URL+"/api/w/ws-a/apps/shop/runtime-lifecycle",
 		bytes.NewBufferString(`{"state":"tombstoned","reason":"retiring","expectedRevision":0}`))
 	request.Header.Set("Content-Type", "application/json")

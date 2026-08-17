@@ -32,6 +32,7 @@ import type {
   AppSummary,
   GitSource,
   HistoryItem,
+  RuntimeAccessTarget,
 } from "../lib/api";
 import { useApp, useAsync } from "../lib/app-context";
 import { findAppForSource } from "../lib/app-rows";
@@ -759,7 +760,7 @@ function ActionReferenceDetail({ app, action }: { app: AppSummary; action: Actio
   );
 }
 
-function RuntimeAccessSummary({ action }: { action: ActionView }) {
+export function RuntimeAccessSummary({ action }: { action: ActionView }) {
   const variables = action.runtime_access?.variables || [];
   const resources = action.runtime_access?.resources || [];
   return (
@@ -779,11 +780,14 @@ function RuntimeAccessSummary({ action }: { action: ActionView }) {
             <div>
               <span className="cellSub">{translate("runtimeConfig.tab.variables")}</span>
               <div className="runtimeAccessPaths">
-                {variables.map((path) => (
-                  <code className="badge neutral" key={`variable-${path}`}>
-                    $var:{path}
-                  </code>
-                ))}
+                {variables.map((target, index) => {
+                  const reference = runtimeAccessReference("var", target);
+                  return (
+                    <code className="badge neutral" key={`variable-${reference}-${index}`}>
+                      {reference}
+                    </code>
+                  );
+                })}
               </div>
             </div>
           ) : null}
@@ -791,11 +795,14 @@ function RuntimeAccessSummary({ action }: { action: ActionView }) {
             <div>
               <span className="cellSub">{translate("runtimeConfig.tab.resources")}</span>
               <div className="runtimeAccessPaths">
-                {resources.map((path) => (
-                  <code className="badge neutral" key={`resource-${path}`}>
-                    $res:{path}
-                  </code>
-                ))}
+                {resources.map((target, index) => {
+                  const reference = runtimeAccessReference("res", target);
+                  return (
+                    <code className="badge neutral" key={`resource-${reference}-${index}`}>
+                      {reference}
+                    </code>
+                  );
+                })}
               </div>
             </div>
           ) : null}
@@ -805,6 +812,11 @@ function RuntimeAccessSummary({ action }: { action: ActionView }) {
       )}
     </section>
   );
+}
+
+export function runtimeAccessReference(kind: "var" | "res", target: RuntimeAccessTarget): string {
+  if (typeof target === "string") return `$${kind}:${target}`;
+  return `$${kind}@${target.scope}:${target.path}`;
 }
 
 function ActionLabel({ action }: { action: ActionView }) {

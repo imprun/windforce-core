@@ -62,6 +62,19 @@ describe("AppRuntimeConfiguration", () => {
       (screen.getByRole("button", { name: /Purge configuration/i }) as HTMLButtonElement).disabled,
     ).toBe(false);
   });
+
+  test("renders an empty audit state when the API returns null", () => {
+    mocks.useAsync.mockReturnValue({
+      data: { ...runtimeData("active"), audit: null },
+      loading: false,
+      error: null,
+      reload: mocks.reload,
+    });
+
+    render(<AppRuntimeConfiguration appKey="orders" />);
+
+    expect(screen.getByText("No lifecycle changes recorded")).toBeTruthy();
+  });
 });
 
 function runtimeData(state: "active" | "tombstoned") {

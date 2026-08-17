@@ -56,11 +56,11 @@ export function AppRuntimeConfiguration({ appKey }: { appKey: string }) {
       api.appRuntimeLifecycleAudit(appKey),
     ]);
     return {
-      variables: variables.filter((item) => item.app_key === appKey),
-      resources: resources.filter((item) => item.app_key === appKey),
-      resourceTypes,
+      variables: (variables ?? []).filter((item) => item.app_key === appKey),
+      resources: (resources ?? []).filter((item) => item.app_key === appKey),
+      resourceTypes: resourceTypes ?? [],
       lifecycle,
-      audit: audit.audits,
+      audit: audit.audits ?? [],
     };
   }, [api, appKey]);
 
@@ -88,7 +88,11 @@ export function AppRuntimeConfiguration({ appKey }: { appKey: string }) {
   if (state.error) return <ErrorNotice message={state.error} onRetry={state.reload} />;
   if (!state.data) return null;
 
-  const { variables, resources, resourceTypes, lifecycle, audit } = state.data;
+  const lifecycle = state.data.lifecycle;
+  const variables = state.data.variables ?? [];
+  const resources = state.data.resources ?? [];
+  const resourceTypes = state.data.resourceTypes ?? [];
+  const audit = state.data.audit ?? [];
   return (
     <div className="appRuntimeConfiguration">
       <Panel

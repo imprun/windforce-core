@@ -262,14 +262,31 @@ export type ActionView = {
   required_labels_override?: string[];
   effective_required_labels?: string[];
   runtime_access?: {
-    variables?: string[];
-    resources?: string[];
+    variables?: RuntimeAccessTarget[];
+    resources?: RuntimeAccessTarget[];
+    writeVariables?: RuntimeVariableWriteTarget[];
+    writeResources?: RuntimeConfigTarget[];
   };
   execution_limits?: ExecutionLimits;
   updated_at: string;
   effective_capabilities?: string[];
   effective_route_tag?: string;
 };
+
+export type RuntimeConfigScope = "workspace" | "app";
+
+export type RuntimeConfigTarget = {
+  scope: RuntimeConfigScope;
+  path: string;
+};
+
+export type RuntimeVariableWriteTarget = RuntimeConfigTarget & {
+  storage: "plain" | "secret";
+};
+
+// Legacy Releases encode workspace-scoped targets as strings. New Releases
+// retain the explicit scope in a structured target.
+export type RuntimeAccessTarget = string | RuntimeConfigTarget;
 
 export type KeyedConcurrencyLimit = {
   id: string;

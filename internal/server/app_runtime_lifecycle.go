@@ -50,6 +50,9 @@ func (h *Handler) handleAppRuntimeLifecycleAudit(w http.ResponseWriter, r *http.
 		writeStateError(w, err)
 		return
 	}
+	if audits == nil {
+		audits = make([]state.AppRuntimeLifecycleAudit, 0)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"audits": audits})
 }
 
