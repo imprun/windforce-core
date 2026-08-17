@@ -6,7 +6,7 @@ export default {
     "Dark mode preserves the Release, operator, and effective-value hierarchy without introducing a separate palette.",
   screenshot: "docs/assets/ui/execution-limits-dark.png",
   guide: [
-    "Open an App and choose Execution limits.",
+    "Open an App and choose App settings, then Execution limits.",
     "Switch the Core console to dark mode.",
     "Confirm safety ceilings, operating allowances, effective values, and previous-Release cohorts remain legible.",
   ],
@@ -16,7 +16,8 @@ export default {
     await page.goto();
     await page.waitForSelector("#appList .tableRow");
     await page.click("#appList .cellTitle");
-    await page.click(".tabBar .tab[href$='/execution-limits']");
+    await page.click('[data-ui-guide="app-settings"]');
+    await page.click(".tabBar .tab[href$='/settings/execution-limits']");
     await page.waitForSelector('[data-ui-guide="execution-limit-policies"]');
     await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
     await capture(this.id);

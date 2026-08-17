@@ -7,13 +7,18 @@ export type AppRow = {
   app: AppSummary | null;
 };
 
-export function findAppForSource(source: GitSource | null, apps: AppSummary[]): AppSummary | null {
+export function findAppForSource(
+  source: GitSource | null,
+  apps: AppSummary[],
+  sourceID?: number,
+): AppSummary | null {
   const appKey = source?.app_key?.trim();
   if (appKey) {
     const logicalApp = apps.find((app) => app.app_key === appKey);
     if (logicalApp) return logicalApp;
   }
-  return source ? apps.find((app) => app.git_source_id === source.id) || null : null;
+  const lookupSourceID = source?.id ?? sourceID;
+  return lookupSourceID ? apps.find((app) => app.git_source_id === lookupSourceID) || null : null;
 }
 
 export function buildAppRows(sources: GitSource[], apps: AppSummary[]): AppRow[] {

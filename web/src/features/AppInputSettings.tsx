@@ -4,6 +4,7 @@ import { EmptyState, ErrorNotice, Loading, Panel } from "../components/ui";
 import { actionDisplayName } from "../lib/action-label";
 import type { AppDetail, InputConfig } from "../lib/api";
 import { useApp, useAsync } from "../lib/app-context";
+import { appSettingsPath } from "../lib/app-settings-navigation";
 import {
   groupInputSettings,
   inputSettingGroupMatches,
@@ -166,7 +167,12 @@ export function AppInputSettings({
                         subtitle: group.key
                           ? translate("inputSettings.clientOverride")
                           : translate("inputSettings.appDefault"),
-                        href: `/apps/${sourceID}/input-settings/client/${group.key || "default"}`,
+                        href: appSettingsPath(
+                          sourceID,
+                          "input-settings",
+                          "client",
+                          group.key || "default",
+                        ),
                         coverage: countLabel(
                           group.configs.length,
                           translate("inputSettings.actionScopeLower"),
@@ -196,7 +202,7 @@ export function AppInputSettings({
           subtitle={translate("inputSettings.scopeSubtitle")}
           actions={
             <>
-              <Link className="button" to={`/apps/${sourceID}/input-settings`}>
+              <Link className="button" to={appSettingsPath(sourceID, "input-settings")}>
                 {translate("inputSettings.backToClientScopes")}
               </Link>
               <button className="button primary" type="button" onClick={() => setEditing("new")}>

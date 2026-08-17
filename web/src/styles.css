@@ -3934,6 +3934,10 @@ textarea {
   margin-bottom: 16px;
 }
 
+.appSettingsNav {
+  margin-top: var(--space-2);
+}
+
 .runtimeConfigIntro {
   display: flex;
   align-items: flex-start;

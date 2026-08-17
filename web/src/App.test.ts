@@ -24,6 +24,17 @@ describe("app-caller routes", () => {
   });
 });
 
+describe("App settings routes", () => {
+  test("uses nested canonical routes and redirects every legacy settings deep link", () => {
+    expect(source).toContain('"/apps/:id/settings/:settingsTab?/:section?/:action?"');
+    expect(source).toContain('tab="settings"');
+    expect(source).toContain('matchRoute("/apps/:id/:settingsTab/:section?/:action?", path)');
+    expect(source).toContain("isAppSettingsTabKey(legacyAppSettings.settingsTab)");
+    expect(source).toContain("legacyAppSettings.section");
+    expect(source).toContain("legacyAppSettings.action");
+  });
+});
+
 describe("HumanTask routes", () => {
   test("keeps the generic HumanTask queue in the workspace shell", () => {
     expect(source).toContain('matchRoute("/human-tasks", path)');

@@ -6,7 +6,7 @@ export default {
     "Execution placement is operator-owned configuration that selects eligible workers and survives releases and rollbacks without changing the release manifest.",
   screenshot: "docs/assets/ui/execution-placement.png",
   guide: [
-    "Open the app and choose the Placement tab.",
+    "Open the App and choose App settings, then Placement.",
     "Choose whether the worker tag and required labels inherit the active release or use an operator override.",
     "An empty required-label override explicitly means no labels; Inherit follows the active release.",
     "Review the effective-after-save preview. The policy applies only to newly admitted Runs.",
@@ -16,7 +16,8 @@ export default {
     await page.goto();
     await page.waitForSelector("#appList .tableRow");
     await page.click("#appList .cellTitle");
-    await page.click(".tabBar .tab[href$='/placement']");
+    await page.click('[data-ui-guide="app-settings"]');
+    await page.click(".tabBar .tab[href$='/settings/placement']");
     await page.waitForSelector(".routingPolicySummary");
     await page.click('[data-ui-guide="edit-app-execution-placement"]');
     await page.waitForSelector("[role=dialog]");

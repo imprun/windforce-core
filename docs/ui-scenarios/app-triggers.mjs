@@ -3,10 +3,10 @@ export default {
   id: "app-triggers",
   title: "Manage App Triggers",
   description:
-    "The App Triggers tab keeps inbound Webhook, Schedule, and RabbitMQ sources beside the Action contract they invoke.",
+    "The App settings area keeps inbound Webhook, Schedule, and RabbitMQ Triggers beside the Action contract they invoke.",
   screenshot: "docs/assets/ui/app-triggers.png",
   guide: [
-    "Open an App and choose Triggers.",
+    "Open an App and choose App settings, then Triggers.",
     "Review each source kind, target Action, enablement state, and latest delivery outcome.",
     "Enable or disable a source without changing its configuration.",
     "Keep outbound release notifications in Settings → Webhooks.",
@@ -15,7 +15,8 @@ export default {
     await page.goto();
     await page.waitForSelector("#appList .tableRow");
     await page.click("#appList .cellTitle");
-    await page.clickText("Triggers");
+    await page.click('[data-ui-guide="app-settings"]');
+    await page.click(".tabBar .tab[href$='/settings/triggers']");
     await page.waitForSelector("#appTriggers tbody tr");
     await capture(this.id);
   },

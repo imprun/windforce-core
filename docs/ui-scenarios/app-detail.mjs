@@ -9,8 +9,8 @@ export default {
     "Open an app from the Apps view.",
     "Review the active release: app key, release commit, entrypoint, and update time.",
     "Follow the source code link to browse the repository at the pinned release commit on GitHub/GitLab.",
-    "Follow the effective worker tag to the separate Placement tab when you need to inspect or edit worker selection.",
-    "Use the tabs for repository settings, release history, and action schemas.",
+    "Follow the effective worker tag to App settings > Placement when you need to inspect or edit worker selection.",
+    "Use App settings for repository and execution configuration; keep release history and action schemas in the top-level tabs.",
   ],
   async run({ page, capture }) {
     await page.goto();

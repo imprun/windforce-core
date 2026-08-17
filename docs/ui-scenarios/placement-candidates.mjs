@@ -18,7 +18,8 @@ export default {
     await page.goto();
     await page.waitForSelector("#appList .tableRow");
     await page.click("#appList .cellTitle");
-    await page.click(".tabBar .tab[href$='/placement']");
+    await page.click('[data-ui-guide="app-settings"]');
+    await page.click(".tabBar .tab[href$='/settings/placement']");
     await page.waitForSelector(".routingActionTable");
     await page.click(".routingActionTable details summary");
     await capture(this.id);

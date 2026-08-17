@@ -7,14 +7,15 @@ export default {
   screenshot: "docs/assets/ui/app-triggers-dark.png",
   guide: [
     "Switch the execution workspace to dark mode.",
-    "Open an App and choose Triggers.",
+    "Open an App and choose App settings, then Triggers.",
     "Confirm status text and icons remain distinguishable without relying on color alone.",
   ],
   async run({ page, capture }) {
     await page.goto();
     await page.waitForSelector("#appList .tableRow");
     await page.click("#appList .cellTitle");
-    await page.clickText("Triggers");
+    await page.click('[data-ui-guide="app-settings"]');
+    await page.click(".tabBar .tab[href$='/settings/triggers']");
     await page.waitForSelector("#appTriggers tbody tr");
     await page.evaluate(() => {
       document.documentElement.setAttribute("data-theme", "dark");
