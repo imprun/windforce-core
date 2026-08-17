@@ -35,14 +35,22 @@ func TestCapabilityGatewayBindingDiscoversBindsAndClosesRun(t *testing.T) {
 			if got := r.Header.Get("Authorization"); got != "Bearer "+workerToken {
 				t.Errorf("create authorization = %q", got)
 			}
-			var body struct {
-				TTLSeconds uint64 `json:"ttlSeconds"`
+			if got := r.Header.Get(capabilityRunIDHeader); got != "run-456" {
+				t.Errorf("run ID header = %q", got)
 			}
+			if got := r.Header.Get(capabilityJobIDHeader); got != "job-789" {
+				t.Errorf("job ID header = %q", got)
+			}
+			if got := r.Header.Get(capabilityJobAttemptHeader); got != "2" {
+				t.Errorf("job attempt header = %q", got)
+			}
+			var body map[string]json.RawMessage
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				t.Errorf("decode create body: %v", err)
 			}
-			if body.TTLSeconds != 360 {
-				t.Errorf("ttlSeconds = %d, want 360", body.TTLSeconds)
+			var ttlSeconds uint64
+			if len(body) != 1 || json.Unmarshal(body["ttlSeconds"], &ttlSeconds) != nil || ttlSeconds != 360 {
+				t.Errorf("create body = %#v, want only ttlSeconds=360", body)
 			}
 			writeCapabilityTestJSON(t, w, http.StatusCreated, map[string]any{
 				"runRef": "run-123", "runToken": runToken, "expiresInSeconds": 360,
@@ -80,6 +88,7 @@ func TestCapabilityGatewayBindingDiscoversBindsAndClosesRun(t *testing.T) {
 	result, err := runtimeBindings.Bind(
 		context.Background(),
 		json.RawMessage(`{"region":"kr"}`),
+		RuntimeBindingContext{RunID: "run-456", JobID: "job-789", Attempt: 2},
 		[]string{"browser", "document.pdf.v1"},
 		5*time.Minute,
 	)
@@ -124,6 +133,7 @@ func TestCapabilityGatewayBindingDiscoversBindsAndClosesRun(t *testing.T) {
 	unmatched, err := runtimeBindings.Bind(
 		context.Background(),
 		json.RawMessage(`{"region":"kr"}`),
+		RuntimeBindingContext{},
 		[]string{"browser"},
 		5*time.Minute,
 	)
@@ -303,11 +313,35 @@ func TestCapabilityGatewayBindingRejectsExcessiveLifetimeAndCleanupTimeout(t *te
 		Timeout:     time.Second,
 		client:      newCapabilityGatewayHTTPClient(time.Second),
 	}
-	if _, err := binding.open(context.Background(), time.Minute); err == nil || !strings.Contains(err.Error(), "lifetime") {
+	if _, err := binding.open(
+		context.Background(),
+		RuntimeBindingContext{RunID: "run-456", JobID: "job-789", Attempt: 1},
+		time.Minute,
+	); err == nil || !strings.Contains(err.Error(), "lifetime") {
 		t.Fatalf("excessive lifetime error = %v", err)
 	}
 	if err := binding.close(context.Background(), capabilityGatewaySession{RunRef: "run-123", RunToken: runToken}); err == nil || !strings.Contains(err.Error(), "408") {
 		t.Fatalf("cleanup timeout error = %v", err)
+	}
+}
+
+func TestCapabilityGatewayBindingRejectsInvalidRunContext(t *testing.T) {
+	binding := CapabilityGatewayBinding{ServiceURL: "http://127.0.0.1:1", WorkerToken: "worker-secret"}
+	tests := []struct {
+		name      string
+		execution RuntimeBindingContext
+		want      string
+	}{
+		{name: "missing run", execution: RuntimeBindingContext{JobID: "job-789", Attempt: 1}, want: "run ID"},
+		{name: "unsafe job", execution: RuntimeBindingContext{RunID: "run-456", JobID: "job\r\nunsafe", Attempt: 1}, want: "job ID"},
+		{name: "missing attempt", execution: RuntimeBindingContext{RunID: "run-456", JobID: "job-789"}, want: "attempt"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := binding.open(context.Background(), tt.execution, time.Minute); err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("open error = %v, want %q", err, tt.want)
+			}
+		})
 	}
 }
 

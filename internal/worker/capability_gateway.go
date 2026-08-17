@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,6 +23,9 @@ const (
 	defaultCapabilityGatewayTimeout = 15 * time.Second
 	maxCapabilityGatewayBodyBytes   = 1 << 20
 	maxCapabilityGatewayTTL         = time.Hour
+	capabilityRunIDHeader           = "X-Windforce-Run-ID"
+	capabilityJobIDHeader           = "X-Windforce-Job-ID"
+	capabilityJobAttemptHeader      = "X-Windforce-Job-Attempt"
 )
 
 type CapabilityGatewayBinding struct {
@@ -128,7 +132,20 @@ func (b CapabilityGatewayBinding) Matches(requiredLabels []string) bool {
 	return false
 }
 
-func (b CapabilityGatewayBinding) open(ctx context.Context, ttl time.Duration) (capabilityGatewaySession, error) {
+func (b CapabilityGatewayBinding) open(
+	ctx context.Context,
+	execution RuntimeBindingContext,
+	ttl time.Duration,
+) (capabilityGatewaySession, error) {
+	if !validOpaqueValue(execution.RunID) {
+		return capabilityGatewaySession{}, errors.New("capability gateway run context has an invalid run ID")
+	}
+	if !validOpaqueValue(execution.JobID) {
+		return capabilityGatewaySession{}, errors.New("capability gateway run context has an invalid job ID")
+	}
+	if execution.Attempt <= 0 {
+		return capabilityGatewaySession{}, errors.New("capability gateway run context has an invalid job attempt")
+	}
 	ttlSeconds := capabilityTTLSeconds(ttl)
 	payload, err := json.Marshal(map[string]uint64{"ttlSeconds": ttlSeconds})
 	if err != nil {
@@ -140,6 +157,9 @@ func (b CapabilityGatewayBinding) open(ctx context.Context, ttl time.Duration) (
 	}
 	req.Header.Set("Authorization", "Bearer "+b.WorkerToken)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(capabilityRunIDHeader, execution.RunID)
+	req.Header.Set(capabilityJobIDHeader, execution.JobID)
+	req.Header.Set(capabilityJobAttemptHeader, strconv.Itoa(execution.Attempt))
 	resp, err := b.httpClient().Do(req)
 	if err != nil {
 		return capabilityGatewaySession{}, errors.New("capability gateway run creation failed")
