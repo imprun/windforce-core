@@ -31,7 +31,7 @@ Equivalent `WINDFORCE_CAPABILITY_GATEWAY_*` environment settings are available f
 
 The canonical manifest and operator policy continue to resolve to `runsOn` labels under the existing placement contract. Core opens a gateway run only when the claimed Job's effective required labels intersect the configured gateway labels. A Job without that intersection receives no gateway metadata.
 
-Before launching a matching Job, the worker creates a gateway run with the worker credential. The requested TTL follows the pinned Action timeout, with a small cleanup allowance and the gateway's one-hour maximum. The gateway returns an opaque run reference and a Job-scoped run token. Core rejects a credential lifetime above that maximum.
+Before launching a matching Job, the worker creates a gateway run with the worker credential. The JSON request body remains the version-one TTL contract, while the worker also sends the actual execution identity in `X-Windforce-Run-ID`, `X-Windforce-Job-ID`, and `X-Windforce-Job-Attempt` headers. This lets a generic gateway correlate its leased resource with the durable Run, Job, and lease-fenced Attempt without adding provider vocabulary to Core or exposing that identity through application input. Existing gateways remain compatible because they may ignore the added headers. The requested TTL follows the pinned Action timeout, with a small cleanup allowance and the gateway's one-hour maximum. The gateway returns an opaque run reference and a Job-scoped run token. Core rejects a credential lifetime above that maximum.
 
 Core injects only the following private worker metadata into the effective input under the reserved runtime key:
 
@@ -63,5 +63,6 @@ Provider identifiers and placement labels are deliberately separate namespaces. 
 - Applications remain ordinary immutable bundles and Core remains unaware of SDK and provider identities.
 - Jobs requiring a configured local facility are placed only on workers that completed gateway discovery.
 - A compromised App receives only its own short-lived run token, not the worker-wide gateway credential.
+- A gateway can audit and clean up a lease against the actual Core Run, Job, and Attempt instead of fabricating a downstream-local execution identity.
 - Provider-native resource and binary-transfer concerns stay outside Core state, Job JSON, and logs.
 - The worker currently binds one loopback gateway. Multiple gateways or remote gateways require a separate decision covering label-to-gateway resolution and trust boundaries.

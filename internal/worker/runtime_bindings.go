@@ -17,6 +17,12 @@ type RuntimeBindings struct {
 	CapabilityGateway CapabilityGatewayBinding
 }
 
+type RuntimeBindingContext struct {
+	RunID   string
+	JobID   string
+	Attempt int
+}
+
 type RuntimeBindingResult struct {
 	Input        json.RawMessage
 	SecretValues []string
@@ -95,6 +101,7 @@ func (b RuntimeBindings) Apply(input json.RawMessage) (json.RawMessage, error) {
 func (b RuntimeBindings) Bind(
 	ctx context.Context,
 	input json.RawMessage,
+	execution RuntimeBindingContext,
 	requiredLabels []string,
 	ttl time.Duration,
 ) (RuntimeBindingResult, error) {
@@ -109,7 +116,7 @@ func (b RuntimeBindings) Bind(
 	if !b.CapabilityGateway.Matches(requiredLabels) {
 		return result, nil
 	}
-	session, err := b.CapabilityGateway.open(ctx, ttl)
+	session, err := b.CapabilityGateway.open(ctx, execution, ttl)
 	if err != nil {
 		return RuntimeBindingResult{}, err
 	}

@@ -209,6 +209,7 @@ func (p *Processor) processOne(claimCtx context.Context, executionCtx context.Co
 	bindingResult, err := p.RuntimeBindings.Bind(
 		runCtx,
 		input,
+		RuntimeBindingContext{RunID: job.RunID, JobID: job.ID, Attempt: job.Attempt},
 		contract.EffectiveRequiredLabels(deployment, actionSpec),
 		capabilityRunTTL(deployment, actionSpec),
 	)

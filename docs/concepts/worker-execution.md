@@ -57,7 +57,7 @@ Run admission
                                                 resolve effective input
                                                 strip caller-supplied reserved runtime metadata
                                                 for matching local capability labels:
-                                                  -> open a Job-scoped gateway run
+                                                  -> open a Job-scoped gateway run with Run/Job/attempt context
                                                   -> inject private run metadata
                                                   -> register the run token for masking
                                                 open pinned execution bundle
@@ -105,7 +105,7 @@ The bundle cache is reusable and addressed by the pinned digest. The Job directo
 
 The Core launcher constructs `WindforceContext` and calls the App entrypoint. Core does not inspect which SDKs the App uses. Any SDK runs as an opaque dependency inside the App process; it does not fetch the bundle, select the launcher, claim the Job, or receive Worker Plane authority. See [App runtime interface and SDK boundaries](app-runtime-interface.md).
 
-A worker may bind an optional loopback capability gateway. The worker discovers ready providers before advertising its configured placement labels. For a claimed Job whose effective labels intersect those gateway labels, the worker opens one Job-scoped run and injects its opaque reference, short-lived token, loopback URL, and ready provider IDs through reserved private runtime metadata. The worker-wide token never enters the App process. The Job token is included in log and result masking, and the run is closed on success, failure, interruption, or cancellation. Core does not proxy provider calls or binary artifacts; see [ADR 0034](../adr/0034-bind-worker-local-capability-gateways.md).
+A worker may bind an optional loopback capability gateway. The worker discovers ready providers before advertising its configured placement labels. For a claimed Job whose effective labels intersect those gateway labels, the worker opens one Job-scoped run and sends the actual Run ID, Job ID, and Attempt in authenticated request headers. It then injects only the gateway's opaque reference, short-lived token, loopback URL, and ready provider IDs through reserved private runtime metadata. The worker-wide token and Core execution identity never enter the App process through that binding. The Job token is included in log and result masking, and the run is closed on success, failure, interruption, or cancellation. Core does not proxy provider calls or binary artifacts; see [ADR 0034](../adr/0034-bind-worker-local-capability-gateways.md).
 
 ## Bundle acquisition and cache safety
 
@@ -220,7 +220,7 @@ Before accepting a worker or runtime change, verify all of the following:
 - Managed credentials never broaden their exact labels or workspace scope, and draining groups acquire no new managed leases.
 - Shutdown stops new claims, exposes `active -> draining`, preserves the active Job until the drain deadline, and removes the registry record only after completion.
 - Logs and results remain secret-masked and lease-fenced.
-- A configured worker-local capability gateway is loopback-only, advertises labels only after successful discovery, issues only Job-scoped credentials to matching executions, and closes every opened run when processing terminates.
+- A configured worker-local capability gateway is loopback-only, advertises labels only after successful discovery, receives the actual Run/Job/Attempt context when opening a matching Job-scoped run, issues only Job-scoped credentials to the execution, and closes every opened run when processing terminates.
 - Missing, malformed, or oversized trace context never blocks execution. Local, remote, and standalone workers use the stored Job creation context rather than ambient claim transport, start a Worker root when no valid Job context exists, and pass only the effective execution carrier to the launcher.
 - A Job is the durable work item and an Attempt is one lease-fenced execution. Attempt 1 may continue the creation trace; lease recovery at `attempt > 1` starts a new root linked to creation without requiring durable previous-attempt context. Idempotency replay does not create an Attempt or replace creation context.
 - Log appends remain ordered and reconnectable by byte offset without mixing
