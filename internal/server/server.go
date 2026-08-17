@@ -44,6 +44,8 @@ type ArtifactStore interface {
 }
 
 type Config struct {
+	Version               string
+	Revision              string
 	Store                 state.Store
 	Catalog               Catalog
 	Syncer                *syncer.Syncer
@@ -73,6 +75,8 @@ type Config struct {
 }
 
 type Handler struct {
+	version               string
+	revision              string
 	store                 state.Store
 	catalog               Catalog
 	syncer                *syncer.Syncer
@@ -190,6 +194,8 @@ func New(config Config) http.Handler {
 	}
 	runtimeResolver := runtimeconfig.New(config.Store, secretBackend)
 	return &Handler{
+		version:               strings.TrimSpace(config.Version),
+		revision:              strings.TrimSpace(config.Revision),
 		store:                 config.Store,
 		catalog:               config.Catalog,
 		syncer:                config.Syncer,
