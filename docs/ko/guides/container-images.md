@@ -7,10 +7,12 @@ description: Windforce Core 표준·OCR 런타임 이미지를 가져오고 검�
 
 Windforce Core 안정 릴리스는 두 개의 공개 컨테이너 이미지를 제공합니다.
 
-- `ghcr.io/imprun/windforce-core`는 Python, Bun, Go가 포함된 표준 런타임입니다.
+- `ghcr.io/imprun/windforce-core`는 Tier 1 TypeScript App을 위한 Bun과 호환성 App을 위한 Python·Go가 포함된 표준 Runtime입니다.
 - `ghcr.io/imprun/windforce-core-ocr`는 표준 런타임에 한국어·영어 Tesseract OCR 데이터를 추가합니다.
 
 두 이미지 모두 `linux/amd64`와 `linux/arm64`를 지원합니다. Go 전용 이미지와 Windows 컨테이너 이미지는 별도로 제공하지 않습니다. Windows 사용자는 Docker Desktop 등 Linux 컨테이너 환경에서 `linux/amd64` 이미지를 실행합니다.
+
+Image 내용은 실행 호환성을 보존하지만 Python과 Go를 동등한 Tier 1 제품 경로로 만들지는 않습니다. [제품 책임 경계](../concepts/product-boundary.md)를 참고합니다.
 
 ## 태그 선택
 

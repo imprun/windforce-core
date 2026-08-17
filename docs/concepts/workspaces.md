@@ -1,6 +1,6 @@
 ---
 title: Workspaces
-description: Managed state and authorization boundaries inside one Windforce Lite instance.
+description: Managed state and authorization boundaries inside one Windforce Core instance.
 ---
 
 A workspace groups apps, releases, clients, input settings, jobs, inbound triggers, outbound webhooks, variables, resources, and audit records inside one Windforce Core instance. Every workspace has an immutable ID, a display name, a lifecycle status, and zero or more named scoped credentials.

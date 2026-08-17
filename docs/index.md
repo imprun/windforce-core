@@ -1,12 +1,13 @@
 ---
-title: Windforce Lite
-description: Source synchronization, release publication, and execution for script applications.
+title: Windforce Core
+description: Durable Bun/TypeScript App execution with immutable releases and provider-neutral capability bindings.
 ---
 
-Windforce Lite is a small control plane and execution runtime for applications
-described by `windforce.json`. It synchronizes an exact Git revision, publishes
-a prepared execution bundle, pins that release when a Run is admitted, and
-executes the pinned bundle on a worker.
+Windforce Core is a self-hosted execution and integration core for Script Apps.
+It synchronizes an exact Git revision, publishes a prepared execution bundle,
+pins that Release when a Run is admitted, and executes the pinned bundle on a
+Worker. Bun/TypeScript is the Tier 1 App path; existing Python and Go contracts
+remain compatibility runtimes.
 
 The product is organized around two independent paths:
 
@@ -17,18 +18,19 @@ The product is organized around two independent paths:
 
 ## Start here
 
-1. [Core concepts](concepts/core-concepts.md) defines apps, synchronized
+1. [Product boundary](concepts/product-boundary.md) explains the Bun/TypeScript Tier 1 direction, compatibility runtimes, and external capability services.
+2. [Core concepts](concepts/core-concepts.md) defines apps, synchronized
    revisions, releases, stores, caches, fingerprints, Runs, and Jobs.
-2. [Container images](guides/container-images.md) explains the signed public images, supported platforms, immutable tags, and local source builds.
-3. [Release and execution lifecycle](concepts/release-lifecycle.md) explains
+3. [Container images](guides/container-images.md) explains the signed public images, supported platforms, immutable tags, and local source builds.
+4. [Release and execution lifecycle](concepts/release-lifecycle.md) explains
    Register, Sync, Publish Release, and Run in order.
-4. [Worker execution lifecycle](concepts/worker-execution.md) defines the canonical pinned-bundle fetch, launcher, and completion sequence.
-5. [Execution observability and debugging](concepts/execution-observability.md) separates Job logs, results, service logs, artifacts, and interactive debuggers.
-6. [App runtime interface and SDK boundaries](concepts/app-runtime-interface.md) separates the Core host context, Invocation SDK, Core Author SDK, and Domain Authoring SDK responsibilities.
-7. [Run admission architecture](concepts/run-admission.md) distinguishes SDKs, the Invocation API, AdmissionService, Triggers, Gateways, Runs, and Jobs.
-8. [Runtime configuration and secrets](concepts/runtime-configuration.md) explains Variable, Resource, InputConfig, SecretBackend, and Job-scoped resolution.
-9. [Architecture](architecture.md) defines the Control, Trigger, Invocation, Execution, and Worker Plane boundaries.
-10. The separately released [Imprun CLI](https://github.com/imprun/cli) consumes Core's HTTP contracts without becoming part of the runtime. `tools/windforce_control.py` is only a repository-local development and operator helper; Core does not ship a separate end-user CLI.
+5. [Worker execution lifecycle](concepts/worker-execution.md) defines the canonical pinned-bundle fetch, launcher, and completion sequence.
+6. [Execution observability and debugging](concepts/execution-observability.md) separates Job logs, results, service logs, artifacts, and interactive debuggers.
+7. [App runtime interface and SDK boundaries](concepts/app-runtime-interface.md) separates the Core host context, Invocation SDK, Core Author SDK, and Domain Authoring SDK responsibilities.
+8. [Run admission architecture](concepts/run-admission.md) distinguishes SDKs, the Invocation API, AdmissionService, Triggers, Gateways, Runs, and Jobs.
+9. [Runtime configuration and secrets](concepts/runtime-configuration.md) explains Variable, Resource, InputConfig, SecretBackend, and Job-scoped resolution.
+10. [Architecture](architecture.md) defines the Control, Trigger, Invocation, Execution, and Worker Plane boundaries.
+11. The separately released [Imprun CLI](https://github.com/imprun/cli) consumes Core's HTTP contracts without becoming part of the runtime. `tools/windforce_control.py` is only a repository-local development and operator helper; Core does not ship a separate end-user CLI.
 
 ## Documentation hosting
 

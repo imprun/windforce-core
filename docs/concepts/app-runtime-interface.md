@@ -7,6 +7,8 @@ This document is the current human-readable reference for the interface between 
 
 > Trace implementation status (2026-08-06): the optional ADR 0029 carrier is implemented in the TypeScript, Python, and Go Core Author SDK surfaces and their launcher transport.
 
+Bun/TypeScript is the Tier 1 App authoring path for new Core capabilities and Application SDK integrations. Python and Go keep their implemented launcher and Author SDK surfaces as compatibility runtimes; new feature parity is not automatic. This investment boundary does not change the SDK-neutral `main(coreCtx)` interface described here. See [Product boundary](product-boundary.md) and [ADR 0046](../adr/0046-define-bun-typescript-app-and-external-capability-boundary.md).
+
 ## The central rule
 
 Core does not detect, classify, import, negotiate, or otherwise care which SDKs an App uses. An App may use a scraping SDK, Playwright, Puppeteer, a mobile SDK, several SDKs, or no SDK. To Core, all of those are opaque application dependencies inside the same immutable App bundle.
@@ -32,7 +34,7 @@ The ecosystem uses the word SDK for independent helpers. This is documentation v
 
 ## The Core-to-App interface
 
-An executable App bundle exposes the entrypoint and Actions declared by `windforce.json`. For the built-in TypeScript, Python, and Go runtimes, the application entrypoint ultimately receives one Core-owned context and returns one terminal Action value.
+An executable App bundle exposes the entrypoint and Actions declared by the configured canonical manifest (`windforce.json` by default). For the Tier 1 TypeScript runtime and the Python and Go compatibility runtimes, the application entrypoint ultimately receives one Core-owned context and returns one terminal Action value.
 
 ```text
 Core Worker
@@ -103,7 +105,7 @@ go test ./internal/server -run TestTypeScriptTier1ExternalAppsE2E -count=1 -v
 
 ## Author source and deployment artifact boundary
 
-Core's Git Source contract starts at a canonical deployment artifact containing `windforce.json`, the declared entrypoint, schema files, and any required opaque dependencies. An author repository may instead treat code as its source of truth and generate that artifact. In that case, the App-owned build pipeline runs SDK-specific discovery such as `bun main.ts --describe`, writes inline schemas to canonical files, bundles dependencies, and publishes the resulting deployment Git or snapshot for Core to Register and Sync.
+Core's Git Source contract starts at a canonical deployment artifact containing the configured manifest (`windforce.json` by default), the declared entrypoint, schema files, and any required opaque dependencies. An author repository may instead treat code as its source of truth and generate that artifact. In that case, the App-owned build pipeline runs SDK-specific discovery such as `bun main.ts --describe`, writes inline schemas to canonical files, bundles dependencies, and publishes the resulting deployment Git or snapshot for Core to Register and Sync.
 
 Core must not run `--describe`, import the App, or infer a Manifest from an SDK. That would execute untrusted author code during registration and couple Core to an SDK-specific output shape. Publication only performs the generic static `main` export check and dependency-graph build against the canonical artifact. The external `demo` and `sample` E2E test demonstrates this boundary with a generated deployment Git and then exercises Register, Sync, Publish, Run, and Result through both local and remote workers.
 
@@ -112,10 +114,10 @@ Core must not run `--describe`, import the App, or infer a Manifest from an SDK.
 Core is responsible for:
 
 - synchronizing an exact source revision and publishing an immutable, prepared execution bundle;
-- treating TypeScript as a Tier 1 runtime while accepting only `typescript`, `python`, and `go` as explicit launcher contracts;
+- treating Bun/TypeScript as the Tier 1 authoring path while preserving `python` and `go` as explicit compatibility launcher contracts;
 - injecting and fingerprinting the matching Core Author SDK while preserving application dependencies;
 - validating and pinning the manifest, Action schema, runtime, entrypoint, `runsOn`, timeout, and bundle digest at admission;
-- matching an eligible worker, claiming and leasing the Job, fetching and validating the pinned bundle, and selecting Bun, Python, Go, or an adapter command;
+- matching an eligible worker, claiming and leasing the Job, fetching and validating the pinned bundle, and selecting Bun, a compatibility Python or Go launcher, or an explicit adapter command;
 - constructing the Core context and granting only Job-scoped runtime access;
 - continuing or creating backend-neutral trace context and exposing its read-only carrier without making telemetry a requirement for execution;
 - enforcing cancellation, timeout, drain, log/result masking, completion, and retry semantics;
@@ -131,6 +133,8 @@ Browser and mobile execution spans two ownership areas:
 - Core owns the pinned launcher, `runsOn` worker requirements, label matching, Job lease, bundle delivery, and execution lifecycle;
 - a self-hoster or downstream fleet manager owns the actual worker image, browser binaries, mobile devices, capacity, and autoscaling.
 
+The same boundary applies to GPU/AI inference, document and native engines, and private infrastructure connectors. They are external capability services rather than additional Core runtime modes. Core may provide provider-neutral placement and Job-scoped binding, while the service owns provider operations, binary artifacts, native resource policy, and provider-specific errors.
+
 In Core, capability and label vocabulary already participates in worker matching. An Application SDK must not redefine Core `capabilities`, `runsOn`, worker labels, or WorkerPool as its own context negotiation protocol. SDK-specific feature discovery, if required, remains internal to the App and must not override Core scheduling.
 
 ## Versioning and conformance
@@ -141,7 +145,7 @@ The two independently evolving interfaces require separate conformance evidence:
 2. Each Application SDK tests its optional context adapter and compatibility fixtures against a supported Core Author SDK/runtime version.
 3. Sample Apps prove the composed bundle can be published and executed by an unmodified Core.
 
-An Application SDK may publish a name such as `scraping.ctx/v1` for its own context interface. That identifier is not a Core manifest field and does not require Core to deserialize an SDK schema. Conversely, Core owns changes to `WindforceContext`, private launcher transport, `windforce.json`, and worker execution semantics.
+An Application SDK may publish a name such as `scraping.ctx/v1` for its own context interface. That identifier is not a Core manifest field and does not require Core to deserialize an SDK schema. Conversely, Core owns changes to `WindforceContext`, private launcher transport, the canonical manifest contract, and worker execution semantics.
 
 ## Change checklist
 
