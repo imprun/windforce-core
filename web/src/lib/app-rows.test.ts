@@ -10,6 +10,10 @@ describe("findAppForSource", () => {
   test("falls back to the source id for legacy registrations", () => {
     expect(findAppForSource(source(4), [app("legacy", 4)])?.app_key).toBe("legacy");
   });
+
+  test("keeps a released App addressable after its repository source is removed", () => {
+    expect(findAppForSource(null, [app("legacy", 4)], 4)?.app_key).toBe("legacy");
+  });
 });
 
 describe("buildAppRows", () => {

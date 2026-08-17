@@ -2,6 +2,7 @@ import { useState } from "react";
 import { DefinitionList, Field, Modal } from "../components/ui";
 import { type DeployResult, errorMessage, type GitSource } from "../lib/api";
 import { useApp } from "../lib/app-context";
+import { appSettingsPath } from "../lib/app-settings-navigation";
 import { shortSHA } from "../lib/format";
 import { displayRepoURL } from "../lib/repo";
 import { Link } from "../lib/router";
@@ -86,7 +87,7 @@ export function PublishReleaseDialog({
       ) : (
         <div className="inlineNotice error">
           {translate("release.noSynchronizedSource")}{" "}
-          <Link to={`/apps/${source.id}/repository`}>
+          <Link to={appSettingsPath(source.id, "repository")}>
             {translate("release.syncRepositorySource")}
           </Link>{" "}
           {translate("release.beforePublishing")}

@@ -1,0 +1,2 @@
+# Vite bundles can preserve dependency template-literal whitespace verbatim.
+internal/webui/assets/** -whitespace

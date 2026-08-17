@@ -6,7 +6,7 @@ export default {
     "The Execution limits tab separates Release safety ceilings, Cell operating allowances, and effective claim-time values.",
   screenshot: "docs/assets/ui/execution-limits.png",
   guide: [
-    "Open an App and choose Execution limits.",
+    "Open an App and choose App settings, then Execution limits.",
     "Compare the Release safety ceiling, operating allowance, and effective value.",
     "Enter a positive allowance to lower this Cell's capacity without publishing a Release.",
     "Use Release default to remove the allowance without disabling the Release safety limit.",
@@ -18,7 +18,8 @@ export default {
     await page.goto();
     await page.waitForSelector("#appList .tableRow");
     await page.click("#appList .cellTitle");
-    await page.click(".tabBar .tab[href$='/execution-limits']");
+    await page.click('[data-ui-guide="app-settings"]');
+    await page.click(".tabBar .tab[href$='/settings/execution-limits']");
     await page.waitForSelector('[data-ui-guide="execution-limit-summary"]');
     await page.waitForSelector('[data-ui-guide="execution-limit-policies"]');
     await capture(this.id);

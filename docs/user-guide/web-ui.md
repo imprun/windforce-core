@@ -87,8 +87,8 @@ The app detail Overview keeps immutable release defaults separate from effective
 1. Open an app from the Apps view.
 2. Review the active release: app key, release commit, entrypoint, and update time.
 3. Follow the source code link to browse the repository at the pinned release commit on GitHub/GitLab.
-4. Follow the effective worker tag to the separate Placement tab when you need to inspect or edit worker selection.
-5. Use the tabs for repository settings, release history, and action schemas.
+4. Follow the effective worker tag to App settings > Placement when you need to inspect or edit worker selection.
+5. Use App settings for repository and execution configuration; keep release history and action schemas in the top-level tabs.
 
 ## Adjust execution limits
 
@@ -96,7 +96,7 @@ The Execution limits tab separates Release safety ceilings, Cell operating allow
 
 ![Adjust execution limits](../assets/ui/execution-limits.png)
 
-1. Open an App and choose Execution limits.
+1. Open an App and choose App settings, then Execution limits.
 2. Compare the Release safety ceiling, operating allowance, and effective value.
 3. Enter a positive allowance to lower this Cell's capacity without publishing a Release.
 4. Use Release default to remove the allowance without disabling the Release safety limit.
@@ -120,7 +120,7 @@ Dark mode preserves the Release, operator, and effective-value hierarchy without
 
 ![Review execution limits in dark mode](../assets/ui/execution-limits-dark.png)
 
-1. Open an App and choose Execution limits.
+1. Open an App and choose App settings, then Execution limits.
 2. Switch the Core console to dark mode.
 3. Confirm safety ceilings, operating allowances, effective values, and previous-Release cohorts remain legible.
 
@@ -130,7 +130,7 @@ Policy tables become labelled records so ceiling, allowance, effective value, an
 
 ![Review execution limits on a narrow screen](../assets/ui/execution-limits-mobile.png)
 
-1. Open an App and choose 실행 제한 on a narrow screen.
+1. Open an App and choose 앱 설정, then 실행 제한 on a narrow screen.
 2. Review App-wide and Action-specific limits as labelled records.
 3. Apply or remove an operating allowance without horizontal table scrolling.
 
@@ -140,7 +140,7 @@ Execution placement is operator-owned configuration that selects eligible worker
 
 ![Configure execution placement](../assets/ui/execution-placement.png)
 
-1. Open the app and choose the Placement tab.
+1. Open the App and choose App settings, then Placement.
 2. Choose whether the worker tag and required labels inherit the active release or use an operator override.
 3. An empty required-label override explicitly means no labels; Inherit follows the active release.
 4. Review the effective-after-save preview. The policy applies only to newly admitted Runs.
@@ -152,7 +152,7 @@ Dark mode keeps release defaults, operator overrides, and effective worker place
 
 ![Configure execution placement in dark mode](../assets/ui/execution-placement-dark.png)
 
-1. Open an App and choose Placement.
+1. Open an App and choose App settings, then Placement.
 2. Switch the console to dark mode and open the App placement editor.
 3. Confirm defaults, overrides, previews, and readiness warnings remain legible.
 
@@ -162,7 +162,7 @@ The App placement summary and editor collapse to one column without hiding worke
 
 ![Configure execution placement on a narrow screen](../assets/ui/execution-placement-mobile.png)
 
-1. Open an App and choose Placement on a narrow screen.
+1. Open an App and choose 앱 설정, then 실행 배치 on a narrow screen.
 2. Open the App placement editor.
 3. Review worker tag and required-label controls in the one-column layout.
 
@@ -193,7 +193,7 @@ App and action schemas stay in context while an operator reviews values for one 
 
 ![Manage app-caller input settings from an app](../assets/ui/app-input-settings.png)
 
-1. Open an app and choose Input Settings.
+1. Open an app and choose App settings, then Input Settings.
 2. Select an app-caller scope.
 3. Open a settings row to review its JSON values and locked keys.
 
@@ -203,7 +203,7 @@ The App detail keeps exact App-owned Variables and Resources together with grace
 
 ![Manage App-owned runtime configuration](../assets/ui/app-runtime-configuration.png)
 
-1. Open a released App and choose Runtime configuration.
+1. Open a released App and choose App settings, then Runtime configuration.
 2. Review the active lifecycle state and revision before changing access.
 3. Manage only the Variables and typed Resources owned by this exact App scope.
 4. Use retirement before purge; reserve emergency revoke and force purge for incident response.
@@ -214,7 +214,7 @@ Lifecycle state, App-owned values, and destructive controls remain readable in K
 
 ![Review App runtime configuration in Korean dark mobile mode](../assets/ui/app-runtime-configuration-korean-dark-mobile.png)
 
-1. Switch the console to Korean and open an App's 실행 구성 tab.
+1. Switch the console to Korean and open 앱 설정, then 실행 구성.
 2. Review lifecycle state and exact App-owned values on a narrow screen.
 3. Confirm retirement, emergency revoke, and purge remain distinguishable without relying on color alone.
 

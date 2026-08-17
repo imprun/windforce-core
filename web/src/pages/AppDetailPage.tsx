@@ -1,5 +1,6 @@
 import { RotateCcw } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { AppSettingsNav } from "../components/AppSettingsNav";
 import { Layout } from "../components/Layout";
 import { ReleaseMarkdown } from "../components/ReleaseMarkdown";
 import { StatTile, WindowSelector, windowLabel } from "../components/stats";
@@ -34,6 +35,11 @@ import type {
 } from "../lib/api";
 import { useApp, useAsync } from "../lib/app-context";
 import { findAppForSource } from "../lib/app-rows";
+import {
+  appSettingsPath,
+  defaultAppSettingsTab,
+  isAppSettingsTabKey,
+} from "../lib/app-settings-navigation";
 import { formatJSON, formatRelative, formatTime, shortSHA } from "../lib/format";
 import { displayRepoURL, forgeCommitURL, forgeName, forgeTreeURL } from "../lib/repo";
 import { Link, useRouter } from "../lib/router";
@@ -44,14 +50,10 @@ const tabs = [
   { key: "overview", labelKey: "appDetail.tab.overview" as TranslationKey },
   { key: "docs", labelKey: "appDetail.tab.docs" as TranslationKey },
   { key: "triggers", labelKey: "trigger.title" as TranslationKey },
-  { key: "input-settings", labelKey: "audit.inputSettings" as TranslationKey },
-  { key: "runtime-config", labelKey: "appDetail.tab.runtimeConfig" as TranslationKey },
-  { key: "placement", labelKey: "appDetail.tab.placement" as TranslationKey },
-  { key: "execution-limits", labelKey: "appDetail.tab.executionLimits" as TranslationKey },
   { key: "monitoring", labelKey: "navigation.monitoring" as TranslationKey },
-  { key: "repository", labelKey: "audit.repository" as TranslationKey },
   { key: "releases", labelKey: "appDetail.tab.releases" as TranslationKey },
   { key: "audit", labelKey: "navigation.audit" as TranslationKey },
+  { key: "settings", labelKey: "appDetail.tab.settings" as TranslationKey },
 ] as const;
 
 type TabKey = (typeof tabs)[number]["key"];
@@ -59,11 +61,13 @@ type TabKey = (typeof tabs)[number]["key"];
 export function AppDetailPage({
   sourceID,
   tab,
+  settingsTab,
   section,
   actionKey,
 }: {
   sourceID: number;
   tab: string;
+  settingsTab?: string;
   section?: string;
   actionKey?: string;
 }) {
@@ -78,7 +82,7 @@ export function AppDetailPage({
   const state = useAsync(async () => {
     const [sources, apps] = await Promise.all([api.gitSources(), api.apps()]);
     const source = sources.find((item) => item.id === sourceID) || null;
-    const app = findAppForSource(source, apps.apps || []);
+    const app = findAppForSource(source, apps.apps || [], sourceID);
     const detail = app ? await api.app(app.app_key) : null;
     return { source, app, detail };
   }, [api, sourceID]);
@@ -86,6 +90,16 @@ export function AppDetailPage({
   const source = state.data?.source || null;
   const app = state.data?.app || null;
   const detail = state.data?.detail || null;
+  const fallbackSettingsTab = defaultAppSettingsTab(Boolean(source));
+  const activeSettingsTab =
+    isAppSettingsTabKey(settingsTab) && (settingsTab !== "repository" || Boolean(source))
+      ? settingsTab
+      : fallbackSettingsTab;
+
+  useEffect(() => {
+    if (activeTab !== "settings" || !state.data || settingsTab === activeSettingsTab) return;
+    navigate(appSettingsPath(sourceID, activeSettingsTab), { replace: true });
+  }, [activeSettingsTab, activeTab, navigate, settingsTab, sourceID, state.data]);
 
   if (state.loading && !state.data) {
     return (
@@ -114,11 +128,6 @@ export function AppDetailPage({
       </Layout>
     );
   }
-
-  // A released app can outlive its repository source registration: the
-  // catalog contract stays after DELETE /git_sources. Repository settings
-  // and publishing then have nothing to operate on.
-  const visibleTabs = source ? tabs : tabs.filter((item) => item.key !== "repository");
 
   const title = app?.app_key ?? source?.name ?? translate("apps.column.app");
   return (
@@ -161,16 +170,31 @@ export function AppDetailPage({
       }
     >
       <nav className="tabBar" aria-label={translate("appDetail.tabs")}>
-        {visibleTabs.map((item) => (
+        {tabs.map((item) => (
           <Link
             key={item.key}
             className={item.key === activeTab ? "tab active" : "tab"}
-            to={item.key === "overview" ? `/apps/${sourceID}` : `/apps/${sourceID}/${item.key}`}
+            data-ui-guide={item.key === "settings" ? "app-settings" : undefined}
+            to={
+              item.key === "overview"
+                ? `/apps/${sourceID}`
+                : item.key === "settings"
+                  ? appSettingsPath(sourceID, fallbackSettingsTab)
+                  : `/apps/${sourceID}/${item.key}`
+            }
           >
             {translate(item.labelKey)}
           </Link>
         ))}
       </nav>
+
+      {activeTab === "settings" ? (
+        <AppSettingsNav
+          sourceID={sourceID}
+          activeTab={activeSettingsTab}
+          repositoryAvailable={Boolean(source)}
+        />
+      ) : null}
 
       {activeTab === "overview" ? (
         <OverviewTab sourceID={sourceID} source={source} app={app} detail={detail} />
@@ -195,17 +219,17 @@ export function AppDetailPage({
           </EmptyState>
         </Panel>
       ) : null}
-      {activeTab === "input-settings" && detail ? (
+      {activeTab === "settings" && activeSettingsTab === "input-settings" && detail ? (
         <AppInputSettings
           detail={detail}
           sourceID={sourceID}
           selectedClientID={section === "client" ? actionKey : undefined}
         />
       ) : null}
-      {activeTab === "runtime-config" && app ? (
+      {activeTab === "settings" && activeSettingsTab === "runtime-config" && app ? (
         <AppRuntimeConfiguration appKey={app.app_key} />
       ) : null}
-      {activeTab === "runtime-config" && !app ? (
+      {activeTab === "settings" && activeSettingsTab === "runtime-config" && !app ? (
         <Panel
           title={translate("appRuntime.configTitle")}
           subtitle={translate("appRuntime.publishFirstHint")}
@@ -213,10 +237,14 @@ export function AppDetailPage({
           <EmptyState title={translate("appRuntime.publishFirst")} />
         </Panel>
       ) : null}
-      {activeTab === "placement" ? <PlacementTab detail={detail} onUpdated={state.reload} /> : null}
-      {activeTab === "execution-limits" ? <ExecutionLimitsTab detail={detail} /> : null}
+      {activeTab === "settings" && activeSettingsTab === "placement" ? (
+        <PlacementTab detail={detail} onUpdated={state.reload} />
+      ) : null}
+      {activeTab === "settings" && activeSettingsTab === "execution-limits" ? (
+        <ExecutionLimitsTab detail={detail} />
+      ) : null}
       {activeTab === "monitoring" ? <MonitoringTab app={app} /> : null}
-      {activeTab === "repository" && source ? (
+      {activeTab === "settings" && activeSettingsTab === "repository" && source ? (
         <RepositorySettings source={source} onChanged={state.reload} />
       ) : null}
       {activeTab === "releases" ? (
@@ -376,7 +404,7 @@ function OverviewTab({
             ],
             [
               translate("appDetail.effectiveWorkerTag"),
-              <Link to={`/apps/${sourceID}/placement`}>
+              <Link to={appSettingsPath(sourceID, "placement")}>
                 <span className="mono">{effectiveWorkerTag}</span>
               </Link>,
             ],

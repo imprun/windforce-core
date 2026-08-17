@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { appSettingsPath, isAppSettingsTabKey } from "./lib/app-settings-navigation";
 import { matchRoute, useRouter } from "./lib/router";
 import { AppDetailPage } from "./pages/AppDetailPage";
 import { AppsPage } from "./pages/AppsPage";
@@ -22,6 +23,39 @@ import { useLocale } from "./shared/i18n";
 export function App() {
   useLocale();
   const { path } = useRouter();
+
+  const appSettingsDetail = matchRoute("/apps/:id/settings/:settingsTab?/:section?/:action?", path);
+  if (appSettingsDetail) {
+    const sourceID = Number(appSettingsDetail.id);
+    if (Number.isFinite(sourceID) && sourceID > 0) {
+      return (
+        <AppDetailPage
+          sourceID={sourceID}
+          tab="settings"
+          settingsTab={appSettingsDetail.settingsTab}
+          section={appSettingsDetail.section}
+          actionKey={appSettingsDetail.action}
+        />
+      );
+    }
+  }
+
+  const legacyAppSettings = matchRoute("/apps/:id/:settingsTab/:section?/:action?", path);
+  if (legacyAppSettings && isAppSettingsTabKey(legacyAppSettings.settingsTab)) {
+    const sourceID = Number(legacyAppSettings.id);
+    if (Number.isFinite(sourceID) && sourceID > 0) {
+      return (
+        <RouteRedirect
+          to={appSettingsPath(
+            sourceID,
+            legacyAppSettings.settingsTab,
+            legacyAppSettings.section,
+            legacyAppSettings.action,
+          )}
+        />
+      );
+    }
+  }
 
   const appDetail = matchRoute("/apps/:id/:tab?/:section?/:action?", path);
   if (appDetail) {

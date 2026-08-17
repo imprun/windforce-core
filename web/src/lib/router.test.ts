@@ -23,6 +23,20 @@ describe("matchRoute", () => {
     expect(matchRoute("/apps/:id/:tab?", "/apps/3")).toEqual({ id: "3" });
   });
 
+  test("captures nested App settings deep links", () => {
+    expect(
+      matchRoute(
+        "/apps/:id/settings/:settingsTab?/:section?/:action?",
+        "/apps/7/settings/input-settings/client/client%20A",
+      ),
+    ).toEqual({
+      id: "7",
+      settingsTab: "input-settings",
+      section: "client",
+      action: "client A",
+    });
+  });
+
   test("rejects extra segments", () => {
     expect(matchRoute("/jobs/:id", "/jobs/a/b")).toBeNull();
     expect(matchRoute("/jobs", "/jobs/a")).toBeNull();
