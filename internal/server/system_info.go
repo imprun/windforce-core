@@ -9,6 +9,8 @@ import (
 
 type systemInfoResponse struct {
 	Service       string                 `json:"service"`
+	Version       string                 `json:"version,omitempty"`
+	Revision      string                 `json:"revision,omitempty"`
 	Workspace     string                 `json:"workspace"`
 	Ready         bool                   `json:"ready"`
 	Planes        map[string]bool        `json:"planes"`
@@ -51,6 +53,8 @@ func (h *Handler) handleSystemInfo(w http.ResponseWriter, r *http.Request, works
 	}
 	writeJSON(w, http.StatusOK, systemInfoResponse{
 		Service:   "windforce-lite",
+		Version:   h.version,
+		Revision:  h.revision,
 		Workspace: contract.NormalizeWorkspace(workspaceID),
 		Ready:     h.store != nil,
 		Planes: map[string]bool{
@@ -79,8 +83,10 @@ func (h *Handler) handleSystemInfo(w http.ResponseWriter, r *http.Request, works
 			"previous_secret_key":     h.secretKeyPrevious != "",
 		},
 		Capabilities: map[string]string{
-			"execution_limit_policy": "v1",
-			"execution_limit_shape":  executionlimit.FingerprintVersion,
+			"capability_gateway_run_context": "v1",
+			"execution_limit_policy":         "v1",
+			"execution_limit_shape":          executionlimit.FingerprintVersion,
+			"worker_management":              "v1",
 		},
 		RuntimeConfig: map[string]interface{}{
 			"wait_ms":               waitMilliseconds,

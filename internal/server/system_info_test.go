@@ -15,6 +15,8 @@ import (
 func TestSystemInfoExposesSafeServiceConfiguration(t *testing.T) {
 	store := state.NewLocalStore(filepath.Join(t.TempDir(), "state.json"))
 	server := httptest.NewServer(New(Config{
+		Version:             "v0.15.0",
+		Revision:            "abcdef123456",
 		Store:               store,
 		AdminToken:          "secret-admin-token",
 		WorkerToken:         "secret-worker-token",
@@ -43,6 +45,8 @@ func TestSystemInfoExposesSafeServiceConfiguration(t *testing.T) {
 	}
 	var body struct {
 		Service       string            `json:"service"`
+		Version       string            `json:"version"`
+		Revision      string            `json:"revision"`
 		Workspace     string            `json:"workspace"`
 		Ready         bool              `json:"ready"`
 		Planes        map[string]bool   `json:"planes"`
@@ -63,6 +67,9 @@ func TestSystemInfoExposesSafeServiceConfiguration(t *testing.T) {
 	if body.Service != "windforce-lite" || body.Workspace != "default" || !body.Ready {
 		t.Fatalf("body identity = %#v", body)
 	}
+	if body.Version != "v0.15.0" || body.Revision != "abcdef123456" {
+		t.Fatalf("build identity = version %q revision %q", body.Version, body.Revision)
+	}
 	if !body.Planes["control_api"] || !body.Planes["invocation_api"] || !body.Planes["worker_api"] || body.Planes["web_ui"] ||
 		!body.Planes["http_routes"] || body.Planes["execution_api"] || body.Planes["public_api"] {
 		t.Fatalf("planes = %#v", body.Planes)
@@ -73,7 +80,10 @@ func TestSystemInfoExposesSafeServiceConfiguration(t *testing.T) {
 	if !body.Auth["admin_token_configured"] || !body.Auth["worker_token_configured"] || !body.Auth["job_token_configured"] {
 		t.Fatalf("auth = %#v", body.Auth)
 	}
-	if body.Capabilities["execution_limit_policy"] != "v1" || body.Capabilities["execution_limit_shape"] != executionlimit.FingerprintVersion {
+	if body.Capabilities["execution_limit_policy"] != "v1" ||
+		body.Capabilities["execution_limit_shape"] != executionlimit.FingerprintVersion ||
+		body.Capabilities["worker_management"] != "v1" ||
+		body.Capabilities["capability_gateway_run_context"] != "v1" {
 		t.Fatalf("capabilities = %#v", body.Capabilities)
 	}
 	if body.RuntimeConfig.WaitMS != 250 {

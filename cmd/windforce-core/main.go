@@ -300,6 +300,8 @@ func runServer(args []string, mode string) int {
 		return 1
 	}
 	handler := server.New(server.Config{
+		Version:               version,
+		Revision:              revision,
 		Store:                 stateStore,
 		Catalog:               releaseCatalog,
 		Syncer:                &syncer.Syncer{Store: bundleStore, ManifestFile: *manifestFile},
