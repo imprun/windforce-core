@@ -75,4 +75,4 @@ A long-lived named entity may become useful later, but it has different identity
 - [App runtime interface and SDK boundaries](app-runtime-interface.md) keeps Application SDKs opaque to Core.
 - [Worker execution lifecycle](worker-execution.md) defines how a pinned Job becomes one process Attempt.
 - [Runtime configuration and secrets](runtime-configuration.md) defines Job-scoped Variable, Resource, InputConfig, and Secret resolution.
-- [ADR 0046](../adr/0046-define-bun-typescript-app-and-external-capability-boundary.md) records the decision and rejected alternatives.
+- [ADR 0047](../adr/0047-define-bun-typescript-app-and-external-capability-boundary.md) records the decision and rejected alternatives.

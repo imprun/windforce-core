@@ -35,7 +35,7 @@ does not — keep the engine generic and let adapters or downstream products own
 it.
 
 Read [docs/concepts/product-boundary.md](docs/concepts/product-boundary.md) and
-[ADR 0046](docs/adr/0046-define-bun-typescript-app-and-external-capability-boundary.md)
+[ADR 0047](docs/adr/0047-define-bun-typescript-app-and-external-capability-boundary.md)
 before expanding App runtimes or provider capabilities. General-purpose means
 neutral execution and integration semantics, not equal investment in every
 language or embedding every provider runtime.

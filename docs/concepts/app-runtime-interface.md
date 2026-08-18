@@ -7,7 +7,7 @@ This document is the current human-readable reference for the interface between 
 
 > Trace implementation status (2026-08-06): the optional ADR 0029 carrier is implemented in the TypeScript, Python, and Go Core Author SDK surfaces and their launcher transport.
 
-Bun/TypeScript is the Tier 1 App authoring path for new Core capabilities and Application SDK integrations. Python and Go keep their implemented launcher and Author SDK surfaces as compatibility runtimes; new feature parity is not automatic. This investment boundary does not change the SDK-neutral `main(coreCtx)` interface described here. See [Product boundary](product-boundary.md) and [ADR 0046](../adr/0046-define-bun-typescript-app-and-external-capability-boundary.md).
+Bun/TypeScript is the Tier 1 App authoring path for new Core capabilities and Application SDK integrations. Python and Go keep their implemented launcher and Author SDK surfaces as compatibility runtimes; new feature parity is not automatic. This investment boundary does not change the SDK-neutral `main(coreCtx)` interface described here. See [Product boundary](product-boundary.md) and [ADR 0047](../adr/0047-define-bun-typescript-app-and-external-capability-boundary.md).
 
 ## The central rule
 

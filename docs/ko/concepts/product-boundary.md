@@ -77,4 +77,4 @@ Windforce Core는 다음 제품이 아닙니다.
 - [앱 런타임 통신규격과 SDK 책임 경계](app-runtime-interface.md)는 Application SDK를 Core에 불투명하게 유지합니다.
 - [Worker 실행 수명주기](worker-execution.md)는 고정된 Job이 하나의 Process Attempt가 되는 절차를 정의합니다.
 - [Runtime 설정과 Secret](runtime-configuration.md)은 Job 범위 Variable, Resource, InputConfig, Secret 해석을 정의합니다.
-- [ADR 0046](../../adr/0046-define-bun-typescript-app-and-external-capability-boundary.md)은 결정과 기각한 대안을 기록합니다.
+- [ADR 0047](../../adr/0047-define-bun-typescript-app-and-external-capability-boundary.md)은 결정과 기각한 대안을 기록합니다.
