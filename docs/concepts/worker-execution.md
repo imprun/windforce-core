@@ -226,6 +226,6 @@ Before accepting a worker or runtime change, verify all of the following:
 - Keyed concurrency remains an Admission-and-claim responsibility: raw key
   components never enter limiter pins, Local and PostgreSQL claim behavior stays
   equivalent, and held leases continue to consume capacity.
-- Tests cover bundle publication/fetch, cache behavior, remote extraction, runtime execution, static TypeScript `main` validation, graceful and timed-out drain, and Job failure on bundle errors.
+- Tests cover bundle publication/fetch, cache behavior, remote extraction, runtime execution, static TypeScript `main` validation, graceful and timed-out drain, and Job failure on bundle errors. A deterministic lease-fencing model checks adversarial claim, heartbeat, expiry, reclaim, completion, cancellation, drain, and shutdown schedules; Local conformance and PostgreSQL contention tests replay the durable-store boundary without wall-clock sleeps.
 
 The primary implementation areas are `internal/worker`, `internal/runtime`, `internal/executor`, `internal/executionbundle`, `internal/remoteworker`, and `internal/server/worker_plane.go`. Execution-semantic changes require an ADR in addition to updating this current-state document. Execution-profile placement is defined in [ADR 0030](../adr/0030-release-execution-profiles.md). Optional trace propagation and independent root creation are defined in [ADR 0029](../adr/0029-optional-trace-context-continuity.md). Worker-local gateway binding is defined in [ADR 0034](../adr/0034-bind-worker-local-capability-gateways.md).
