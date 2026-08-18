@@ -232,12 +232,19 @@ func (s *LocalStore) ExpireDueHeldHumanTasks(ctx context.Context, now time.Time,
 	if limit <= 0 || limit > 1000 {
 		limit = 100
 	}
+	preflight, err := s.Load(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if !localSnapshotHasDueHeldHumanTask(preflight, now) {
+		return 0, nil
+	}
 	type dueTask struct {
 		id        string
 		expiresAt time.Time
 	}
 	var expired int64
-	err := s.updateWithClock(ctx, func() time.Time { return now }, func(snapshot *Snapshot, txNow time.Time) error {
+	err = s.updateWithClock(ctx, func() time.Time { return now }, func(snapshot *Snapshot, txNow time.Time) error {
 		due := make([]dueTask, 0)
 		for id, task := range snapshot.HumanTasks {
 			if task.Mode != HumanTaskModeHold || task.State != HumanTaskPending || task.ExpiresAt == nil || task.ExpiresAt.After(txNow) {
@@ -265,6 +272,18 @@ func (s *LocalStore) ExpireDueHeldHumanTasks(ctx context.Context, now time.Time,
 		return nil
 	})
 	return expired, err
+}
+
+func localSnapshotHasDueHeldHumanTask(snapshot Snapshot, now time.Time) bool {
+	// The sweep uses this only as a lock-free negative preflight. A possible due
+	// task is rechecked under the write lock; a concurrently created task
+	// linearizes after this empty snapshot and is observed by the next sweep.
+	for _, task := range snapshot.HumanTasks {
+		if task.Mode == HumanTaskModeHold && task.State == HumanTaskPending && task.ExpiresAt != nil && !task.ExpiresAt.After(now) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *LocalStore) CancelHeldHumanTasksForJob(ctx context.Context, workspaceID string, jobID string, cause string) error {

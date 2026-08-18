@@ -27,8 +27,12 @@ func TestLocalStoreEmptyHumanTaskDeadlineSweepDoesNotWrite(t *testing.T) {
 	if err := os.Chtimes(store.Path, marker, marker); err != nil {
 		t.Fatal(err)
 	}
+	owner := lockLocalStoreFile(t, store)
+	defer func() { _ = owner.Unlock() }()
 
-	expired, err := store.ExpireDueHeldHumanTasks(context.Background(), task.ExpiresAt.Add(-time.Second), 100)
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	expired, err := store.ExpireDueHeldHumanTasks(ctx, task.ExpiresAt.Add(-time.Second), 100)
 	if err != nil {
 		t.Fatal(err)
 	}
