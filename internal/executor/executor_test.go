@@ -259,6 +259,67 @@ export async function main(ctx) {
 	}
 }
 
+func TestRunTypeScriptHumanTaskDeadlinePreservesTerminalCode(t *testing.T) {
+	bun, err := exec.LookPath("bun")
+	if err != nil {
+		t.Skip("bun is not installed")
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/w/ws-a/human-tasks/wait" || r.Method != http.MethodPost {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusRequestTimeout)
+		_, _ = w.Write([]byte(`{"error":"HumanTask is expired","code":"human_task_deadline","task_id":"task-private"}`))
+	}))
+	defer server.Close()
+
+	entrypoint := filepath.Join(t.TempDir(), "main.ts")
+	if err := os.WriteFile(entrypoint, []byte(`
+export async function main(ctx) {
+  await ctx.human.wait({ key: "login-otp", title: "Enter code", timeoutMs: 30000 })
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := Run(context.Background(), RunParams{
+		BunPath:           bun,
+		ScriptLang:        "typescript",
+		BaseDir:           t.TempDir(),
+		EntrypointAbsPath: entrypoint,
+		Input:             []byte(`{}`),
+		Env: append(os.Environ(),
+			"WF_JOB_ID=job-a",
+			"WF_WORKSPACE=ws-a",
+			"WF_BASE_URL="+server.URL,
+			"WF_TOKEN=job-token",
+			"WF_APP=demo",
+			"WF_ACTION=wait",
+		),
+		Timeout: time.Minute,
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if result.Success() {
+		t.Fatalf("HumanTask deadline unexpectedly succeeded: %#v", result)
+	}
+	var output struct {
+		Name    string `json:"name"`
+		Message string `json:"message"`
+		Code    string `json:"code"`
+		TaskID  string `json:"taskId"`
+	}
+	if err := json.Unmarshal(result.Result, &output); err != nil {
+		t.Fatalf("decode deadline result %s: %v", result.Result, err)
+	}
+	if output.Name != "Error" || !strings.Contains(output.Message, "HumanTask is expired") ||
+		output.Code != "human_task_deadline" || output.TaskID != "" {
+		t.Fatalf("HumanTask deadline result = %#v", output)
+	}
+}
+
 func TestRunTypeScriptHumanTaskHoldPreservesLiveChromiumSession(t *testing.T) {
 	bun, err := exec.LookPath("bun")
 	if err != nil {

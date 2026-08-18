@@ -638,6 +638,11 @@ export type JobStatus = {
   execution_limits?: ExecutionLimitPins;
 };
 
+export type JobResultResponse = {
+  status: "success" | "failure" | "canceled" | string;
+  result: unknown;
+};
+
 export type JobLogStreamEvent = {
   type: "update" | "ping" | "timeout" | "error" | "notfound";
   running?: boolean;
@@ -1426,6 +1431,10 @@ export class WindforceApi {
 
   job(jobID: string): Promise<JobStatus> {
     return this.request(`/jobs/${encodeURIComponent(jobID)}`);
+  }
+
+  jobResult(jobID: string): Promise<JobResultResponse> {
+    return this.request(`/jobs/${encodeURIComponent(jobID)}/result`);
   }
 
   humanTasks(state = "", limit = 100): Promise<{ items: HumanTask[] }> {

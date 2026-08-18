@@ -408,6 +408,7 @@ try {
   process.exit(0)
 } catch (e) {
   const err = { message: String((e && e.message) != null ? e.message : e), name: (e && e.name) || "Error", stack: e && e.stack }
+  if (e && typeof e.code === "string") err.code = e.code
   writeFileSync("result.json", JSON.stringify(err))
   console.error(e)
   process.exit(1)
