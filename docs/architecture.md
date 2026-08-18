@@ -5,6 +5,8 @@ description: Control, Invocation, Trigger, and Worker Plane ownership in Windfor
 
 Windforce Core separates deployment management, Run invocation, protocol ingress, and worker execution into planes with package boundaries and system-to-system HTTP specifications. Those boundaries are deployed through three process roles: `server`, `worker`, and `standalone`.
 
+Core is a general-purpose execution and integration engine rather than a multi-language or provider runtime platform. Bun/TypeScript is the Tier 1 App path, Python and Go preserve existing compatibility contracts, and expensive provider-native facilities are bound as external capability services. See [Product boundary](concepts/product-boundary.md) and [ADR 0046](adr/0046-define-bun-typescript-app-and-external-capability-boundary.md).
+
 [Run admission architecture](concepts/run-admission.md) is the human-readable current reference for the relationship between SDKs, the Invocation API, AdmissionService, Triggers, Gateways, Runs, Jobs, workspaces, and Core instances. The OpenAPI served at `/api/v1/openapi.json` is the machine-readable Invocation contract. ADRs preserve decision history and rationale rather than replacing these current-state documents.
 
 [Runtime configuration and secrets](concepts/runtime-configuration.md) is the

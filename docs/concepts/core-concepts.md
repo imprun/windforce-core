@@ -1,18 +1,20 @@
 ---
 title: Core concepts
-description: The source, release, artifact, cache, and execution terms used by Windforce Lite.
+description: The source, release, artifact, cache, and execution terms used by Windforce Core.
 ---
 
-Windforce Lite keeps source management separate from job execution. A Git
+Windforce Core keeps source management separate from Job execution. A Git
 revision becomes a release through the Control Plane. The Execution Plane then
 runs only the immutable bundle pinned into each Job.
+
+Bun/TypeScript is the Tier 1 App path. Python and Go remain compatibility runtimes, while Browser, GPU/AI, document/native engines, and similar provider facilities remain external capability services. This product boundary is separate from the storage and execution terms below; see [Product boundary](product-boundary.md).
 
 ## Domain model
 
 | Term | Meaning | Source of truth |
 | --- | --- | --- |
 | Repository source | A repository URL, branch, optional subpath, and credential reference registered with the Control Plane. | Control Plane state |
-| App | The stable executable identity declared by `app` in `windforce.json`. A repository source supplies an app, but the repository and app are not the same object. | Released manifest |
+| App | The stable executable identity declared by `app` in the configured canonical manifest (`windforce.json` by default). A repository source supplies an App, but the repository and App are not the same object. | Released manifest |
 | Action | A named operation exposed by an app, including its schemas and execution settings. All actions enter through the app-level entrypoint. | Released manifest |
 | Synchronized revision | An exact commit whose app root, manifest, schemas, and lockfile have passed source validation. It is also called a release candidate. | Release candidate catalog and Source Store |
 | Deployment | The complete executable snapshot assembled from a synchronized revision: app, commit, entrypoint, actions, schemas, execution settings, and execution bundle coordinates. | Release record or pinned Job |
@@ -28,7 +30,7 @@ bundle remain available.
 
 ## Shared stores and local caches
 
-Windforce Lite uses two shared stores and one disposable worker cache. They have
+Windforce Core uses two shared stores and one disposable Worker cache. They have
 different identities and must not be treated as one directory.
 
 | Storage | Identity | Contents | Used by |
@@ -102,7 +104,7 @@ The preparation fingerprint is a JSON value containing:
 - operating system and architecture identity
 - digest of the injected Windforce SDK
 
-Windforce Lite currently writes two ready markers:
+Windforce Core currently writes two ready markers:
 
 | File | Location | Value | Meaning |
 | --- | --- | --- | --- |

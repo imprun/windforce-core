@@ -15,7 +15,7 @@ Worker는 Job에 고정된 불변 Execution Bundle을 실행합니다. Git, Sour
 
 각 Release는 정확히 하나의 실행 프로필을 대상으로 합니다. Core는 하나의 준비된 Bundle을 OS나 아키텍처 사이에서 이식하지 않습니다. Windows Bundle은 호환 Windows Worker에만, Linux Bundle은 호환 Linux Worker에만 배치합니다. 올바른 배치가 통신규격입니다.
 
-Bun은 TypeScript App의 1급 기본 실행 Runtime입니다. Python과 Go도 App Runtime으로 지원합니다. 하나의 App은 Release 전체에서 하나의 Runtime을 선택하며 Action은 entrypoint만 달리할 수 있고 App Runtime을 덮어쓸 수 없습니다.
+Bun은 TypeScript App의 Tier 1 기본 Runtime이며 새 App 기능의 권장 경로입니다. Python과 Go는 기존 Publication과 Launcher 통신규격을 호환성 Runtime으로 유지하며 새 기능의 동등 구현은 자동 요구사항이 아닙니다. 하나의 App은 Release 전체에서 하나의 Runtime을 선택하며 Action은 Entrypoint만 달리할 수 있고 App Runtime을 덮어쓸 수 없습니다.
 
 ## 서로 다른 두 수명주기
 

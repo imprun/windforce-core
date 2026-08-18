@@ -7,10 +7,12 @@ description: Pull, verify, or build the standard and OCR Windforce Core runtime 
 
 Stable Windforce Core releases publish two public container images:
 
-- `ghcr.io/imprun/windforce-core` is the standard runtime with Python, Bun, and Go.
+- `ghcr.io/imprun/windforce-core` is the standard runtime with Bun for Tier 1 TypeScript Apps and Python and Go for compatibility Apps.
 - `ghcr.io/imprun/windforce-core-ocr` adds Tesseract with Korean and English OCR data.
 
 Both images support `linux/amd64` and `linux/arm64`. There is no separate Go-only or Windows container image. Windows users run the Linux image through Docker Desktop or another Linux-container environment.
+
+Image contents preserve executable compatibility; they do not make Python and Go equal Tier 1 product paths. See [Product boundary](../concepts/product-boundary.md).
 
 ## Choose a tag
 

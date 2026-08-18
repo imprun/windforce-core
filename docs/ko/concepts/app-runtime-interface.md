@@ -7,6 +7,8 @@ description: Core와 실행 가능한 App Bundle 사이의 SDK 중립적인 시�
 
 > Trace 구현 상태 (2026-08-06): 선택적 ADR 0029 Carrier는 TypeScript, Python, Go Core Author SDK 표면과 Launcher transport에 구현되어 있습니다.
 
+Bun/TypeScript는 새 Core 기능과 Application SDK 통합의 Tier 1 App 작성 경로입니다. Python과 Go는 구현된 Launcher와 Author SDK 표면을 호환성 Runtime으로 유지하며 새 기능의 동등 구현은 자동 요구사항이 아닙니다. 이 투자 경계는 여기서 설명하는 SDK 중립적 `main(coreCtx)` 통신규격을 바꾸지 않습니다. [제품 책임 경계](product-boundary.md)와 [ADR 0046](../../adr/0046-define-bun-typescript-app-and-external-capability-boundary.md)을 참고합니다.
+
 [English](../../concepts/app-runtime-interface.md)
 
 ## 핵심 원칙
@@ -34,7 +36,7 @@ Package 이름, SDK Context version, Module envelope, HTTP helper 형태와 Brow
 
 ## Core에서 App으로 전달하는 통신규격
 
-실행 가능한 App Bundle은 `windforce.json`에 선언한 Entrypoint와 Action을 제공합니다. 기본 TypeScript, Python, Go Runtime에서 App Entrypoint는 최종적으로 Core가 만든 Context 하나를 받고 Action 최종값 하나를 반환합니다.
+실행 가능한 App Bundle은 설정된 정규 Manifest(`windforce.json`은 기본 파일명)에 선언한 Entrypoint와 Action을 제공합니다. Tier 1 TypeScript Runtime과 호환성 Python·Go Runtime에서 App Entrypoint는 최종적으로 Core가 만든 Context 하나를 받고 Action 최종값 하나를 반환합니다.
 
 ```text
 Core Worker
@@ -88,7 +90,7 @@ Core -X-> SDK identity, SDK Context, Module 용어, Transport 구현
 
 ## 작성 소스와 배포 Artifact 경계
 
-Core의 Git Source 통신규격은 `windforce.json`, 선언된 Entrypoint, Schema 파일, 필요한 불투명 dependency가 포함된 정규 배포 Artifact에서 시작합니다. 작성 Repository가 코드를 정본으로 삼고 이 Artifact를 생성할 수도 있습니다. 이 경우 App 소유 Build Pipeline이 `bun main.ts --describe` 같은 SDK 전용 discovery를 실행하고, inline schema를 정규 파일로 기록하고, dependency를 bundle한 뒤 Core가 Register와 Sync할 배포 Git 또는 snapshot을 발행합니다.
+Core의 Git Source 통신규격은 설정된 Manifest(`windforce.json`은 기본 파일명), 선언된 Entrypoint, Schema 파일, 필요한 불투명 dependency가 포함된 정규 배포 Artifact에서 시작합니다. 작성 Repository가 코드를 정본으로 삼고 이 Artifact를 생성할 수도 있습니다. 이 경우 App 소유 Build Pipeline이 `bun main.ts --describe` 같은 SDK 전용 discovery를 실행하고, inline schema를 정규 파일로 기록하고, dependency를 bundle한 뒤 Core가 Register와 Sync할 배포 Git 또는 snapshot을 발행합니다.
 
 Core는 `--describe`를 실행하거나 App을 import하거나 SDK에서 Manifest를 추론하지 않습니다. 그렇게 하면 등록 중 신뢰하지 않는 작성자 코드를 실행하고 Core를 SDK 전용 출력 형태에 결합하게 됩니다. Publish는 정규 Artifact에 대해 범용 정적 `main` export 검사와 dependency graph build만 수행합니다. 외부 `demo`, `sample` E2E 테스트는 생성된 배포 Git으로 이 경계를 증명한 뒤 로컬 및 원격 Worker에서 Register, Sync, Publish, Run, Result를 모두 검증합니다.
 
@@ -104,10 +106,10 @@ go test ./internal/server -run TestTypeScriptTier1ExternalAppsE2E -count=1 -v
 Core는 다음을 책임집니다.
 
 - 정확한 Source revision을 동기화하고 불변의 준비된 Execution Bundle을 발행합니다.
-- TypeScript를 Tier 1 Runtime으로 취급하되 명시적 Launcher 통신규격은 `typescript`, `python`, `go`만 허용합니다.
+- Bun/TypeScript를 Tier 1 작성 경로로 취급하면서 `python`, `go`의 명시적인 호환성 Launcher 통신규격을 보존합니다.
 - App dependency를 보존하면서 해당 언어의 Core Author SDK를 주입하고 fingerprint를 계산합니다.
 - Admission에서 Manifest, Action schema, Runtime, Entrypoint, `runsOn`, Timeout, Bundle digest를 검증하고 고정합니다.
-- 적합한 Worker matching, Job claim과 lease, 고정 Bundle fetch와 검증, Bun, Python, Go 또는 Adapter command 선택을 수행합니다.
+- 적합한 Worker matching, Job claim과 lease, 고정 Bundle fetch와 검증, Bun, 호환성 Python·Go Launcher 또는 명시적인 Adapter command 선택을 수행합니다.
 - Core Context를 만들고 Job 범위 Runtime access만 부여합니다.
 - Backend 중립 Trace Context를 이어서 사용하거나 생성하고, Telemetry를 실행 필수조건으로 만들지 않으면서 읽기 전용 Carrier를 노출합니다.
 - Cancel, Timeout, Drain, Log/Result masking, Completion, Retry 의미를 집행합니다.
@@ -123,6 +125,8 @@ Browser와 Mobile 실행에는 서로 다른 책임 영역이 있습니다.
 - Core는 고정된 Launcher, `runsOn` Worker 요구조건, Label matching, Job lease, Bundle 전달, 실행 수명주기를 소유합니다.
 - Self-hoster 또는 downstream fleet manager는 실제 Worker image, Browser binary, Mobile device, Capacity, Autoscaling을 소유합니다.
 
+같은 경계가 GPU/AI inference, Document·Native engine, Private infrastructure connector에도 적용됩니다. 이들은 추가 Core Runtime mode가 아니라 외부 Capability service입니다. Core는 Provider 중립적인 Placement와 Job 범위 Binding을 제공할 수 있지만 Provider operation, Binary artifact, Native resource policy, Provider별 error는 Service가 소유합니다.
+
 Core에서 capability와 label 용어는 이미 Worker matching에 사용됩니다. Application SDK는 Core의 `capabilities`, `runsOn`, Worker label 또는 WorkerPool을 자신의 Context negotiation 규격으로 다시 정의하면 안 됩니다. SDK 기능 탐색이 필요하다면 App 내부에서 관리하고 Core scheduling을 덮어쓰지 않아야 합니다.
 
 ## Version과 적합성 검증
@@ -133,7 +137,7 @@ Core에서 capability와 label 용어는 이미 Worker matching에 사용됩니�
 2. 각 Application SDK는 지원하는 Core Author SDK/Runtime version에 대해 선택적인 Context adapter와 호환성 fixture를 테스트합니다.
 3. Sample App은 수정하지 않은 Core가 조합된 Bundle을 발행하고 실행할 수 있음을 증명합니다.
 
-Application SDK는 자신의 Context 통신규격에 `scraping.ctx/v1` 같은 이름을 발행할 수 있습니다. 이 식별자는 Core Manifest field가 아니며 Core가 SDK schema를 역직렬화할 이유가 되지 않습니다. 반대로 `WindforceContext`, private Launcher transport, `windforce.json`, Worker 실행 의미의 변경은 Core가 소유합니다.
+Application SDK는 자신의 Context 통신규격에 `scraping.ctx/v1` 같은 이름을 발행할 수 있습니다. 이 식별자는 Core Manifest field가 아니며 Core가 SDK schema를 역직렬화할 이유가 되지 않습니다. 반대로 `WindforceContext`, private Launcher transport, 정규 Manifest 통신규격, Worker 실행 의미의 변경은 Core가 소유합니다.
 
 ## 변경 점검표
 

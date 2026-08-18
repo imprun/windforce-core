@@ -15,7 +15,7 @@ A worker executes an immutable execution bundle pinned into the Job. It does not
 
 Each Release targets exactly one execution profile. Core does not make one prepared bundle portable across operating systems or architectures: a Windows bundle is scheduled only to compatible Windows workers, and a Linux bundle only to compatible Linux workers. Correct placement is the contract.
 
-Bun is the tier-1/default execution runtime for TypeScript Apps. Python and Go are also supported App runtimes. One App selects one runtime for the whole Release; Actions may select different entrypoints but cannot override the App runtime.
+Bun is the Tier 1 default runtime for TypeScript Apps and the preferred path for new App-facing capabilities. Python and Go remain compatibility App runtimes with their existing publication and launcher contracts; new feature parity is not automatic. One App selects one runtime for the whole Release; Actions may select different entrypoints but cannot override the App runtime.
 
 ## Two distinct lifecycles
 

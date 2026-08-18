@@ -1,8 +1,8 @@
 # AGENTS.md
 
-windforce-core — a small source-sync runtime and execution engine for
-Windforce-style apps. Go + PostgreSQL queue; TypeScript, Python, and Go
-actions deployed from git.
+windforce-core — a self-hosted execution and integration core for Script Apps.
+Go + PostgreSQL coordinate immutable Releases and lease-fenced Runs/Jobs;
+Bun/TypeScript is the Tier 1 App path, with Python and Go compatibility runtimes.
 
 This file is the canonical agent guide for this repository. `CLAUDE.md` only
 imports it — rules live in one place.
@@ -10,9 +10,11 @@ imports it — rules live in one place.
 ## Identity and scope
 
 windforce-core is a **self-sufficient execution engine**: source sync →
-catalog/releases → run/job queue → execution. A self-hoster bringing their own
-workers must be able to run everything in this repository with no external
-service.
+catalog/releases → run/job queue → execution. It requires no hosted control
+plane. Ordinary Apps run with Core workers alone; Apps that need a browser,
+GPU, document engine, mobile device, or another provider-native facility may
+bind an operator-supplied external capability service through a neutral Core
+contract.
 
 The scope discipline of [docs/adr/0001-scope.md](docs/adr/0001-scope.md)
 applies to all changes:
@@ -23,13 +25,20 @@ applies to all changes:
   outbound webhooks, the execution API and SDKs, the embedded admin UI.
 - **Out of scope** (belongs to downstream products and adapters): account and
   multi-tenant SaaS management, billing and quota, managed worker fleets and
-  autoscaling, product consoles beyond the embedded UI, product-specific
-  vocabulary and integrations.
+  autoscaling, provider-native Browser/GPU/document service implementations,
+  product consoles beyond the embedded UI, product-specific vocabulary and
+  integrations.
 
 Litmus test for any new feature: **"does a self-hoster need this?"** If yes,
 it may belong here. If it only makes sense for a hosted commercial service, it
 does not — keep the engine generic and let adapters or downstream products own
 it.
+
+Read [docs/concepts/product-boundary.md](docs/concepts/product-boundary.md) and
+[ADR 0046](docs/adr/0046-define-bun-typescript-app-and-external-capability-boundary.md)
+before expanding App runtimes or provider capabilities. General-purpose means
+neutral execution and integration semantics, not equal investment in every
+language or embedding every provider runtime.
 
 ## Vocabulary
 
@@ -57,6 +66,7 @@ Preserve these invariants:
 - Local and remote workers have the same execution semantics. Remote workers claim, fetch artifacts, append logs, and complete Jobs only through `/worker/v1`; they do not access the server database or artifact filesystem directly.
 - `scriptLang` is normalized once to `typescript`, `python`, or `go`; an empty value means TypeScript and every unknown value is rejected before preparation. Never add an implicit launcher fallback.
 - TypeScript publication statically verifies a named `main` export and builds the dependency graph without importing or executing the App.
+- Bun/TypeScript is the only Tier 1 path for new App-facing capabilities. Preserve existing Python and Go compatibility unless a separate ADR approves a migration; do not require new feature parity by default.
 - On shutdown, a worker stops claiming, reports `draining`, lets the active Job run for `--drain-timeout`, cancels it only after that deadline, completes the lease, and then deregisters. Offline is represented by registry absence.
 
 Any change to this ordering, pinning boundary, bundle identity, ready-marker meaning, or Worker Plane artifact protocol changes execution semantics and requires documentation, focused lifecycle tests, and an ADR.
@@ -66,6 +76,8 @@ Any change to this ordering, pinning boundary, bundle identity, ready-marker mea
 Before changing the language wrappers, `internal/sdk`, `WindforceContext`, private `WF_*` transport, or App entrypoint behavior, read [docs/concepts/app-runtime-interface.md](docs/concepts/app-runtime-interface.md) and [ADR 0021](docs/adr/0021-keep-application-sdks-opaque-to-core.md).
 
 Core owns the generic `main(coreCtx)` host interface, Core Author SDK, launcher transport, Job-scoped access, and worker lifecycle. Every SDK used by an App is an opaque App dependency. Core must not inspect or classify SDK identity, import an SDK context, understand its module envelope, negotiate its version, or transfer service credentials and Worker Plane authority to it. `runsOn` and worker labels remain Core scheduling inputs regardless of whether the App uses a scraping SDK, Playwright, Puppeteer, a mobile SDK, or no SDK.
+
+Browser, GPU/AI, document/native engines, mobile devices, and similar facilities are external capability services, not new Core runtime modes. Core may own neutral placement, discovery, Job-scoped binding, masking, and cleanup. Provider APIs, binary artifacts, native resource policy, fleet provisioning, and provider-specific errors stay outside Core.
 
 Some App repositories generate a canonical deployment artifact instead of storing `windforce.json` in author source. Their external builder owns `--describe` or equivalent SDK-specific discovery, schema-file emission, dependency bundling, and creation of the deployment Git or snapshot. Core begins at the configured canonical manifest file plus entrypoint boundary (`windforce.json` is only the default filename) and must not execute author code to discover an SDK manifest.
 

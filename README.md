@@ -1,6 +1,6 @@
 # windforce-core
 
-`windforce-core` is the Windforce Lite execution engine for apps described by `windforce.json`.
+`windforce-core` is a self-hosted execution and integration core for Script Apps. It uses `windforce.json` as the default canonical manifest filename, while deployments may configure another filename.
 
 It keeps the useful core of Windforce:
 
@@ -13,15 +13,14 @@ It keeps the useful core of Windforce:
 - fetch the pinned execution bundle before execution
 - run the app entrypoint with `main(ctx)` and dispatch by action
 
-It intentionally does not include the full Windforce product surface:
-multi-tenant SaaS concerns, quota, billing, a workflow designer, or an operator. A small
-admin Web UI for git source registration, deployment, and deployment history is
-in scope.
+Its general-purpose contract is admission, immutable Release pinning, Run/Job queueing, lease-fenced Worker Attempts, retry, limits, runtime configuration, and optional external capability binding. Bun/TypeScript is the Tier 1 App authoring path. Existing Python and Go launchers remain compatibility runtimes; this direction does not remove them or change their current manifest and execution contracts.
+
+It intentionally does not include the full Windforce product surface: multi-tenant SaaS concerns, quota, billing, a workflow designer, managed fleets, or provider-native Browser/GPU/document services. A small admin Web UI for source registration, deployment, execution policy, and operational observation is in scope.
 
 ## Concepts
 
 - Repository source: the Git location, branch, subpath, and credential reference
-- App: the stable executable identity declared in `windforce.json`
+- App: the stable executable identity declared in the configured canonical manifest (`windforce.json` by default)
 - Action: one executable unit inside an app
 - Synchronized revision: an exact validated source commit available for release
 - Deployment: the app, commit, bundle digest, and executable action metadata
@@ -38,6 +37,9 @@ in scope.
 Read [Core concepts](docs/concepts/core-concepts.md) for the exact storage,
 fingerprint, marker, Run, and Job definitions. The complete state flow is in
 [Release and execution lifecycle](docs/concepts/release-lifecycle.md).
+[Product boundary](docs/concepts/product-boundary.md) explains the Bun/TypeScript
+Tier 1 direction, Python/Go compatibility, and why provider-native capabilities
+remain external services.
 
 [Execution placement](docs/concepts/execution-placement.md) explains how generated or
 committed manifest defaults combine with persistent operator overrides, including
@@ -80,11 +82,12 @@ above; operators may still inspect internal Jobs through `/api/w`.
 `sync` stores the latest valid source revision. `deploy` prepares that revision
 for the worker runtime and publishes it as the active release used by new jobs.
 
-1. Register a git source through the control-plane API. Registration validates
-   repository access, branch existence, subpath containment, `windforce.json`,
-   action schemas, and lockfile reproducibility before saving the source.
-2. Sync the source to resolve an exact commit and validate its manifest,
-   schemas, and lockfile.
+1. Register a Git source through the Control Plane API. Registration validates
+   repository access, branch existence, and safe relative subpath syntax before
+   saving the source. It does not clone the repository or read an App manifest.
+2. Sync the source to resolve an exact commit, materialize the configured
+   subpath, and validate its configured manifest, schemas, entrypoint
+   references, and lockfile.
 3. If the git source has a `subpath`, use that repo directory as the app root
    and try sparse checkout before falling back to a full clone.
 4. Materialize the source tree into the bundle store under
@@ -93,8 +96,9 @@ for the worker runtime and publishes it as the active release used by new jobs.
    dependencies or change the active release.
 6. Deploy pins the latest synchronized revision while holding the source
    operation lock.
-7. Prepare the exact source with the runtime contract used by workers. Python
-   dependencies, Bun lockfiles, Go builds, and the entrypoint must validate.
+7. Prepare the exact source with the selected runtime contract used by workers.
+   Bun lockfiles and the TypeScript entrypoint, or the selected compatibility
+   runtime's Python dependencies or Go build, must validate.
    Store the result as a content-addressed execution bundle.
 8. Publish only the validated execution bundle. The active release, release
    history, audit record, Control Plane event, and matching Webhook deliveries
@@ -111,7 +115,7 @@ idempotently at startup.
 
 The Docker Compose server maps every HTTP plane to `127.0.0.1:18091`. The local Web UI is a Vite development server (run with Bun) on `127.0.0.1:18090/ui/` and proxies API calls to the server. This repository ships only the neutral `windforce-core` runtime. Users who want a separately installed client can use the public [`imprun` CLI](https://github.com/imprun/cli), which consumes the same HTTP APIs without adding hosted Identity or tenant policy to Core.
 
-The published `ghcr.io/imprun/windforce-core` image is the standard self-hosted runtime and contains Python, Bun, and the Go toolchain so one image can prepare and run every built-in App language. `ghcr.io/imprun/windforce-core-ocr` extends that standard image with Tesseract and Korean OCR data for OCR-capable Worker pools. Core does not publish a separate Go-only image. Stable tags are public, signed multi-architecture images for `linux/amd64` and `linux/arm64`; see [Container images](docs/guides/container-images.md) for tags, verification, and source-build instructions.
+The published `ghcr.io/imprun/windforce-core` image is the standard self-hosted runtime. It contains Bun for the Tier 1 TypeScript path and Python and the Go toolchain for compatibility with existing Apps. `ghcr.io/imprun/windforce-core-ocr` extends that standard image with Tesseract and Korean OCR data for OCR-capable Worker groups. Core does not publish a separate Go-only image. Stable tags are public, signed multi-architecture images for `linux/amd64` and `linux/arm64`; see [Container images](docs/guides/container-images.md) for tags, verification, and source-build instructions.
 
 The Web UI is live during local development. Run `make web-dev` for a host dev
 server, or `make compose-up` for the Compose-managed dev server. The production
@@ -193,13 +197,13 @@ The SDK-neutral Core `main(ctx)` host interface and the rule that every App SDK 
 
 ## Manifest
 
-Every app source has a `windforce.json` file:
+Every canonical deployment artifact has a manifest file. Its default filename is `windforce.json`; `--manifest-file` or `WINDFORCE_CORE_MANIFEST_FILE` may select another repository-relative filename such as `scraping.json`:
 
 ```json
 {
   "app": "echo",
-  "entrypoint": "main.py",
-  "scriptLang": "python",
+  "entrypoint": "main.ts",
+  "scriptLang": "typescript",
   "timeout": 30,
   "actions": {
     "echo": {
@@ -224,10 +228,13 @@ commands or adapters; integration adapters live outside the app source contract.
 an action. InputConfig may contain exact `$var:path` and `$res:path` values;
 Admission validates and pins their transitive access without resolving Secret
 plaintext. See [Runtime configuration and secrets](docs/concepts/runtime-configuration.md).
-The execution bundle builder supports canonical `typescript`, `python`, and
+The execution bundle builder implements canonical `typescript`, `python`, and
 `go` entrypoints. `scriptLang` defaults to `typescript`; any other value is
-rejected instead of falling through to Bun. TypeScript is a Tier 1 runtime and
-must pass entrypoint validation before a release is published.
+rejected instead of falling through to Bun. Bun/TypeScript is the Tier 1 path
+for new App and Author SDK capabilities and must pass entrypoint validation
+before a Release is published. Python and Go preserve their existing
+publication and launcher contracts as compatibility runtimes; new feature
+parity is not automatic.
 
 Deployment prepares a content-addressed execution bundle for TypeScript,
 Python, and Go entrypoints. It pins the latest synchronized commit, installs declared
