@@ -65,3 +65,40 @@ func TestLocalStoreMaterializeAndFetch(t *testing.T) {
 		t.Fatalf(".venv should be copied like the canonical source store: %v", err)
 	}
 }
+
+func TestLocalStoreVerifyRejectsMissingOrStaleMarker(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	sourceDir := filepath.Join(root, "source")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "main.ts"), []byte("export default 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	store := NewLocalStore(filepath.Join(root, "store"))
+	if err := store.Materialize(ctx, "workspace-a", "source-a", "commit-a", sourceDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Verify(ctx, "workspace-a", "source-a", "commit-a"); err != nil {
+		t.Fatalf("Verify(valid) = %v", err)
+	}
+
+	storedFile := filepath.Join(store.bundleDir("workspace-a", "source-a", "commit-a"), "main.ts")
+	if err := os.WriteFile(storedFile, []byte("changed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(filepath.Dir(storedFile), "extra.ts"), []byte("extra\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Verify(ctx, "workspace-a", "source-a", "commit-a"); err == nil {
+		t.Fatal("Verify(stale file count) succeeded, want error")
+	}
+
+	if err := os.Remove(filepath.Join(filepath.Dir(storedFile), markerFile)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Verify(ctx, "workspace-a", "source-a", "commit-a"); err == nil {
+		t.Fatal("Verify(missing marker) succeeded, want error")
+	}
+}
