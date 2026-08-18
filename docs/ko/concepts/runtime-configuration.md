@@ -3,11 +3,7 @@ title: 런타임 구성과 비밀값
 description: Variable, Resource, InputConfig, SecretBackend, Admission, Worker 해석의 현재 모델입니다.
 ---
 
-이 문서는 2026-08-01 현재 런타임 구성 아키텍처를 사람이 이해하기
-쉽게 설명한 정리본입니다. `/api/w/{workspace}/openapi.json`의 Control Plane
-OpenAPI와 Release에 포함된 `windforce.json` 스키마가 시스템 간 통신규격의
-기계 판독 가능한 정본입니다. ADR은 결정이 바뀐 이유를 기록하며 현재 운영
-안내서를 대신하지 않습니다.
+이 문서는 2026-08-19 현재 런타임 구성 아키텍처를 사람이 이해하기 쉽게 설명한 정리본입니다. `/api/w/{workspace}/openapi.json`의 Control Plane OpenAPI와 Release에 포함된 `windforce.json` 스키마가 시스템 간 통신규격의 기계 판독 가능한 정본입니다. ADR은 결정이 바뀐 이유를 기록하며 현재 운영 안내서를 대신하지 않습니다.
 
 [English](../../concepts/runtime-configuration.md)
 
@@ -124,6 +120,10 @@ Variable 평문은 해석하지 않습니다. 따라서 영속화된 Run과 Job 
 전달되고 Workspace 데이터 암호화 키는 전달하지 않습니다. Job SDK 읽기는 attempt가
 포함된 Job token을 사용하며, 같은 attempt가 유효한 lease로 실행 중일 때만
 허용합니다. Job에 고정되지 않은 경로는 forbidden입니다.
+
+## 외부 Secret 후보 정리
+
+기본 Database `SecretBackend`는 Core 상태 경계 안에 암호문을 만들기 때문에 정리할 외부 후보 객체가 없습니다. 부수 효과가 있는 backend는 제한된 runtime candidate 목록과 version 조건부 삭제 기능을 선택적으로 구현할 수 있습니다. Core는 현재 App 소유 Secret Variable이 봉인해 참조하는 모든 후보를 live로 간주하고, 설정한 유예 시간이 지난 뒤에도 참조되지 않는 후보만 회수합니다. 정확한 재시도는 하나의 결정적 후보를 갱신하고 tombstone과 revoke는 이를 보존하며, 감사된 purge는 live root를 제거하여 물리 정리 대상으로 만듭니다. Metric에는 결과 건수만 기록합니다. [ADR 0051](../../adr/0051-collect-orphaned-runtime-secret-candidates.md)을 참고하십시오.
 
 ## 암호화와 키 소유권
 
