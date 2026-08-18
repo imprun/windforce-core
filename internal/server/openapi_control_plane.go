@@ -787,7 +787,7 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 			},
 			"post": map[string]any{
 				"operationId": "setVariable",
-				"summary":     "Set a workspace or app-scoped variable",
+				"summary":     "Set a workspace, App, or actor-scoped variable",
 				"parameters":  []any{oapiWorkspaceParam(workspaceID)},
 				"requestBody": oapiJSONBody(oapiSchemaRef("SetVariableRequest"), true),
 				"responses": withErrors(map[string]any{
@@ -833,7 +833,7 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 					oapiWorkspaceParam(workspaceID),
 					oapiPathParam("path", "Variable path."),
 					oapiQueryParam("app", "Optional exact app key scope for console lookup.", oapiStringSchema(), false),
-					oapiQueryParam("scope", "Exact runtime scope. Job callbacks must pass workspace or app; operator calls infer app when app is supplied.", oapiStringEnumSchema("workspace", "app"), false),
+					oapiQueryParam("scope", "Exact runtime scope for a Job callback.", oapiStringEnumSchema("workspace", "app", "actor"), false),
 				},
 				"responses": withErrors(map[string]any{
 					"200": oapiResponse("Variable metadata. Secret values are omitted outside runtime callbacks.", oapiSchemaRef("VariableValueResponse")),
@@ -845,7 +845,11 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 				"operationId": "mutateRuntimeVariable",
 				"summary":     "Mutate an App-owned Variable from a live Job attempt",
 				"description": "Requires Job-bound authorization, an Admission-pinned exact target and storage class, operationId idempotency, and Worker mask registration for Secret writes.",
-				"parameters":  []any{oapiWorkspaceParam(workspaceID), oapiPathParam("path", "Pinned App-owned Variable path.")},
+				"parameters": []any{
+					oapiWorkspaceParam(workspaceID),
+					oapiPathParam("path", "Pinned App-owned Variable path."),
+					oapiQueryParam("scope", "Pinned write scope. Omitted means app.", oapiStringEnumSchema("app", "actor"), false),
+				},
 				"requestBody": oapiJSONBody(oapiSchemaRef("RuntimeVariableMutationRequest"), true),
 				"responses": withErrors(map[string]any{
 					"200": oapiResponse("Mutation result, including the current revision and replay status.", oapiSchemaRef("RuntimeConfigMutationResult")),
@@ -934,7 +938,11 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 				"operationId": "mutateRuntimeResource",
 				"summary":     "Mutate an App-owned Resource from a live Job attempt",
 				"description": "Requires Job-bound authorization, an Admission-pinned exact App Resource target, a versioned Resource schema, and operationId idempotency.",
-				"parameters":  []any{oapiWorkspaceParam(workspaceID), oapiPathParam("path", "Pinned App-owned Resource path.")},
+				"parameters": []any{
+					oapiWorkspaceParam(workspaceID),
+					oapiPathParam("path", "Pinned App-owned Resource path."),
+					oapiQueryParam("scope", "Pinned write scope. Omitted means app.", oapiStringEnumSchema("app", "actor"), false),
+				},
 				"requestBody": oapiJSONBody(oapiSchemaRef("RuntimeResourceMutationRequest"), true),
 				"responses": withErrors(map[string]any{
 					"200": oapiResponse("Mutation result, including the current revision and replay status.", oapiSchemaRef("RuntimeConfigMutationResult")),
@@ -959,7 +967,7 @@ func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any
 					oapiWorkspaceParam(workspaceID),
 					oapiPathParam("path", "Resource path."),
 					oapiQueryParam("app", "Optional exact app key scope for operator lookup.", oapiStringSchema(), false),
-					oapiQueryParam("scope", "Exact runtime scope. Job callbacks must pass workspace or app; operator calls infer app when app is supplied.", oapiStringEnumSchema("workspace", "app"), false),
+					oapiQueryParam("scope", "Exact runtime scope for a Job callback.", oapiStringEnumSchema("workspace", "app", "actor"), false),
 				},
 				"responses": withErrors(map[string]any{
 					"200": oapiResponse("Stored JSON with unresolved references for operators; Job callbacks receive the Admission-allowed resolved value.", oapiSchemaRef("JSONValue")),
@@ -2364,6 +2372,7 @@ func controlPlaneSchemas() map[string]any {
 				"description": oapiStringSchema(),
 				"is_secret":   oapiBooleanSchema(),
 				"app_key":     oapiStringSchema(),
+				"scope":       oapiStringEnumSchema("workspace", "app", "actor"),
 			},
 			"required": []any{"path"},
 		},

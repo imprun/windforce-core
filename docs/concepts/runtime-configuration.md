@@ -47,6 +47,12 @@ A reference replaces the complete JSON value at its location:
 - Cycles, excessive nesting, too many references, missing values, and deleted
   values fail closed.
 
+## Actor-scoped App configuration
+
+An Action may declare an exact `actor` Variable or Resource target when the value belongs to the authenticated invocation subject rather than to every invocation of the App. Core binds the logical target to `permissionedAs`, derives an opaque App-owned physical path from a subject hash, and applies the same storage-class, Job-attempt, lease, revision, idempotency, masking, lifecycle, and audit checks used by App scope. The App never selects the physical namespace and cannot use actor scope without an authenticated subject.
+
+Actor scope is intended for small per-user connection metadata and Secret session state. It does not support wildcard grants, collection queries, cross-actor lookup, or `$var`/`$res` references in invocation input. Admission pins the declared logical path without enumerating actor data; the runtime resolves only the current subject after a Worker owns the Job.
+
 Because a reference is a JSON string before execution, an Action input schema
 must explicitly allow that string representation when the resolved value has a
 different type. A Resource-backed object can use a schema such as:
