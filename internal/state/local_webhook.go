@@ -247,8 +247,15 @@ func (s *LocalStore) ClaimDelivery(ctx context.Context, workerID string, leaseTT
 	if leaseTTL <= 0 {
 		leaseTTL = 30 * time.Second
 	}
+	snapshot, err := s.Load(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !localSnapshotHasEligibleDelivery(snapshot, currentUTC(nil)) {
+		return nil, webhook.ErrNoPendingDelivery
+	}
 	var claimed *webhook.ClaimedDelivery
-	err := s.update(ctx, func(snapshot *Snapshot, now time.Time) error {
+	err = s.update(ctx, func(snapshot *Snapshot, now time.Time) error {
 		var selected webhook.Delivery
 		var selectedRecord WebhookSubscriptionRecord
 		found := false
@@ -286,6 +293,19 @@ func (s *LocalStore) ClaimDelivery(ctx context.Context, workerID string, leaseTT
 		return nil
 	})
 	return claimed, err
+}
+
+func localSnapshotHasEligibleDelivery(snapshot Snapshot, now time.Time) bool {
+	// ClaimDelivery uses this only as a lock-free negative preflight. A possible
+	// delivery is selected and leased again under the write lock, while a
+	// concurrent publish after an empty snapshot is observed on the next poll.
+	for _, delivery := range snapshot.WebhookDeliveries {
+		record, ok := snapshot.WebhookSubscriptions[webhookSubscriptionKey(delivery.WorkspaceID, delivery.SubscriptionID)]
+		if ok && deliveryEligible(delivery, record, now) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *LocalStore) CompleteDelivery(ctx context.Context, lease webhook.DeliveryLease, result webhook.DeliveryResult) error {

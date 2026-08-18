@@ -967,7 +967,7 @@ func TestActionJobPreservesActorAudit(t *testing.T) {
 	}
 }
 
-func TestJobListFailureSnippetMatchesCanonicalResult(t *testing.T) {
+func TestJobListFailureSnippetUsesPlaintextError(t *testing.T) {
 	deployment := contract.Deployment{
 		Workspace:   "ws-a",
 		GitSourceID: "1",
@@ -981,14 +981,28 @@ func TestJobListFailureSnippetMatchesCanonicalResult(t *testing.T) {
 	run.State = RunFailed
 	run.Result = &contract.JobResult{
 		Output: json.RawMessage(`{"name":"TargetError","message":"target rejected"}`),
-		Error:  "fallback should not win",
+		Error:  "public failure",
 	}
 	job := NewActionJob(run, nil)
 	job.State = JobFailed
 
 	item := newJobListItem("ws-a", job, run)
-	if item.ErrorSnippet == nil || *item.ErrorSnippet != "TargetError: target rejected" {
-		t.Fatalf("error snippet = %v, want TargetError: target rejected", item.ErrorSnippet)
+	if item.ErrorSnippet == nil || *item.ErrorSnippet != "public failure" {
+		t.Fatalf("error snippet = %v, want public failure", item.ErrorSnippet)
+	}
+}
+
+func TestJobListFailureSnippetFallsBackToRunErrorWithoutResultOutput(t *testing.T) {
+	run := Run{
+		State: RunFailed,
+		Result: &contract.JobResult{
+			Output: json.RawMessage(`{"name":"PrivateError","message":"private result"}`),
+		},
+		Error: json.RawMessage(`{"name":"RunError","message":"public run failure"}`),
+	}
+	snippet := failureSnippet("failure", run)
+	if snippet == nil || *snippet != "RunError: public run failure" {
+		t.Fatalf("error snippet = %v, want RunError: public run failure", snippet)
 	}
 }
 

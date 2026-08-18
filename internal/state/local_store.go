@@ -23,10 +23,13 @@ type LocalStore struct {
 	Path              string
 	SecretKey         string
 	SecretKeyPrevious string
+	resultKeyProvider inputWorkspaceKeyProvider
 	leaseNow          nowFunc
 	executionMetrics  *executionMetrics
 	humanTaskSignals  humanTaskSignalHub
 }
+
+var errSkipLocalStateWrite = errors.New("skip local state write")
 
 func NewLocalStore(path string) *LocalStore {
 	return &LocalStore{Path: path, executionMetrics: newExecutionMetrics()}
@@ -64,17 +67,24 @@ func (s *LocalStore) DecryptInput(ctx context.Context, workspaceID string, input
 }
 
 func (s *LocalStore) encryptResult(ctx context.Context, workspaceID string, result json.RawMessage) (json.RawMessage, error) {
-	return encryptResultAtRest(ctx, s, inputCryptoConfig{
+	return encryptResultAtRest(ctx, s.resultCryptoKeyProvider(), inputCryptoConfig{
 		SecretKey:         s.SecretKey,
 		SecretKeyPrevious: s.SecretKeyPrevious,
 	}, workspaceID, result)
 }
 
 func (s *LocalStore) decryptResult(ctx context.Context, workspaceID string, result json.RawMessage) (json.RawMessage, error) {
-	return decryptResultAtRest(ctx, s, inputCryptoConfig{
+	return decryptResultAtRest(ctx, s.resultCryptoKeyProvider(), inputCryptoConfig{
 		SecretKey:         s.SecretKey,
 		SecretKeyPrevious: s.SecretKeyPrevious,
 	}, workspaceID, result)
+}
+
+func (s *LocalStore) resultCryptoKeyProvider() inputWorkspaceKeyProvider {
+	if s.resultKeyProvider != nil {
+		return s.resultKeyProvider
+	}
+	return s
 }
 
 func (s *LocalStore) encryptJobResult(ctx context.Context, workspaceID string, result contract.JobResult) (contract.JobResult, error) {
@@ -262,9 +272,6 @@ func (s *LocalStore) ListJobs(ctx context.Context, query JobListQuery) ([]JobLis
 		if !ok {
 			continue
 		}
-		if err := s.decryptRunResult(ctx, normalizedJobWorkspace("", job), &run); err != nil {
-			clearRunResultOutput(&run)
-		}
 		records = append(records, jobRunRecord{Job: job, Run: run})
 	}
 	return listJobsFromRecords(records, query), nil
@@ -280,9 +287,6 @@ func (s *LocalStore) JobSummary(ctx context.Context, workspaceID string, recent 
 		run, ok := snapshot.Runs[job.RunID]
 		if !ok {
 			continue
-		}
-		if err := s.decryptRunResult(ctx, normalizedJobWorkspace("", job), &run); err != nil {
-			clearRunResultOutput(&run)
 		}
 		records = append(records, jobRunRecord{Job: job, Run: run})
 	}
@@ -601,11 +605,18 @@ func (s *LocalStore) ClaimJobForWorkerScope(ctx context.Context, workerID string
 	requestedTags := NormalizeWorkerScope(tags)
 	requestedLabels := NormalizeWorkerScope(labels)
 	allowedWorkspaces := normalizeClaimTags(workspaceIDs)
+	mayOfferJob, err := s.localClaimMayOfferJob(ctx, workerID, requestedTags, requestedLabels)
+	if err != nil {
+		return Job{}, Lease{}, err
+	}
+	if !mayOfferJob {
+		return Job{}, Lease{}, ErrNoQueuedJob
+	}
 	var claimed Job
 	var lease Lease
 	rateBlocked := false
 	rateConsumed := false
-	err := s.updateLease(ctx, func(snapshot *Snapshot, now time.Time) error {
+	err = s.updateLease(ctx, func(snapshot *Snapshot, now time.Time) error {
 		if err := s.requeueExpiredJobs(ctx, snapshot, now); err != nil {
 			return err
 		}
@@ -708,6 +719,29 @@ func (s *LocalStore) ClaimJobForWorkerScope(ctx context.Context, workerID string
 		s.executionMetrics.observeRateClaims(executionRateOutcomeConsumed, 1)
 	}
 	return claimed, lease, nil
+}
+
+func (s *LocalStore) localClaimMayOfferJob(ctx context.Context, workerID string, requestedTags []string, requestedLabels []string) (bool, error) {
+	// Local snapshots are replaced atomically. An empty preflight therefore
+	// linearizes before any concurrent enqueue; the polling worker observes that
+	// enqueue on its next claim. A possible candidate is always rechecked under
+	// the write lock by ClaimJobForWorkerScope.
+	snapshot, err := s.Load(ctx)
+	if err != nil {
+		return false, err
+	}
+	now := currentUTC(s.leaseNow)
+	if record, registered := snapshot.Workers[workerID]; registered {
+		if _, _, _, err := RegisteredWorkerClaim(record, requestedTags, requestedLabels, now); err != nil {
+			return false, err
+		}
+	}
+	for _, job := range snapshot.Jobs {
+		if job.State == JobQueued || job.State == JobRunning && job.LeaseExpiresAt != nil && !job.LeaseExpiresAt.After(now) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (s *LocalStore) HeartbeatJob(ctx context.Context, lease Lease, leaseTTL time.Duration) (HeartbeatResult, error) {
@@ -1093,7 +1127,9 @@ func (s *LocalStore) updateWithClock(ctx context.Context, nowFunc nowFunc, fn fu
 			beforeHumanTasks[id] = task.State
 		}
 		now := currentUTC(nowFunc)
-		if err := fn(&snapshot, now); err != nil {
+		if err := fn(&snapshot, now); errors.Is(err, errSkipLocalStateWrite) {
+			return nil
+		} else if err != nil {
 			return err
 		}
 		for id, task := range snapshot.HumanTasks {
