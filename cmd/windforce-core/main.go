@@ -67,6 +67,8 @@ func run(args []string) int {
 		return 0
 	case "run-json":
 		return runJSON(args[1:])
+	case "diagnose":
+		return runDiagnose(args[1:], os.Stdout, os.Stderr)
 	case "server":
 		return runServer(args[1:], "server")
 	case "worker":
@@ -1003,6 +1005,7 @@ func defaultStatePath() string {
 func printUsage(file io.Writer) {
 	fmt.Fprintln(file, "usage:")
 	fmt.Fprintln(file, "  windforce-core version")
+	fmt.Fprintln(file, "  windforce-core diagnose [--mode standalone|server|remote-worker] [--json] [flags]")
 	fmt.Fprintln(file, "  windforce-core server [--addr :8080] [--state-backend local|postgres] [--ui-mode embedded|disabled] [--worker-group-operator self-managed|external] [--git-sources <path>] [--provision-dir <path>]")
 	fmt.Fprintln(file, "  windforce-core worker [--api-url <url> --worker-token-env <name>] [--state-backend local|postgres] [--worker-group default] [--labels <csv>] [--egress-proxy host:port] [--auth-session-url <url>] [--capability-gateway-url <url> --capability-gateway-labels <csv>] [--bun-path <path>] [--python-path <path>] [--go-path <path>] [--prepare-timeout 5m] [--once]")
 	fmt.Fprintln(file, "  windforce-core standalone [--addr :8080] [--state-backend local|postgres] [--ui-mode embedded|disabled] [--worker-group-operator self-managed|external] [--worker-group default] [--egress-proxy host:port] [--auth-session-url <url>] [--capability-gateway-url <url> --capability-gateway-labels <csv>] [--git-sources <path>] [--provision-dir <path>] [--bun-path <path>] [--python-path <path>] [--go-path <path>] [--prepare-timeout 5m]")

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -20,6 +21,12 @@ type Store interface {
 	Exists(ctx context.Context, workspace string, gitSourceID string, commit string) (bool, error)
 	Materialize(ctx context.Context, workspace string, gitSourceID string, commit string, sourceDir string) error
 	FetchTo(ctx context.Context, destinationDir string, workspace string, gitSourceID string, commit string) error
+}
+
+// Verifier is the optional read-only source marker capability used by
+// operational diagnostics. It does not materialize or copy source data.
+type Verifier interface {
+	Verify(ctx context.Context, workspace string, gitSourceID string, commit string) error
 }
 
 // LocalStore is the development and test implementation of Store.
@@ -44,6 +51,43 @@ func (s *LocalStore) Exists(_ context.Context, workspace string, gitSourceID str
 		return false, nil
 	}
 	return false, err
+}
+
+func (s *LocalStore) Verify(ctx context.Context, workspace string, gitSourceID string, commit string) error {
+	dir := s.bundleDir(workspace, gitSourceID, commit)
+	markerPath := filepath.Join(dir, markerFile)
+	data, err := os.ReadFile(markerPath)
+	if err != nil {
+		return fmt.Errorf("read source marker: %w", err)
+	}
+	var stored marker
+	if err := json.Unmarshal(data, &stored); err != nil {
+		return errors.New("source marker is not valid JSON")
+	}
+	expectedWorkspace := contract.NormalizeWorkspace(workspace)
+	expectedSource := contract.NormalizeGitSourceID(gitSourceID, "")
+	if stored.CompletedAt.IsZero() || stored.Workspace != expectedWorkspace || stored.GitSourceID != expectedSource || stored.Commit != commit {
+		return errors.New("source marker identity does not match its address")
+	}
+	files := 0
+	if err := filepath.WalkDir(dir, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if !entry.IsDir() && filepath.Clean(path) != filepath.Clean(markerPath) {
+			files++
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("inspect source snapshot: %w", err)
+	}
+	if stored.FileCount != files {
+		return fmt.Errorf("source marker file count mismatch: got %d, want %d", files, stored.FileCount)
+	}
+	return nil
 }
 
 func (s *LocalStore) Materialize(ctx context.Context, workspace string, gitSourceID string, commit string, sourceDir string) error {

@@ -170,6 +170,11 @@ docker compose --profile worker up -d worker
 
 ## Run
 
+Before or during self-hosted operations, use the read-only
+[`windforce-core diagnose`](docs/guides/self-hosted-diagnose.md) preflight to
+check state/schema compatibility, active artifacts, runtime profiles, placement,
+and stable queue blockers. `--json` emits the versioned `diagnose/v1` contract.
+
 A run request is admitted and executed as follows:
 
 1. Resolve the active app deployment and requested action.
