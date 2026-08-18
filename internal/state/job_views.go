@@ -470,11 +470,6 @@ func failureSnippet(status string, run Run) *string {
 		return nil
 	}
 	if run.Result != nil {
-		if len(run.Result.Output) > 0 {
-			if snippet := errorSnippet(run.Result.Output); snippet != nil {
-				return snippet
-			}
-		}
 		if run.Result.Error != "" {
 			return errorSnippet([]byte(run.Result.Error))
 		}

@@ -23,6 +23,7 @@ type LocalStore struct {
 	Path              string
 	SecretKey         string
 	SecretKeyPrevious string
+	resultKeyProvider inputWorkspaceKeyProvider
 	leaseNow          nowFunc
 	executionMetrics  *executionMetrics
 	humanTaskSignals  humanTaskSignalHub
@@ -66,17 +67,24 @@ func (s *LocalStore) DecryptInput(ctx context.Context, workspaceID string, input
 }
 
 func (s *LocalStore) encryptResult(ctx context.Context, workspaceID string, result json.RawMessage) (json.RawMessage, error) {
-	return encryptResultAtRest(ctx, s, inputCryptoConfig{
+	return encryptResultAtRest(ctx, s.resultCryptoKeyProvider(), inputCryptoConfig{
 		SecretKey:         s.SecretKey,
 		SecretKeyPrevious: s.SecretKeyPrevious,
 	}, workspaceID, result)
 }
 
 func (s *LocalStore) decryptResult(ctx context.Context, workspaceID string, result json.RawMessage) (json.RawMessage, error) {
-	return decryptResultAtRest(ctx, s, inputCryptoConfig{
+	return decryptResultAtRest(ctx, s.resultCryptoKeyProvider(), inputCryptoConfig{
 		SecretKey:         s.SecretKey,
 		SecretKeyPrevious: s.SecretKeyPrevious,
 	}, workspaceID, result)
+}
+
+func (s *LocalStore) resultCryptoKeyProvider() inputWorkspaceKeyProvider {
+	if s.resultKeyProvider != nil {
+		return s.resultKeyProvider
+	}
+	return s
 }
 
 func (s *LocalStore) encryptJobResult(ctx context.Context, workspaceID string, result contract.JobResult) (contract.JobResult, error) {
@@ -263,9 +271,6 @@ func (s *LocalStore) ListJobs(ctx context.Context, query JobListQuery) ([]JobLis
 		run, ok := snapshot.Runs[job.RunID]
 		if !ok {
 			continue
-		}
-		if err := s.decryptRunResult(ctx, normalizedJobWorkspace("", job), &run); err != nil {
-			clearRunResultOutput(&run)
 		}
 		records = append(records, jobRunRecord{Job: job, Run: run})
 	}
