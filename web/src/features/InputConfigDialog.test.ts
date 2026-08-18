@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, test } from "vitest";
+import type { InputConfig } from "../lib/api";
 import { inputSettingDefinitions } from "../lib/input-setting-schema";
 import { setLocale } from "../shared/i18n";
-import { inputConfigPayload } from "./InputConfigDialog";
+import { inputConfigPayload, inputConfigRows } from "./InputConfigDialog";
 
 describe("inputConfigPayload", () => {
   beforeEach(() => setLocale("en"));
@@ -61,5 +62,19 @@ describe("inputConfigPayload", () => {
         definitions,
       ).config,
     ).toEqual({ token: "$var:secrets/token" });
+  });
+
+  test("opens legacy rows with null collections without crashing", () => {
+    const existing = {
+      workspace_id: "default",
+      app_key: "orders",
+      action_key: "",
+      config: null,
+      locked_keys: null,
+      updated_by: "operator",
+      updated_at: "2026-08-18T00:00:00Z",
+    } as unknown as InputConfig;
+
+    expect(inputConfigRows(existing)).toEqual([]);
   });
 });
