@@ -3,11 +3,7 @@ title: Runtime configuration and secrets
 description: Current Variable, Resource, InputConfig, SecretBackend, Admission, and worker resolution model.
 ---
 
-This document is the human-readable current-state reference for runtime
-configuration as of 2026-08-01. The control-plane OpenAPI at
-`/api/w/{workspace}/openapi.json` and the released `windforce.json` schema are
-the machine-readable system-to-system contracts. ADRs record why decisions
-changed; they are not the primary operating guide.
+This document is the human-readable current-state reference for runtime configuration as of 2026-08-19. The control-plane OpenAPI at `/api/w/{workspace}/openapi.json` and the released `windforce.json` schema are the machine-readable system-to-system contracts. ADRs record why decisions changed; they are not the primary operating guide.
 
 For a runnable App-author walkthrough, see [Use runtime secrets from a TypeScript App](../guides/runtime-secrets-typescript.md).
 
@@ -133,6 +129,10 @@ worker receives the resolved input in memory and never receives a workspace
 data-encryption key. Job SDK reads use a job token containing the attempt and
 are accepted only while the same attempt is running under a live lease. Paths
 outside the pinned allowlist return forbidden.
+
+## External Secret candidate cleanup
+
+The built-in Database `SecretBackend` creates ciphertext in the Core state transaction boundary and has no external candidate object to collect. A side-effecting backend can optionally implement bounded runtime-candidate inventory and versioned conditional deletion. Core treats every current sealed App-owned Secret Variable reference as live, waits for the configured grace period, and reclaims only candidates that remain old and unreferenced. Exact retries refresh one deterministic candidate; tombstone and revoke preserve it; audited purge removes the live root and makes physical cleanup eventual. Metrics contain only outcome counts. See [ADR 0051](../adr/0051-collect-orphaned-runtime-secret-candidates.md).
 
 ## Encryption and key ownership
 

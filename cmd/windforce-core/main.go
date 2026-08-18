@@ -47,8 +47,9 @@ var (
 )
 
 const (
-	defaultLogFlushInterval = 2 * time.Second
-	defaultLogCapBytes      = 20 << 20
+	defaultLogFlushInterval                    = 2 * time.Second
+	defaultLogCapBytes                         = 20 << 20
+	defaultRuntimeSecretCandidateSweepInterval = 15 * time.Minute
 )
 
 func main() {
@@ -153,6 +154,9 @@ func runServer(args []string, mode string) int {
 	jobFailureRetention := flags.Duration("job-failure-retention", envDays("WINDFORCE_CORE_JOB_FAILURE_RETENTION_DAYS", defaultJobFailureRetention), "how long failed/canceled/expired job records are kept; 0 keeps them forever")
 	jobStuckAfter := flags.Duration("job-stuck-after", envHours("WINDFORCE_CORE_JOB_STUCK_AFTER_HOURS", defaultJobStuckAfter), "expire queued/running jobs with no progress for this long; 0 disables")
 	jobRetentionInterval := flags.Duration("job-retention-interval", defaultJobRetentionInterval, "how often the retention pruner runs")
+	runtimeSecretCandidateGracePeriod := flags.Duration("runtime-secret-candidate-grace-period", secretbackend.DefaultRuntimeCandidateGracePeriod, "minimum age before an unreferenced external runtime Secret candidate can be reclaimed; 0 disables")
+	runtimeSecretCandidateSweepInterval := flags.Duration("runtime-secret-candidate-sweep-interval", defaultRuntimeSecretCandidateSweepInterval, "how often external runtime Secret candidates are checked")
+	runtimeSecretCandidateSweepLimit := flags.Int("runtime-secret-candidate-sweep-limit", secretbackend.DefaultRuntimeCandidateSweepLimit, "maximum external runtime Secret candidates examined per sweep")
 	sourceBundleGracePeriod := flags.Duration("source-bundle-grace-period", defaultSourceBundleGracePeriod, "minimum age before an unreferenced source snapshot can be removed; 0 disables")
 	sourceBundleRetentionInterval := flags.Duration("source-bundle-retention-interval", defaultSourceBundleRetentionInterval, "how often unreferenced source snapshots are checked")
 	sourceBundleRetentionDryRun := flags.Bool("source-bundle-retention-dry-run", false, "report eligible unreferenced source snapshots without deleting them")
@@ -195,6 +199,10 @@ func runServer(args []string, mode string) int {
 		fmt.Fprintln(os.Stderr, "source bundle grace period must not be negative and retention interval must be positive")
 		return 2
 	}
+	if *runtimeSecretCandidateGracePeriod < 0 || *runtimeSecretCandidateSweepInterval <= 0 || *runtimeSecretCandidateSweepLimit <= 0 {
+		fmt.Fprintln(os.Stderr, "runtime Secret candidate grace period must not be negative, and sweep interval and limit must be positive")
+		return 2
+	}
 	runCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
 	telemetrySDK := telemetry.InitSDK(runCtx, mode, version)
@@ -235,7 +243,7 @@ func runServer(args []string, mode string) int {
 	secretKey := effectiveSecretKey(rawSecretKey)
 	secretKeyPrevious := tokenFromEnv(*secretKeyPreviousEnv)
 	configureInputCrypto(stateStore, secretKey, secretKeyPrevious)
-	secretStore := secretbackend.NewDatabase(stateStore, secretKey, secretKeyPrevious)
+	var secretStore secretbackend.Backend = secretbackend.NewDatabase(stateStore, secretKey, secretKeyPrevious)
 	runtimeResolver := runtimeconfig.New(stateStore, secretStore)
 	if strings.TrimSpace(*provisionDir) != "" {
 		docs, err := provisioning.LoadDir(strings.TrimSpace(*provisionDir))
@@ -267,6 +275,7 @@ func runServer(args []string, mode string) int {
 	executionBundleStore := executionbundle.NewLocalStore(executionBundleStoreRoot(*storeDir))
 	admission := execution.NewService(stateStore, releaseCatalog, bundleStore)
 	triggerMetrics := triggerpkg.NewMetrics()
+	runtimeSecretCandidateMetrics := secretbackend.NewRuntimeCandidateMetrics()
 	triggerManager := &triggerpkg.Manager{
 		Store:     stateStore,
 		Admission: admission,
@@ -329,7 +338,7 @@ func runServer(args []string, mode string) int {
 		SecretKey:             secretKey,
 		SecretKeyPrevious:     secretKeyPrevious,
 		SecretBackend:         secretStore,
-		MetricsHandler:        state.ExecutionMetricsHandler(stateStore, triggerMetrics.Handler(webhookMetrics.Handler(webhookStore))),
+		MetricsHandler:        runtimeSecretCandidateMetrics.Handler(state.ExecutionMetricsHandler(stateStore, triggerMetrics.Handler(webhookMetrics.Handler(webhookStore)))),
 		UIHostURL:             *uiHostURL,
 		UIHostLabel:           *uiHostLabel,
 		UIHostAccountEndpoint: *uiHostAccountEndpoint,
@@ -348,6 +357,28 @@ func runServer(args []string, mode string) int {
 	}
 	if retention.Enabled() {
 		go runJobRetentionLoop(runCtx, stateStore, retention)
+	}
+	if cleaner, ok := secretStore.(secretbackend.RuntimeCandidateCleaner); ok && *runtimeSecretCandidateGracePeriod > 0 {
+		liveReferences, ok := stateStore.(secretbackend.RuntimeCandidateLiveReferenceSource)
+		if !ok {
+			fmt.Fprintf(os.Stderr, "%s state backend does not provide runtime Secret candidate liveness\n", mode)
+			return 1
+		}
+		collector := secretbackend.RuntimeCandidateCollector{
+			Backend:     cleaner,
+			Live:        liveReferences,
+			GracePeriod: *runtimeSecretCandidateGracePeriod,
+			PageSize:    min(secretbackend.DefaultRuntimeCandidatePageSize, *runtimeSecretCandidateSweepLimit),
+			SweepLimit:  *runtimeSecretCandidateSweepLimit,
+			Metrics:     runtimeSecretCandidateMetrics,
+		}
+		go func() {
+			if err := collector.Run(runCtx, *runtimeSecretCandidateSweepInterval, func(err error) {
+				fmt.Fprintf(os.Stderr, "%s runtime Secret candidate collector: %v\n", mode, err)
+			}); err != nil {
+				fmt.Fprintf(os.Stderr, "%s runtime Secret candidate collector: %v\n", mode, err)
+			}
+		}()
 	}
 	sourceBundleRetention := sourceBundleRetentionPolicy{
 		GracePeriod: *sourceBundleGracePeriod,
