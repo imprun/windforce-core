@@ -301,14 +301,26 @@ func (r *Resolver) ResolveRuntimeInput(
 		}
 	}
 	for _, target := range job.Payload.RuntimeAccess.VariableTargets {
-		value, secret, resolveErr := r.ResolveVariableScoped(
-			preparedContext,
-			workspaceID,
-			job.Payload.App,
-			job.Payload.RuntimeAccess,
-			target.Scope,
-			target.Path,
-		)
+		var value string
+		var secret bool
+		var resolveErr error
+		if target.Scope == contract.RuntimeConfigScopeActor {
+			value, secret, resolveErr = r.ResolveJobVariableScoped(
+				preparedContext,
+				job,
+				target.Scope,
+				target.Path,
+			)
+		} else {
+			value, secret, resolveErr = r.ResolveVariableScoped(
+				preparedContext,
+				workspaceID,
+				job.Payload.App,
+				job.Payload.RuntimeAccess,
+				target.Scope,
+				target.Path,
+			)
+		}
 		if resolveErr != nil {
 			if errors.Is(resolveErr, state.ErrNotFound) {
 				continue
