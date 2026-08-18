@@ -25,6 +25,7 @@ type WorkerRecord struct {
 	Status               string                      `json:"status"`
 	CredentialID         string                      `json:"credentialId,omitempty"`
 	CredentialGeneration int64                       `json:"credentialGeneration,omitempty"`
+	ResourcePressure     *WorkerResourcePressure     `json:"resourcePressure,omitempty"`
 	StartedAt            time.Time                   `json:"startedAt"`
 	LastHeartbeatAt      time.Time                   `json:"lastHeartbeatAt"`
 }
@@ -94,7 +95,7 @@ func WorkerClaimSelector(record WorkerRecord) ([]string, []string, error) {
 // and returns the immutable, non-secret identity to pin to the claim attempt.
 func RegisteredWorkerClaim(record WorkerRecord, requestedTags []string, requestedLabels []string, now time.Time) ([]string, []string, WorkerLeaseIdentity, error) {
 	status, err := NormalizeWorkerStatus(record.Status)
-	if err != nil || status != WorkerStatusActive || !record.Live(now) {
+	if err != nil || status != WorkerStatusActive || !record.Live(now) || !record.AcceptingClaims() {
 		return nil, nil, WorkerLeaseIdentity{}, ErrForbidden
 	}
 	tags, labels, err := WorkerClaimSelector(record)

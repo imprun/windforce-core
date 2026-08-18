@@ -263,12 +263,12 @@ RETURNING updated_at`,
 
 func (s *PostgresStore) GetWorker(ctx context.Context, workerID string) (WorkerRecord, error) {
 	var record WorkerRecord
-	var tags, labels, profiles []byte
+	var tags, labels, profiles, pressure []byte
 	err := s.pool.QueryRow(ctx, `
-SELECT id, worker_group, engine_version, build_revision, tags, labels, execution_profiles, slots, status, credential_id, credential_generation, started_at, last_heartbeat_at
+SELECT id, worker_group, engine_version, build_revision, tags, labels, execution_profiles, slots, status, credential_id, credential_generation, resource_pressure, started_at, last_heartbeat_at
 FROM worker_registry WHERE id=$1`, strings.TrimSpace(workerID)).Scan(
 		&record.ID, &record.Group, &record.EngineVersion, &record.BuildRevision, &tags, &labels, &profiles, &record.Slots, &record.Status,
-		&record.CredentialID, &record.CredentialGeneration, &record.StartedAt, &record.LastHeartbeatAt,
+		&record.CredentialID, &record.CredentialGeneration, &pressure, &record.StartedAt, &record.LastHeartbeatAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return WorkerRecord{}, ErrNotFound
@@ -283,6 +283,10 @@ FROM worker_registry WHERE id=$1`, strings.TrimSpace(workerID)).Scan(
 		return WorkerRecord{}, err
 	}
 	if err := json.Unmarshal(profiles, &record.ExecutionProfiles); err != nil {
+		return WorkerRecord{}, err
+	}
+	record.ResourcePressure, err = unmarshalWorkerResourcePressure(pressure)
+	if err != nil {
 		return WorkerRecord{}, err
 	}
 	return record, nil

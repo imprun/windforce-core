@@ -27,6 +27,13 @@ type Backend interface {
 	CompleteJobWaitingHuman(ctx context.Context, lease state.Lease, result contract.JobResult, task state.HumanTask) error
 }
 
+// ResourcePressureHeartbeatBackend is optional so third-party/local Backend
+// implementations that predate pressure reporting keep working. Core's Local,
+// PostgreSQL, and remote Worker API implementations support it.
+type ResourcePressureHeartbeatBackend interface {
+	HeartbeatWorkerPressure(context.Context, string, state.WorkerResourcePressure) error
+}
+
 // ExecutionContextProvider lets a remote backend attach lease-scoped metadata
 // to artifact requests without coupling the generic runtime to its transport.
 type ExecutionContextProvider interface {

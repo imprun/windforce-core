@@ -119,6 +119,14 @@ Profile이 고정된 queued Job인데 live registry에 호환 실행 profile이 
 
 현재 서버 측 Artifact Store 구현은 파일시스템 기반입니다. 이것은 원격 Worker 전송 방식과 별개입니다. Core가 해당 파일시스템을 소유하고 Worker Plane을 통해 digest 기반 Artifact를 원격 Worker에 제공합니다.
 
+## 리소스 압력에 따른 Claim 보호
+
+Worker는 로컬 메모리, CPU 또는 파일 디스크립터 사용률이 설정된 high watermark에 도달하면 새 claim만 잠시 멈춥니다. 기본 high/low 값은 `0.90`/`0.80`이며, 현재 비교 가능한 모든 수치가 low보다 낮아져야 재개합니다. 아직 high를 넘은 적이 없는 Worker에서 unknown 관측은 실행을 막지 않지만, 이미 멈춘 Worker를 unknown 관측만으로 재개하지 않습니다. `--resource-pressure-high-watermark`, `--resource-pressure-low-watermark`, `--resource-pressure-sample-interval`로 조정하고 `--resource-pressure-disabled`로 명시적으로 끌 수 있습니다.
+
+Linux에서는 cgroup v2를 우선 사용합니다. `memory.current`는 같은 cgroup에 놓인 Worker와 App child process를 포함하며, 유한한 `memory.max`가 있을 때만 비율을 계산합니다. `memory.max=max`를 0이나 과부하로 오판하지 않습니다. Host fallback은 Worker process tree의 RSS 합계를 `MemTotal`과 비교합니다. CPU는 cgroup pressure 또는 정규화한 host load를 사용하며 파일 디스크립터는 per-process 제한에 따라 Worker process만 측정합니다. 다른 플랫폼은 버전 1에서 안전한 값을 추측하지 않고 `scope: unknown`을 보고합니다.
+
+리소스 압력은 `draining`이나 `offline`이 아닙니다. 이미 실행 중인 Job의 registry/lease heartbeat, 로그, 완료와 정리는 계속됩니다. Local Processor와 정본 State Store claim transaction이 모두 `accepting_claims: false`인 등록 Worker의 신규 claim을 거부합니다. 압력 관측이 없는 기존 Worker는 호환성을 유지합니다. Worker 및 Worker Group 관측 API는 stable reason code, 숫자 수치, 관측/freshness 시각과 claim 가능한 capacity만 노출하며 sampler 원문 오류, 경로, 환경 값, credential을 노출하지 않습니다. [ADR 0050](../../adr/0050-pause-worker-claims-under-resource-pressure.md)을 참고하세요.
+
 ## Worker 종료 수명주기
 
 등록된 Worker 상태는 `active`입니다. Process가 interrupt 또는 termination signal을 받으면 새 Job claim을 중단하고 같은 registry record를 `draining`으로 갱신합니다. Registry와 Job lease heartbeat는 계속되며 이미 claim한 Job은 기본 30초인 `--drain-timeout` 동안 실행 context를 유지합니다. 그 안에 끝나면 정상적으로 최종 Result를 기록합니다. 제한시간이 지나면 Core가 Launcher를 취소하고 실패 Result를 기록하며, 종료 signal과 분리된 completion context로 lease-fenced 완료 처리까지 수행합니다.
@@ -158,6 +166,7 @@ Worker 또는 Runtime 변경을 수용하기 전에 다음을 모두 확인해�
 - 로컬 및 원격 Worker 경로가 동일한 Bundle과 완료 의미를 보존합니다.
 - 원격 archive 무결성을 Windows와 POSIX 모두에서 cache 승격 전에 검증합니다.
 - 종료 시 새 claim을 중단하고 `active -> draining`을 노출하며 drain deadline까지 실행 중 Job을 보존한 뒤 완료 후에만 registry record를 제거합니다.
+- 리소스 압력은 새 claim만 멈추고 lifecycle drain/offline과 분리되며, unknown 또는 stale 관측만으로 자동 재개하지 않고 실행 중 Job을 취소하지 않습니다.
 - 로그와 결과가 Secret 마스킹 및 lease fencing을 유지합니다.
 - Trace Context가 없거나 잘못됐거나 너무 커도 실행을 막지 않습니다. Local, Remote, Standalone Worker는 claim transport의 현재 Context가 아니라 저장된 Job 생성 Context를 사용하고, 유효한 Job Context가 없으면 Worker Root를 시작하며, 유효 실행 Carrier만 Launcher에 전달합니다.
 - Job은 영속 작업이고 Attempt는 lease로 fence된 한 번의 실행입니다. Attempt 1은 생성 Trace를 이어서 사용할 수 있고, `attempt > 1`의 lease 복구는 이전 attempt Context 저장을 요구하지 않으면서 생성 Context에 Link한 새 Root를 시작합니다. 멱등 replay는 Attempt를 만들거나 생성 Context를 바꾸지 않습니다.

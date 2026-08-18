@@ -38,6 +38,7 @@ import (
 	triggerpkg "github.com/imprun/windforce-core/internal/trigger"
 	"github.com/imprun/windforce-core/internal/webhook"
 	"github.com/imprun/windforce-core/internal/worker"
+	"github.com/imprun/windforce-core/internal/workerpressure"
 )
 
 var (
@@ -126,6 +127,10 @@ func runServer(args []string, mode string) int {
 	poll := flags.Duration("poll", 500*time.Millisecond, "standalone worker poll interval")
 	leaseTTL := flags.Duration("lease", 30*time.Second, "worker job lease TTL")
 	drainTimeout := flags.Duration("drain-timeout", 30*time.Second, "maximum time to drain an active job during shutdown")
+	pressureDisabled := flags.Bool("resource-pressure-disabled", false, "disable standalone Worker resource-pressure claim protection")
+	pressureHighWatermark := flags.Float64("resource-pressure-high-watermark", workerpressure.DefaultHighWatermark, "pause standalone Worker claims at or above this resource ratio")
+	pressureLowWatermark := flags.Float64("resource-pressure-low-watermark", workerpressure.DefaultLowWatermark, "resume standalone Worker claims only below this resource ratio")
+	pressureSampleInterval := flags.Duration("resource-pressure-sample-interval", workerpressure.DefaultSampleInterval, "minimum interval between standalone Worker resource samples")
 	logFlushInterval := flags.Duration("log-flush-interval", defaultLogFlushInterval, "worker log flush interval")
 	logCapBytes := flags.Int("log-cap-bytes", defaultLogCapBytes, "per-job log size cap in bytes; 0 disables the cap")
 	logJobPayloads := flags.Bool("log-job-payloads", false, "log complete decrypted job input and execution output")
@@ -171,6 +176,11 @@ func runServer(args []string, mode string) int {
 	}
 	if *drainTimeout <= 0 {
 		fmt.Fprintf(os.Stderr, "%s: --drain-timeout must be greater than zero\n", mode)
+		return 2
+	}
+	pressureObserver, err := newResourcePressureObserver(mode != "standalone" || *pressureDisabled, *pressureHighWatermark, *pressureLowWatermark, *pressureSampleInterval)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s: %v\n", mode, err)
 		return 2
 	}
 	if *publicAPIRPS <= 0 || *publicAPIBurst <= 0 {
@@ -391,6 +401,7 @@ func runServer(args []string, mode string) int {
 			TeeJobLogs:        *teeJobLogs,
 			RuntimeBindings:   runtimeBindings,
 			RuntimeResolver:   runtimeResolver,
+			ResourcePressure:  pressureObserver,
 		}
 		go func() {
 			if err := processor.RunLoop(runCtx, *poll); err != nil {
@@ -492,6 +503,10 @@ func runWorker(args []string) int {
 	poll := flags.Duration("poll", 500*time.Millisecond, "job poll interval")
 	leaseTTL := flags.Duration("lease", 30*time.Second, "job lease TTL")
 	drainTimeout := flags.Duration("drain-timeout", 30*time.Second, "maximum time to drain an active job during shutdown")
+	pressureDisabled := flags.Bool("resource-pressure-disabled", false, "disable Worker resource-pressure claim protection")
+	pressureHighWatermark := flags.Float64("resource-pressure-high-watermark", workerpressure.DefaultHighWatermark, "pause Worker claims at or above this resource ratio")
+	pressureLowWatermark := flags.Float64("resource-pressure-low-watermark", workerpressure.DefaultLowWatermark, "resume Worker claims only below this resource ratio")
+	pressureSampleInterval := flags.Duration("resource-pressure-sample-interval", workerpressure.DefaultSampleInterval, "minimum interval between Worker resource samples")
 	logFlushInterval := flags.Duration("log-flush-interval", defaultLogFlushInterval, "worker log flush interval")
 	logCapBytes := flags.Int("log-cap-bytes", defaultLogCapBytes, "per-job log size cap in bytes; 0 disables the cap")
 	logJobPayloads := flags.Bool("log-job-payloads", false, "log complete decrypted job input and execution output")
@@ -516,6 +531,11 @@ func runWorker(args []string) int {
 	}
 	if *drainTimeout <= 0 {
 		fmt.Fprintln(os.Stderr, "worker: --drain-timeout must be greater than zero")
+		return 2
+	}
+	pressureObserver, err := newResourcePressureObserver(*pressureDisabled, *pressureHighWatermark, *pressureLowWatermark, *pressureSampleInterval)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "worker: %v\n", err)
 		return 2
 	}
 	runCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -597,6 +617,7 @@ func runWorker(args []string) int {
 			LogJobPayloads:    *logJobPayloads,
 			TeeJobLogs:        *teeJobLogs,
 			RuntimeBindings:   runtimeBindings,
+			ResourcePressure:  pressureObserver,
 		}
 		if *once {
 			processed, err := processor.RunOnce(context.Background())
@@ -658,6 +679,7 @@ func runWorker(args []string) int {
 		TeeJobLogs:        *teeJobLogs,
 		RuntimeBindings:   runtimeBindings,
 		RuntimeResolver:   runtimeconfig.New(stateStore, secretStore),
+		ResourcePressure:  pressureObserver,
 	}
 	if *once {
 		processed, err := processor.RunOnce(context.Background())
@@ -674,6 +696,17 @@ func runWorker(args []string) int {
 		return 1
 	}
 	return 0
+}
+
+func newResourcePressureObserver(disabled bool, highWatermark, lowWatermark float64, sampleInterval time.Duration) (worker.ResourcePressureObserver, error) {
+	if disabled {
+		return nil, nil
+	}
+	return workerpressure.New(workerpressure.DefaultSampler(), workerpressure.Config{
+		HighWatermark:  highWatermark,
+		LowWatermark:   lowWatermark,
+		SampleInterval: sampleInterval,
+	})
 }
 
 const (

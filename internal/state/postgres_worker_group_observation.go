@@ -35,7 +35,7 @@ FROM worker_group_run_state WHERE worker_group=$1`, group).Scan(
 	}
 
 	workerRows, err := tx.Query(ctx, `
-SELECT id, COALESCE(worker_group, ''), slots, status, credential_generation, last_heartbeat_at
+SELECT id, COALESCE(worker_group, ''), slots, status, credential_generation, resource_pressure, last_heartbeat_at
 FROM worker_registry`)
 	if err != nil {
 		return WorkerGroupObservation{}, err
@@ -43,10 +43,16 @@ FROM worker_registry`)
 	workers := []WorkerRecord{}
 	for workerRows.Next() {
 		var worker WorkerRecord
+		var pressure []byte
 		if err := workerRows.Scan(
 			&worker.ID, &worker.Group, &worker.Slots, &worker.Status,
-			&worker.CredentialGeneration, &worker.LastHeartbeatAt,
+			&worker.CredentialGeneration, &pressure, &worker.LastHeartbeatAt,
 		); err != nil {
+			workerRows.Close()
+			return WorkerGroupObservation{}, err
+		}
+		worker.ResourcePressure, err = unmarshalWorkerResourcePressure(pressure)
+		if err != nil {
 			workerRows.Close()
 			return WorkerGroupObservation{}, err
 		}

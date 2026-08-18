@@ -143,12 +143,20 @@ func (c *Client) RegisterWorker(ctx context.Context, record state.WorkerRecord) 
 		"execution_profiles": record.ExecutionProfiles,
 		"slots":              record.Slots,
 		"status":             record.Status,
+		"resource_pressure":  record.ResourcePressure,
 	}, nil)
 	return err
 }
 
 func (c *Client) HeartbeatWorker(ctx context.Context, workerID string) error {
 	_, err := c.do(ctx, http.MethodPost, "/worker/v1/workers/"+workerID+"/heartbeat", struct{}{}, nil)
+	return err
+}
+
+func (c *Client) HeartbeatWorkerPressure(ctx context.Context, workerID string, pressure state.WorkerResourcePressure) error {
+	_, err := c.do(ctx, http.MethodPost, "/worker/v1/workers/"+workerID+"/heartbeat", map[string]any{
+		"resource_pressure": pressure,
+	}, nil)
 	return err
 }
 

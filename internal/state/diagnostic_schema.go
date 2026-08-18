@@ -48,7 +48,7 @@ func (s *PostgresStore) CheckSchemaCompatibility(ctx context.Context) (SchemaCom
 		"runtime_config_operation": {"workspace_id", "job_id", "attempt", "operation_id", "request_fingerprint"},
 		"runtime_resource":         {"workspace_id", "owner_scope", "app_key", "path", "revision"},
 		"runtime_variable":         {"workspace_id", "owner_scope", "app_key", "path", "revision"},
-		"worker_registry":          {"id", "worker_group", "execution_profiles", "engine_version", "build_revision"},
+		"worker_registry":          {"id", "worker_group", "execution_profiles", "engine_version", "build_revision", "resource_pressure"},
 	}
 
 	rows, err := s.pool.Query(ctx, `

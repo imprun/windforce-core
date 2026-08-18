@@ -1599,6 +1599,11 @@ func (s *LocalStore) RegisterWorker(ctx context.Context, record WorkerRecord) er
 	}
 	record.ExecutionProfiles = profiles
 	return s.update(ctx, func(snapshot *Snapshot, now time.Time) error {
+		pressure, err := NormalizeWorkerResourcePressure(record.ResourcePressure, now)
+		if err != nil {
+			return err
+		}
+		record.ResourcePressure = pressure
 		if snapshot.Workers == nil {
 			snapshot.Workers = map[string]WorkerRecord{}
 		}
@@ -1633,6 +1638,23 @@ func (s *LocalStore) HeartbeatWorker(ctx context.Context, workerID string) error
 		if !ok {
 			return fmt.Errorf("%w: worker %q", ErrNotFound, workerID)
 		}
+		record.LastHeartbeatAt = now
+		snapshot.Workers[workerID] = record
+		return nil
+	})
+}
+
+func (s *LocalStore) HeartbeatWorkerPressure(ctx context.Context, workerID string, pressure WorkerResourcePressure) error {
+	return s.update(ctx, func(snapshot *Snapshot, now time.Time) error {
+		record, ok := snapshot.Workers[workerID]
+		if !ok {
+			return fmt.Errorf("%w: worker %q", ErrNotFound, workerID)
+		}
+		normalized, err := NormalizeWorkerResourcePressure(&pressure, now)
+		if err != nil {
+			return err
+		}
+		record.ResourcePressure = normalized
 		record.LastHeartbeatAt = now
 		snapshot.Workers[workerID] = record
 		return nil

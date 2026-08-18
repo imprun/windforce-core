@@ -424,6 +424,23 @@ export type ExecutionProfileView = {
   libc: string;
 };
 
+export type WorkerResourceMeasurement = {
+  supported: boolean;
+  usage?: number;
+  limit?: number;
+  ratio?: number;
+};
+
+export type WorkerResourcePressure = {
+  supported: boolean;
+  accepting_claims: boolean;
+  reason_code?: WorkerPressureReasonCode;
+  scope: "cgroup_v2" | "process_tree_host" | "unknown";
+  observed_at: string;
+  fresh_until: string;
+  measurements?: Record<string, WorkerResourceMeasurement>;
+};
+
 export type WorkerView = {
   id: string;
   group?: string;
@@ -434,6 +451,7 @@ export type WorkerView = {
   execution_profiles: ExecutionProfileView[];
   slots: number;
   live: boolean;
+  resource_pressure?: WorkerResourcePressure;
   started_at: string;
   last_heartbeat_at: string;
 };
@@ -450,6 +468,10 @@ export type WorkerGroupInventoryItem = {
   run_state_revision: number;
   deadline_at?: string;
   live_workers: number;
+  pressure_accepting_workers: number;
+  pressure_paused_workers: number;
+  stale_pressure_workers: number;
+  pressure_reason_codes: WorkerPressureReasonCode[];
   unmanaged_live_workers: number;
   total_slots: number;
   occupied_slots: number;
@@ -478,7 +500,14 @@ export type PlacementReasonCode =
   | "no_live_capacity"
   | "missing_tag"
   | "missing_label"
-  | "execution_profile_mismatch";
+  | "execution_profile_mismatch"
+  | "resource_pressure";
+
+export type WorkerPressureReasonCode =
+  | "memory_high"
+  | "cpu_high"
+  | "file_descriptors_high"
+  | "observation_unknown";
 
 export type WorkerGroupPlacementCandidate = {
   group: string;
