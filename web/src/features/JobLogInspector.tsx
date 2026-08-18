@@ -1,12 +1,19 @@
 import { RotateCw, Search, Square } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DefinitionList, ErrorNotice, Field, Sheet } from "../components/ui";
-import { errorMessage, type JobLogStreamEvent, type JobStatus } from "../lib/api";
+import {
+  errorMessage,
+  type JobLogStreamEvent,
+  type JobResultResponse,
+  type JobStatus,
+} from "../lib/api";
 import { useApp } from "../lib/app-context";
 import { formatTime, shortSHA } from "../lib/format";
 import { translate } from "../shared/i18n";
 
 const maxClientLogCharacters = 2 * 1024 * 1024;
+const terminalResultRetryAttempts = 3;
+const terminalResultRetryDelayMs = 100;
 
 export function JobLogInspector({
   initialJobID = "",
@@ -19,6 +26,7 @@ export function JobLogInspector({
   const [draftJobID, setDraftJobID] = useState(initialJobID);
   const [activeJobID, setActiveJobID] = useState("");
   const [job, setJob] = useState<JobStatus | null>(null);
+  const [terminalResult, setTerminalResult] = useState<JobResultResponse | null>(null);
   const [logs, setLogs] = useState("");
   const [offset, setOffset] = useState(0);
   const [attempt, setAttempt] = useState<number | null>(null);
@@ -49,6 +57,7 @@ export function JobLogInspector({
       setActiveJobID(jobID);
       setDraftJobID(jobID);
       setJob(null);
+      setTerminalResult(null);
       setLogs("");
       logsRef.current = "";
       setOffset(0);
@@ -95,6 +104,10 @@ export function JobLogInspector({
           cursor = result.offset;
           completed = result.completed;
         }
+        if (!controller.signal.aborted && completed) {
+          const result = await readTerminalJobResult(() => api.jobResult(jobID, controller.signal));
+          if (!controller.signal.aborted && result) setTerminalResult(result);
+        }
       } catch (cause: unknown) {
         if (!controller.signal.aborted) setError(errorMessage(cause));
       } finally {
@@ -117,6 +130,7 @@ export function JobLogInspector({
     onClose();
   };
   const status = streamStatus || job?.status || job?.state || "";
+  const humanTaskExpired = isHumanTaskDeadlineResult(terminalResult);
   const executionLimitPins = [
     ...(job?.execution_limits?.concurrency || []).map((limit) => ({
       kind: "concurrency" as const,
@@ -210,6 +224,12 @@ export function JobLogInspector({
               [translate("monitoring.logInspector.started"), formatTime(job.started_at)],
             ]}
           />
+        ) : null}
+
+        {humanTaskExpired ? (
+          <div className="inlineNotice error" role="status">
+            {translate("monitoring.logInspector.humanTaskExpired")}
+          </div>
         ) : null}
 
         {executionLimitPins.length ? (
@@ -308,6 +328,30 @@ export function shortOpaqueDigest(value: string, length = 12): string {
   const separator = value.indexOf(":");
   if (separator < 0) return shortSHA(value, length);
   return `${value.slice(0, separator + 1)}${value.slice(separator + 1, separator + 1 + length)}`;
+}
+
+export function isHumanTaskDeadlineResult(result: JobResultResponse | null): boolean {
+  if (result?.status !== "failure" || typeof result.result !== "object") return false;
+  if (result.result === null || Array.isArray(result.result)) return false;
+  return (result.result as Record<string, unknown>).code === "human_task_deadline";
+}
+
+export async function readTerminalJobResult(
+  load: () => Promise<JobResultResponse>,
+  pause: () => Promise<void> = () =>
+    new Promise((resolve) => window.setTimeout(resolve, terminalResultRetryDelayMs)),
+): Promise<JobResultResponse | null> {
+  for (let attempt = 0; attempt < terminalResultRetryAttempts; attempt += 1) {
+    let result: JobResultResponse;
+    try {
+      result = await load();
+    } catch {
+      return null;
+    }
+    if (result.status !== "pending") return result;
+    if (attempt + 1 < terminalResultRetryAttempts) await pause();
+  }
+  return null;
 }
 
 function JobLogStatus({ status }: { status: string }) {

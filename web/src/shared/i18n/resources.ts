@@ -636,6 +636,8 @@ export const en = {
   "monitoring.logInspector.attempt": "Attempt",
   "monitoring.logInspector.commit": "Release commit",
   "monitoring.logInspector.started": "Started",
+  "monitoring.logInspector.humanTaskExpired":
+    "HumanTask expired at its requested deadline. This is a HumanTask terminal cause, not an ordinary Action error.",
   "monitoring.logInspector.executionLimits": "Applied execution limits",
   "monitoring.logInspector.executionLimitsHint":
     "Policies pinned when the Run was admitted. Raw input values are never displayed.",
@@ -2320,6 +2322,8 @@ export const ko = {
   "monitoring.logInspector.attempt": "시도",
   "monitoring.logInspector.commit": "Release commit",
   "monitoring.logInspector.started": "시작 시각",
+  "monitoring.logInspector.humanTaskExpired":
+    "HumanTask가 요청된 기한에 만료되었습니다. 일반 Action 오류가 아니라 HumanTask 종료 원인입니다.",
   "monitoring.logInspector.executionLimits": "적용된 실행 제한",
   "monitoring.logInspector.executionLimitsHint":
     "Run 수용 시점에 고정된 정책입니다. 원본 입력값은 표시하지 않습니다.",
