@@ -321,6 +321,12 @@ default of incremental job log flushing with a 20 MiB per-job cap; set
 `worker --drain-timeout 30s` controls graceful shutdown: the Worker stops new
 claims, reports `draining`, lets the active Job finish for that period, and
 then cancels it if necessary before deregistering.
+Workers also protect running work by pausing only new claims when local memory,
+CPU, or file-descriptor pressure crosses the default `0.90` high watermark.
+They resume only below the default `0.80` low watermark. Tune this with
+`--resource-pressure-high-watermark`, `--resource-pressure-low-watermark`, and
+`--resource-pressure-sample-interval`; use `--resource-pressure-disabled` only
+when an external supervisor deliberately owns an equivalent claim gate.
 
 Implemented control-plane endpoints:
 

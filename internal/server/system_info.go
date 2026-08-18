@@ -28,6 +28,7 @@ func EngineCapabilities() map[string]string {
 		"execution_limit_policy":         "v1",
 		"execution_limit_shape":          executionlimit.FingerprintVersion,
 		"worker_management":              "v1",
+		"worker_resource_pressure":       "v1",
 	}
 }
 

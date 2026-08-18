@@ -83,6 +83,7 @@ func TestSystemInfoExposesSafeServiceConfiguration(t *testing.T) {
 	if body.Capabilities["execution_limit_policy"] != "v1" ||
 		body.Capabilities["execution_limit_shape"] != executionlimit.FingerprintVersion ||
 		body.Capabilities["worker_management"] != "v1" ||
+		body.Capabilities["worker_resource_pressure"] != "v1" ||
 		body.Capabilities["capability_gateway_run_context"] != "v1" {
 		t.Fatalf("capabilities = %#v", body.Capabilities)
 	}

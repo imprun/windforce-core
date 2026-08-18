@@ -166,6 +166,14 @@ managed claim while leaving existing lease heartbeat, log, cancellation, and
 completion behavior unchanged. See [ADR 0025](../adr/0025-managed-worker-credentials-and-group-drain.md)
 and the [Worker management API](../api/worker-management.md).
 
+## Resource-pressure claim protection
+
+A Worker can pause only new claims when local memory, CPU, or file-descriptor pressure reaches its configured high watermark. The default high/low pair is `0.90`/`0.80`; recovery requires every comparable measurement to fall strictly below the low watermark. An unknown observation does not pause a Worker that has never crossed high, but it never resumes a Worker that was already paused. Configure the controller with `--resource-pressure-high-watermark`, `--resource-pressure-low-watermark`, and `--resource-pressure-sample-interval`, or explicitly disable it with `--resource-pressure-disabled`.
+
+On Linux, Core prefers cgroup v2. `memory.current` includes the Worker and child App processes in the same cgroup and is compared only with a finite `memory.max`; `max` is reported without a ratio. The host fallback sums RSS for the Worker process tree against `MemTotal`. CPU is cgroup pressure or normalized host load, while file-descriptor usage is the Worker process against its per-process limit. Unsupported platforms report `scope: unknown` in version 1 instead of manufacturing a safe value.
+
+Pressure is not `draining` or `offline`. The Worker keeps registry and lease heartbeats, logs, completion, and cleanup for an already running Job. Both the local Processor and the authoritative State Store claim transaction reject a new registered claim while `accepting_claims` is false. A legacy Worker with no pressure observation remains compatible. Worker and group observation APIs expose only stable reason codes, numeric measurements, observation/freshness times, and claimable capacity; they never expose sampler errors, paths, environment values, or credentials. See [ADR 0050](../adr/0050-pause-worker-claims-under-resource-pressure.md).
+
 ## Worker shutdown lifecycle
 
 A registered worker is `active`. When its process receives interrupt or termination, it stops making new claims and updates the same registry record to `draining`. Registry and Job lease heartbeats continue while an already claimed Job keeps its execution context for the configured `--drain-timeout`, which defaults to 30 seconds. If it finishes within that period, the worker writes the terminal result normally. If the deadline expires, Core cancels the launcher, records the resulting failure, and still performs lease-fenced completion with a shutdown-independent completion context.
@@ -215,6 +223,7 @@ Before accepting a worker or runtime change, verify all of the following:
 - Local and remote worker paths preserve equivalent bundle and completion semantics.
 - Remote archive integrity is verified before cache promotion on Windows as well as POSIX hosts.
 - Managed credentials never broaden their exact labels or workspace scope, and draining groups acquire no new managed leases.
+- Resource pressure pauses only new claims, remains distinct from lifecycle drain/offline, cannot auto-resume from an unknown or stale observation, and never cancels a running Job.
 - Shutdown stops new claims, exposes `active -> draining`, preserves the active Job until the drain deadline, and removes the registry record only after completion.
 - Logs and results remain secret-masked and lease-fenced.
 - A configured worker-local capability gateway is loopback-only, advertises labels only after successful discovery, receives the actual Run/Job/Attempt context when opening a matching Job-scoped run, issues only Job-scoped credentials to the execution, and closes every opened run when processing terminates.

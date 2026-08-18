@@ -958,6 +958,7 @@ CREATE TABLE IF NOT EXISTS worker_registry (
     status            text NOT NULL DEFAULT 'active',
     credential_id     text NOT NULL DEFAULT '',
     credential_generation bigint NOT NULL DEFAULT 0,
+    resource_pressure jsonb NOT NULL DEFAULT 'null'::jsonb,
     started_at        timestamptz NOT NULL,
     last_heartbeat_at timestamptz NOT NULL
 );
@@ -974,6 +975,8 @@ ALTER TABLE worker_registry
     ADD COLUMN IF NOT EXISTS engine_version text NOT NULL DEFAULT '';
 ALTER TABLE worker_registry
     ADD COLUMN IF NOT EXISTS build_revision text NOT NULL DEFAULT '';
+ALTER TABLE worker_registry
+    ADD COLUMN IF NOT EXISTS resource_pressure jsonb NOT NULL DEFAULT 'null'::jsonb;
 
 CREATE TABLE IF NOT EXISTS worker_credential (
     id                  text PRIMARY KEY,

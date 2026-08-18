@@ -18,6 +18,7 @@ const (
 	PlacementReasonMissingTag               = "missing_tag"
 	PlacementReasonMissingLabel             = "missing_label"
 	PlacementReasonExecutionProfileMismatch = "execution_profile_mismatch"
+	PlacementReasonResourcePressure         = "resource_pressure"
 
 	unmanagedWorkerGroup = "unmanaged"
 )
@@ -37,29 +38,33 @@ type WorkerGroupInventory struct {
 }
 
 type WorkerGroupInventoryItem struct {
-	Group                string                      `json:"group"`
-	Status               string                      `json:"status"`
-	WorkspaceAllowed     bool                        `json:"workspace_allowed"`
-	Managed              bool                        `json:"managed"`
-	ActiveCredentials    int                         `json:"active_credentials"`
-	RunState             string                      `json:"run_state"`
-	RunStateRevision     int64                       `json:"run_state_revision"`
-	DeadlineAt           *time.Time                  `json:"deadline_at,omitempty"`
-	LiveWorkers          int                         `json:"live_workers"`
-	UnmanagedLiveWorkers int                         `json:"unmanaged_live_workers"`
-	TotalSlots           int                         `json:"total_slots"`
-	OccupiedSlots        int                         `json:"occupied_slots"`
-	AvailableSlots       int                         `json:"available_slots"`
-	ActiveLeases         int                         `json:"active_leases"`
-	RunningJobs          int                         `json:"running_jobs"`
-	Quiescent            bool                        `json:"quiescent"`
-	Tags                 []string                    `json:"tags"`
-	Labels               []string                    `json:"labels"`
-	ExecutionProfiles    []contract.ExecutionProfile `json:"execution_profiles"`
-	EngineVersions       []string                    `json:"engine_versions"`
-	BuildRevisions       []string                    `json:"build_revisions"`
-	VersionOrBuildDrift  bool                        `json:"version_or_build_drift"`
-	LastHeartbeatAt      *time.Time                  `json:"last_heartbeat_at,omitempty"`
+	Group                    string                      `json:"group"`
+	Status                   string                      `json:"status"`
+	WorkspaceAllowed         bool                        `json:"workspace_allowed"`
+	Managed                  bool                        `json:"managed"`
+	ActiveCredentials        int                         `json:"active_credentials"`
+	RunState                 string                      `json:"run_state"`
+	RunStateRevision         int64                       `json:"run_state_revision"`
+	DeadlineAt               *time.Time                  `json:"deadline_at,omitempty"`
+	LiveWorkers              int                         `json:"live_workers"`
+	PressureAcceptingWorkers int                         `json:"pressure_accepting_workers"`
+	PressurePausedWorkers    int                         `json:"pressure_paused_workers"`
+	StalePressureWorkers     int                         `json:"stale_pressure_workers"`
+	PressureReasonCodes      []string                    `json:"pressure_reason_codes"`
+	UnmanagedLiveWorkers     int                         `json:"unmanaged_live_workers"`
+	TotalSlots               int                         `json:"total_slots"`
+	OccupiedSlots            int                         `json:"occupied_slots"`
+	AvailableSlots           int                         `json:"available_slots"`
+	ActiveLeases             int                         `json:"active_leases"`
+	RunningJobs              int                         `json:"running_jobs"`
+	Quiescent                bool                        `json:"quiescent"`
+	Tags                     []string                    `json:"tags"`
+	Labels                   []string                    `json:"labels"`
+	ExecutionProfiles        []contract.ExecutionProfile `json:"execution_profiles"`
+	EngineVersions           []string                    `json:"engine_versions"`
+	BuildRevisions           []string                    `json:"build_revisions"`
+	VersionOrBuildDrift      bool                        `json:"version_or_build_drift"`
+	LastHeartbeatAt          *time.Time                  `json:"last_heartbeat_at,omitempty"`
 }
 
 type PlacementCandidates struct {
@@ -211,7 +216,7 @@ func buildWorkerGroupInventoryItem(
 		Group: group, RunState: runState.State, RunStateRevision: runState.Revision, DeadlineAt: runState.DeadlineAt,
 		ActiveLeases: observation.ActiveLeases, RunningJobs: observation.RunningJobs, Quiescent: observation.Quiescent,
 		Tags: []string{}, Labels: []string{}, ExecutionProfiles: []contract.ExecutionProfile{},
-		EngineVersions: []string{}, BuildRevisions: []string{},
+		EngineVersions: []string{}, BuildRevisions: []string{}, PressureReasonCodes: []string{},
 	}
 
 	for _, credential := range credentials {
@@ -232,6 +237,7 @@ func buildWorkerGroupInventoryItem(
 	profileSet := map[string]contract.ExecutionProfile{}
 	versionSet := map[string]struct{}{}
 	revisionSet := map[string]struct{}{}
+	pressureReasonSet := map[string]struct{}{}
 	activeLeasesByWorker := activeLeaseCountsByWorker(observedAt, jobs)
 	for _, worker := range workers {
 		if placementWorkerGroup(worker) != group || !placementWorkerGenerallyActive(worker, observedAt, credentials) {
@@ -248,10 +254,19 @@ func buildWorkerGroupInventoryItem(
 			continue
 		}
 		item.LiveWorkers++
+		if worker.ResourcePressure != nil && !worker.ResourcePressure.Fresh(observedAt) {
+			item.StalePressureWorkers++
+		}
+		if worker.AcceptingClaims() {
+			item.PressureAcceptingWorkers++
+		} else {
+			item.PressurePausedWorkers++
+			pressureReasonSet[worker.ResourcePressure.ReasonCode] = struct{}{}
+		}
 		if strings.TrimSpace(worker.CredentialID) == "" {
 			item.UnmanagedLiveWorkers++
 		}
-		if placementWorkerEligible(worker, workspaceID, observedAt, credentials, runStates) {
+		if placementWorkerEligible(worker, workspaceID, observedAt, credentials, runStates) && worker.AcceptingClaims() {
 			slots := normalizedWorkerSlots(worker)
 			item.TotalSlots = saturatingAddInt(item.TotalSlots, slots)
 			occupied := activeLeasesByWorker.forWorker(worker)
@@ -296,6 +311,7 @@ func buildWorkerGroupInventoryItem(
 	item.Labels = sortedSet(labelSet)
 	item.EngineVersions = sortedSet(versionSet)
 	item.BuildRevisions = sortedSet(revisionSet)
+	item.PressureReasonCodes = sortedSet(pressureReasonSet)
 	item.VersionOrBuildDrift = len(item.EngineVersions) > 1 || len(item.BuildRevisions) > 1
 	profileKeys := make([]string, 0, len(profileSet))
 	for key := range profileSet {
@@ -401,6 +417,7 @@ func buildWorkerGroupPlacementCandidate(
 	drainingWorkers := 0
 	tagMatches := 0
 	profileMatches := 0
+	pressurePausedMatches := 0
 	for _, worker := range workers {
 		if placementWorkerGroup(worker) != group.Group ||
 			!placementWorkerWorkspaceActive(worker, workspaceID, observedAt, credentials) {
@@ -431,6 +448,10 @@ func buildWorkerGroupPlacementCandidate(
 		}
 		profileMatches++
 		if !selectorAllowed(target.tag, target.labels, tagSet, labelSet) {
+			continue
+		}
+		if !worker.AcceptingClaims() {
+			pressurePausedMatches++
 			continue
 		}
 		result.MatchingWorkers++
@@ -476,6 +497,10 @@ func buildWorkerGroupPlacementCandidate(
 	}
 	if profileLabel != "" && profileMatches == 0 {
 		result.ReasonCodes = appendReasonCode(result.ReasonCodes, PlacementReasonExecutionProfileMismatch)
+		return result, nil
+	}
+	if pressurePausedMatches > 0 {
+		result.ReasonCodes = appendReasonCode(result.ReasonCodes, PlacementReasonResourcePressure)
 		return result, nil
 	}
 	result.ReasonCodes = appendReasonCode(result.ReasonCodes, PlacementReasonMissingLabel)

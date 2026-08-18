@@ -23,6 +23,10 @@ type WorkerGroupObservation struct {
 	DeadlineAt                *time.Time                 `json:"deadline_at,omitempty"`
 	ObservedAt                time.Time                  `json:"observed_at"`
 	LiveWorkers               int                        `json:"live_workers"`
+	PressureAcceptingWorkers  int                        `json:"pressure_accepting_workers"`
+	PressurePausedWorkers     int                        `json:"pressure_paused_workers"`
+	StalePressureWorkers      int                        `json:"stale_pressure_workers"`
+	PressureReasonCodes       []string                   `json:"pressure_reason_codes"`
 	UnmanagedLiveWorkers      int                        `json:"unmanaged_live_workers"`
 	AvailableSlots            int                        `json:"available_slots"`
 	ActiveLeases              int                        `json:"active_leases"`
@@ -44,12 +48,14 @@ func buildWorkerGroupObservation(
 	generationCounts := map[int64]int{}
 
 	result := WorkerGroupObservation{
-		Group:            group,
-		RunState:         runState.State,
-		RunStateRevision: runState.Revision,
-		DeadlineAt:       runState.DeadlineAt,
-		ObservedAt:       observedAt,
+		Group:               group,
+		RunState:            runState.State,
+		RunStateRevision:    runState.Revision,
+		DeadlineAt:          runState.DeadlineAt,
+		ObservedAt:          observedAt,
+		PressureReasonCodes: []string{},
 	}
+	pressureReasons := map[string]struct{}{}
 	for _, job := range jobs {
 		if job.State != JobRunning {
 			continue
@@ -75,17 +81,27 @@ func buildWorkerGroupObservation(
 			continue
 		}
 		result.LiveWorkers++
+		if worker.ResourcePressure != nil && !worker.ResourcePressure.Fresh(observedAt) {
+			result.StalePressureWorkers++
+		}
+		if worker.AcceptingClaims() {
+			result.PressureAcceptingWorkers++
+		} else {
+			result.PressurePausedWorkers++
+			pressureReasons[worker.ResourcePressure.ReasonCode] = struct{}{}
+		}
 		generationCounts[worker.CredentialGeneration]++
 		if worker.CredentialGeneration == 0 {
 			result.UnmanagedLiveWorkers++
 		}
-		if runState.Draining() || worker.Status != WorkerStatusActive {
+		if runState.Draining() || worker.Status != WorkerStatusActive || !worker.AcceptingClaims() {
 			continue
 		}
 		if worker.Slots > 0 {
 			result.AvailableSlots += worker.Slots
 		}
 	}
+	result.PressureReasonCodes = sortedSet(pressureReasons)
 	if result.ActiveLeases >= result.AvailableSlots {
 		result.AvailableSlots = 0
 	} else {

@@ -105,7 +105,7 @@ func (s *PostgresStore) UpdateRoutingPolicyWithPrecondition(ctx context.Context,
 
 func postgresPlacementWorkers(ctx context.Context, tx pgx.Tx) ([]WorkerRecord, error) {
 	rows, err := tx.Query(ctx, `
-SELECT id, worker_group, engine_version, build_revision, tags, labels, execution_profiles, slots, status, credential_id, credential_generation, started_at, last_heartbeat_at
+SELECT id, worker_group, engine_version, build_revision, tags, labels, execution_profiles, slots, status, credential_id, credential_generation, resource_pressure, started_at, last_heartbeat_at
 FROM worker_registry ORDER BY id`)
 	if err != nil {
 		return nil, err
@@ -114,10 +114,10 @@ FROM worker_registry ORDER BY id`)
 	workers := []WorkerRecord{}
 	for rows.Next() {
 		var worker WorkerRecord
-		var tags, labels, profiles []byte
+		var tags, labels, profiles, pressure []byte
 		if err := rows.Scan(
 			&worker.ID, &worker.Group, &worker.EngineVersion, &worker.BuildRevision, &tags, &labels, &profiles,
-			&worker.Slots, &worker.Status, &worker.CredentialID, &worker.CredentialGeneration, &worker.StartedAt, &worker.LastHeartbeatAt,
+			&worker.Slots, &worker.Status, &worker.CredentialID, &worker.CredentialGeneration, &pressure, &worker.StartedAt, &worker.LastHeartbeatAt,
 		); err != nil {
 			return nil, err
 		}
@@ -128,6 +128,10 @@ FROM worker_registry ORDER BY id`)
 			return nil, err
 		}
 		if err := json.Unmarshal(profiles, &worker.ExecutionProfiles); err != nil {
+			return nil, err
+		}
+		worker.ResourcePressure, err = unmarshalWorkerResourcePressure(pressure)
+		if err != nil {
 			return nil, err
 		}
 		workers = append(workers, worker)
