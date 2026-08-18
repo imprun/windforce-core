@@ -123,6 +123,8 @@ Local and remote workers preserve the same ordering and pinned-bundle semantics.
 
 Workers detect and register the Bun, Python, and static-Go profiles they can execute. Claim matching compiles those profiles into reserved labels and reuses the State Store's atomic label filter, so incompatible Jobs remain queued instead of being claimed and failed. The Processor repeats a structured profile check immediately after claim as an invariant defense. Operator labels and execution-profile labels remain separate: managed credentials constrain the former, while Core derives the latter from registered profiles.
 
+Long-running and one-shot Workers both discover profiles before registering. A long-running Worker then polls until shutdown; `worker --once` registers the same active identity, processes at most one claim, and deregisters before returning. The lower-level `Processor.ProcessOne` does not own registry lifecycle and is reserved for callers that already registered the Worker or deliberately use the trusted unregistered static-token compatibility path. See [ADR 0046](../adr/0046-register-one-shot-workers-before-claim.md).
+
 Once a Worker ID is present in the canonical registry, that record is also the
 authoritative claim selector. The State Store atomically requires the claim's
 tags and labels to equal the registered advertisement (including the derived
@@ -148,12 +150,7 @@ The current server-side Artifact Store implementation is filesystem-backed. This
 
 ### Managed remote-worker authority
 
-The static worker token remains a trusted self-hosted compatibility path. A
-managed remote worker instead uses a generation-specific `wfr_` credential
-whose group, exact offered labels, and workspace allowlist are persisted by
-Core. Registration binds the live worker record to that credential ID and
-generation. Claim selection then applies the existing tag and AND-label rules
-inside the credential's workspace scope.
+The static worker token remains a trusted self-hosted compatibility path. A managed remote worker instead uses a generation-specific `wfr_` credential whose group, exact offered labels, and workspace allowlist are persisted by Core. Registration binds the live worker record to that credential ID and generation. Claim selection then applies the existing tag and AND-label rules inside the credential's workspace scope. The credential's exact offered-label set contains operator-authored labels. Reserved execution-profile labels are not added to that credential scope: Core derives them from the structured profiles in the registered Worker record and requires the claim request to match the resulting authoritative selector.
 
 An unregistered static Worker may still use the historical request selector,
 but its lease is deliberately unattributed. It cannot be counted as positive
