@@ -336,24 +336,28 @@ const ctx = {
   },
   variables: {
     async get(p, scope = "workspace") {
-      const r = await api("GET", "/variables/get/p/" + p + (scope === "app" ? "?scope=app" : ""))
+	  const suffix = scope === "workspace" ? "" : "?scope=" + encodeURIComponent(scope)
+	  const r = await api("GET", "/variables/get/p/" + p + suffix)
       if (!r.ok) throw new Error("variables.get(" + p + ") failed: " + r.status)
       return (await r.json()).value
     },
     async set(p, value, options) {
-      const r = await api("PUT", "/variables/p/" + p, { value, ...options })
+	  const suffix = options && options.scope ? "?scope=" + encodeURIComponent(options.scope) : ""
+	  const r = await api("PUT", "/variables/p/" + p + suffix, { value, ...options })
       if (!r.ok) throw new Error("variables.set(" + p + ") failed: " + r.status)
       return r.json()
     },
   },
   resources: {
     async get(p, scope = "workspace") {
-      const r = await api("GET", "/resources/get/p/" + p + (scope === "app" ? "?scope=app" : ""))
+	  const suffix = scope === "workspace" ? "" : "?scope=" + encodeURIComponent(scope)
+	  const r = await api("GET", "/resources/get/p/" + p + suffix)
       if (!r.ok) throw new Error("resources.get(" + p + ") failed: " + r.status)
       return r.json()
     },
     async set(p, value, resourceType, options) {
-      const r = await api("PUT", "/resources/p/" + p, { value, resourceType, ...options })
+	  const suffix = options && options.scope ? "?scope=" + encodeURIComponent(options.scope) : ""
+	  const r = await api("PUT", "/resources/p/" + p + suffix, { value, resourceType, ...options })
       if (!r.ok) throw new Error("resources.set(" + p + ") failed: " + r.status)
       return r.json()
     },
@@ -503,7 +507,7 @@ def _api(method, path, body=None):
 
 class _Variables:
     async def get(self, path, scope="workspace"):
-        suffix = "?scope=app" if scope == "app" else ""
+        suffix = "" if scope == "workspace" else "?scope=" + urllib.parse.quote(scope, safe="")
         status, raw = await asyncio.to_thread(_api, "GET", "/variables/get/p/" + path + suffix)
         if status < 200 or status >= 300:
             raise RuntimeError("variables.get(" + path + ") failed: " + str(status))
@@ -513,7 +517,8 @@ class _Variables:
         body = {"value": value, "operationId": options["operation_id"]}
         if "expected_revision" in options:
             body["expectedRevision"] = options["expected_revision"]
-        status, raw = await asyncio.to_thread(_api, "PUT", "/variables/p/" + path, body)
+        suffix = "?scope=" + urllib.parse.quote(options["scope"], safe="") if "scope" in options else ""
+        status, raw = await asyncio.to_thread(_api, "PUT", "/variables/p/" + path + suffix, body)
         if status < 200 or status >= 300:
             raise RuntimeError("variables.set(" + path + ") failed: " + str(status))
         return json.loads(raw)
@@ -521,7 +526,7 @@ class _Variables:
 
 class _Resources:
     async def get(self, path, scope="workspace"):
-        suffix = "?scope=app" if scope == "app" else ""
+        suffix = "" if scope == "workspace" else "?scope=" + urllib.parse.quote(scope, safe="")
         status, raw = await asyncio.to_thread(_api, "GET", "/resources/get/p/" + path + suffix)
         if status < 200 or status >= 300:
             raise RuntimeError("resources.get(" + path + ") failed: " + str(status))
@@ -531,7 +536,8 @@ class _Resources:
         body = {"value": value, "resourceType": resource_type, "operationId": options["operation_id"]}
         if "expected_revision" in options:
             body["expectedRevision"] = options["expected_revision"]
-        status, raw = await asyncio.to_thread(_api, "PUT", "/resources/p/" + path, body)
+        suffix = "?scope=" + urllib.parse.quote(options["scope"], safe="") if "scope" in options else ""
+        status, raw = await asyncio.to_thread(_api, "PUT", "/resources/p/" + path + suffix, body)
         if status < 200 or status >= 300:
             raise RuntimeError("resources.set(" + path + ") failed: " + str(status))
         return json.loads(raw)

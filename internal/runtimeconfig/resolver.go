@@ -115,6 +115,14 @@ func (r *Resolver) BuildAccess(
 			return nil
 		}
 		visiting[key] = true
+		// Actor-scoped targets are resolved against the authenticated Run
+		// subject at execution time. Admission deliberately does not enumerate
+		// or expand another actor's App-owned data.
+		if target.Scope == contract.RuntimeConfigScopeActor {
+			delete(visiting, key)
+			visited[key] = true
+			return nil
+		}
 		resource, found, err := r.Store.GetResourceScoped(ctx, workspaceID, target.Scope, appKey, target.Path)
 		if err != nil {
 			return fmt.Errorf("read resource %q: %w", target.Path, err)
@@ -181,6 +189,9 @@ func (r *Resolver) BuildAccess(
 		}
 	}
 	for _, target := range allRuntimeTargets(legacyVariables, variableTargets) {
+		if target.Scope == contract.RuntimeConfigScopeActor {
+			continue
+		}
 		if _, found, err := r.Store.GetVariableScoped(ctx, workspaceID, target.Scope, appKey, target.Path); err != nil {
 			return contract.RuntimeAccess{}, fmt.Errorf("read variable %q: %w", target.Path, err)
 		} else if !found && requiredVariables[runtimeTargetKey(target)] {
@@ -327,6 +338,53 @@ func (r *Resolver) ResolveJobVariableScoped(ctx context.Context, job state.Job, 
 		return "", false, err
 	}
 	ctx = withSecretAccessAudit(ctx, job, "sdk")
+	if scope == contract.RuntimeConfigScopeActor {
+		normalizedPath, err := contract.NormalizeRuntimeConfigPath(path)
+		if err != nil {
+			return "", false, err
+		}
+		target := contract.RuntimeConfigTarget{Scope: scope, Path: normalizedPath}
+		variableTargets, _ := runtimeAccessTargetSets(job.Payload.RuntimeAccess)
+		if _, allowed := variableTargets[runtimeTargetKey(target)]; !allowed {
+			return "", false, state.ErrForbidden
+		}
+		physicalPath, err := contract.ActorRuntimeConfigPath(job.Payload.PermissionedAs, normalizedPath)
+		if err != nil {
+			return "", false, state.ErrForbidden
+		}
+		variable, found, err := r.Store.GetVariableScoped(
+			ctx,
+			contract.NormalizeWorkspace(job.Payload.Workspace),
+			contract.RuntimeConfigScopeApp,
+			job.Payload.App,
+			physicalPath,
+		)
+		if err != nil {
+			return "", false, err
+		}
+		if !found {
+			return "", false, state.ErrNotFound
+		}
+		if !variable.IsSecret {
+			return variable.Value, false, nil
+		}
+		if r.Secrets == nil {
+			return "", true, errors.New("secret backend is required")
+		}
+		reference, stored, err := secretbackend.OpenRuntimeCandidate(secretbackend.Reference{
+			WorkspaceID: contract.NormalizeWorkspace(job.Payload.Workspace),
+			Kind:        "variable-app",
+			Path:        strings.TrimSpace(job.Payload.App) + "/" + variable.Path,
+		}, variable.Value)
+		if err != nil {
+			return "", true, err
+		}
+		plaintext, err := r.Secrets.Resolve(ctx, reference, stored)
+		if err == nil {
+			err = r.recordSecretAccess(ctx, normalizedPath)
+		}
+		return plaintext, true, err
+	}
 	return r.ResolveVariableScoped(
 		ctx,
 		contract.NormalizeWorkspace(job.Payload.Workspace),
@@ -353,6 +411,35 @@ func (r *Resolver) ResolveJobResourceScoped(ctx context.Context, job state.Job, 
 		return Resolution{}, err
 	}
 	ctx = withSecretAccessAudit(ctx, job, "sdk")
+	if scope == contract.RuntimeConfigScopeActor {
+		normalizedPath, err := contract.NormalizeRuntimeConfigPath(path)
+		if err != nil {
+			return Resolution{}, err
+		}
+		target := contract.RuntimeConfigTarget{Scope: scope, Path: normalizedPath}
+		_, resourceTargets := runtimeAccessTargetSets(job.Payload.RuntimeAccess)
+		if _, allowed := resourceTargets[runtimeTargetKey(target)]; !allowed {
+			return Resolution{}, state.ErrForbidden
+		}
+		physicalPath, err := contract.ActorRuntimeConfigPath(job.Payload.PermissionedAs, normalizedPath)
+		if err != nil {
+			return Resolution{}, state.ErrForbidden
+		}
+		resource, found, err := r.Store.GetResourceScoped(
+			ctx,
+			contract.NormalizeWorkspace(job.Payload.Workspace),
+			contract.RuntimeConfigScopeApp,
+			job.Payload.App,
+			physicalPath,
+		)
+		if err != nil {
+			return Resolution{}, err
+		}
+		if !found {
+			return Resolution{}, state.ErrNotFound
+		}
+		return Resolution{Value: resource.Value}, nil
+	}
 	return r.ResolveResourceScoped(
 		ctx,
 		contract.NormalizeWorkspace(job.Payload.Workspace),
