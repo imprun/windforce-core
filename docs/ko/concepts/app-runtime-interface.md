@@ -7,7 +7,7 @@ description: Core와 실행 가능한 App Bundle 사이의 SDK 중립적인 시�
 
 > Trace 구현 상태 (2026-08-06): 선택적 ADR 0029 Carrier는 TypeScript, Python, Go Core Author SDK 표면과 Launcher transport에 구현되어 있습니다.
 
-Bun/TypeScript는 새 Core 기능과 Application SDK 통합의 Tier 1 App 작성 경로입니다. Python과 Go는 구현된 Launcher와 Author SDK 표면을 호환성 Runtime으로 유지하며 새 기능의 동등 구현은 자동 요구사항이 아닙니다. 이 투자 경계는 여기서 설명하는 SDK 중립적 `main(coreCtx)` 통신규격을 바꾸지 않습니다. [제품 책임 경계](product-boundary.md)와 [ADR 0046](../../adr/0046-define-bun-typescript-app-and-external-capability-boundary.md)을 참고합니다.
+Bun/TypeScript는 새 Core 기능과 Application SDK 통합의 Tier 1 App 작성 경로입니다. Python과 Go는 구현된 Launcher와 Author SDK 표면을 호환성 Runtime으로 유지하며 새 기능의 동등 구현은 자동 요구사항이 아닙니다. 이 투자 경계는 여기서 설명하는 SDK 중립적 `main(coreCtx)` 통신규격을 바꾸지 않습니다. [제품 책임 경계](product-boundary.md)와 [ADR 0047](../../adr/0047-define-bun-typescript-app-and-external-capability-boundary.md)을 참고합니다.
 
 [English](../../concepts/app-runtime-interface.md)
 

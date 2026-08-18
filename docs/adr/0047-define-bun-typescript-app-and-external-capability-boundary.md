@@ -1,4 +1,4 @@
-# ADR 0046: Define the Bun/TypeScript App and external capability boundary
+# ADR 0047: Define the Bun/TypeScript App and external capability boundary
 
 - Status: Accepted
 - Date: 2026-08-18
