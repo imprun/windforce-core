@@ -1,5 +1,10 @@
 import { describe, expect, test } from "vitest";
-import { isHumanTaskDeadlineResult, shortOpaqueDigest } from "./JobLogInspector";
+import type { JobResultResponse } from "../lib/api";
+import {
+  isHumanTaskDeadlineResult,
+  readTerminalJobResult,
+  shortOpaqueDigest,
+} from "./JobLogInspector";
 
 describe("shortOpaqueDigest", () => {
   test("keeps the algorithm and enough digest material to compare pins", () => {
@@ -32,5 +37,43 @@ describe("isHumanTaskDeadlineResult", () => {
         result: { code: "human_task_deadline" },
       }),
     ).toBe(false);
+  });
+});
+
+describe("readTerminalJobResult", () => {
+  test("retries a pending projection without turning lookup failure into a log-stream failure", async () => {
+    const responses: JobResultResponse[] = [
+      { status: "pending" },
+      { status: "pending" },
+      { status: "failure", result: { code: "human_task_deadline" } },
+    ];
+    let calls = 0;
+    const result = await readTerminalJobResult(
+      async () => responses[calls++]!,
+      async () => undefined,
+    );
+    expect(calls).toBe(3);
+    expect(result).toEqual(responses[2]);
+
+    calls = 0;
+    await expect(
+      readTerminalJobResult(
+        async () => {
+          calls += 1;
+          return { status: "pending" };
+        },
+        async () => undefined,
+      ),
+    ).resolves.toBeNull();
+    expect(calls).toBe(3);
+
+    await expect(
+      readTerminalJobResult(
+        async () => {
+          throw new Error("result unavailable");
+        },
+        async () => undefined,
+      ),
+    ).resolves.toBeNull();
   });
 });

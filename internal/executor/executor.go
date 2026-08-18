@@ -265,6 +265,7 @@ async function api(method, path, body, signal) {
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+const humanTaskErrors = new WeakMap()
 
 async function waitForHuman(request) {
   const timeoutMs = Number(request && request.timeoutMs) || 120000
@@ -287,6 +288,7 @@ async function waitForHuman(request) {
     if (remainingMs <= 0) {
       const error = new Error("HumanTask transport retries exceeded the hold deadline")
       error.code = "human_task_transport_timeout"
+      humanTaskErrors.set(error, error.code)
       throw error
     }
     const controller = new AbortController()
@@ -301,11 +303,11 @@ async function waitForHuman(request) {
       if (response.status !== 502 && response.status !== 503 && response.status !== 504) {
         const error = new Error(String(payload.error || "HumanTask wait failed") + " (" + response.status + ")")
         error.code = payload.code || "human_task_wait_failed"
-        error.taskId = payload.task_id
+        humanTaskErrors.set(error, error.code)
         throw error
       }
     } catch (error) {
-      if (error && (error.code || error.taskId)) throw error
+      if (error && humanTaskErrors.has(error)) throw error
       if (Date.now() >= deadline + 10000) throw error
     } finally {
       clearTimeout(transportTimer)
@@ -408,7 +410,8 @@ try {
   process.exit(0)
 } catch (e) {
   const err = { message: String((e && e.message) != null ? e.message : e), name: (e && e.name) || "Error", stack: e && e.stack }
-  if (e && typeof e.code === "string") err.code = e.code
+  const publicErrorCode = e && humanTaskErrors.get(e)
+  if (publicErrorCode === "human_task_deadline") err.code = publicErrorCode
   writeFileSync("result.json", JSON.stringify(err))
   console.error(e)
   process.exit(1)

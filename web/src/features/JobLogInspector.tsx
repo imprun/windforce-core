@@ -12,6 +12,8 @@ import { formatTime, shortSHA } from "../lib/format";
 import { translate } from "../shared/i18n";
 
 const maxClientLogCharacters = 2 * 1024 * 1024;
+const terminalResultRetryAttempts = 3;
+const terminalResultRetryDelayMs = 100;
 
 export function JobLogInspector({
   initialJobID = "",
@@ -103,8 +105,8 @@ export function JobLogInspector({
           completed = result.completed;
         }
         if (!controller.signal.aborted && completed) {
-          const result = await api.jobResult(jobID);
-          if (!controller.signal.aborted) setTerminalResult(result);
+          const result = await readTerminalJobResult(() => api.jobResult(jobID, controller.signal));
+          if (!controller.signal.aborted && result) setTerminalResult(result);
         }
       } catch (cause: unknown) {
         if (!controller.signal.aborted) setError(errorMessage(cause));
@@ -332,6 +334,24 @@ export function isHumanTaskDeadlineResult(result: JobResultResponse | null): boo
   if (result?.status !== "failure" || typeof result.result !== "object") return false;
   if (result.result === null || Array.isArray(result.result)) return false;
   return (result.result as Record<string, unknown>).code === "human_task_deadline";
+}
+
+export async function readTerminalJobResult(
+  load: () => Promise<JobResultResponse>,
+  pause: () => Promise<void> = () =>
+    new Promise((resolve) => window.setTimeout(resolve, terminalResultRetryDelayMs)),
+): Promise<JobResultResponse | null> {
+  for (let attempt = 0; attempt < terminalResultRetryAttempts; attempt += 1) {
+    let result: JobResultResponse;
+    try {
+      result = await load();
+    } catch {
+      return null;
+    }
+    if (result.status !== "pending") return result;
+    if (attempt + 1 < terminalResultRetryAttempts) await pause();
+  }
+  return null;
 }
 
 function JobLogStatus({ status }: { status: string }) {

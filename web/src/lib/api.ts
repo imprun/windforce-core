@@ -639,8 +639,8 @@ export type JobStatus = {
 };
 
 export type JobResultResponse = {
-  status: "success" | "failure" | "canceled" | string;
-  result: unknown;
+  status: "pending" | "success" | "failure" | "canceled" | string;
+  result?: unknown;
 };
 
 export type JobLogStreamEvent = {
@@ -1126,6 +1126,7 @@ type RequestOptions = {
   method?: string;
   body?: unknown;
   headers?: Record<string, string>;
+  signal?: AbortSignal;
 };
 
 export class WindforceApi {
@@ -1433,8 +1434,8 @@ export class WindforceApi {
     return this.request(`/jobs/${encodeURIComponent(jobID)}`);
   }
 
-  jobResult(jobID: string): Promise<JobResultResponse> {
-    return this.request(`/jobs/${encodeURIComponent(jobID)}/result`);
+  jobResult(jobID: string, signal?: AbortSignal): Promise<JobResultResponse> {
+    return this.request(`/jobs/${encodeURIComponent(jobID)}/result`, { signal });
   }
 
   humanTasks(state = "", limit = 100): Promise<{ items: HumanTask[] }> {
@@ -1775,6 +1776,7 @@ export class WindforceApi {
       method: options.method || "GET",
       headers,
       body,
+      signal: options.signal,
     });
     const text = await response.text();
     if (!response.ok) {

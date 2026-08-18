@@ -318,6 +318,116 @@ export async function main(ctx) {
 		output.Code != "human_task_deadline" || output.TaskID != "" {
 		t.Fatalf("HumanTask deadline result = %#v", output)
 	}
+	if strings.Contains(result.Logs, "task-private") {
+		t.Fatalf("HumanTask identifier escaped into Job logs: %q", result.Logs)
+	}
+}
+
+func TestRunTypeScriptDoesNotPublishAppDefinedErrorCode(t *testing.T) {
+	bun, err := exec.LookPath("bun")
+	if err != nil {
+		t.Skip("bun is not installed")
+	}
+
+	entrypoint := filepath.Join(t.TempDir(), "main.ts")
+	if err := os.WriteFile(entrypoint, []byte(`
+export async function main() {
+  const error = new Error("ordinary action failure")
+  error.code = "human_task_deadline"
+  throw error
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := Run(context.Background(), RunParams{
+		BunPath:           bun,
+		ScriptLang:        "typescript",
+		BaseDir:           t.TempDir(),
+		EntrypointAbsPath: entrypoint,
+		Input:             []byte(`{}`),
+		Env:               os.Environ(),
+		Timeout:           time.Minute,
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if result.Success() {
+		t.Fatalf("Action error unexpectedly succeeded: %#v", result)
+	}
+	var output struct {
+		Code string `json:"code"`
+	}
+	if err := json.Unmarshal(result.Result, &output); err != nil {
+		t.Fatalf("decode Action error result %s: %v", result.Result, err)
+	}
+	if output.Code != "" {
+		t.Fatalf("App-defined error code escaped the runtime trust boundary: %q", output.Code)
+	}
+}
+
+func TestRunTypeScriptDoesNotPublishMutatedHumanTaskErrorCode(t *testing.T) {
+	bun, err := exec.LookPath("bun")
+	if err != nil {
+		t.Skip("bun is not installed")
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/w/ws-a/human-tasks/wait" || r.Method != http.MethodPost {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte(`{"error":"HumanTask was canceled","code":"run_canceled","task_id":"task-private"}`))
+	}))
+	defer server.Close()
+
+	entrypoint := filepath.Join(t.TempDir(), "main.ts")
+	if err := os.WriteFile(entrypoint, []byte(`
+export async function main(ctx) {
+  try {
+    await ctx.human.wait({ key: "login-otp", title: "Enter code", timeoutMs: 30000 })
+  } catch (error) {
+    error.code = "human_task_deadline"
+    throw error
+  }
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := Run(context.Background(), RunParams{
+		BunPath:           bun,
+		ScriptLang:        "typescript",
+		BaseDir:           t.TempDir(),
+		EntrypointAbsPath: entrypoint,
+		Input:             []byte(`{}`),
+		Env: append(os.Environ(),
+			"WF_JOB_ID=job-a",
+			"WF_WORKSPACE=ws-a",
+			"WF_BASE_URL="+server.URL,
+			"WF_TOKEN=job-token",
+			"WF_APP=demo",
+			"WF_ACTION=wait",
+		),
+		Timeout: time.Minute,
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if result.Success() {
+		t.Fatalf("mutated HumanTask error unexpectedly succeeded: %#v", result)
+	}
+	var output struct {
+		Code string `json:"code"`
+	}
+	if err := json.Unmarshal(result.Result, &output); err != nil {
+		t.Fatalf("decode mutated HumanTask result %s: %v", result.Result, err)
+	}
+	if output.Code != "" {
+		t.Fatalf("mutated HumanTask error escaped the runtime trust boundary: %q", output.Code)
+	}
+	if strings.Contains(result.Logs, "task-private") {
+		t.Fatalf("HumanTask identifier escaped into Job logs: %q", result.Logs)
+	}
 }
 
 func TestRunTypeScriptHumanTaskHoldPreservesLiveChromiumSession(t *testing.T) {
