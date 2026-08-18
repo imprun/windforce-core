@@ -43,6 +43,73 @@ type mismatchingClaimStore struct {
 	requiredLabel string
 }
 
+type onceLifecycleStore struct {
+	Backend
+	calls       []string
+	record      state.WorkerRecord
+	claimTags   []string
+	claimLabels []string
+}
+
+func (s *onceLifecycleStore) RegisterWorker(_ context.Context, record state.WorkerRecord) error {
+	s.calls = append(s.calls, "register")
+	s.record = record
+	return nil
+}
+
+func (s *onceLifecycleStore) ClaimJobForWorker(_ context.Context, workerID string, tags, labels []string, _ time.Duration) (state.Job, state.Lease, error) {
+	s.calls = append(s.calls, "claim")
+	if workerID != s.record.ID {
+		return state.Job{}, state.Lease{}, state.ErrForbidden
+	}
+	s.claimTags = append([]string(nil), tags...)
+	s.claimLabels = append([]string(nil), labels...)
+	return state.Job{}, state.Lease{}, state.ErrNoQueuedJob
+}
+
+func (s *onceLifecycleStore) DeregisterWorker(_ context.Context, workerID string) error {
+	s.calls = append(s.calls, "deregister")
+	if workerID != s.record.ID {
+		return state.ErrForbidden
+	}
+	return nil
+}
+
+func TestRunOnceRegistersEffectiveClaimScopeAndDeregisters(t *testing.T) {
+	profile, err := contract.NewExecutionProfile("", "linux", "arm64", "python", "cpython-314", "glibc-2.36")
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectedLabels, err := contract.WithExecutionProfileLabels([]string{"arm64", "linux"}, []contract.ExecutionProfile{profile})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := &onceLifecycleStore{}
+	processor := Processor{
+		Store: store, WorkerID: "ephemeral-a", Group: "general", Tags: []string{"default"},
+		Labels: []string{"arm64", "linux"}, ExecutionProfiles: []contract.ExecutionProfile{profile}, LeaseTTL: time.Minute,
+	}
+	processed, err := processor.RunOnce(context.Background())
+	if err != nil || processed {
+		t.Fatalf("RunOnce() = %v, %v", processed, err)
+	}
+	if got, want := strings.Join(store.calls, ","), "register,claim,deregister"; got != want {
+		t.Fatalf("lifecycle calls = %q, want %q", got, want)
+	}
+	if store.record.Status != state.WorkerStatusActive || store.record.Group != "general" {
+		t.Fatalf("registered record = %#v", store.record)
+	}
+	if got, want := strings.Join(store.record.Labels, ","), "arm64,linux"; got != want {
+		t.Fatalf("registered labels = %q, want %q", got, want)
+	}
+	if got, want := strings.Join(store.claimLabels, ","), strings.Join(expectedLabels, ","); got != want {
+		t.Fatalf("claim labels = %q, want %q", got, want)
+	}
+	if got := strings.Join(store.claimTags, ","); got != "default" {
+		t.Fatalf("claim tags = %q, want default", got)
+	}
+}
+
 func (s *mismatchingClaimStore) ClaimJobForWorker(ctx context.Context, workerID string, tags []string, _ []string, leaseTTL time.Duration) (state.Job, state.Lease, error) {
 	return s.LocalStore.ClaimJobForWorker(ctx, workerID, tags, []string{s.requiredLabel}, leaseTTL)
 }

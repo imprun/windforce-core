@@ -597,7 +597,7 @@ func runWorker(args []string) int {
 			RuntimeBindings:   runtimeBindings,
 		}
 		if *once {
-			processed, err := processor.ProcessOne(context.Background())
+			processed, err := processor.RunOnce(context.Background())
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "worker: %v\n", err)
 				return 1
@@ -658,7 +658,7 @@ func runWorker(args []string) int {
 		RuntimeResolver:   runtimeconfig.New(stateStore, secretStore),
 	}
 	if *once {
-		processed, err := processor.ProcessOne(context.Background())
+		processed, err := processor.RunOnce(context.Background())
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "worker: %v\n", err)
 			return 1

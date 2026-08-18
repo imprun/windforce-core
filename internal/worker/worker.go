@@ -78,6 +78,31 @@ func (p *Processor) ProcessOne(ctx context.Context) (bool, error) {
 	return p.processOne(ctx, ctx)
 }
 
+// RunOnce registers the Worker, processes at most one Job, and then removes the
+// registry record. Managed worker credentials bind claims to a registered
+// Worker identity, so one-shot runtimes must use this lifecycle rather than
+// calling ProcessOne directly.
+func (p *Processor) RunOnce(ctx context.Context) (bool, error) {
+	if p.Store == nil {
+		return false, errors.New("state store is required")
+	}
+	record, err := p.registrationRecord(ctx, state.WorkerStatusActive)
+	if err != nil {
+		return false, err
+	}
+	if err := p.Store.RegisterWorker(ctx, record); err != nil {
+		return false, fmt.Errorf("register worker: %w", err)
+	}
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		if err := p.Store.DeregisterWorker(cleanupCtx, record.ID); err != nil {
+			log.Printf("deregister worker %s: %v", record.ID, err)
+		}
+	}()
+	return p.processOne(ctx, ctx)
+}
+
 func (p *Processor) processOne(claimCtx context.Context, executionCtx context.Context) (bool, error) {
 	if p.Store == nil {
 		return false, errors.New("state store is required")
@@ -512,6 +537,9 @@ func namedErrorResult(err error, message string) json.RawMessage {
 const heartbeatInterval = 15 * time.Second
 
 func (p *Processor) RunLoop(ctx context.Context, pollInterval time.Duration) error {
+	if p.Store == nil {
+		return errors.New("state store is required")
+	}
 	if pollInterval <= 0 {
 		pollInterval = 500 * time.Millisecond
 	}
@@ -519,21 +547,11 @@ func (p *Processor) RunLoop(ctx context.Context, pollInterval time.Duration) err
 	if drainTimeout <= 0 {
 		drainTimeout = 30 * time.Second
 	}
-	workerID := p.workerID()
-	if _, err := p.claimLabels(ctx); err != nil {
+	record, err := p.registrationRecord(ctx, state.WorkerStatusActive)
+	if err != nil {
 		return err
 	}
-	record := state.WorkerRecord{
-		ID:                workerID,
-		Group:             p.Group,
-		EngineVersion:     p.EngineVersion,
-		BuildRevision:     p.BuildRevision,
-		Tags:              append([]string(nil), p.Tags...),
-		Labels:            append([]string(nil), p.Labels...),
-		ExecutionProfiles: append([]contract.ExecutionProfile(nil), p.ExecutionProfiles...),
-		Slots:             p.Slots,
-		Status:            state.WorkerStatusActive,
-	}
+	workerID := record.ID
 	if err := p.Store.RegisterWorker(ctx, record); err != nil {
 		return fmt.Errorf("register worker: %w", err)
 	}
@@ -638,6 +656,23 @@ func (p *Processor) RunLoop(ctx context.Context, pollInterval time.Duration) err
 		case <-time.After(pollInterval):
 		}
 	}
+}
+
+func (p *Processor) registrationRecord(ctx context.Context, status string) (state.WorkerRecord, error) {
+	if _, err := p.claimLabels(ctx); err != nil {
+		return state.WorkerRecord{}, err
+	}
+	return state.WorkerRecord{
+		ID:                p.workerID(),
+		Group:             p.Group,
+		EngineVersion:     p.EngineVersion,
+		BuildRevision:     p.BuildRevision,
+		Tags:              append([]string(nil), p.Tags...),
+		Labels:            append([]string(nil), p.Labels...),
+		ExecutionProfiles: append([]contract.ExecutionProfile(nil), p.ExecutionProfiles...),
+		Slots:             p.Slots,
+		Status:            status,
+	}, nil
 }
 
 func (p *Processor) claimLabels(ctx context.Context) ([]string, error) {
