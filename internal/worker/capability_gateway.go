@@ -22,6 +22,7 @@ import (
 const (
 	defaultCapabilityGatewayTimeout = 15 * time.Second
 	maxCapabilityGatewayBodyBytes   = 1 << 20
+	maxCapabilityGatewayErrorBytes  = 4 << 10
 	maxCapabilityGatewayTTL         = time.Hour
 	capabilityRunIDHeader           = "X-Windforce-Run-ID"
 	capabilityJobIDHeader           = "X-Windforce-Job-ID"
@@ -55,6 +56,13 @@ type capabilityRunResponse struct {
 	RunRef           string `json:"runRef"`
 	RunToken         string `json:"runToken"`
 	ExpiresInSeconds uint64 `json:"expiresInSeconds"`
+}
+
+type capabilityGatewayErrorResponse struct {
+	Error     string `json:"error"`
+	Phase     string `json:"phase"`
+	Reason    string `json:"reason"`
+	Retryable *bool  `json:"retryable"`
 }
 
 func NewCapabilityGatewayBinding(
@@ -162,11 +170,11 @@ func (b CapabilityGatewayBinding) open(
 	req.Header.Set(capabilityJobAttemptHeader, strconv.Itoa(execution.Attempt))
 	resp, err := b.httpClient().Do(req)
 	if err != nil {
-		return capabilityGatewaySession{}, errors.New("capability gateway run creation failed")
+		return capabilityGatewaySession{}, capabilityGatewayTransportFailure(err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusCreated {
-		return capabilityGatewaySession{}, fmt.Errorf("capability gateway run creation returned status %d", resp.StatusCode)
+		return capabilityGatewaySession{}, capabilityGatewayRunFailure(resp.StatusCode, resp.Body)
 	}
 	var output capabilityRunResponse
 	if err := decodeCapabilityGatewayJSON(resp.Body, &output); err != nil {
@@ -334,6 +342,77 @@ func decodeCapabilityGatewayJSON(body io.Reader, value any) error {
 		return errors.New("unexpected trailing JSON")
 	}
 	return nil
+}
+
+func capabilityGatewayTransportFailure(err error) *RuntimeBindingFailure {
+	reason := capabilityGatewayReasonOffline
+	var netErr net.Error
+	if errors.Is(err, context.Canceled) {
+		reason = runtimeBindingReasonCanceled
+	} else if errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout()) {
+		reason = capabilityGatewayReasonTimeout
+	}
+	return &RuntimeBindingFailure{
+		Phase:     capabilityRunOpenPhase,
+		Reason:    reason,
+		Retryable: !errors.Is(err, context.Canceled),
+	}
+}
+
+func capabilityGatewayRunFailure(status int, body io.Reader) *RuntimeBindingFailure {
+	failure := &RuntimeBindingFailure{
+		Phase:     capabilityRunOpenPhase,
+		Reason:    capabilityGatewayReasonRejected,
+		Retryable: retryableCapabilityGatewayStatus(status),
+	}
+	data, err := io.ReadAll(io.LimitReader(body, maxCapabilityGatewayErrorBytes+1))
+	if err != nil || len(data) == 0 || len(data) > maxCapabilityGatewayErrorBytes {
+		return failure
+	}
+	var response capabilityGatewayErrorResponse
+	if err := json.Unmarshal(data, &response); err != nil {
+		return failure
+	}
+	if validFailureCode(response.Phase) {
+		failure.Phase = response.Phase
+	}
+	if validFailureCode(response.Reason) {
+		failure.Reason = response.Reason
+	} else if validFailureCode(response.Error) {
+		failure.Reason = response.Error
+	}
+	if response.Retryable != nil {
+		failure.Retryable = *response.Retryable
+	}
+	return failure
+}
+
+func retryableCapabilityGatewayStatus(status int) bool {
+	return status == http.StatusRequestTimeout ||
+		status == http.StatusTooEarly ||
+		status == http.StatusTooManyRequests ||
+		status >= http.StatusInternalServerError
+}
+
+func validFailureCode(value string) bool {
+	if value == "" || len(value) > 64 || value[0] < 'a' || value[0] > 'z' || value[len(value)-1] == '_' {
+		return false
+	}
+	previousUnderscore := false
+	for _, char := range value {
+		if char == '_' {
+			if previousUnderscore {
+				return false
+			}
+			previousUnderscore = true
+			continue
+		}
+		if (char < 'a' || char > 'z') && (char < '0' || char > '9') {
+			return false
+		}
+		previousUnderscore = false
+	}
+	return true
 }
 
 func capabilityTTLSeconds(ttl time.Duration) uint64 {

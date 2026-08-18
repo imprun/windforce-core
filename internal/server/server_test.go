@@ -1526,11 +1526,14 @@ func TestCanonicalJobRunStatusAndResultAPI(t *testing.T) {
 		t.Fatalf("claimed failed job = %q, want %q", failedClaim.ID, failedJob.ID)
 	}
 	if err := store.CompleteJobFailed(context.Background(), failedLease, contract.JobResult{
-		JobID:      failedClaim.ID,
-		App:        "echo",
-		Action:     "echo",
-		Output:     json.RawMessage(`{"name":"TargetError","message":"target rejected"}`),
-		ExitCode:   7,
+		JobID:  failedClaim.ID,
+		App:    "echo",
+		Action: "echo",
+		Output: json.RawMessage(
+			`{"name":"RuntimeBindingError","message":"could not apply runtime bindings","phase":"capability_run_open","reason":"capacity_unavailable","retryable":true}`,
+		),
+		ExitCode:   -1,
+		Error:      "could not apply runtime bindings",
 		DurationMs: 34,
 	}); err != nil {
 		t.Fatalf("CompleteJobFailed returned error: %v", err)
@@ -1551,13 +1554,18 @@ func TestCanonicalJobRunStatusAndResultAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 	var failedResult struct {
-		Name    string `json:"name"`
-		Message string `json:"message"`
+		Name      string `json:"name"`
+		Message   string `json:"message"`
+		Phase     string `json:"phase"`
+		Reason    string `json:"reason"`
+		Retryable bool   `json:"retryable"`
 	}
 	if err := json.Unmarshal(failedResultBody.Result, &failedResult); err != nil {
 		t.Fatal(err)
 	}
-	if failedResultBody.Status != "failure" || failedResult.Name != "TargetError" || failedResult.Message != "target rejected" {
+	if failedResultBody.Status != "failure" || failedResult.Name != "RuntimeBindingError" ||
+		failedResult.Message != "could not apply runtime bindings" || failedResult.Phase != "capability_run_open" ||
+		failedResult.Reason != "capacity_unavailable" || !failedResult.Retryable {
 		t.Fatalf("failed result body = %#v result=%s", failedResultBody, failedResultBody.Result)
 	}
 
@@ -3602,6 +3610,14 @@ func TestCanonicalControlPlaneRegistersSyncsAndExposesSchemas(t *testing.T) {
 	}
 	if resultResponses["404"] == nil {
 		t.Fatalf("openapi result lookup must document missing Runs: %#v", resultResponses)
+	}
+	resultSchema := resultResponses["200"].(map[string]any)["content"].(map[string]any)["application/json"].(map[string]any)["schema"].(map[string]any)
+	resultVariants := resultSchema["anyOf"].([]any)
+	errorProperties := resultVariants[len(resultVariants)-1].(map[string]any)["properties"].(map[string]any)
+	for _, field := range []string{"name", "message", "phase", "reason", "retryable"} {
+		if errorProperties[field] == nil {
+			t.Fatalf("openapi execution error schema missing %q: %#v", field, resultSchema)
+		}
 	}
 	appResponses := openAPIBody["components"].(map[string]any)["responses"].(map[string]any)
 	if appResponses["Conflict"] == nil {

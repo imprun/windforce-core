@@ -16,6 +16,52 @@ import (
 
 var canonicalUUIDPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
+func TestLocalStoreRuntimeBindingFailureMetadataRoundTrip(t *testing.T) {
+	statePath := t.TempDir() + "/state.json"
+	store := NewLocalStore(statePath)
+	deployment := contract.Deployment{
+		Workspace: "ws-a", App: "echo", Commit: "commit-a",
+		Actions: map[string]contract.Action{"run": {Action: "run"}},
+	}
+	run := NewRun("windforce", "run-binding-failure", "echo", "run", deployment, json.RawMessage(`{}`))
+	job := NewActionJob(run, nil)
+	if err := store.CreateRunAndEnqueue(context.Background(), run, job); err != nil {
+		t.Fatal(err)
+	}
+	claimed, lease, err := store.ClaimJob(context.Background(), "worker-a", time.Minute)
+	if err != nil || claimed.ID != job.ID {
+		t.Fatalf("claim = %#v, err=%v", claimed, err)
+	}
+	output := json.RawMessage(
+		`{"name":"RuntimeBindingError","message":"could not apply runtime bindings","phase":"capability_run_open","reason":"capacity_unavailable","retryable":true}`,
+	)
+	if err := store.CompleteJobFailed(context.Background(), lease, contract.JobResult{
+		JobID: job.ID, App: "echo", Action: "run", Output: output,
+		ExitCode: -1, Error: "could not apply runtime bindings",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	reloaded, err := NewLocalStore(statePath).GetRun(context.Background(), run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var metadata struct {
+		Phase     string `json:"phase"`
+		Reason    string `json:"reason"`
+		Retryable bool   `json:"retryable"`
+	}
+	if reloaded.Result != nil {
+		if err := json.Unmarshal(reloaded.Result.Output, &metadata); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if reloaded.State != RunFailed || reloaded.Result == nil || metadata.Phase != "capability_run_open" ||
+		metadata.Reason != "capacity_unavailable" || !metadata.Retryable || reloaded.Result.ExitCode != -1 ||
+		reloaded.Result.Error != "could not apply runtime bindings" {
+		t.Fatalf("binding failure round-trip = %#v", reloaded.Result)
+	}
+}
+
 func TestNewIDUsesCanonicalUUIDsForRuntimeEntities(t *testing.T) {
 	for _, prefix := range []string{"run", "job", "human"} {
 		if got := NewID(prefix); !canonicalUUIDPattern.MatchString(got) {

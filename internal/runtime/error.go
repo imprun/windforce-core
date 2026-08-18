@@ -43,3 +43,29 @@ func ErrorResult(name string, message string) json.RawMessage {
 	body, _ := json.Marshal(map[string]string{"name": name, "message": message})
 	return body
 }
+
+// FailureMetadata is a bounded, non-secret machine-readable classification for
+// an engine failure that happened before an App could return its own result.
+type FailureMetadata struct {
+	Phase     string `json:"phase"`
+	Reason    string `json:"reason"`
+	Retryable bool   `json:"retryable"`
+}
+
+// ErrorResultWithMetadata preserves the existing name/message error contract
+// while adding an optional engine-owned classification for newer consumers.
+func ErrorResultWithMetadata(name string, message string, metadata FailureMetadata) json.RawMessage {
+	if name == "" {
+		name = "Error"
+	}
+	body, _ := json.Marshal(struct {
+		Name    string `json:"name"`
+		Message string `json:"message"`
+		FailureMetadata
+	}{
+		Name:            name,
+		Message:         message,
+		FailureMetadata: metadata,
+	})
+	return body
+}

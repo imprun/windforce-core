@@ -256,10 +256,14 @@ func (p *Processor) processOne(claimCtx context.Context, executionCtx context.Co
 		outcome = "failed"
 		jobError = "could not apply runtime bindings"
 		result := contract.JobResult{
-			JobID:    job.ID,
-			App:      job.Payload.App,
-			Action:   job.Payload.Action,
-			Output:   actionruntime.ErrorResult("RuntimeBindingError", "could not apply runtime bindings"),
+			JobID:  job.ID,
+			App:    job.Payload.App,
+			Action: job.Payload.Action,
+			Output: actionruntime.ErrorResultWithMetadata(
+				"RuntimeBindingError",
+				"could not apply runtime bindings",
+				runtimeBindingFailureMetadata(err),
+			),
 			ExitCode: -1,
 			Error:    "could not apply runtime bindings",
 		}
@@ -379,6 +383,25 @@ func (p *Processor) processOne(claimCtx context.Context, executionCtx context.Co
 	}
 	outcome = "succeeded"
 	return completeProcessed(p.Store.CompleteJobSucceeded(completeCtx, lease, result))
+}
+
+func runtimeBindingFailureMetadata(err error) actionruntime.FailureMetadata {
+	metadata := actionruntime.FailureMetadata{
+		Phase:     runtimeBindingPhase,
+		Reason:    runtimeBindingReasonFailed,
+		Retryable: false,
+	}
+	var failure *RuntimeBindingFailure
+	if errors.As(err, &failure) && failure != nil {
+		if validFailureCode(failure.Phase) {
+			metadata.Phase = failure.Phase
+		}
+		if validFailureCode(failure.Reason) {
+			metadata.Reason = failure.Reason
+		}
+		metadata.Retryable = failure.Retryable
+	}
+	return metadata
 }
 
 func capabilityRunTTL(deployment contract.Deployment, action contract.Action) time.Duration {
