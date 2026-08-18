@@ -11,6 +11,11 @@ import (
 func buildAppOpenAPI(baseURL string, workspaceID string, deployment contract.Deployment, actions []openAPIAction) map[string]any {
 	sorted := append([]openAPIAction(nil), actions...)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].ActionKey < sorted[j].ActionKey })
+	safeFailureCodeSchema := map[string]any{
+		"type":      "string",
+		"pattern":   "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$",
+		"maxLength": 64,
+	}
 
 	createVariants := make([]any, 0, len(sorted))
 	resultVariants := make([]any, 0, len(sorted))
@@ -28,14 +33,22 @@ func buildAppOpenAPI(baseURL string, workspaceID string, deployment contract.Dep
 		})
 		resultVariants = append(resultVariants, schemaOrAny(action.OutputSchema))
 	}
+	resultVariants = append(resultVariants, map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"name":      oapiStringSchema(),
+			"message":   oapiStringSchema(),
+			"phase":     safeFailureCodeSchema,
+			"reason":    safeFailureCodeSchema,
+			"retryable": oapiBooleanSchema(),
+		},
+		"required": []any{"name", "message"},
+	})
 	createSchema := map[string]any{"oneOf": createVariants}
 	if len(createVariants) == 0 {
 		createSchema = map[string]any{"type": "object", "additionalProperties": false}
 	}
-	resultSchema := map[string]any{"oneOf": resultVariants}
-	if len(resultVariants) == 0 {
-		resultSchema = map[string]any{}
-	}
+	resultSchema := map[string]any{"anyOf": resultVariants}
 
 	runSchema := map[string]any{
 		"type":                 "object",

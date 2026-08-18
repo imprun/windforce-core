@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/imprun/windforce-core/internal/contract"
+	"github.com/imprun/windforce-core/internal/state"
 )
 
 func TestCapabilityGatewayBindingDiscoversBindsAndClosesRun(t *testing.T) {
@@ -219,6 +221,85 @@ func TestProcessorClosesAndMasksCapabilityGatewayRun(t *testing.T) {
 	}
 }
 
+func TestProcessorPreservesSafeCapabilityGatewayFailureMetadata(t *testing.T) {
+	const responseSecret = "gateway-response-secret"
+	var creates atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/capabilities":
+			writeCapabilityTestJSON(t, w, http.StatusOK, map[string]any{
+				"capabilities": []map[string]any{
+					{"id": "document.pdf/v1", "operations": []string{"transform"}, "ready": true, "maxConcurrency": 1},
+				},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/runs":
+			creates.Add(1)
+			writeCapabilityTestJSON(t, w, http.StatusServiceUnavailable, map[string]any{
+				"error":     "capability_unavailable",
+				"phase":     "provider_selection",
+				"reason":    "capacity_unavailable",
+				"retryable": true,
+				"detail":    responseSecret,
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("TEST_CAPABILITY_GATEWAY_TOKEN", "worker-secret")
+
+	processor, stateStore, run := newProcessorTestHarnessWithDeployment(t, "echo", func(deployment *contract.Deployment) {
+		runsOn := []string{"document.pdf.v1"}
+		action := deployment.Actions["echo"]
+		action.RunsOn = &runsOn
+		deployment.Actions["echo"] = action
+	})
+	binding, err := NewCapabilityGatewayBinding(
+		server.URL,
+		"TEST_CAPABILITY_GATEWAY_TOKEN",
+		"",
+		time.Second,
+		[]string{"document.pdf.v1"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	processor.Labels = append(processor.Labels, binding.Labels...)
+	processor.RuntimeBindings.CapabilityGateway = binding
+
+	processed, err := processor.ProcessOne(context.Background())
+	if err != nil || !processed {
+		t.Fatalf("ProcessOne = %v, %v", processed, err)
+	}
+	completed, err := stateStore.GetRun(context.Background(), run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if creates.Load() != 1 || completed.State != state.RunFailed || completed.Result == nil {
+		t.Fatalf("binding failure execution = creates=%d run=%#v", creates.Load(), completed)
+	}
+	if completed.Result.ExitCode != -1 || completed.Result.Error != "could not apply runtime bindings" {
+		t.Fatalf("legacy failure fields = %#v", completed.Result)
+	}
+	var output struct {
+		Name      string `json:"name"`
+		Message   string `json:"message"`
+		Phase     string `json:"phase"`
+		Reason    string `json:"reason"`
+		Retryable bool   `json:"retryable"`
+	}
+	if err := json.Unmarshal(completed.Result.Output, &output); err != nil {
+		t.Fatal(err)
+	}
+	if output.Name != "RuntimeBindingError" || output.Message != "could not apply runtime bindings" ||
+		output.Phase != "provider_selection" || output.Reason != "capacity_unavailable" || !output.Retryable {
+		t.Fatalf("runtime binding output = %#v", output)
+	}
+	if strings.Contains(string(completed.Result.Output), responseSecret) {
+		t.Fatalf("runtime binding output leaked gateway response detail: %s", completed.Result.Output)
+	}
+}
+
 func TestCapabilityRunTTLUsesPinnedTimeoutAndFallsBackToGatewayMaximum(t *testing.T) {
 	timeout := int32(15)
 	if got := capabilityRunTTL(contract.Deployment{TimeoutS: 30}, contract.Action{TimeoutS: &timeout}); got != 15*time.Second {
@@ -322,6 +403,181 @@ func TestCapabilityGatewayBindingRejectsExcessiveLifetimeAndCleanupTimeout(t *te
 	}
 	if err := binding.close(context.Background(), capabilityGatewaySession{RunRef: "run-123", RunToken: runToken}); err == nil || !strings.Contains(err.Error(), "408") {
 		t.Fatalf("cleanup timeout error = %v", err)
+	}
+}
+
+func TestCapabilityGatewayRunFailureUsesBoundedSafeMetadata(t *testing.T) {
+	tests := []struct {
+		name          string
+		status        int
+		body          string
+		wantPhase     string
+		wantReason    string
+		wantRetryable bool
+		secret        string
+	}{
+		{
+			name:          "safe additive envelope",
+			status:        http.StatusServiceUnavailable,
+			body:          `{"error":"capability_unavailable","phase":"provider_selection","reason":"capacity_unavailable","retryable":true,"detail":"response-secret"}`,
+			wantPhase:     "provider_selection",
+			wantReason:    "capacity_unavailable",
+			wantRetryable: true,
+			secret:        "response-secret",
+		},
+		{
+			name:          "legacy error only",
+			status:        http.StatusBadRequest,
+			body:          `{"error":"invalid_request"}`,
+			wantPhase:     capabilityRunOpenPhase,
+			wantReason:    "invalid_request",
+			wantRetryable: false,
+		},
+		{
+			name:          "empty",
+			status:        http.StatusServiceUnavailable,
+			wantPhase:     capabilityRunOpenPhase,
+			wantReason:    capabilityGatewayReasonRejected,
+			wantRetryable: true,
+		},
+		{
+			name:          "non JSON",
+			status:        http.StatusServiceUnavailable,
+			body:          "response-secret",
+			wantPhase:     capabilityRunOpenPhase,
+			wantReason:    capabilityGatewayReasonRejected,
+			wantRetryable: true,
+			secret:        "response-secret",
+		},
+		{
+			name:          "oversized",
+			status:        http.StatusServiceUnavailable,
+			body:          `{"error":"` + strings.Repeat("x", maxCapabilityGatewayErrorBytes) + `"}`,
+			wantPhase:     capabilityRunOpenPhase,
+			wantReason:    capabilityGatewayReasonRejected,
+			wantRetryable: true,
+		},
+		{
+			name:          "unsafe codes",
+			status:        http.StatusBadRequest,
+			body:          `{"phase":"provider selection","reason":"token=response-secret","retryable":true}`,
+			wantPhase:     capabilityRunOpenPhase,
+			wantReason:    capabilityGatewayReasonRejected,
+			wantRetryable: true,
+			secret:        "response-secret",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tt.status)
+				_, _ = io.WriteString(w, tt.body)
+			}))
+			defer server.Close()
+			binding := CapabilityGatewayBinding{
+				ServiceURL:  server.URL,
+				WorkerToken: "worker-secret",
+				Timeout:     time.Second,
+				client:      newCapabilityGatewayHTTPClient(time.Second),
+			}
+			_, err := binding.open(
+				context.Background(),
+				RuntimeBindingContext{RunID: "run-456", JobID: "job-789", Attempt: 1},
+				time.Minute,
+			)
+			var failure *RuntimeBindingFailure
+			if !errors.As(err, &failure) {
+				t.Fatalf("open error = %v, want RuntimeBindingFailure", err)
+			}
+			if failure.Phase != tt.wantPhase || failure.Reason != tt.wantReason || failure.Retryable != tt.wantRetryable {
+				t.Fatalf("failure = %#v", failure)
+			}
+			if tt.secret != "" && strings.Contains(err.Error(), tt.secret) {
+				t.Fatalf("failure leaked response content: %v", err)
+			}
+		})
+	}
+}
+
+func TestCapabilityGatewayRunTransportFailureIsSafeAndRetryable(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	serviceURL := server.URL
+	server.Close()
+	binding := CapabilityGatewayBinding{
+		ServiceURL:  serviceURL,
+		WorkerToken: "worker-secret",
+		Timeout:     time.Second,
+		client:      newCapabilityGatewayHTTPClient(time.Second),
+	}
+	_, err := binding.open(
+		context.Background(),
+		RuntimeBindingContext{RunID: "run-456", JobID: "job-789", Attempt: 1},
+		time.Minute,
+	)
+	var failure *RuntimeBindingFailure
+	if !errors.As(err, &failure) || failure.Phase != capabilityRunOpenPhase ||
+		failure.Reason != capabilityGatewayReasonOffline || !failure.Retryable {
+		t.Fatalf("transport failure = %#v, err=%v", failure, err)
+	}
+	if strings.Contains(err.Error(), serviceURL) || strings.Contains(err.Error(), "worker-secret") {
+		t.Fatalf("transport failure leaked connection or credential details: %v", err)
+	}
+}
+
+func TestCapabilityGatewayTransportFailureClassifiesTimeoutAndCancellation(t *testing.T) {
+	timeout := capabilityGatewayTransportFailure(context.DeadlineExceeded)
+	if timeout.Phase != capabilityRunOpenPhase || timeout.Reason != capabilityGatewayReasonTimeout || !timeout.Retryable {
+		t.Fatalf("timeout failure = %#v", timeout)
+	}
+	canceled := capabilityGatewayTransportFailure(context.Canceled)
+	if canceled.Phase != capabilityRunOpenPhase || canceled.Reason != runtimeBindingReasonCanceled || canceled.Retryable {
+		t.Fatalf("canceled failure = %#v", canceled)
+	}
+}
+
+func TestCapabilityGatewayRunSuccessResponseRemainsStrict(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeCapabilityTestJSON(t, w, http.StatusCreated, map[string]any{
+			"runRef": "run-123", "runToken": "run-secret", "expiresInSeconds": 60,
+			"phase": capabilityRunOpenPhase,
+		})
+	}))
+	defer server.Close()
+	binding := CapabilityGatewayBinding{
+		ServiceURL:  server.URL,
+		WorkerToken: "worker-secret",
+		Timeout:     time.Second,
+		client:      newCapabilityGatewayHTTPClient(time.Second),
+	}
+	_, err := binding.open(
+		context.Background(),
+		RuntimeBindingContext{RunID: "run-456", JobID: "job-789", Attempt: 1},
+		time.Minute,
+	)
+	var failure *RuntimeBindingFailure
+	if err == nil || !strings.Contains(err.Error(), "invalid run response") || errors.As(err, &failure) {
+		t.Fatalf("strict success response error = %v, failure=%#v", err, failure)
+	}
+}
+
+func TestRuntimeBindingFailureMetadataRejectsUnsafeTypedCodes(t *testing.T) {
+	fallback := runtimeBindingFailureMetadata(errors.New("raw-secret-detail"))
+	if fallback.Phase != runtimeBindingPhase || fallback.Reason != runtimeBindingReasonFailed || fallback.Retryable {
+		t.Fatalf("generic binding failure = %#v", fallback)
+	}
+	metadata := runtimeBindingFailureMetadata(&RuntimeBindingFailure{
+		Phase: "unsafe phase", Reason: "token=response-secret", Retryable: true,
+	})
+	if metadata.Phase != runtimeBindingPhase || metadata.Reason != runtimeBindingReasonFailed || !metadata.Retryable {
+		t.Fatalf("sanitized typed failure = %#v", metadata)
+	}
+}
+
+func TestValidFailureCodeChecksSyntaxNotSemantics(t *testing.T) {
+	// Registration and semantic confidentiality are gateway responsibilities.
+	// Core can only recognize the bounded ASCII snake-case transport syntax.
+	if !validFailureCode("opaque_7f3a9") {
+		t.Fatal("safe-shaped opaque value must pass syntax validation")
 	}
 }
 

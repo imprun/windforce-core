@@ -20,6 +20,23 @@ import (
 	"github.com/imprun/windforce-core/internal/telemetry"
 )
 
+func TestInvocationRawResultPreservesRuntimeBindingFailureMetadata(t *testing.T) {
+	output := json.RawMessage(
+		`{"name":"RuntimeBindingError","message":"could not apply runtime bindings","phase":"capability_run_open","reason":"capacity_unavailable","retryable":true}`,
+	)
+	recorder := httptest.NewRecorder()
+	writeInvocationRawResult(recorder, state.Run{
+		State: state.RunFailed,
+		Result: &contract.JobResult{
+			Output: output, ExitCode: -1, Error: "could not apply runtime bindings",
+		},
+	})
+	if recorder.Code != http.StatusOK || recorder.Header().Get("Content-Type") != "application/json" ||
+		!bytes.Equal(recorder.Body.Bytes(), output) {
+		t.Fatalf("invocation runtime binding result = status %d body %s", recorder.Code, recorder.Body.Bytes())
+	}
+}
+
 func TestInvocationIdempotencyReplayKeepsPinnedRunUnderCurrentClaimPolicy(t *testing.T) {
 	ctx := context.Background()
 	store := state.NewLocalStore(filepath.Join(t.TempDir(), "state.json"))
