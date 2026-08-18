@@ -19,6 +19,15 @@ type inputConfigTestCatalog struct {
 	deployment contract.Deployment
 }
 
+type nullInputConfigStore struct {
+	state.Store
+	config state.InputConfig
+}
+
+func (s nullInputConfigStore) ListInputConfigsForApp(context.Context, string, string) ([]state.InputConfig, error) {
+	return []state.InputConfig{s.config}, nil
+}
+
 func (c inputConfigTestCatalog) GetDeployment(_ context.Context, app string) (contract.Deployment, error) {
 	if app != c.deployment.App {
 		return contract.Deployment{}, catalog.ErrDeploymentNotFound
@@ -136,6 +145,48 @@ func TestCanonicalInputConfigLifecycleAndExecutionAdmission(t *testing.T) {
 	do(http.MethodGet, "/api/w/ws-a/clients/"+client.ID+"/input-configs", "", http.StatusOK, &clientConfigs)
 	if len(clientConfigs) != 0 {
 		t.Fatalf("client configs after delete = %#v", clientConfigs)
+	}
+}
+
+func TestCanonicalInputConfigListNormalizesNullCollections(t *testing.T) {
+	baseStore := state.NewLocalStore(filepath.Join(t.TempDir(), "state.json"))
+	deployment := contract.Deployment{
+		Workspace: "ws-a",
+		App:       "shop",
+		Actions:   map[string]contract.Action{},
+	}
+	store := nullInputConfigStore{
+		Store: baseStore,
+		config: state.InputConfig{
+			WorkspaceID: "ws-a",
+			AppKey:      "shop",
+			UpdatedBy:   "operator",
+		},
+	}
+	server := httptest.NewServer(New(Config{
+		Store: store, Catalog: inputConfigTestCatalog{deployment: deployment}, AdminToken: "test-admin",
+	}))
+	defer server.Close()
+
+	req, err := http.NewRequest(http.MethodGet, server.URL+"/api/w/ws-a/apps/shop/input-configs", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer test-admin")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	var payload []map[string]json.RawMessage
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload) != 1 || string(payload[0]["config"]) != "{}" || string(payload[0]["locked_keys"]) != "[]" {
+		t.Fatalf("payload = %s", mustJSON(t, payload))
 	}
 }
 

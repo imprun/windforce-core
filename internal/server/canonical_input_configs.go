@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -29,7 +30,7 @@ func (h *Handler) handleCanonicalAppInputConfigs(w http.ResponseWriter, r *http.
 		writeStateError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, configs)
+	writeJSON(w, http.StatusOK, canonicalInputConfigResponses(configs))
 }
 
 func (h *Handler) handleCanonicalClientInputConfigs(w http.ResponseWriter, r *http.Request, workspaceID string, clientID string) {
@@ -42,7 +43,7 @@ func (h *Handler) handleCanonicalClientInputConfigs(w http.ResponseWriter, r *ht
 		writeStateError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, configs)
+	writeJSON(w, http.StatusOK, canonicalInputConfigResponses(configs))
 }
 
 func (h *Handler) handleCanonicalSetInputConfig(w http.ResponseWriter, r *http.Request, workspaceID string, appKey string) {
@@ -105,7 +106,26 @@ func (h *Handler) handleCanonicalSetInputConfig(w http.ResponseWriter, r *http.R
 		writeStateError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, config)
+	writeJSON(w, http.StatusOK, canonicalInputConfigResponse(config))
+}
+
+func canonicalInputConfigResponses(configs []state.InputConfig) []state.InputConfig {
+	result := make([]state.InputConfig, len(configs))
+	for index, config := range configs {
+		result[index] = canonicalInputConfigResponse(config)
+	}
+	return result
+}
+
+func canonicalInputConfigResponse(config state.InputConfig) state.InputConfig {
+	trimmed := bytes.TrimSpace(config.Config)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		config.Config = json.RawMessage(`{}`)
+	}
+	if config.LockedKeys == nil {
+		config.LockedKeys = []string{}
+	}
+	return config
 }
 
 func (h *Handler) validateInputConfigSecretReferences(
