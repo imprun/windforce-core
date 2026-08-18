@@ -120,4 +120,28 @@ func TestLocalStoreListJobsDoesNotDecryptLargeEncryptedResults(t *testing.T) {
 	if bytes.Contains(encoded, []byte("private-result-must-not-be-listed")) || bytes.Contains(encoded, []byte(envelope.Ciphertext)) {
 		t.Fatalf("job list exposed encrypted result content: %s", encoded)
 	}
+
+	keyProvider.calls = 0
+	summary, err := store.JobSummary(ctx, "default", time.Hour)
+	if err != nil {
+		t.Fatalf("JobSummary returned error: %v", err)
+	}
+	if keyProvider.calls != 0 {
+		t.Fatalf("JobSummary made %d workspace key lookups, want 0", keyProvider.calls)
+	}
+	if summary.CompletedCountRecent != jobCount || summary.FailedCountRecent != jobCount ||
+		summary.QueuedCount != 0 || summary.RunningCount != 0 || summary.CanceledCountRecent != 0 {
+		t.Fatalf("JobSummary counts = %#v", summary.JobSummaryCounts)
+	}
+	if len(summary.ByApp) != 1 || summary.ByApp[0].AppKey != "echo" ||
+		summary.ByApp[0].CompletedCountRecent != jobCount || summary.ByApp[0].FailedCountRecent != jobCount {
+		t.Fatalf("JobSummary App breakdown = %#v", summary.ByApp)
+	}
+	summaryJSON, err := json.Marshal(summary)
+	if err != nil {
+		t.Fatalf("marshal job summary: %v", err)
+	}
+	if bytes.Contains(summaryJSON, []byte("private-result-must-not-be-listed")) || bytes.Contains(summaryJSON, []byte(envelope.Ciphertext)) {
+		t.Fatalf("job summary exposed encrypted result content: %s", summaryJSON)
+	}
 }

@@ -288,9 +288,6 @@ func (s *LocalStore) JobSummary(ctx context.Context, workspaceID string, recent 
 		if !ok {
 			continue
 		}
-		if err := s.decryptRunResult(ctx, normalizedJobWorkspace("", job), &run); err != nil {
-			clearRunResultOutput(&run)
-		}
 		records = append(records, jobRunRecord{Job: job, Run: run})
 	}
 	return summarizeJobs(records, workspaceID, recent), nil
