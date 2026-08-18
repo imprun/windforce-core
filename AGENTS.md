@@ -91,6 +91,8 @@ Engine contract decisions are recorded as public ADRs in
 worker protocol. General docs describe the current contract only; history and
 rationale live in ADRs.
 
+Canonical ADR filenames and first headings must use the same unique four-digit number. When a published ADR must be renumbered, preserve its old path as a non-canonical move notice with a machine-readable `Redirect` line naming the target ADR number and relative file; `tools/adr_numbers_test.py` enforces both canonical uniqueness and redirect integrity.
+
 Do not hard-wrap markdown prose: one paragraph per line, soft wrap. Convert
 existing files only when touching them — no bulk reformatting.
 
