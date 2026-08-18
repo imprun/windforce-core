@@ -603,11 +603,18 @@ func (s *LocalStore) ClaimJobForWorkerScope(ctx context.Context, workerID string
 	requestedTags := NormalizeWorkerScope(tags)
 	requestedLabels := NormalizeWorkerScope(labels)
 	allowedWorkspaces := normalizeClaimTags(workspaceIDs)
+	mayOfferJob, err := s.localClaimMayOfferJob(ctx, workerID, requestedTags, requestedLabels)
+	if err != nil {
+		return Job{}, Lease{}, err
+	}
+	if !mayOfferJob {
+		return Job{}, Lease{}, ErrNoQueuedJob
+	}
 	var claimed Job
 	var lease Lease
 	rateBlocked := false
 	rateConsumed := false
-	err := s.updateLease(ctx, func(snapshot *Snapshot, now time.Time) error {
+	err = s.updateLease(ctx, func(snapshot *Snapshot, now time.Time) error {
 		if err := s.requeueExpiredJobs(ctx, snapshot, now); err != nil {
 			return err
 		}
@@ -710,6 +717,29 @@ func (s *LocalStore) ClaimJobForWorkerScope(ctx context.Context, workerID string
 		s.executionMetrics.observeRateClaims(executionRateOutcomeConsumed, 1)
 	}
 	return claimed, lease, nil
+}
+
+func (s *LocalStore) localClaimMayOfferJob(ctx context.Context, workerID string, requestedTags []string, requestedLabels []string) (bool, error) {
+	// Local snapshots are replaced atomically. An empty preflight therefore
+	// linearizes before any concurrent enqueue; the polling worker observes that
+	// enqueue on its next claim. A possible candidate is always rechecked under
+	// the write lock by ClaimJobForWorkerScope.
+	snapshot, err := s.Load(ctx)
+	if err != nil {
+		return false, err
+	}
+	now := currentUTC(s.leaseNow)
+	if record, registered := snapshot.Workers[workerID]; registered {
+		if _, _, _, err := RegisteredWorkerClaim(record, requestedTags, requestedLabels, now); err != nil {
+			return false, err
+		}
+	}
+	for _, job := range snapshot.Jobs {
+		if job.State == JobQueued || job.State == JobRunning && job.LeaseExpiresAt != nil && !job.LeaseExpiresAt.After(now) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (s *LocalStore) HeartbeatJob(ctx context.Context, lease Lease, leaseTTL time.Duration) (HeartbeatResult, error) {
