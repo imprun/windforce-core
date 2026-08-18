@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-07-29). Supersedes [ADR 0015: Ship `wf` as a thin workspace client](0015-thin-wf-client.md).
+Accepted (2026-07-29). Supersedes [ADR 0048: Ship `wf` as a thin workspace client](0048-thin-wf-client.md).
 
 ## Context
 
