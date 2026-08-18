@@ -254,6 +254,9 @@ func (s *LocalStore) ExpireDueHeldHumanTasks(ctx context.Context, now time.Time,
 		if len(due) > limit {
 			due = due[:limit]
 		}
+		if len(due) == 0 {
+			return errSkipLocalStateWrite
+		}
 		for _, candidate := range due {
 			task := snapshot.HumanTasks[candidate.id]
 			expireHeldTask(snapshot, &task, HumanTaskCauseDeadline, txNow)

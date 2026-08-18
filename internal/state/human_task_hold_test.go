@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -14,6 +15,68 @@ import (
 	controlevent "github.com/imprun/windforce-core/internal/event"
 	"github.com/imprun/windforce-core/internal/webhook"
 )
+
+func TestLocalStoreEmptyHumanTaskDeadlineSweepDoesNotWrite(t *testing.T) {
+	store := NewLocalStore(t.TempDir() + "/state.json")
+	task := seedHeldHumanTask(t, store, "empty-deadline-sweep")
+	before, err := store.Load(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker := time.Date(2000, time.January, 2, 3, 4, 5, 0, time.UTC)
+	if err := os.Chtimes(store.Path, marker, marker); err != nil {
+		t.Fatal(err)
+	}
+
+	expired, err := store.ExpireDueHeldHumanTasks(context.Background(), task.ExpiresAt.Add(-time.Second), 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if expired != 0 {
+		t.Fatalf("expired = %d, want 0", expired)
+	}
+	after, err := store.Load(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.SnapshotRevision != before.SnapshotRevision {
+		t.Fatalf("snapshot revision = %d, want unchanged %d", after.SnapshotRevision, before.SnapshotRevision)
+	}
+	info, err := os.Stat(store.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.ModTime().Equal(marker) {
+		t.Fatalf("state mtime = %s, want unchanged %s", info.ModTime(), marker)
+	}
+}
+
+func TestLocalStoreDueHumanTaskDeadlineSweepStillWrites(t *testing.T) {
+	store := NewLocalStore(t.TempDir() + "/state.json")
+	task := seedHeldHumanTask(t, store, "due-deadline-sweep")
+	before, err := store.Load(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expired, err := store.ExpireDueHeldHumanTasks(context.Background(), task.ExpiresAt.Add(time.Second), 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if expired != 1 {
+		t.Fatalf("expired = %d, want 1", expired)
+	}
+	after, err := store.Load(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.SnapshotRevision != before.SnapshotRevision+1 {
+		t.Fatalf("snapshot revision = %d, want %d", after.SnapshotRevision, before.SnapshotRevision+1)
+	}
+	if got := after.HumanTasks[task.ID].State; got != HumanTaskExpired {
+		t.Fatalf("HumanTask state = %q, want %q", got, HumanTaskExpired)
+	}
+}
 
 func TestLocalStoreHeldHumanTaskLifecycleEncryptsSensitiveValues(t *testing.T) {
 	store := NewLocalStore(t.TempDir() + "/state.json")

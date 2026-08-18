@@ -28,6 +28,8 @@ type LocalStore struct {
 	humanTaskSignals  humanTaskSignalHub
 }
 
+var errSkipLocalStateWrite = errors.New("skip local state write")
+
 func NewLocalStore(path string) *LocalStore {
 	return &LocalStore{Path: path, executionMetrics: newExecutionMetrics()}
 }
@@ -1093,7 +1095,9 @@ func (s *LocalStore) updateWithClock(ctx context.Context, nowFunc nowFunc, fn fu
 			beforeHumanTasks[id] = task.State
 		}
 		now := currentUTC(nowFunc)
-		if err := fn(&snapshot, now); err != nil {
+		if err := fn(&snapshot, now); errors.Is(err, errSkipLocalStateWrite) {
+			return nil
+		} else if err != nil {
 			return err
 		}
 		for id, task := range snapshot.HumanTasks {
