@@ -573,6 +573,14 @@ func TestRuntimeBindingFailureMetadataRejectsUnsafeTypedCodes(t *testing.T) {
 	}
 }
 
+func TestValidFailureCodeChecksSyntaxNotSemantics(t *testing.T) {
+	// Registration and semantic confidentiality are gateway responsibilities.
+	// Core can only recognize the bounded ASCII snake-case transport syntax.
+	if !validFailureCode("opaque_7f3a9") {
+		t.Fatal("safe-shaped opaque value must pass syntax validation")
+	}
+}
+
 func TestCapabilityGatewayBindingRejectsInvalidRunContext(t *testing.T) {
 	binding := CapabilityGatewayBinding{ServiceURL: "http://127.0.0.1:1", WorkerToken: "worker-secret"}
 	tests := []struct {

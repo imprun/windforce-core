@@ -33,8 +33,9 @@ type RuntimeBindingContext struct {
 	Attempt int
 }
 
-// RuntimeBindingFailure carries only bounded, non-secret classification data.
-// It is safe to translate into the public RuntimeBindingError result.
+// RuntimeBindingFailure carries classification data from a trusted runtime
+// binding. Its codes must be validated again before public translation; syntax
+// validation cannot determine whether an opaque value is semantically secret.
 type RuntimeBindingFailure struct {
 	Phase     string
 	Reason    string

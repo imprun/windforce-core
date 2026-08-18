@@ -6,9 +6,11 @@
 
 ## Context
 
-ADR 0034 lets a Worker open a Job-scoped run on a neutral capability gateway before starting an App. A failed run-open request previously became the same `RuntimeBindingError` as every other binding failure. The public result retained only the generic `name` and `message`; it discarded whether the failure happened while opening the capability run, which safe gateway reason applied, and whether retrying later might succeed.
+ADR 0034 lets a Worker open a Job-scoped run on a neutral capability gateway before starting an App. A failed run-open request previously became the same `RuntimeBindingError` as every other binding failure. The public result retained only the generic `name` and `message`; it discarded whether the failure happened while opening the capability run, which registered gateway reason applied, and whether retrying later might succeed.
 
-Core must not persist a raw gateway response, provider message, URL, credential, resource identifier, or other free-form detail. It also must not add provider policy or an automatic retry loop to the Worker. A newer gateway and an older Core or the reverse must continue to interoperate.
+Core must not persist a raw gateway response or other free-form detail. It also must not add provider policy or an automatic retry loop to the Worker. A newer gateway and an older Core or the reverse must continue to interoperate.
+
+The gateway is a trusted operator component authenticated with the Worker token. Core can bound the response, discard the raw body, and validate an ASCII lower-case snake-case transport syntax. It cannot determine whether a syntactically valid opaque value is semantically a credential, resource identifier, or unregistered provider detail. The trust boundary therefore requires the gateway to emit only registered, stable, non-secret codes. Any adapter translating an upstream provider error into this envelope must use an explicit allowlist; it must not normalize arbitrary upstream strings into code-shaped values.
 
 ## Decision
 
@@ -25,7 +27,7 @@ For a non-`201` response to `POST /v1/runs`, a gateway may return this additive 
 }
 ```
 
-`error` is the legacy reason field. `phase` and `reason` are optional lower-case snake-case machine codes of at most 64 bytes. `retryable` is an optional boolean hint. Core reads at most 4 KiB, ignores unknown JSON fields, and never includes the raw body or decoder error in the returned error, persisted result, event, or log.
+`error` is the legacy reason field. `phase` and `reason` are optional ASCII lower-case snake-case machine codes of at most 64 bytes. `retryable` is an optional boolean hint. The authenticated gateway MUST emit only codes from its registered non-secret code set, and a provider adapter MUST select from an explicit allowlist. Core reads at most 4 KiB, ignores unknown JSON fields, and never includes the raw body or decoder error in the returned error, persisted result, event, or log. Core's validator enforces size and syntax only; it does not provide semantic secret detection.
 
 If `phase` is absent or invalid, Core uses `capability_run_open`. If `reason` is absent or invalid, Core accepts a valid legacy `error`; otherwise it uses `gateway_rejected`. Empty, non-JSON, oversized, or unreadable bodies use those fallbacks. Transport failures use `gateway_timeout` or `gateway_unreachable`, while a canceled binding context uses `binding_canceled`. Without an explicit gateway hint, HTTP 408, 425, 429, and 5xx responses are retryable; other statuses and cancellation are not.
 
@@ -55,7 +57,7 @@ No database migration or Worker Plane version field is required. The failure met
 
 ## Consequences
 
-- Operators and callers can distinguish a retryable capability allocation failure from a generic binding defect without exposing gateway internals.
+- When the gateway honors the registered-code trust contract, operators and callers can distinguish a retryable capability allocation failure from a generic binding defect without carrying upstream free-form details.
 - Core remains neutral about providers, capacity policy, artifacts, and external resource identity.
 - The existing `RuntimeBindingError` contract and terminal Job semantics remain backward compatible.
 - A future generic top-level `JobResult.failure` would require a separate decision because current Job and Invocation result APIs intentionally return the Action or execution-error JSON value rather than the complete internal `JobResult`.

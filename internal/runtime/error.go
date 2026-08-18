@@ -44,8 +44,10 @@ func ErrorResult(name string, message string) json.RawMessage {
 	return body
 }
 
-// FailureMetadata is a bounded, non-secret machine-readable classification for
-// an engine failure that happened before an App could return its own result.
+// FailureMetadata carries a machine-readable classification for an engine
+// failure that happened before an App could return its own result. Producers
+// must supply registered non-secret codes; syntax alone cannot establish that a
+// value is semantically safe.
 type FailureMetadata struct {
 	Phase     string `json:"phase"`
 	Reason    string `json:"reason"`
