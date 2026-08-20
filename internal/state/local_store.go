@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -1218,7 +1219,37 @@ func (s *LocalStore) write(snapshot Snapshot) error {
 	if err := os.WriteFile(tmpPath, data, 0o600); err != nil {
 		return err
 	}
-	return os.Rename(tmpPath, s.Path)
+	return replaceFile(tmpPath, s.Path)
+}
+
+// replaceFile swaps the staged snapshot into place.
+//
+// On Windows the replace fails while another handle holds the destination
+// without delete sharing, which happens transiently when an indexer or an
+// endpoint protection agent scans the file right after it is written. The
+// condition clears on its own, so retry briefly before reporting the failure.
+func replaceFile(source, destination string) error {
+	return replaceFileWith(source, destination, os.Rename, time.Sleep)
+}
+
+func replaceFileWith(source, destination string, rename func(string, string) error, sleep func(time.Duration)) error {
+	const (
+		attempts  = 10
+		baseDelay = 10 * time.Millisecond
+	)
+	var err error
+	for attempt := 0; attempt < attempts; attempt++ {
+		if err = rename(source, destination); err == nil {
+			return nil
+		}
+		if !errors.Is(err, fs.ErrPermission) {
+			return err
+		}
+		if attempt+1 < attempts {
+			sleep(time.Duration(attempt+1) * baseDelay)
+		}
+	}
+	return err
 }
 
 func newSnapshot() Snapshot {
