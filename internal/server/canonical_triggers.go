@@ -251,7 +251,7 @@ func (h *Handler) handleTriggerIngress(w http.ResponseWriter, r *http.Request) b
 		definition, err := h.store.GetTrigger(r.Context(), parts[3], parts[5])
 		if err == nil && definition.Response.Mode == state.TriggerResponseWait {
 			principal := executionpkg.TriggerPrincipal(definition.WorkspaceID, definition.ID, definition.AppKey, definition.ActionKey)
-			h.waitForInvocationRun(w, r, definition.WorkspaceID, submission.RunID, principal, time.Duration(definition.Response.TimeoutSeconds)*time.Second)
+			h.waitForInvocationRun(w, r, definition.WorkspaceID, submission.RunID, principal, time.Duration(definition.Response.TimeoutSeconds)*time.Second, false)
 			return true
 		}
 		writeJSON(w, http.StatusAccepted, map[string]any{

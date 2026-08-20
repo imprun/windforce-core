@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,11 +15,13 @@ import (
 	"github.com/imprun/windforce-core/internal/state"
 )
 
-const invocationRunIDHeader = "X-WF-Run-Id"
-const maxInvocationIdempotencyKeyBytes = 200
 const (
-	defaultInvocationWaitTimeout = 30 * time.Second
-	maxInvocationWaitTimeout     = 30 * time.Second
+	invocationRunIDHeader             = "X-WF-Run-Id"
+	invocationRunStateHeader          = "X-WF-Run-State"
+	invocationIdempotencyReusedHeader = "X-WF-Idempotency-Reused"
+	maxInvocationIdempotencyKeyBytes  = 200
+	defaultInvocationWaitTimeout      = 30 * time.Second
+	maxInvocationWaitTimeout          = 30 * time.Second
 )
 
 type invocationCreateRunRequest struct {
@@ -194,12 +197,13 @@ func (h *Handler) handleInvocationCreateRun(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	setInvocationRunHeaders(w, r, workspaceID, admission.Run.ID)
+	setInvocationAdmissionHeaders(w, admission.Run, admission.Replayed)
 	if wait {
 		timeout, ok := parseInvocationWaitTimeout(w, r)
 		if !ok {
 			return
 		}
-		h.waitForInvocationRun(w, r, workspaceID, admission.Run.ID, principal, timeout)
+		h.waitForInvocationRun(w, r, workspaceID, admission.Run.ID, principal, timeout, admission.Replayed)
 		return
 	}
 	status := http.StatusCreated
@@ -285,7 +289,7 @@ func (h *Handler) handleInvocationDescribeApp(w http.ResponseWriter, r *http.Req
 	})
 }
 
-func (h *Handler) waitForInvocationRun(w http.ResponseWriter, r *http.Request, workspaceID string, runID string, principal executionpkg.Principal, timeout time.Duration) {
+func (h *Handler) waitForInvocationRun(w http.ResponseWriter, r *http.Request, workspaceID string, runID string, principal executionpkg.Principal, timeout time.Duration, replayed bool) {
 	deadline := time.Now().Add(timeout)
 	for {
 		run, err := h.execution.GetRunForPrincipal(r.Context(), principal, workspaceID, runID)
@@ -293,12 +297,13 @@ func (h *Handler) waitForInvocationRun(w http.ResponseWriter, r *http.Request, w
 			writeInvocationFault(w, err)
 			return
 		}
+		w.Header().Set(invocationRunStateHeader, strings.ToLower(string(run.State)))
 		if state.TerminalRunState(run.State) {
 			writeInvocationRawResult(w, run)
 			return
 		}
 		if !time.Now().Before(deadline) {
-			writeJSON(w, http.StatusAccepted, newInvocationRunView(run, false))
+			writeJSON(w, http.StatusAccepted, newInvocationRunView(run, replayed))
 			return
 		}
 		sleep := 50 * time.Millisecond
@@ -356,6 +361,11 @@ func decodeStrictInvocationJSON(w http.ResponseWriter, r *http.Request, target a
 func setInvocationRunHeaders(w http.ResponseWriter, r *http.Request, workspaceID string, runID string) {
 	w.Header().Set(invocationRunIDHeader, runID)
 	w.Header().Set("Location", "/api/v1/workspaces/"+workspaceID+"/runs/"+runID)
+}
+
+func setInvocationAdmissionHeaders(w http.ResponseWriter, run state.Run, replayed bool) {
+	w.Header().Set(invocationRunStateHeader, strings.ToLower(string(run.State)))
+	w.Header().Set(invocationIdempotencyReusedHeader, strconv.FormatBool(replayed))
 }
 
 func writeInvocationRawResult(w http.ResponseWriter, run state.Run) {

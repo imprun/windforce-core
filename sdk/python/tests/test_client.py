@@ -50,7 +50,15 @@ class WindforceInvocationClientTest(TestCase):
         with patch.object(
             client,
             "_request_with_metadata",
-            return_value=({"ok": True}, 200, {"X-Wf-Run-Id": "run_a"}),
+            return_value=(
+                {"ok": True},
+                200,
+                {
+                    "X-Wf-Run-Id": "run_a",
+                    "x-wf-run-state": "SUCCEEDED",
+                    "X-WF-Idempotency-Reused": "true",
+                },
+            ),
         ) as request:
             result = client.create_run_and_wait(
                 app="echo",
@@ -63,6 +71,8 @@ class WindforceInvocationClientTest(TestCase):
 
         self.assertTrue(result.completed)
         self.assertEqual(result.run_id, "run_a")
+        self.assertEqual(result.state, "succeeded")
+        self.assertTrue(result.replayed)
         self.assertEqual(result.value, {"ok": True})
         request.assert_called_once_with(
             "POST",
@@ -76,6 +86,30 @@ class WindforceInvocationClientTest(TestCase):
             headers={"Idempotency-Key": "message-1"},
             accepted_statuses=(200, 202),
         )
+
+    def test_create_run_and_wait_falls_back_to_run_view_signals(self) -> None:
+        client = WindforceInvocationClient("http://windforce", workspace="default")
+        with patch.object(
+            client,
+            "_request_with_metadata",
+            return_value=(
+                {"run_id": "run_a", "state": "running", "replayed": True},
+                202,
+                {},
+            ),
+        ):
+            result = client.create_run_and_wait(
+                app="echo",
+                action="run",
+                input={"message": "hello"},
+                timeout_seconds=0,
+                idempotency_key="message-1",
+            )
+
+        self.assertFalse(result.completed)
+        self.assertEqual(result.run_id, "run_a")
+        self.assertEqual(result.state, "running")
+        self.assertTrue(result.replayed)
 
     def test_run_lifecycle_and_app_routes_are_canonical(self) -> None:
         client = WindforceInvocationClient("http://windforce", workspace="team a")

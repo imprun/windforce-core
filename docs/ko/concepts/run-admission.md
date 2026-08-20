@@ -69,7 +69,7 @@ Invocation API는 Run 수용 유스케이스를 원격 HTTP로 표현한 것입�
 - Bearer 자격 증명 해석
 - `Idempotency-Key`와 상관관계 헤더
 - JSON 요청과 응답 표현
-- HTTP 상태, `Location`, `X-WF-Run-Id`
+- HTTP 상태, `Location`, `X-WF-Run-Id`, `X-WF-Run-State`, `X-WF-Idempotency-Reused`
 
 AdmissionService는 다음과 같은 엔진 결정을 담당합니다.
 

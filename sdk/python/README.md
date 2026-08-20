@@ -21,3 +21,5 @@ result = client.get_result(run.run_id)
 ```
 
 Authentication derives the caller principal from an operator, workspace, `wfk_` client, or `wfs_` service-principal bearer. Callers cannot assert another principal, inject per-run environment variables, or observe internal Job identifiers. `Idempotency-Key` is scoped to the authenticated principal.
+
+`create_run_and_wait` returns an `InvocationResult` containing the Run ID, the state observed for the response, and whether Core reused an existing idempotent Run. These values come from the canonical `X-WF-Run-Id`, `X-WF-Run-State`, and `X-WF-Idempotency-Reused` response headers; the SDK falls back to a `202` Run representation when talking to an older Core.

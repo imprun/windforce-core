@@ -172,8 +172,7 @@ schemas. Protocol adapters use it to generate their own customer-facing API
 documentation without mounting the Windforce catalog.
 
 Operator, `wfk_` Client Registry, and scoped `wfs_` Service Principal
-credentials use these same routes. The Invocation response exposes Run ID and
-`X-WF-Run-Id`, never Job ID. See [Invocation API](concepts/public-api.md).
+credentials use these same routes. Successful admission responses expose Run ID, state, and idempotent reuse through `X-WF-Run-Id`, `X-WF-Run-State`, and `X-WF-Idempotency-Reused`, never Job ID. See [Invocation API](concepts/public-api.md).
 
 The v0.3 boundary removes `/execution/v1`,
 `/api/v1/w/{workspace}/run/...`, and control-plane Job submission. ADR 0013

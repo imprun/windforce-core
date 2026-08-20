@@ -69,7 +69,7 @@ They remain separate because the HTTP adapter owns transport concerns:
 - Bearer credential parsing
 - `Idempotency-Key` and correlation headers
 - JSON request and response representation
-- HTTP status, `Location`, and `X-WF-Run-Id`
+- HTTP status, `Location`, `X-WF-Run-Id`, `X-WF-Run-State`, and `X-WF-Idempotency-Reused`
 
 AdmissionService owns engine decisions:
 

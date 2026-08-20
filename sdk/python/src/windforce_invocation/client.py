@@ -61,6 +61,8 @@ class InvocationResult:
     run_id: str
     value: Any
     completed: bool
+    state: str = ""
+    replayed: bool = False
 
 
 class WindforceInvocationClient:
@@ -119,7 +121,20 @@ class WindforceInvocationClient:
         run_id = _header_value(response_headers, "X-WF-Run-Id")
         if not run_id and isinstance(response, Mapping):
             run_id = str(response.get("run_id") or "")
-        return InvocationResult(run_id=run_id, value=response, completed=status == 200)
+        state = _header_value(response_headers, "X-WF-Run-State").strip().lower()
+        if not state and isinstance(response, Mapping):
+            state = str(response.get("state") or "").lower()
+        reused_header = _header_value(response_headers, "X-WF-Idempotency-Reused").strip().lower()
+        replayed = reused_header == "true"
+        if not reused_header and isinstance(response, Mapping):
+            replayed = bool(response.get("replayed"))
+        return InvocationResult(
+            run_id=run_id,
+            value=response,
+            completed=status == 200,
+            state=state,
+            replayed=replayed,
+        )
 
     def get_run(self, run_id: str) -> Run:
         response = self._request("GET", self._workspace_path("runs", run_id))

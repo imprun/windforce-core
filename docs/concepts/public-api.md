@@ -77,9 +77,7 @@ returns HTTP 409.
 }
 ```
 
-`Location` points to the Run status URL and `X-WF-Run-Id` contains the same Run
-ID. Invocation responses never expose Job ID, lease, attempt, stored
-credentials, or principal internals.
+Every successful admission response includes `Location`, `X-WF-Run-Id`, `X-WF-Run-State`, and `X-WF-Idempotency-Reused`. The state header is the lowercase Run state observed for that response. The reuse header is always `true` or `false`; it is true only when the authenticated principal and canonical request exactly reused the existing Run for the supplied `Idempotency-Key`. Invocation responses never expose Job ID, lease, attempt, stored credentials, or principal internals.
 
 `client_id`, `created_by`, `permissioned_as`, `env`, adapter, and trigger
 identity fields are not accepted. Client and service identity comes from the
@@ -96,10 +94,7 @@ POST /api/v1/workspaces/{workspace}/runs/{run_id}/cancel
 GET  /api/v1/workspaces/{workspace}/apps/{app}
 ```
 
-A completed wait or result request returns the raw Action result with HTTP 200.
-If the wait expires or the polled Run is not terminal, the API returns HTTP 202
-with the current Run representation. Read and cancel operations enforce
-read-own/cancel-own or read-any/cancel-any scope and workspace ownership.
+A completed wait or result request returns the raw Action result with HTTP 200. A completed wait still exposes the terminal state and idempotency reuse decision through the admission response headers. If the wait expires or the polled Run is not terminal, the API returns HTTP 202 with the current Run representation; its `state` and any `replayed` field agree with the corresponding headers. Read and cancel operations enforce read-own/cancel-own or read-any/cancel-any scope and workspace ownership.
 
 ## Input settings
 
