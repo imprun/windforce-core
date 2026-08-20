@@ -127,6 +127,42 @@ func TestClientLifecycleAgainstRealServer(t *testing.T) {
 	if stored.State != state.RunSucceeded {
 		t.Fatalf("run state = %s", stored.State)
 	}
+
+	failureRun := state.NewRun("windforce", "run-remote-failure", "echo", "run", deployment, json.RawMessage(`{"message":"fail"}`))
+	failureJob := state.NewActionJob(failureRun, nil)
+	if err := store.CreateRunAndEnqueue(ctx, failureRun, failureJob); err != nil {
+		t.Fatal(err)
+	}
+	failedClaim, failedLease, err := client.ClaimJobForWorker(ctx, "w-remote", nil, deployment.RequiredLabels, time.Minute)
+	if err != nil || failedClaim.ID != failureJob.ID {
+		t.Fatalf("claim failure job = %#v, err=%v", failedClaim, err)
+	}
+	failureOutput := json.RawMessage(`{"name":"RuntimeBindingError","message":"could not apply runtime bindings","phase":"capability_run_open","reason":"capacity_unavailable","retryable":true}`)
+	if err := client.CompleteJobFailed(ctx, failedLease, contract.JobResult{
+		JobID: failedClaim.ID, App: "echo", Action: "run", Output: failureOutput,
+		ExitCode: -1, Error: "could not apply runtime bindings",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	storedFailure, err := store.GetRun(ctx, failureRun.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var failureMetadata struct {
+		Phase     string `json:"phase"`
+		Reason    string `json:"reason"`
+		Retryable bool   `json:"retryable"`
+	}
+	if storedFailure.Result != nil {
+		if err := json.Unmarshal(storedFailure.Result.Output, &failureMetadata); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if storedFailure.State != state.RunFailed || storedFailure.Result == nil ||
+		failureMetadata.Phase != "capability_run_open" || failureMetadata.Reason != "capacity_unavailable" ||
+		!failureMetadata.Retryable || storedFailure.Result.ExitCode != -1 || storedFailure.Result.Error != "could not apply runtime bindings" {
+		t.Fatalf("remote binding failure round-trip = %#v", storedFailure.Result)
+	}
 	if err := client.DeregisterWorker(ctx, "w-remote"); err != nil {
 		t.Fatal(err)
 	}

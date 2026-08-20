@@ -170,6 +170,11 @@ docker compose --profile worker up -d worker
 
 ## Run
 
+Before or during self-hosted operations, use the read-only
+[`windforce-core diagnose`](docs/guides/self-hosted-diagnose.md) preflight to
+check state/schema compatibility, active artifacts, runtime profiles, placement,
+and stable queue blockers. `--json` emits the versioned `diagnose/v1` contract.
+
 A run request is admitted and executed as follows:
 
 1. Resolve the active app deployment and requested action.
@@ -316,6 +321,12 @@ default of incremental job log flushing with a 20 MiB per-job cap; set
 `worker --drain-timeout 30s` controls graceful shutdown: the Worker stops new
 claims, reports `draining`, lets the active Job finish for that period, and
 then cancels it if necessary before deregistering.
+Workers also protect running work by pausing only new claims when local memory,
+CPU, or file-descriptor pressure crosses the default `0.90` high watermark.
+They resume only below the default `0.80` low watermark. Tune this with
+`--resource-pressure-high-watermark`, `--resource-pressure-low-watermark`, and
+`--resource-pressure-sample-interval`; use `--resource-pressure-disabled` only
+when an external supervisor deliberately owns an equivalent claim gate.
 
 Implemented control-plane endpoints:
 
@@ -528,6 +539,8 @@ Job input and job result output are stored with the same Windforce
 `--secret-key-env` / `--secret-key-previous-env` values; when omitted, both use
 the local development default so standalone and compose runs continue to work
 without extra setup.
+
+The built-in Database Secret backend creates no external runtime candidate and needs no collector. A side-effecting backend may implement the optional prefix-scoped, versioned cleanup contract from [ADR 0051](docs/adr/0051-collect-orphaned-runtime-secret-candidates.md). Core then preserves current App-owned Secret references and reclaims only old unreferenced candidates. Tune its safety window and bounded work with `--runtime-secret-candidate-grace-period`, `--runtime-secret-candidate-sweep-interval`, and `--runtime-secret-candidate-sweep-limit`; a zero grace period disables collection without changing `Store` or `Resolve` behavior.
 
 Input settings are resolved in this order: app default, action default, client app, client action, then request input. Each layer performs a shallow top-level merge. Locked keys are the union of all applied layers, and their configured values cannot be overridden by the request. Admission resolves and validates the effective input once and pins it in the Run and Job, so later InputConfig changes cannot alter queued execution. Keys under `_SCRAPING_RUNTIME` are reserved for worker-owned runtime service metadata and cannot be stored as app input settings.
 

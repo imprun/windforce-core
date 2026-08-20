@@ -12,6 +12,16 @@ import (
 	"github.com/imprun/windforce-core/internal/state"
 )
 
+const (
+	runtimeBindingPhase             = "runtime_binding"
+	runtimeBindingReasonFailed      = "binding_failed"
+	runtimeBindingReasonCanceled    = "binding_canceled"
+	capabilityRunOpenPhase          = "capability_run_open"
+	capabilityGatewayReasonRejected = "gateway_rejected"
+	capabilityGatewayReasonTimeout  = "gateway_timeout"
+	capabilityGatewayReasonOffline  = "gateway_unreachable"
+)
+
 type RuntimeBindings struct {
 	AuthSession       AuthSessionBinding
 	CapabilityGateway CapabilityGatewayBinding
@@ -21,6 +31,22 @@ type RuntimeBindingContext struct {
 	RunID   string
 	JobID   string
 	Attempt int
+}
+
+// RuntimeBindingFailure carries classification data from a trusted runtime
+// binding. Its codes must be validated again before public translation; syntax
+// validation cannot determine whether an opaque value is semantically secret.
+type RuntimeBindingFailure struct {
+	Phase     string
+	Reason    string
+	Retryable bool
+}
+
+func (f *RuntimeBindingFailure) Error() string {
+	if f == nil {
+		return "runtime binding failed"
+	}
+	return fmt.Sprintf("runtime binding failed at %s: %s", f.Phase, f.Reason)
 }
 
 type RuntimeBindingResult struct {

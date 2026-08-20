@@ -583,14 +583,14 @@ WHERE id=$3 AND state IN ($4, $5)
 
 func postgresRegisteredWorkerClaim(ctx context.Context, tx pgx.Tx, workerID string, requestedTags []string, requestedLabels []string, now time.Time) ([]string, []string, *WorkerLeaseIdentity, error) {
 	var record WorkerRecord
-	var tagsJSON, labelsJSON, profilesJSON []byte
+	var tagsJSON, labelsJSON, profilesJSON, pressureJSON []byte
 	err := tx.QueryRow(ctx, `
-SELECT id, worker_group, tags, labels, execution_profiles, status, credential_generation, last_heartbeat_at
+SELECT id, worker_group, tags, labels, execution_profiles, status, credential_generation, resource_pressure, last_heartbeat_at
 FROM worker_registry
 WHERE id=$1
 FOR SHARE`, workerID).Scan(
 		&record.ID, &record.Group, &tagsJSON, &labelsJSON, &profilesJSON,
-		&record.Status, &record.CredentialGeneration, &record.LastHeartbeatAt,
+		&record.Status, &record.CredentialGeneration, &pressureJSON, &record.LastHeartbeatAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return requestedTags, requestedLabels, nil, nil
@@ -605,6 +605,10 @@ FOR SHARE`, workerID).Scan(
 		return nil, nil, nil, err
 	}
 	if err := json.Unmarshal(profilesJSON, &record.ExecutionProfiles); err != nil {
+		return nil, nil, nil, err
+	}
+	record.ResourcePressure, err = unmarshalWorkerResourcePressure(pressureJSON)
+	if err != nil {
 		return nil, nil, nil, err
 	}
 	registeredTags, registeredLabels, identity, err := RegisteredWorkerClaim(record, requestedTags, requestedLabels, now)
@@ -1447,6 +1451,10 @@ func (s *PostgresStore) RegisterWorker(ctx context.Context, record WorkerRecord)
 		return err
 	}
 	record.ExecutionProfiles = profilesNormalized
+	record.ResourcePressure, err = NormalizeWorkerResourcePressure(record.ResourcePressure, time.Now().UTC())
+	if err != nil {
+		return err
+	}
 	if record.Slots <= 0 {
 		record.Slots = 1
 	}
@@ -1466,9 +1474,13 @@ func (s *PostgresStore) RegisterWorker(ctx context.Context, record WorkerRecord)
 	if err != nil {
 		return err
 	}
+	pressure, err := marshalWorkerResourcePressure(record.ResourcePressure)
+	if err != nil {
+		return err
+	}
 	commandTag, err := s.pool.Exec(ctx, `
-INSERT INTO worker_registry (id, worker_group, engine_version, build_revision, tags, labels, execution_profiles, slots, status, credential_id, credential_generation, started_at, last_heartbeat_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now(), now())
+INSERT INTO worker_registry (id, worker_group, engine_version, build_revision, tags, labels, execution_profiles, slots, status, credential_id, credential_generation, resource_pressure, started_at, last_heartbeat_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now(), now())
 ON CONFLICT (id) DO UPDATE SET
     worker_group = EXCLUDED.worker_group,
     engine_version = EXCLUDED.engine_version,
@@ -1480,10 +1492,11 @@ ON CONFLICT (id) DO UPDATE SET
     status = EXCLUDED.status,
     credential_id = EXCLUDED.credential_id,
     credential_generation = EXCLUDED.credential_generation,
+    resource_pressure = EXCLUDED.resource_pressure,
     last_heartbeat_at = now()
 WHERE worker_registry.credential_id = EXCLUDED.credential_id
   AND worker_registry.credential_generation = EXCLUDED.credential_generation`,
-		record.ID, record.Group, record.EngineVersion, record.BuildRevision, tags, labels, profiles, record.Slots, status, record.CredentialID, record.CredentialGeneration)
+		record.ID, record.Group, record.EngineVersion, record.BuildRevision, tags, labels, profiles, record.Slots, status, record.CredentialID, record.CredentialGeneration, pressure)
 	if err != nil {
 		return err
 	}
@@ -1495,6 +1508,25 @@ WHERE worker_registry.credential_id = EXCLUDED.credential_id
 
 func (s *PostgresStore) HeartbeatWorker(ctx context.Context, workerID string) error {
 	tag, err := s.pool.Exec(ctx, `UPDATE worker_registry SET last_heartbeat_at = now() WHERE id = $1`, workerID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("%w: worker %q", ErrNotFound, workerID)
+	}
+	return nil
+}
+
+func (s *PostgresStore) HeartbeatWorkerPressure(ctx context.Context, workerID string, pressure WorkerResourcePressure) error {
+	normalized, err := NormalizeWorkerResourcePressure(&pressure, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	encoded, err := marshalWorkerResourcePressure(normalized)
+	if err != nil {
+		return err
+	}
+	tag, err := s.pool.Exec(ctx, `UPDATE worker_registry SET resource_pressure = $2, last_heartbeat_at = now() WHERE id = $1`, workerID, encoded)
 	if err != nil {
 		return err
 	}
@@ -1517,7 +1549,7 @@ DELETE FROM worker_registry WHERE last_heartbeat_at < now() - $1::interval`,
 		return nil, err
 	}
 	rows, err := s.pool.Query(ctx, `
-SELECT id, worker_group, engine_version, build_revision, tags, labels, execution_profiles, slots, status, credential_id, credential_generation, started_at, last_heartbeat_at
+SELECT id, worker_group, engine_version, build_revision, tags, labels, execution_profiles, slots, status, credential_id, credential_generation, resource_pressure, started_at, last_heartbeat_at
 FROM worker_registry ORDER BY id`)
 	if err != nil {
 		return nil, err
@@ -1526,8 +1558,8 @@ FROM worker_registry ORDER BY id`)
 	out := []WorkerRecord{}
 	for rows.Next() {
 		var record WorkerRecord
-		var tags, labels, profiles []byte
-		if err := rows.Scan(&record.ID, &record.Group, &record.EngineVersion, &record.BuildRevision, &tags, &labels, &profiles, &record.Slots, &record.Status, &record.CredentialID, &record.CredentialGeneration, &record.StartedAt, &record.LastHeartbeatAt); err != nil {
+		var tags, labels, profiles, pressure []byte
+		if err := rows.Scan(&record.ID, &record.Group, &record.EngineVersion, &record.BuildRevision, &tags, &labels, &profiles, &record.Slots, &record.Status, &record.CredentialID, &record.CredentialGeneration, &pressure, &record.StartedAt, &record.LastHeartbeatAt); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal(tags, &record.Tags); err != nil {
@@ -1537,6 +1569,10 @@ FROM worker_registry ORDER BY id`)
 			return nil, err
 		}
 		if err := json.Unmarshal(profiles, &record.ExecutionProfiles); err != nil {
+			return nil, err
+		}
+		record.ResourcePressure, err = unmarshalWorkerResourcePressure(pressure)
+		if err != nil {
 			return nil, err
 		}
 		out = append(out, record)

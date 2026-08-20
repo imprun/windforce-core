@@ -1,6 +1,8 @@
 package contract
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -294,6 +296,10 @@ type RuntimeConfigScope string
 const (
 	RuntimeConfigScopeWorkspace RuntimeConfigScope = "workspace"
 	RuntimeConfigScopeApp       RuntimeConfigScope = "app"
+	// RuntimeConfigScopeActor isolates App-owned configuration by the
+	// authenticated invocation subject. The physical namespace is derived by
+	// Core and is never selected by an App or browser client.
+	RuntimeConfigScopeActor RuntimeConfigScope = "actor"
 )
 
 type RuntimeVariableStorage string
@@ -507,11 +513,11 @@ func normalizeRuntimeConfigTargets(values []RuntimeConfigTarget, requireApp bool
 	seen := map[string]bool{}
 	result := make([]RuntimeConfigTarget, 0, len(values))
 	for _, value := range values {
-		if value.Scope != RuntimeConfigScopeWorkspace && value.Scope != RuntimeConfigScopeApp {
-			return nil, fmt.Errorf("target scope must be workspace or app")
+		if value.Scope != RuntimeConfigScopeWorkspace && value.Scope != RuntimeConfigScopeApp && value.Scope != RuntimeConfigScopeActor {
+			return nil, fmt.Errorf("target scope must be workspace, app, or actor")
 		}
-		if requireApp && value.Scope != RuntimeConfigScopeApp {
-			return nil, fmt.Errorf("runtime writes require app scope")
+		if requireApp && value.Scope != RuntimeConfigScopeApp && value.Scope != RuntimeConfigScopeActor {
+			return nil, fmt.Errorf("runtime writes require app scope or actor scope")
 		}
 		path, err := NormalizeRuntimeConfigPath(value.Path)
 		if err != nil {
@@ -586,6 +592,22 @@ func NormalizeRuntimeConfigPath(value string) (string, error) {
 		}
 	}
 	return value, nil
+}
+
+// ActorRuntimeConfigPath maps a logical actor-scoped path to an opaque
+// App-owned storage path. The durable subject is intentionally hashed so it is
+// not exposed through configuration inventory APIs or secret-backend keys.
+func ActorRuntimeConfigPath(subject string, value string) (string, error) {
+	subject = strings.TrimSpace(subject)
+	if subject == "" {
+		return "", errors.New("actor runtime configuration requires an authenticated subject")
+	}
+	normalized, err := NormalizeRuntimeConfigPath(value)
+	if err != nil {
+		return "", err
+	}
+	digest := sha256.Sum256([]byte(subject))
+	return "actors/" + hex.EncodeToString(digest[:]) + "/" + normalized, nil
 }
 
 func normalizeRuntimeConfigPaths(values []string) ([]string, error) {

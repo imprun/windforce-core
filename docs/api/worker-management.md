@@ -118,6 +118,10 @@ The response is computed from one Local store lock/snapshot or one PostgreSQL re
   "deadline_at": "2026-08-03T00:10:00Z",
   "observed_at": "2026-08-03T00:01:00Z",
   "live_workers": 2,
+  "pressure_accepting_workers": 1,
+  "pressure_paused_workers": 1,
+  "stale_pressure_workers": 0,
+  "pressure_reason_codes": ["memory_high"],
   "unmanaged_live_workers": 0,
   "available_slots": 0,
   "active_leases": 1,
@@ -132,7 +136,7 @@ The response is computed from one Local store lock/snapshot or one PostgreSQL re
 }
 ```
 
-`active_workers_by_generation` counts live registry activity and includes Workers whose per-Worker status is already `draining`; generation `0` represents the legacy static Worker Plane credential. `available_slots` totals live active Worker slots, subtracts the group's immutable claim-time active leases, clamps at zero, and is always zero while the group run state is `draining`.
+`active_workers_by_generation` counts live registry activity and includes Workers whose per-Worker status is already `draining`; generation `0` represents the legacy static Worker Plane credential. `available_slots` totals live active Workers that are currently accepting claims, subtracts the group's immutable claim-time active leases, clamps at zero, and is always zero while the group run state is `draining`.
 
 `quiescent` becomes true only while the group is `draining`, no live generation-zero Worker can bypass that managed claim fence, and its active lease and running Job counts are zero. Live idle managed Workers may remain registered so an external controller can observe quiescence before reducing replicas. Running Job attribution comes from the immutable group and credential generation pinned when a registered Worker claimed the attempt. A Job without that identity is reported in the unattributed counts and conservatively keeps every group observation non-quiescent until it settles or is requeued. Deregistration or reuse of the same Worker ID cannot rewrite attribution. The endpoint never returns a Worker identity, endpoint, credential ID, bearer, token hash, or request fingerprint.
 
@@ -165,6 +169,9 @@ Authorization: Bearer <workspace-or-instance-admin-token>
 The response is calculated from one authoritative State Store snapshot. It
 includes group status, live Worker and free-slot counts, running work, effective
 selectors, execution profiles, heartbeat time, and self-reported build drift.
+It also includes `pressure_accepting_workers`, `pressure_paused_workers`,
+`stale_pressure_workers`, and `pressure_reason_codes`. Claimable slot totals
+exclude pressure-paused Workers while lifecycle `status` remains independent.
 Static Workers remain visible as the `unmanaged` compatibility pool. A workspace
 token receives only groups usable by that workspace; an instance administrator
 also sees other groups with `workspace_allowed: false`. Worker IDs and credential
@@ -206,6 +213,17 @@ reported by each Worker:
       "execution_profiles": [],
       "slots": 1,
       "live": true,
+      "resource_pressure": {
+        "supported": true,
+        "accepting_claims": false,
+        "reason_code": "memory_high",
+        "scope": "cgroup_v2",
+        "observed_at": "2026-08-11T00:00:08Z",
+        "fresh_until": "2026-08-11T00:00:53Z",
+        "measurements": {
+          "memory": {"supported": true, "usage": 943718400, "limit": 1073741824, "ratio": 0.87890625}
+        }
+      },
       "started_at": "2026-08-11T00:00:00Z",
       "last_heartbeat_at": "2026-08-11T00:00:10Z"
     }
@@ -217,3 +235,11 @@ The fields are optional for compatibility, self-reported, and diagnostic only.
 They are not credential authority or signed provenance. Core records observed
 state; a hosted portal or self-hosted deployment controller owns the desired
 Worker image/version, drift comparison, rollout, and replacement policy.
+
+`resource_pressure` is also self-reported but is enforced again at the final
+registered claim boundary. Stable reasons are `memory_high`, `cpu_high`,
+`file_descriptors_high`, and `observation_unknown`. `fresh_until` is bounded by
+the server. A stale paused observation does not automatically resume claims;
+the Worker must report a low observation or leave the live registry. The shape
+cannot carry filesystem paths, environment values, raw sampler errors,
+credentials, or tokens. See [ADR 0050](../adr/0050-pause-worker-claims-under-resource-pressure.md).

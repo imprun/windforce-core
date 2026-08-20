@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://windforce.imprun.dev/schemas/diagnose-report-v1.json",
+  "title": "Windforce Core diagnose report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "mode", "status", "observed_at", "checks"],
+  "properties": {
+    "schema_version": { "const": "diagnose/v1" },
+    "mode": { "enum": ["standalone", "server", "remote-worker"] },
+    "status": { "enum": ["pass", "warn", "fail"] },
+    "observed_at": { "type": "string", "format": "date-time" },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "status", "message", "observed_at"],
+        "properties": {
+          "id": {
+            "enum": [
+              "build.identity",
+              "state.connectivity",
+              "state.schema",
+              "artifact.source_store",
+              "artifact.execution_store",
+              "server.reachability",
+              "auth.configuration",
+              "runtime.profiles",
+              "release.active",
+              "placement.compatibility",
+              "queue.scheduling",
+              "secret_backend.configuration",
+              "capability_gateway.readiness"
+            ]
+          },
+          "status": { "enum": ["pass", "warn", "fail", "unsupported"] },
+          "message": { "type": "string", "minLength": 1 },
+          "remediation": { "type": "string", "minLength": 1 },
+          "observed_at": { "type": "string", "format": "date-time" },
+          "details": {
+            "type": "object",
+            "additionalProperties": {
+              "oneOf": [
+                { "type": "string" },
+                { "type": "number" },
+                { "type": "boolean" },
+                { "type": "array", "items": { "type": "string" } }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

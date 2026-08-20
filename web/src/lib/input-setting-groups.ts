@@ -29,12 +29,17 @@ export function groupInputSettings(
       key,
       configs: groupedConfigs,
       actionKeys: [...new Set(groupedConfigs.map((config) => config.action_key))],
-      keyNames: [...new Set(groupedConfigs.flatMap((config) => Object.keys(config.config)))].sort(),
+      keyNames: [
+        ...new Set(groupedConfigs.flatMap((config) => Object.keys(config.config ?? {}))),
+      ].sort(),
       valueCount: groupedConfigs.reduce(
-        (total, config) => total + Object.keys(config.config).length,
+        (total, config) => total + Object.keys(config.config ?? {}).length,
         0,
       ),
-      lockedCount: groupedConfigs.reduce((total, config) => total + config.locked_keys.length, 0),
+      lockedCount: groupedConfigs.reduce(
+        (total, config) => total + (config.locked_keys ?? []).length,
+        0,
+      ),
       updatedAt: latest.updated_at,
       updatedBy: latest.updated_by,
     };

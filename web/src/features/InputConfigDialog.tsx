@@ -28,10 +28,10 @@ export type InputConfigRow = {
 
 export function inputConfigRows(config?: InputConfig): InputConfigRow[] {
   if (!config) return [{ key: "", valueText: "", locked: false }];
-  return Object.entries(config.config).map(([key, value]) => ({
+  return Object.entries(config.config ?? {}).map(([key, value]) => ({
     key,
     valueText: formatInputSettingExample(value),
-    locked: config.locked_keys.includes(key),
+    locked: (config.locked_keys ?? []).includes(key),
   }));
 }
 

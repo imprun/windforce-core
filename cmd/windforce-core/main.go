@@ -38,6 +38,7 @@ import (
 	triggerpkg "github.com/imprun/windforce-core/internal/trigger"
 	"github.com/imprun/windforce-core/internal/webhook"
 	"github.com/imprun/windforce-core/internal/worker"
+	"github.com/imprun/windforce-core/internal/workerpressure"
 )
 
 var (
@@ -46,8 +47,9 @@ var (
 )
 
 const (
-	defaultLogFlushInterval = 2 * time.Second
-	defaultLogCapBytes      = 20 << 20
+	defaultLogFlushInterval                    = 2 * time.Second
+	defaultLogCapBytes                         = 20 << 20
+	defaultRuntimeSecretCandidateSweepInterval = 15 * time.Minute
 )
 
 func main() {
@@ -67,6 +69,8 @@ func run(args []string) int {
 		return 0
 	case "run-json":
 		return runJSON(args[1:])
+	case "diagnose":
+		return runDiagnose(args[1:], os.Stdout, os.Stderr)
 	case "server":
 		return runServer(args[1:], "server")
 	case "worker":
@@ -124,6 +128,10 @@ func runServer(args []string, mode string) int {
 	poll := flags.Duration("poll", 500*time.Millisecond, "standalone worker poll interval")
 	leaseTTL := flags.Duration("lease", 30*time.Second, "worker job lease TTL")
 	drainTimeout := flags.Duration("drain-timeout", 30*time.Second, "maximum time to drain an active job during shutdown")
+	pressureDisabled := flags.Bool("resource-pressure-disabled", false, "disable standalone Worker resource-pressure claim protection")
+	pressureHighWatermark := flags.Float64("resource-pressure-high-watermark", workerpressure.DefaultHighWatermark, "pause standalone Worker claims at or above this resource ratio")
+	pressureLowWatermark := flags.Float64("resource-pressure-low-watermark", workerpressure.DefaultLowWatermark, "resume standalone Worker claims only below this resource ratio")
+	pressureSampleInterval := flags.Duration("resource-pressure-sample-interval", workerpressure.DefaultSampleInterval, "minimum interval between standalone Worker resource samples")
 	logFlushInterval := flags.Duration("log-flush-interval", defaultLogFlushInterval, "worker log flush interval")
 	logCapBytes := flags.Int("log-cap-bytes", defaultLogCapBytes, "per-job log size cap in bytes; 0 disables the cap")
 	logJobPayloads := flags.Bool("log-job-payloads", false, "log complete decrypted job input and execution output")
@@ -146,6 +154,9 @@ func runServer(args []string, mode string) int {
 	jobFailureRetention := flags.Duration("job-failure-retention", envDays("WINDFORCE_CORE_JOB_FAILURE_RETENTION_DAYS", defaultJobFailureRetention), "how long failed/canceled/expired job records are kept; 0 keeps them forever")
 	jobStuckAfter := flags.Duration("job-stuck-after", envHours("WINDFORCE_CORE_JOB_STUCK_AFTER_HOURS", defaultJobStuckAfter), "expire queued/running jobs with no progress for this long; 0 disables")
 	jobRetentionInterval := flags.Duration("job-retention-interval", defaultJobRetentionInterval, "how often the retention pruner runs")
+	runtimeSecretCandidateGracePeriod := flags.Duration("runtime-secret-candidate-grace-period", secretbackend.DefaultRuntimeCandidateGracePeriod, "minimum age before an unreferenced external runtime Secret candidate can be reclaimed; 0 disables")
+	runtimeSecretCandidateSweepInterval := flags.Duration("runtime-secret-candidate-sweep-interval", defaultRuntimeSecretCandidateSweepInterval, "how often external runtime Secret candidates are checked")
+	runtimeSecretCandidateSweepLimit := flags.Int("runtime-secret-candidate-sweep-limit", secretbackend.DefaultRuntimeCandidateSweepLimit, "maximum external runtime Secret candidates examined per sweep")
 	sourceBundleGracePeriod := flags.Duration("source-bundle-grace-period", defaultSourceBundleGracePeriod, "minimum age before an unreferenced source snapshot can be removed; 0 disables")
 	sourceBundleRetentionInterval := flags.Duration("source-bundle-retention-interval", defaultSourceBundleRetentionInterval, "how often unreferenced source snapshots are checked")
 	sourceBundleRetentionDryRun := flags.Bool("source-bundle-retention-dry-run", false, "report eligible unreferenced source snapshots without deleting them")
@@ -171,6 +182,11 @@ func runServer(args []string, mode string) int {
 		fmt.Fprintf(os.Stderr, "%s: --drain-timeout must be greater than zero\n", mode)
 		return 2
 	}
+	pressureObserver, err := newResourcePressureObserver(mode != "standalone" || *pressureDisabled, *pressureHighWatermark, *pressureLowWatermark, *pressureSampleInterval)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s: %v\n", mode, err)
+		return 2
+	}
 	if *publicAPIRPS <= 0 || *publicAPIBurst <= 0 {
 		fmt.Fprintln(os.Stderr, "public API rate and burst must be greater than zero")
 		return 2
@@ -181,6 +197,10 @@ func runServer(args []string, mode string) int {
 	}
 	if *sourceBundleGracePeriod < 0 || *sourceBundleRetentionInterval <= 0 {
 		fmt.Fprintln(os.Stderr, "source bundle grace period must not be negative and retention interval must be positive")
+		return 2
+	}
+	if *runtimeSecretCandidateGracePeriod < 0 || *runtimeSecretCandidateSweepInterval <= 0 || *runtimeSecretCandidateSweepLimit <= 0 {
+		fmt.Fprintln(os.Stderr, "runtime Secret candidate grace period must not be negative, and sweep interval and limit must be positive")
 		return 2
 	}
 	runCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -223,7 +243,7 @@ func runServer(args []string, mode string) int {
 	secretKey := effectiveSecretKey(rawSecretKey)
 	secretKeyPrevious := tokenFromEnv(*secretKeyPreviousEnv)
 	configureInputCrypto(stateStore, secretKey, secretKeyPrevious)
-	secretStore := secretbackend.NewDatabase(stateStore, secretKey, secretKeyPrevious)
+	var secretStore secretbackend.Backend = secretbackend.NewDatabase(stateStore, secretKey, secretKeyPrevious)
 	runtimeResolver := runtimeconfig.New(stateStore, secretStore)
 	if strings.TrimSpace(*provisionDir) != "" {
 		docs, err := provisioning.LoadDir(strings.TrimSpace(*provisionDir))
@@ -255,6 +275,7 @@ func runServer(args []string, mode string) int {
 	executionBundleStore := executionbundle.NewLocalStore(executionBundleStoreRoot(*storeDir))
 	admission := execution.NewService(stateStore, releaseCatalog, bundleStore)
 	triggerMetrics := triggerpkg.NewMetrics()
+	runtimeSecretCandidateMetrics := secretbackend.NewRuntimeCandidateMetrics()
 	triggerManager := &triggerpkg.Manager{
 		Store:     stateStore,
 		Admission: admission,
@@ -317,7 +338,7 @@ func runServer(args []string, mode string) int {
 		SecretKey:             secretKey,
 		SecretKeyPrevious:     secretKeyPrevious,
 		SecretBackend:         secretStore,
-		MetricsHandler:        state.ExecutionMetricsHandler(stateStore, triggerMetrics.Handler(webhookMetrics.Handler(webhookStore))),
+		MetricsHandler:        runtimeSecretCandidateMetrics.Handler(state.ExecutionMetricsHandler(stateStore, triggerMetrics.Handler(webhookMetrics.Handler(webhookStore)))),
 		UIHostURL:             *uiHostURL,
 		UIHostLabel:           *uiHostLabel,
 		UIHostAccountEndpoint: *uiHostAccountEndpoint,
@@ -336,6 +357,28 @@ func runServer(args []string, mode string) int {
 	}
 	if retention.Enabled() {
 		go runJobRetentionLoop(runCtx, stateStore, retention)
+	}
+	if cleaner, ok := secretStore.(secretbackend.RuntimeCandidateCleaner); ok && *runtimeSecretCandidateGracePeriod > 0 {
+		liveReferences, ok := stateStore.(secretbackend.RuntimeCandidateLiveReferenceSource)
+		if !ok {
+			fmt.Fprintf(os.Stderr, "%s state backend does not provide runtime Secret candidate liveness\n", mode)
+			return 1
+		}
+		collector := secretbackend.RuntimeCandidateCollector{
+			Backend:     cleaner,
+			Live:        liveReferences,
+			GracePeriod: *runtimeSecretCandidateGracePeriod,
+			PageSize:    min(secretbackend.DefaultRuntimeCandidatePageSize, *runtimeSecretCandidateSweepLimit),
+			SweepLimit:  *runtimeSecretCandidateSweepLimit,
+			Metrics:     runtimeSecretCandidateMetrics,
+		}
+		go func() {
+			if err := collector.Run(runCtx, *runtimeSecretCandidateSweepInterval, func(err error) {
+				fmt.Fprintf(os.Stderr, "%s runtime Secret candidate collector: %v\n", mode, err)
+			}); err != nil {
+				fmt.Fprintf(os.Stderr, "%s runtime Secret candidate collector: %v\n", mode, err)
+			}
+		}()
 	}
 	sourceBundleRetention := sourceBundleRetentionPolicy{
 		GracePeriod: *sourceBundleGracePeriod,
@@ -389,6 +432,7 @@ func runServer(args []string, mode string) int {
 			TeeJobLogs:        *teeJobLogs,
 			RuntimeBindings:   runtimeBindings,
 			RuntimeResolver:   runtimeResolver,
+			ResourcePressure:  pressureObserver,
 		}
 		go func() {
 			if err := processor.RunLoop(runCtx, *poll); err != nil {
@@ -490,6 +534,10 @@ func runWorker(args []string) int {
 	poll := flags.Duration("poll", 500*time.Millisecond, "job poll interval")
 	leaseTTL := flags.Duration("lease", 30*time.Second, "job lease TTL")
 	drainTimeout := flags.Duration("drain-timeout", 30*time.Second, "maximum time to drain an active job during shutdown")
+	pressureDisabled := flags.Bool("resource-pressure-disabled", false, "disable Worker resource-pressure claim protection")
+	pressureHighWatermark := flags.Float64("resource-pressure-high-watermark", workerpressure.DefaultHighWatermark, "pause Worker claims at or above this resource ratio")
+	pressureLowWatermark := flags.Float64("resource-pressure-low-watermark", workerpressure.DefaultLowWatermark, "resume Worker claims only below this resource ratio")
+	pressureSampleInterval := flags.Duration("resource-pressure-sample-interval", workerpressure.DefaultSampleInterval, "minimum interval between Worker resource samples")
 	logFlushInterval := flags.Duration("log-flush-interval", defaultLogFlushInterval, "worker log flush interval")
 	logCapBytes := flags.Int("log-cap-bytes", defaultLogCapBytes, "per-job log size cap in bytes; 0 disables the cap")
 	logJobPayloads := flags.Bool("log-job-payloads", false, "log complete decrypted job input and execution output")
@@ -514,6 +562,11 @@ func runWorker(args []string) int {
 	}
 	if *drainTimeout <= 0 {
 		fmt.Fprintln(os.Stderr, "worker: --drain-timeout must be greater than zero")
+		return 2
+	}
+	pressureObserver, err := newResourcePressureObserver(*pressureDisabled, *pressureHighWatermark, *pressureLowWatermark, *pressureSampleInterval)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "worker: %v\n", err)
 		return 2
 	}
 	runCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -595,6 +648,7 @@ func runWorker(args []string) int {
 			LogJobPayloads:    *logJobPayloads,
 			TeeJobLogs:        *teeJobLogs,
 			RuntimeBindings:   runtimeBindings,
+			ResourcePressure:  pressureObserver,
 		}
 		if *once {
 			processed, err := processor.RunOnce(context.Background())
@@ -656,6 +710,7 @@ func runWorker(args []string) int {
 		TeeJobLogs:        *teeJobLogs,
 		RuntimeBindings:   runtimeBindings,
 		RuntimeResolver:   runtimeconfig.New(stateStore, secretStore),
+		ResourcePressure:  pressureObserver,
 	}
 	if *once {
 		processed, err := processor.RunOnce(context.Background())
@@ -672,6 +727,17 @@ func runWorker(args []string) int {
 		return 1
 	}
 	return 0
+}
+
+func newResourcePressureObserver(disabled bool, highWatermark, lowWatermark float64, sampleInterval time.Duration) (worker.ResourcePressureObserver, error) {
+	if disabled {
+		return nil, nil
+	}
+	return workerpressure.New(workerpressure.DefaultSampler(), workerpressure.Config{
+		HighWatermark:  highWatermark,
+		LowWatermark:   lowWatermark,
+		SampleInterval: sampleInterval,
+	})
 }
 
 const (
@@ -1003,6 +1069,7 @@ func defaultStatePath() string {
 func printUsage(file io.Writer) {
 	fmt.Fprintln(file, "usage:")
 	fmt.Fprintln(file, "  windforce-core version")
+	fmt.Fprintln(file, "  windforce-core diagnose [--mode standalone|server|remote-worker] [--json] [flags]")
 	fmt.Fprintln(file, "  windforce-core server [--addr :8080] [--state-backend local|postgres] [--ui-mode embedded|disabled] [--worker-group-operator self-managed|external] [--git-sources <path>] [--provision-dir <path>]")
 	fmt.Fprintln(file, "  windforce-core worker [--api-url <url> --worker-token-env <name>] [--state-backend local|postgres] [--worker-group default] [--labels <csv>] [--egress-proxy host:port] [--auth-session-url <url>] [--capability-gateway-url <url> --capability-gateway-labels <csv>] [--bun-path <path>] [--python-path <path>] [--go-path <path>] [--prepare-timeout 5m] [--once]")
 	fmt.Fprintln(file, "  windforce-core standalone [--addr :8080] [--state-backend local|postgres] [--ui-mode embedded|disabled] [--worker-group-operator self-managed|external] [--worker-group default] [--egress-proxy host:port] [--auth-session-url <url>] [--capability-gateway-url <url> --capability-gateway-labels <csv>] [--git-sources <path>] [--provision-dir <path>] [--bun-path <path>] [--python-path <path>] [--go-path <path>] [--prepare-timeout 5m]")

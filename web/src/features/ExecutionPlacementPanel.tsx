@@ -25,6 +25,7 @@ const placementReasonKeys: Record<PlacementReasonCode, TranslationKey> = {
   missing_tag: "routing.reason.missing_tag",
   missing_label: "routing.reason.missing_label",
   execution_profile_mismatch: "routing.reason.execution_profile_mismatch",
+  resource_pressure: "routing.reason.resource_pressure",
 };
 
 export function ExecutionPlacementPanel({

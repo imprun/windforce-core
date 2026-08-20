@@ -81,8 +81,8 @@ export function InputSettingScopeList({
               </tr>
             </thead>
             <tbody>
-              {Object.entries(item.config.config).map(([key, value]) => {
-                const locked = item.config.locked_keys.includes(key);
+              {Object.entries(item.config.config ?? {}).map(([key, value]) => {
+                const locked = (item.config.locked_keys ?? []).includes(key);
                 return (
                   <tr className="inputSettingValueRow" key={key}>
                     <td className="inputSettingValueCell">

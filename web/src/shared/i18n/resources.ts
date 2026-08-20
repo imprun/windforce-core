@@ -241,6 +241,7 @@ export const en = {
   "routing.reason.missing_tag": "worker tag does not match",
   "routing.reason.missing_label": "required labels do not match",
   "routing.reason.execution_profile_mismatch": "execution profile does not match",
+  "routing.reason.resource_pressure": "matching workers paused by resource pressure",
   "routing.reason.unknown": "not eligible",
   "routing.inherit": "Inherit",
   "routing.inheritRelease": "Inherit release default",
@@ -635,6 +636,8 @@ export const en = {
   "monitoring.logInspector.attempt": "Attempt",
   "monitoring.logInspector.commit": "Release commit",
   "monitoring.logInspector.started": "Started",
+  "monitoring.logInspector.humanTaskExpired":
+    "HumanTask expired at its requested deadline. This is a HumanTask terminal cause, not an ordinary Action error.",
   "monitoring.logInspector.executionLimits": "Applied execution limits",
   "monitoring.logInspector.executionLimitsHint":
     "Policies pinned when the Run was admitted. Raw input values are never displayed.",
@@ -1932,6 +1935,7 @@ export const ko = {
   "routing.reason.missing_tag": "워커 태그가 일치하지 않음",
   "routing.reason.missing_label": "필수 레이블이 일치하지 않음",
   "routing.reason.execution_profile_mismatch": "실행 프로필이 일치하지 않음",
+  "routing.reason.resource_pressure": "일치하는 워커가 리소스 압력으로 일시 중지됨",
   "routing.reason.unknown": "실행할 수 없음",
   "routing.inherit": "상속",
   "routing.inheritRelease": "릴리스 기본값 상속",
@@ -2318,6 +2322,8 @@ export const ko = {
   "monitoring.logInspector.attempt": "시도",
   "monitoring.logInspector.commit": "Release commit",
   "monitoring.logInspector.started": "시작 시각",
+  "monitoring.logInspector.humanTaskExpired":
+    "HumanTask가 요청된 기한에 만료되었습니다. 일반 Action 오류가 아니라 HumanTask 종료 원인입니다.",
   "monitoring.logInspector.executionLimits": "적용된 실행 제한",
   "monitoring.logInspector.executionLimitsHint":
     "Run 수용 시점에 고정된 정책입니다. 원본 입력값은 표시하지 않습니다.",

@@ -89,6 +89,7 @@ func (h *Handler) handleSetVariable(w http.ResponseWriter, r *http.Request, work
 		Description string `json:"description"`
 		IsSecret    bool   `json:"is_secret"`
 		AppKey      string `json:"app_key"`
+		Scope       string `json:"scope"`
 	}
 	body, err := readJSONBody(r)
 	if err != nil {
@@ -109,6 +110,26 @@ func (h *Handler) handleSetVariable(w http.ResponseWriter, r *http.Request, work
 		return
 	}
 	request.Path = normalizedPath
+	responsePath := request.Path
+	if strings.TrimSpace(request.Scope) == string(contract.RuntimeConfigScopeActor) {
+		if request.AppKey == "" {
+			writeError(w, http.StatusBadRequest, "actor scope requires an app key")
+			return
+		}
+		principal := workspacePrincipalFrom(r.Context())
+		if principal == nil || strings.TrimSpace(principal.Subject) == "" {
+			writeError(w, http.StatusUnauthorized, "actor scope requires an authenticated subject")
+			return
+		}
+		request.Path, err = contract.ActorRuntimeConfigPath(principal.Subject, request.Path)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	} else if strings.TrimSpace(request.Scope) != "" && strings.TrimSpace(request.Scope) != string(contract.RuntimeConfigScopeApp) && strings.TrimSpace(request.Scope) != string(contract.RuntimeConfigScopeWorkspace) {
+		writeError(w, http.StatusBadRequest, "scope must be workspace, app, or actor")
+		return
+	}
 	value := request.Value
 	if request.IsSecret {
 		reference := secretbackend.Reference{
@@ -131,7 +152,7 @@ func (h *Handler) handleSetVariable(w http.ResponseWriter, r *http.Request, work
 		writeStateError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"path": request.Path, "app_key": request.AppKey})
+	writeJSON(w, http.StatusOK, map[string]string{"path": responsePath, "app_key": request.AppKey})
 }
 
 func (h *Handler) handleGetVariable(w http.ResponseWriter, r *http.Request, workspaceID string, variablePath string) {
@@ -253,7 +274,12 @@ func (h *Handler) handleRuntimeSetVariable(w http.ResponseWriter, r *http.Reques
 		writeRuntimeConfigError(w, state.RuntimeConfigCodeLimitExceeded, http.StatusRequestEntityTooLarge, "Variable value exceeds runtime limit", 0)
 		return
 	}
-	storage, allowed := pinnedVariableWriteStorage(job.Payload.RuntimeAccess, variablePath)
+	scope, err := runtimeMutationScopeQuery(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	storage, allowed := pinnedVariableWriteStorage(job.Payload.RuntimeAccess, scope, variablePath)
 	if !allowed {
 		writeRuntimeConfigError(w, state.RuntimeConfigCodeForbidden, http.StatusForbidden, "Variable write target is not pinned", 0)
 		return
@@ -262,6 +288,20 @@ func (h *Handler) handleRuntimeSetVariable(w http.ResponseWriter, r *http.Reques
 	if isSecret && !validSecretMaskRegistration(r, body) {
 		writeRuntimeConfigError(w, state.RuntimeConfigCodeForbidden, http.StatusForbidden, "Secret write requires Worker mask registration", 0)
 		return
+	}
+	logicalPath := variablePath
+	mutationAccess := job.Payload.RuntimeAccess
+	if scope == contract.RuntimeConfigScopeActor {
+		variablePath, err = contract.ActorRuntimeConfigPath(job.Payload.PermissionedAs, logicalPath)
+		if err != nil {
+			writeRuntimeConfigError(w, state.RuntimeConfigCodeForbidden, http.StatusForbidden, "Actor-scoped Variable write requires an authenticated subject", 0)
+			return
+		}
+		mutationAccess, err = materializeActorRuntimeAccess(mutationAccess, job.Payload.PermissionedAs)
+		if err != nil {
+			writeRuntimeConfigError(w, state.RuntimeConfigCodeForbidden, http.StatusForbidden, "Actor-scoped Variable write could not be authorized", 0)
+			return
+		}
 	}
 	fingerprint := runtimeMutationFingerprint(struct {
 		Kind             string `json:"kind"`
@@ -290,6 +330,7 @@ func (h *Handler) handleRuntimeSetVariable(w http.ResponseWriter, r *http.Reques
 			return
 		}
 	}
+	job.Payload.RuntimeAccess = mutationAccess
 	result, err := h.store.MutateRuntimeVariable(r.Context(), state.RuntimeVariableMutationRequest{
 		WorkspaceID: workspaceID, AppKey: job.Payload.App, Path: variablePath,
 		Value: storedValue, IsSecret: isSecret, PlaintextBytes: len(request.Value), OperationID: request.OperationID,
@@ -300,6 +341,7 @@ func (h *Handler) handleRuntimeSetVariable(w http.ResponseWriter, r *http.Reques
 		writeRuntimeConfigStateError(w, err)
 		return
 	}
+	result.Path = logicalPath
 	writeJSON(w, http.StatusOK, result)
 }
 
@@ -441,7 +483,17 @@ func runtimeConfigScopeQuery(r *http.Request) (contract.RuntimeConfigScope, erro
 	if value == string(contract.RuntimeConfigScopeApp) {
 		return contract.RuntimeConfigScopeApp, nil
 	}
-	return "", fmt.Errorf("scope must be workspace or app")
+	if value == string(contract.RuntimeConfigScopeActor) {
+		return contract.RuntimeConfigScopeActor, nil
+	}
+	return "", fmt.Errorf("scope must be workspace, app, or actor")
+}
+
+func runtimeMutationScopeQuery(r *http.Request) (contract.RuntimeConfigScope, error) {
+	if strings.TrimSpace(r.URL.Query().Get("scope")) == "" {
+		return contract.RuntimeConfigScopeApp, nil
+	}
+	return runtimeConfigScopeQuery(r)
 }
 
 func (h *Handler) handleDeleteResource(w http.ResponseWriter, r *http.Request, workspaceID string, resourcePath string) {
@@ -474,9 +526,40 @@ func (h *Handler) handleRuntimeSetResource(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "valid runtime Resource write body required")
 		return
 	}
+	scope, err := runtimeMutationScopeQuery(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	logicalPath := resourcePath
+	mutationAccess := job.Payload.RuntimeAccess
+	if scope == contract.RuntimeConfigScopeActor {
+		allowed := false
+		for _, target := range mutationAccess.WriteResources {
+			if target.Scope == scope && target.Path == logicalPath {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			writeRuntimeConfigError(w, state.RuntimeConfigCodeForbidden, http.StatusForbidden, "Resource write target is not pinned", 0)
+			return
+		}
+		resourcePath, err = contract.ActorRuntimeConfigPath(job.Payload.PermissionedAs, logicalPath)
+		if err != nil {
+			writeRuntimeConfigError(w, state.RuntimeConfigCodeForbidden, http.StatusForbidden, "Actor-scoped Resource write requires an authenticated subject", 0)
+			return
+		}
+		mutationAccess, err = materializeActorRuntimeAccess(mutationAccess, job.Payload.PermissionedAs)
+		if err != nil {
+			writeRuntimeConfigError(w, state.RuntimeConfigCodeForbidden, http.StatusForbidden, "Actor-scoped Resource write could not be authorized", 0)
+			return
+		}
+	}
 	fingerprint := runtimeResourceMutationFingerprint(
 		resourcePath, request.Value, request.ResourceType, request.Description, request.ExpectedRevision,
 	)
+	job.Payload.RuntimeAccess = mutationAccess
 	result, err := h.store.MutateRuntimeResource(r.Context(), state.RuntimeResourceMutationRequest{
 		WorkspaceID: workspaceID, AppKey: job.Payload.App, Path: resourcePath,
 		Value: request.Value, ResourceType: request.ResourceType, Description: request.Description,
@@ -487,6 +570,7 @@ func (h *Handler) handleRuntimeSetResource(w http.ResponseWriter, r *http.Reques
 		writeRuntimeConfigStateError(w, err)
 		return
 	}
+	result.Path = logicalPath
 	writeJSON(w, http.StatusOK, result)
 }
 
@@ -501,17 +585,60 @@ func runtimeResourceMutationFingerprint(path string, value json.RawMessage, reso
 	}{"resource", path, value, resourceType, description, expectedRevision})
 }
 
-func pinnedVariableWriteStorage(access contract.RuntimeAccess, path string) (contract.RuntimeVariableStorage, bool) {
+func pinnedVariableWriteStorage(access contract.RuntimeAccess, scope contract.RuntimeConfigScope, path string) (contract.RuntimeVariableStorage, bool) {
 	path, err := contract.NormalizeRuntimeConfigPath(path)
 	if err != nil {
 		return "", false
 	}
 	for _, target := range access.WriteVariables {
-		if target.Scope == contract.RuntimeConfigScopeApp && target.Path == path {
+		if target.Scope == scope && target.Path == path {
 			return target.Storage, true
 		}
 	}
 	return "", false
+}
+
+func materializeActorRuntimeAccess(access contract.RuntimeAccess, subject string) (contract.RuntimeAccess, error) {
+	result := contract.CloneRuntimeAccess(access)
+	materializeTarget := func(target contract.RuntimeConfigTarget) (contract.RuntimeConfigTarget, error) {
+		if target.Scope != contract.RuntimeConfigScopeActor {
+			return target, nil
+		}
+		path, err := contract.ActorRuntimeConfigPath(subject, target.Path)
+		if err != nil {
+			return contract.RuntimeConfigTarget{}, err
+		}
+		return contract.RuntimeConfigTarget{Scope: contract.RuntimeConfigScopeApp, Path: path}, nil
+	}
+	for index, target := range result.VariableTargets {
+		mapped, err := materializeTarget(target)
+		if err != nil {
+			return contract.RuntimeAccess{}, err
+		}
+		result.VariableTargets[index] = mapped
+	}
+	for index, target := range result.ResourceTargets {
+		mapped, err := materializeTarget(target)
+		if err != nil {
+			return contract.RuntimeAccess{}, err
+		}
+		result.ResourceTargets[index] = mapped
+	}
+	for index, target := range result.WriteVariables {
+		mapped, err := materializeTarget(target.RuntimeConfigTarget)
+		if err != nil {
+			return contract.RuntimeAccess{}, err
+		}
+		result.WriteVariables[index].RuntimeConfigTarget = mapped
+	}
+	for index, target := range result.WriteResources {
+		mapped, err := materializeTarget(target)
+		if err != nil {
+			return contract.RuntimeAccess{}, err
+		}
+		result.WriteResources[index] = mapped
+	}
+	return contract.NormalizeRuntimeAccess(result)
 }
 
 func runtimeMutationFingerprint(value any) string {

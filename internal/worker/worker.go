@@ -48,21 +48,29 @@ type Processor struct {
 	// labels participate in atomic claim matching but are not operator-authored.
 	ExecutionProfiles []contract.ExecutionProfile
 	// Slots is the worker concurrency cap advertised to the registry.
-	Slots             int
-	EgressProxyAddr   string
-	LeaseTTL          time.Duration
-	DrainTimeout      time.Duration
-	HeartbeatInterval time.Duration
-	LogFlushInterval  time.Duration
-	LogCapBytes       int
-	LogJobPayloads    bool
-	TeeJobLogs        bool
-	RuntimeBindings   RuntimeBindings
-	RuntimeResolver   RuntimeInputResolver
+	Slots                  int
+	EgressProxyAddr        string
+	LeaseTTL               time.Duration
+	DrainTimeout           time.Duration
+	HeartbeatInterval      time.Duration
+	LogFlushInterval       time.Duration
+	LogCapBytes            int
+	LogJobPayloads         bool
+	TeeJobLogs             bool
+	RuntimeBindings        RuntimeBindings
+	RuntimeResolver        RuntimeInputResolver
+	ResourcePressure       ResourcePressureObserver
+	pressureMu             sync.Mutex
+	pressureReportedAt     time.Time
+	registryHeartbeatEvery time.Duration
 }
 
 type RuntimeInputResolver interface {
 	ResolveRuntimeInput(ctx context.Context, job state.Job, input json.RawMessage) (json.RawMessage, []string, error)
+}
+
+type ResourcePressureObserver interface {
+	Observe(context.Context) state.WorkerResourcePressure
 }
 
 // workerID resolves a stable identity for both the claim path and the
@@ -75,6 +83,9 @@ func (p *Processor) workerID() string {
 }
 
 func (p *Processor) ProcessOne(ctx context.Context) (bool, error) {
+	if pressure := p.observeResourcePressure(ctx); pressure != nil && !pressure.AcceptingClaims {
+		return false, nil
+	}
 	return p.processOne(ctx, ctx)
 }
 
@@ -100,6 +111,9 @@ func (p *Processor) RunOnce(ctx context.Context) (bool, error) {
 			log.Printf("deregister worker %s: %v", record.ID, err)
 		}
 	}()
+	if record.ResourcePressure != nil && !record.ResourcePressure.AcceptingClaims {
+		return false, nil
+	}
 	return p.processOne(ctx, ctx)
 }
 
@@ -242,10 +256,14 @@ func (p *Processor) processOne(claimCtx context.Context, executionCtx context.Co
 		outcome = "failed"
 		jobError = "could not apply runtime bindings"
 		result := contract.JobResult{
-			JobID:    job.ID,
-			App:      job.Payload.App,
-			Action:   job.Payload.Action,
-			Output:   actionruntime.ErrorResult("RuntimeBindingError", "could not apply runtime bindings"),
+			JobID:  job.ID,
+			App:    job.Payload.App,
+			Action: job.Payload.Action,
+			Output: actionruntime.ErrorResultWithMetadata(
+				"RuntimeBindingError",
+				"could not apply runtime bindings",
+				runtimeBindingFailureMetadata(err),
+			),
 			ExitCode: -1,
 			Error:    "could not apply runtime bindings",
 		}
@@ -365,6 +383,25 @@ func (p *Processor) processOne(claimCtx context.Context, executionCtx context.Co
 	}
 	outcome = "succeeded"
 	return completeProcessed(p.Store.CompleteJobSucceeded(completeCtx, lease, result))
+}
+
+func runtimeBindingFailureMetadata(err error) actionruntime.FailureMetadata {
+	metadata := actionruntime.FailureMetadata{
+		Phase:     runtimeBindingPhase,
+		Reason:    runtimeBindingReasonFailed,
+		Retryable: false,
+	}
+	var failure *RuntimeBindingFailure
+	if errors.As(err, &failure) && failure != nil {
+		if validFailureCode(failure.Phase) {
+			metadata.Phase = failure.Phase
+		}
+		if validFailureCode(failure.Reason) {
+			metadata.Reason = failure.Reason
+		}
+		metadata.Retryable = failure.Retryable
+	}
+	return metadata
 }
 
 func capabilityRunTTL(deployment contract.Deployment, action contract.Action) time.Duration {
@@ -570,6 +607,7 @@ func (p *Processor) RunLoop(ctx context.Context, pollInterval time.Duration) err
 			draining.Status = state.WorkerStatusDraining
 			updateCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
+			draining.ResourcePressure = p.observeResourcePressure(updateCtx)
 			if err := p.Store.RegisterWorker(updateCtx, draining); err != nil {
 				log.Printf("worker lifecycle worker=%s status=%s: %v", workerID, state.WorkerStatusDraining, err)
 				return
@@ -589,20 +627,23 @@ func (p *Processor) RunLoop(ctx context.Context, pollInterval time.Duration) err
 	}()
 
 	go func() {
-		ticker := time.NewTicker(heartbeatInterval)
+		ticker := time.NewTicker(p.effectiveRegistryHeartbeatInterval())
 		defer ticker.Stop()
 		for {
 			select {
 			case <-heartbeatCtx.Done():
 				return
 			case <-ticker.C:
-				err := p.Store.HeartbeatWorker(heartbeatCtx, workerID)
+				pressure := p.observeResourcePressure(heartbeatCtx)
+				err := p.heartbeatWorker(heartbeatCtx, workerID, pressure)
 				if err == nil {
 					continue
 				}
 				log.Printf("worker heartbeat %s: %v", workerID, err)
 				if errors.Is(err, state.ErrNotFound) && heartbeatCtx.Err() == nil && ctx.Err() == nil {
-					if regErr := p.Store.RegisterWorker(heartbeatCtx, record); regErr != nil {
+					current := record
+					current.ResourcePressure = pressure
+					if regErr := p.Store.RegisterWorker(heartbeatCtx, current); regErr != nil {
 						log.Printf("re-register worker %s: %v", workerID, regErr)
 					}
 				}
@@ -614,6 +655,29 @@ func (p *Processor) RunLoop(ctx context.Context, pollInterval time.Duration) err
 	// complete) must not kill a long-running worker — back off and retry.
 	consecutiveFailures := 0
 	for {
+		pressure := p.observeResourcePressure(ctx)
+		if err := p.reportResourcePressure(ctx, workerID, pressure); err != nil {
+			consecutiveFailures++
+			delay := retryDelay(pollInterval, consecutiveFailures)
+			log.Printf("worker %s: resource pressure heartbeat: %v (retry in %s)", workerID, err, delay)
+			select {
+			case <-ctx.Done():
+				<-transitionDone
+				return nil
+			case <-time.After(delay):
+			}
+			continue
+		}
+		if pressure != nil && !pressure.AcceptingClaims {
+			consecutiveFailures = 0
+			select {
+			case <-ctx.Done():
+				<-transitionDone
+				return nil
+			case <-time.After(pollInterval):
+			}
+			continue
+		}
 		executionCtx, cancelExecution := context.WithCancel(context.WithoutCancel(ctx))
 		stopDrainCancellation := context.AfterFunc(ctx, func() {
 			timer := time.NewTimer(drainTimeout)
@@ -672,7 +736,52 @@ func (p *Processor) registrationRecord(ctx context.Context, status string) (stat
 		ExecutionProfiles: append([]contract.ExecutionProfile(nil), p.ExecutionProfiles...),
 		Slots:             p.Slots,
 		Status:            status,
+		ResourcePressure:  p.observeResourcePressure(ctx),
 	}, nil
+}
+
+func (p *Processor) observeResourcePressure(ctx context.Context) *state.WorkerResourcePressure {
+	if p.ResourcePressure == nil {
+		return nil
+	}
+	observation := p.ResourcePressure.Observe(ctx)
+	return &observation
+}
+
+func (p *Processor) effectiveRegistryHeartbeatInterval() time.Duration {
+	if p.registryHeartbeatEvery > 0 {
+		return p.registryHeartbeatEvery
+	}
+	return heartbeatInterval
+}
+
+func (p *Processor) heartbeatWorker(ctx context.Context, workerID string, pressure *state.WorkerResourcePressure) error {
+	if pressure != nil {
+		if backend, ok := p.Store.(ResourcePressureHeartbeatBackend); ok {
+			return backend.HeartbeatWorkerPressure(ctx, workerID, *pressure)
+		}
+	}
+	return p.Store.HeartbeatWorker(ctx, workerID)
+}
+
+func (p *Processor) reportResourcePressure(ctx context.Context, workerID string, pressure *state.WorkerResourcePressure) error {
+	if pressure == nil {
+		return nil
+	}
+	backend, ok := p.Store.(ResourcePressureHeartbeatBackend)
+	if !ok {
+		return nil
+	}
+	p.pressureMu.Lock()
+	defer p.pressureMu.Unlock()
+	if !pressure.ObservedAt.After(p.pressureReportedAt) {
+		return nil
+	}
+	if err := backend.HeartbeatWorkerPressure(ctx, workerID, *pressure); err != nil {
+		return err
+	}
+	p.pressureReportedAt = pressure.ObservedAt
+	return nil
 }
 
 func (p *Processor) claimLabels(ctx context.Context) ([]string, error) {

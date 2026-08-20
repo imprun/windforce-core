@@ -53,6 +53,15 @@ describe("groupInputSettings", () => {
     expect(inputSettingGroupMatches(group!, "proxy")).toBe(true);
     expect(inputSettingGroupMatches(group!, "missing")).toBe(false);
   });
+
+  test("treats legacy null config and locked keys as empty collections", () => {
+    const [group] = groupInputSettings(
+      [config({ config: null, locked_keys: null } as unknown as Partial<InputConfig>)],
+      () => "default",
+    );
+
+    expect(group).toMatchObject({ keyNames: [], valueCount: 0, lockedCount: 0 });
+  });
 });
 
 describe("paginate", () => {

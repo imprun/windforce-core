@@ -11,6 +11,7 @@ export default {
     "Connect to replay retained bytes and continue following from the latest byte offset.",
     "Use status, App/Action, Worker, attempt, release commit, and start time to anchor the diagnosis.",
     "Review the policy ID, scope, capacity, revision, and opaque key digest pinned at admission.",
+    "When a HumanTask reaches its requested deadline, use the explicit terminal notice to distinguish it from an ordinary Action error.",
   ],
   async run({ page, capture, api }) {
     const jobs = await api("/jobs?status=all&limit=10");

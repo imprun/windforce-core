@@ -3,11 +3,7 @@ title: Runtime configuration and secrets
 description: Current Variable, Resource, InputConfig, SecretBackend, Admission, and worker resolution model.
 ---
 
-This document is the human-readable current-state reference for runtime
-configuration as of 2026-08-01. The control-plane OpenAPI at
-`/api/w/{workspace}/openapi.json` and the released `windforce.json` schema are
-the machine-readable system-to-system contracts. ADRs record why decisions
-changed; they are not the primary operating guide.
+This document is the human-readable current-state reference for runtime configuration as of 2026-08-19. The control-plane OpenAPI at `/api/w/{workspace}/openapi.json` and the released `windforce.json` schema are the machine-readable system-to-system contracts. ADRs record why decisions changed; they are not the primary operating guide.
 
 For a runnable App-author walkthrough, see [Use runtime secrets from a TypeScript App](../guides/runtime-secrets-typescript.md).
 
@@ -46,6 +42,12 @@ A reference replaces the complete JSON value at its location:
   `.` and `..`, backslashes, and traversal are rejected.
 - Cycles, excessive nesting, too many references, missing values, and deleted
   values fail closed.
+
+## Actor-scoped App configuration
+
+An Action may declare an exact `actor` Variable or Resource target when the value belongs to the authenticated invocation subject rather than to every invocation of the App. Core binds the logical target to `permissionedAs`, derives an opaque App-owned physical path from a subject hash, and applies the same storage-class, Job-attempt, lease, revision, idempotency, masking, lifecycle, and audit checks used by App scope. The App never selects the physical namespace and cannot use actor scope without an authenticated subject.
+
+Actor scope is intended for small per-user connection metadata and Secret session state. It does not support wildcard grants, collection queries, cross-actor lookup, or `$var`/`$res` references in invocation input. Admission pins the declared logical path without enumerating actor data; the runtime resolves only the current subject after a Worker owns the Job.
 
 Because a reference is a JSON string before execution, an Action input schema
 must explicitly allow that string representation when the resolved value has a
@@ -127,6 +129,10 @@ worker receives the resolved input in memory and never receives a workspace
 data-encryption key. Job SDK reads use a job token containing the attempt and
 are accepted only while the same attempt is running under a live lease. Paths
 outside the pinned allowlist return forbidden.
+
+## External Secret candidate cleanup
+
+The built-in Database `SecretBackend` creates ciphertext in the Core state transaction boundary and has no external candidate object to collect. A side-effecting backend can optionally implement bounded runtime-candidate inventory and versioned conditional deletion. Core treats every current sealed App-owned Secret Variable reference as live, waits for the configured grace period, and reclaims only candidates that remain old and unreferenced. Exact retries refresh one deterministic candidate; tombstone and revoke preserve it; audited purge removes the live root and makes physical cleanup eventual. Metrics contain only outcome counts. See [ADR 0051](../adr/0051-collect-orphaned-runtime-secret-candidates.md).
 
 ## Encryption and key ownership
 

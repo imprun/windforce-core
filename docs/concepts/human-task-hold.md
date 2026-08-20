@@ -41,7 +41,7 @@ export async function main(ctx) {
 
 The request contains a generic `form` kind, title, optional description, JSON Schema, optional presentation hints, optional private context, and a bounded timeout. Core validates the submitted value against the JSON Schema. Phase 1's built-in console renders common object fields (`string`, string enum, `number`, `integer`, and `boolean`) and refuses to display private context.
 
-The result contains `taskId`, `outcome` (`submit` or `cancel`), and an optional typed `value`. A cancel is a deliberate HumanTask decision. Run cancellation, action timeout, task deadline, worker shutdown, and lease loss are different terminal causes and reject the wait with a structured runtime error.
+The result contains `taskId`, `outcome` (`submit` or `cancel`), and an optional typed `value`. A cancel is a deliberate HumanTask decision. Run cancellation, action timeout, task deadline, worker shutdown, and lease loss are different terminal causes and reject the wait with a structured runtime error. If that error escapes the Action, the terminal Job result preserves its stable `code`; an Author-requested HumanTask deadline is `human_task_deadline`, so result consumers and the built-in Job log inspector can distinguish it from an ordinary Action error. The task identifier is not copied into the public Job result.
 
 ## Control API
 

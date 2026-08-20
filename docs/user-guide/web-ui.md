@@ -406,6 +406,7 @@ The focused inspector follows masked stdout and stderr for a known Job ID while 
 3. Connect to replay retained bytes and continue following from the latest byte offset.
 4. Use status, App/Action, Worker, attempt, release commit, and start time to anchor the diagnosis.
 5. Review the policy ID, scope, capacity, revision, and opaque key digest pinned at admission.
+6. When a HumanTask reaches its requested deadline, use the explicit terminal notice to distinguish it from an ordinary Action error.
 
 ## Add an inbound Trigger
 

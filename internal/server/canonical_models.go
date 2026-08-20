@@ -948,17 +948,18 @@ func workerServesTag(worker state.WorkerRecord, tag string) bool {
 }
 
 type canonicalWorkerView struct {
-	ID                string                      `json:"id"`
-	Group             string                      `json:"group,omitempty"`
-	EngineVersion     string                      `json:"engine_version,omitempty"`
-	BuildRevision     string                      `json:"build_revision,omitempty"`
-	Tags              []string                    `json:"tags"`
-	Labels            []string                    `json:"labels"`
-	ExecutionProfiles []contract.ExecutionProfile `json:"execution_profiles"`
-	Slots             int                         `json:"slots"`
-	Live              bool                        `json:"live"`
-	StartedAt         time.Time                   `json:"started_at"`
-	LastHeartbeatAt   time.Time                   `json:"last_heartbeat_at"`
+	ID                string                        `json:"id"`
+	Group             string                        `json:"group,omitempty"`
+	EngineVersion     string                        `json:"engine_version,omitempty"`
+	BuildRevision     string                        `json:"build_revision,omitempty"`
+	Tags              []string                      `json:"tags"`
+	Labels            []string                      `json:"labels"`
+	ExecutionProfiles []contract.ExecutionProfile   `json:"execution_profiles"`
+	Slots             int                           `json:"slots"`
+	Live              bool                          `json:"live"`
+	ResourcePressure  *state.WorkerResourcePressure `json:"resource_pressure,omitempty"`
+	StartedAt         time.Time                     `json:"started_at"`
+	LastHeartbeatAt   time.Time                     `json:"last_heartbeat_at"`
 }
 
 func newCanonicalWorkersView(workers []state.WorkerRecord, now time.Time) map[string]any {
@@ -974,6 +975,7 @@ func newCanonicalWorkersView(workers []state.WorkerRecord, now time.Time) map[st
 			ExecutionProfiles: append([]contract.ExecutionProfile{}, worker.ExecutionProfiles...),
 			Slots:             worker.Slots,
 			Live:              worker.Live(now),
+			ResourcePressure:  worker.ResourcePressure,
 			StartedAt:         worker.StartedAt,
 			LastHeartbeatAt:   worker.LastHeartbeatAt,
 		})

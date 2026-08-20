@@ -40,7 +40,7 @@ export async function main(ctx) {
 
 요청에는 범용 `form`, 제목, 설명, JSON Schema, 선택적 표시 힌트, 비공개 컨텍스트와 제한 시간이 들어갑니다. Core는 제출값을 JSON Schema로 검증합니다. 내장 콘솔은 일반적인 object 필드(`string`, 문자열 enum, `number`, `integer`, `boolean`)를 표시하며 비공개 컨텍스트는 절대 보여주지 않습니다.
 
-결과에는 `taskId`, `outcome`(`submit` 또는 `cancel`)과 선택적 `value`가 있습니다. HumanTask 취소 결정과 Run 취소, Action timeout, 작업 deadline, worker shutdown, lease loss는 서로 다른 종료 원인입니다.
+결과에는 `taskId`, `outcome`(`submit` 또는 `cancel`)과 선택적 `value`가 있습니다. HumanTask 취소 결정과 Run 취소, Action timeout, 작업 deadline, worker shutdown, lease loss는 서로 다른 종료 원인입니다. 이 오류가 Action 밖으로 전파되면 종료 Job 결과가 안정된 `code`를 보존합니다. 작성자가 지정한 HumanTask deadline은 `human_task_deadline`이므로 결과 소비자와 내장 Job 로그 검사기가 일반 Action 오류와 구분할 수 있습니다. Task 식별자는 공개 Job 결과로 복사하지 않습니다.
 
 ## 요청·응답 흐름
 

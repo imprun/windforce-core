@@ -20,6 +20,18 @@ type systemInfoResponse struct {
 	RuntimeConfig map[string]interface{} `json:"runtime_config"`
 }
 
+// EngineCapabilities is the stable provider-neutral capability inventory
+// shared by the System Info API and offline diagnostics.
+func EngineCapabilities() map[string]string {
+	return map[string]string{
+		"capability_gateway_run_context": "v1",
+		"execution_limit_policy":         "v1",
+		"execution_limit_shape":          executionlimit.FingerprintVersion,
+		"worker_management":              "v1",
+		"worker_resource_pressure":       "v1",
+	}
+}
+
 func (h *Handler) handleSystemInfo(w http.ResponseWriter, r *http.Request, workspaceID string) {
 	waitMilliseconds := int64(0)
 	if h.wait > 0 {
@@ -82,12 +94,7 @@ func (h *Handler) handleSystemInfo(w http.ResponseWriter, r *http.Request, works
 			"secret_key_configured":   h.secretKey != "" && h.secretKey != DefaultSecretKey,
 			"previous_secret_key":     h.secretKeyPrevious != "",
 		},
-		Capabilities: map[string]string{
-			"capability_gateway_run_context": "v1",
-			"execution_limit_policy":         "v1",
-			"execution_limit_shape":          executionlimit.FingerprintVersion,
-			"worker_management":              "v1",
-		},
+		Capabilities: EngineCapabilities(),
 		RuntimeConfig: map[string]interface{}{
 			"wait_ms":               waitMilliseconds,
 			"sample_root":           h.sampleRoot != "",

@@ -2,6 +2,7 @@ package server
 
 import (
 	"archive/tar"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -129,15 +130,16 @@ func (h *Handler) handleWorkerPlane(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) workerPlaneRegister(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		ID                string                      `json:"id"`
-		Group             string                      `json:"group"`
-		EngineVersion     string                      `json:"engine_version"`
-		BuildRevision     string                      `json:"build_revision"`
-		Tags              []string                    `json:"tags"`
-		Labels            []string                    `json:"labels"`
-		ExecutionProfiles []contract.ExecutionProfile `json:"execution_profiles"`
-		Slots             int                         `json:"slots"`
-		Status            string                      `json:"status"`
+		ID                string                        `json:"id"`
+		Group             string                        `json:"group"`
+		EngineVersion     string                        `json:"engine_version"`
+		BuildRevision     string                        `json:"build_revision"`
+		Tags              []string                      `json:"tags"`
+		Labels            []string                      `json:"labels"`
+		ExecutionProfiles []contract.ExecutionProfile   `json:"execution_profiles"`
+		Slots             int                           `json:"slots"`
+		Status            string                        `json:"status"`
+		ResourcePressure  *state.WorkerResourcePressure `json:"resource_pressure"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
@@ -168,6 +170,11 @@ func (h *Handler) workerPlaneRegister(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	resourcePressure, err := state.NormalizeWorkerResourcePressure(req.ResourcePressure, time.Now().UTC())
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	if strings.TrimSpace(req.ID) == "" {
 		req.ID = state.NewID("worker")
 	}
@@ -181,6 +188,7 @@ func (h *Handler) workerPlaneRegister(w http.ResponseWriter, r *http.Request) {
 		ExecutionProfiles: profiles,
 		Slots:             req.Slots,
 		Status:            status,
+		ResourcePressure:  resourcePressure,
 	}
 	if credential := managedWorkerCredential(r); credential != nil {
 		store, ok := h.workerControlStore()
@@ -222,6 +230,13 @@ func (h *Handler) workerPlaneRegister(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) workerPlaneWorkerHeartbeat(w http.ResponseWriter, r *http.Request, workerID string) {
+	var req struct {
+		ResourcePressure *state.WorkerResourcePressure `json:"resource_pressure"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, workerPlaneMaxBody)).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
 	if credential := managedWorkerCredential(r); credential != nil {
 		store, ok := h.workerControlStore()
 		if !ok || !credentialAllowsContinuation(*credential) {
@@ -233,8 +248,21 @@ func (h *Handler) workerPlaneWorkerHeartbeat(w http.ResponseWriter, r *http.Requ
 			return
 		}
 	}
-	if err := h.store.HeartbeatWorker(r.Context(), workerID); err != nil {
-		writeStoreError(w, err)
+	var heartbeatErr error
+	if req.ResourcePressure != nil {
+		pressureStore, ok := h.store.(interface {
+			HeartbeatWorkerPressure(context.Context, string, state.WorkerResourcePressure) error
+		})
+		if !ok {
+			writeError(w, http.StatusNotImplemented, "worker pressure heartbeat is unsupported")
+			return
+		}
+		heartbeatErr = pressureStore.HeartbeatWorkerPressure(r.Context(), workerID, *req.ResourcePressure)
+	} else {
+		heartbeatErr = h.store.HeartbeatWorker(r.Context(), workerID)
+	}
+	if heartbeatErr != nil {
+		writeStoreError(w, heartbeatErr)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
