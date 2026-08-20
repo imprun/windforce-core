@@ -2489,6 +2489,21 @@ func TestCanonicalControlPlaneUsesMaterializedActionSchemas(t *testing.T) {
 	if !bytes.Contains(runSchemaJSON, []byte(`"waiting_human"`)) || !bytes.Contains(runSchemaJSON, []byte(`"resuming"`)) {
 		t.Fatalf("openapi Run states = %s", runSchemaJSON)
 	}
+	for path, statuses := range map[string][]string{
+		"/api/v1/workspaces/{workspace}/runs":      {"200", "201"},
+		"/api/v1/workspaces/{workspace}/runs/wait": {"200", "202"},
+	} {
+		operation := paths[path].(map[string]any)["post"].(map[string]any)
+		responses := operation["responses"].(map[string]any)
+		for _, status := range statuses {
+			headers := responses[status].(map[string]any)["headers"].(map[string]any)
+			for _, name := range []string{"Location", invocationRunIDHeader, invocationRunStateHeader, invocationIdempotencyReusedHeader} {
+				if headers[name] == nil {
+					t.Errorf("App OpenAPI %s response %s is missing header %s", path, status, name)
+				}
+			}
+		}
+	}
 
 	runBody := admitTestRun(t, store, server.URL, "ws-a", "echo", "echo", `{"message":"hello"}`)
 	job := testJobForRun(t, store, runBody.RunID)

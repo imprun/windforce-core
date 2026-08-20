@@ -61,6 +61,12 @@
         "responses": {
           "200": {
             "description": "An idempotent retry replayed the existing Run.",
+            "headers": {
+              "Location": { "$ref": "#/components/headers/RunLocation" },
+              "X-WF-Run-Id": { "$ref": "#/components/headers/RunID" },
+              "X-WF-Run-State": { "$ref": "#/components/headers/RunState" },
+              "X-WF-Idempotency-Reused": { "$ref": "#/components/headers/IdempotencyReused" }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -71,6 +77,12 @@
           },
           "201": {
             "description": "Run admitted.",
+            "headers": {
+              "Location": { "$ref": "#/components/headers/RunLocation" },
+              "X-WF-Run-Id": { "$ref": "#/components/headers/RunID" },
+              "X-WF-Run-State": { "$ref": "#/components/headers/RunState" },
+              "X-WF-Idempotency-Reused": { "$ref": "#/components/headers/IdempotencyReused" }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -138,6 +150,12 @@
         "responses": {
           "200": {
             "description": "Terminal Run result.",
+            "headers": {
+              "Location": { "$ref": "#/components/headers/RunLocation" },
+              "X-WF-Run-Id": { "$ref": "#/components/headers/RunID" },
+              "X-WF-Run-State": { "$ref": "#/components/headers/RunState" },
+              "X-WF-Idempotency-Reused": { "$ref": "#/components/headers/IdempotencyReused" }
+            },
             "content": {
               "application/json": {
                 "schema": true
@@ -146,6 +164,12 @@
           },
           "202": {
             "description": "The Run is still pending when the wait timeout expires.",
+            "headers": {
+              "Location": { "$ref": "#/components/headers/RunLocation" },
+              "X-WF-Run-Id": { "$ref": "#/components/headers/RunID" },
+              "X-WF-Run-State": { "$ref": "#/components/headers/RunState" },
+              "X-WF-Idempotency-Reused": { "$ref": "#/components/headers/IdempotencyReused" }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -379,6 +403,42 @@
         "schema": {
           "type": "string",
           "maxLength": 200
+        }
+      }
+    },
+    "headers": {
+      "RunLocation": {
+        "description": "Canonical URL of the admitted Run.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "RunID": {
+        "description": "Caller-visible Run identifier.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "RunState": {
+        "description": "Run state observed for this response.",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "queued",
+            "running",
+            "waiting_human",
+            "resuming",
+            "succeeded",
+            "failed",
+            "canceled",
+            "expired"
+          ]
+        }
+      },
+      "IdempotencyReused": {
+        "description": "True when this admission reused the existing Run for the same Idempotency-Key and request.",
+        "schema": {
+          "type": "boolean"
         }
       }
     },

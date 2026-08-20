@@ -49,13 +49,14 @@ func buildAppOpenAPI(baseURL string, workspaceID string, deployment contract.Dep
 		createSchema = map[string]any{"type": "object", "additionalProperties": false}
 	}
 	resultSchema := map[string]any{"anyOf": resultVariants}
+	runStateSchema := oapiInvocationRunStateSchema()
 
 	runSchema := map[string]any{
 		"type":                 "object",
 		"additionalProperties": false,
 		"properties": map[string]any{
 			"run_id":         oapiStringSchema(),
-			"state":          map[string]any{"type": "string", "enum": []any{"queued", "running", "waiting_human", "resuming", "succeeded", "failed", "canceled", "expired"}},
+			"state":          runStateSchema,
 			"app":            map[string]any{"type": "string", "const": deployment.App},
 			"action":         map[string]any{"type": "string"},
 			"correlation_id": oapiStringSchema(),
@@ -68,6 +69,10 @@ func buildAppOpenAPI(baseURL string, workspaceID string, deployment contract.Dep
 	runResponses := withErrors(map[string]any{
 		"200": oapiResponse("Run state.", runSchema),
 		"201": oapiResponse("Run admitted.", runSchema),
+	}, "400", "401", "403", "404", "409", "422")
+	admissionRunResponses := withErrors(map[string]any{
+		"200": oapiInvocationAdmissionResponse("Existing Run reused.", runSchema),
+		"201": oapiInvocationAdmissionResponse("Run admitted.", runSchema),
 	}, "400", "401", "403", "404", "409", "422")
 	runIDParameter := oapiPathParam("run_id", "Caller-visible Run identifier.")
 	workspaceParameter := oapiPathParam("workspace", fmt.Sprintf("Workspace id. This document was generated for %q.", workspaceID))
@@ -83,14 +88,14 @@ func buildAppOpenAPI(baseURL string, workspaceID string, deployment contract.Dep
 					oapiHeaderParam("Idempotency-Key", "Principal-scoped idempotency key.", oapiStringSchema(), false),
 				},
 				"requestBody": oapiJSONBody(createSchema, true),
-				"responses":   runResponses,
+				"responses":   admissionRunResponses,
 			},
 		},
 		"/api/v1/workspaces/{workspace}/runs/wait": map[string]any{
 			"post": map[string]any{
 				"operationId": "createRunAndWait",
 				"summary":     fmt.Sprintf("Admit a %s Run and wait", deployment.App),
-				"description": "Returns the action result when the Run settles before the timeout. X-WF-Run-Id identifies the admitted Run for reconciliation.",
+				"description": "Returns the action result when the Run settles before the timeout. Response headers identify the Run, its observed state, and whether admission reused an existing idempotent Run.",
 				"parameters": []any{
 					workspaceParameter,
 					oapiHeaderParam("Idempotency-Key", "Principal-scoped idempotency key.", oapiStringSchema(), false),
@@ -98,8 +103,8 @@ func buildAppOpenAPI(baseURL string, workspaceID string, deployment contract.Dep
 				},
 				"requestBody": oapiJSONBody(createSchema, true),
 				"responses": withErrors(map[string]any{
-					"200": oapiResponse("Terminal action result.", resultSchema),
-					"202": oapiResponse("Run is still active.", runSchema),
+					"200": oapiInvocationAdmissionResponse("Terminal action result.", resultSchema),
+					"202": oapiInvocationAdmissionResponse("Run is still active.", runSchema),
 				}, "400", "401", "403", "404", "409", "422"),
 			},
 		},
@@ -173,4 +178,31 @@ func buildAppOpenAPI(baseURL string, workspaceID string, deployment contract.Dep
 		},
 		"paths": paths,
 	}
+}
+
+func oapiInvocationRunStateSchema() map[string]any {
+	return oapiStringEnumSchema("queued", "running", "waiting_human", "resuming", "succeeded", "failed", "canceled", "expired")
+}
+
+func oapiInvocationAdmissionResponse(description string, schema any) map[string]any {
+	response := oapiResponse(description, schema)
+	response["headers"] = map[string]any{
+		"Location": map[string]any{
+			"description": "Canonical URL of the admitted Run.",
+			"schema":      oapiStringSchema(),
+		},
+		invocationRunIDHeader: map[string]any{
+			"description": "Caller-visible Run identifier.",
+			"schema":      oapiStringSchema(),
+		},
+		invocationRunStateHeader: map[string]any{
+			"description": "Run state observed for this response.",
+			"schema":      oapiInvocationRunStateSchema(),
+		},
+		invocationIdempotencyReusedHeader: map[string]any{
+			"description": "True when this admission reused the existing Run for the same Idempotency-Key and request.",
+			"schema":      oapiBooleanSchema(),
+		},
+	}
+	return response
 }

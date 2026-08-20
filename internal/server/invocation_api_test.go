@@ -37,6 +37,110 @@ func TestInvocationRawResultPreservesRuntimeBindingFailureMetadata(t *testing.T)
 	}
 }
 
+func TestInvocationAdmissionResponseSignals(t *testing.T) {
+	ctx := context.Background()
+	store := state.NewLocalStore(filepath.Join(t.TempDir(), "state.json"))
+	if _, err := store.CreateWorkspace(ctx, "ws-signals", "Signals", "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.PublishRelease(ctx, contract.Deployment{
+		Workspace: "ws-signals", GitSourceID: "source-signals", App: "echo", Commit: "commit-signals",
+		BundleDigest: testExecutionBundleDigest,
+		Actions: map[string]contract.Action{
+			"run": {Action: "run", Entrypoint: "main.ts"},
+		},
+	}, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(New(Config{Store: store, Catalog: store, AdminToken: "admin-secret"}))
+	defer server.Close()
+
+	requestBody := `{"app":"echo","action":"run","input":{}}`
+	call := func(path, idempotencyKey string) (*http.Response, []byte) {
+		t.Helper()
+		request, err := http.NewRequest(http.MethodPost, server.URL+path, bytes.NewBufferString(requestBody))
+		if err != nil {
+			t.Fatal(err)
+		}
+		request.Header.Set("Authorization", "Bearer admin-secret")
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("Idempotency-Key", idempotencyKey)
+		response, err := http.DefaultClient.Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, err := io.ReadAll(response.Body)
+		response.Body.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return response, body
+	}
+
+	freshWait, freshWaitBody := call("/api/v1/workspaces/ws-signals/runs/wait?timeout=0s", "wait-1")
+	if freshWait.StatusCode != http.StatusAccepted {
+		t.Fatalf("fresh wait status = %d: %s", freshWait.StatusCode, freshWaitBody)
+	}
+	var admitted invocationRunView
+	if err := json.Unmarshal(freshWaitBody, &admitted); err != nil {
+		t.Fatal(err)
+	}
+	if admitted.RunID == "" || admitted.Replayed ||
+		freshWait.Header.Get(invocationRunIDHeader) != admitted.RunID ||
+		freshWait.Header.Get(invocationRunStateHeader) != "queued" ||
+		freshWait.Header.Get(invocationIdempotencyReusedHeader) != "false" {
+		t.Fatalf("fresh wait = %#v headers=%v", admitted, freshWait.Header)
+	}
+
+	replayedWait, replayedWaitBody := call("/api/v1/workspaces/ws-signals/runs/wait?timeout=0s", "wait-1")
+	if replayedWait.StatusCode != http.StatusAccepted {
+		t.Fatalf("replayed wait status = %d: %s", replayedWait.StatusCode, replayedWaitBody)
+	}
+	var replayed invocationRunView
+	if err := json.Unmarshal(replayedWaitBody, &replayed); err != nil {
+		t.Fatal(err)
+	}
+	if replayed.RunID != admitted.RunID || !replayed.Replayed ||
+		replayedWait.Header.Get(invocationRunStateHeader) != "queued" ||
+		replayedWait.Header.Get(invocationIdempotencyReusedHeader) != "true" {
+		t.Fatalf("replayed wait = %#v headers=%v", replayed, replayedWait.Header)
+	}
+
+	claimed, lease, err := store.ClaimJob(ctx, "worker-signals", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claimed.RunID != admitted.RunID {
+		t.Fatalf("claimed Run = %q, want %q", claimed.RunID, admitted.RunID)
+	}
+	if err := store.CompleteJobSucceeded(ctx, lease, contract.JobResult{
+		JobID: claimed.ID, App: "echo", Action: "run", ExitCode: 0, Output: json.RawMessage(`{"ok":true}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	completedWait, completedWaitBody := call("/api/v1/workspaces/ws-signals/runs/wait?timeout=0s", "wait-1")
+	var completedResult map[string]any
+	completedResultErr := json.Unmarshal(completedWaitBody, &completedResult)
+	if completedWait.StatusCode != http.StatusOK || completedResultErr != nil || completedResult["ok"] != true ||
+		completedWait.Header.Get(invocationRunStateHeader) != "succeeded" ||
+		completedWait.Header.Get(invocationIdempotencyReusedHeader) != "true" {
+		t.Fatalf("completed wait status=%d body=%s resultErr=%v headers=%v", completedWait.StatusCode, completedWaitBody, completedResultErr, completedWait.Header)
+	}
+
+	freshCreate, freshCreateBody := call("/api/v1/workspaces/ws-signals/runs", "create-1")
+	if freshCreate.StatusCode != http.StatusCreated ||
+		freshCreate.Header.Get(invocationRunStateHeader) != "queued" ||
+		freshCreate.Header.Get(invocationIdempotencyReusedHeader) != "false" {
+		t.Fatalf("fresh create status=%d body=%s headers=%v", freshCreate.StatusCode, freshCreateBody, freshCreate.Header)
+	}
+	replayedCreate, replayedCreateBody := call("/api/v1/workspaces/ws-signals/runs", "create-1")
+	if replayedCreate.StatusCode != http.StatusOK ||
+		replayedCreate.Header.Get(invocationRunStateHeader) != "queued" ||
+		replayedCreate.Header.Get(invocationIdempotencyReusedHeader) != "true" {
+		t.Fatalf("replayed create status=%d body=%s headers=%v", replayedCreate.StatusCode, replayedCreateBody, replayedCreate.Header)
+	}
+}
+
 func TestInvocationIdempotencyReplayKeepsPinnedRunUnderCurrentClaimPolicy(t *testing.T) {
 	ctx := context.Background()
 	store := state.NewLocalStore(filepath.Join(t.TempDir(), "state.json"))
@@ -498,6 +602,21 @@ func TestInvocationOpenAPIContainsOnlyRunBoundary(t *testing.T) {
 	} {
 		if paths[path] == nil {
 			t.Errorf("Invocation OpenAPI path %q is missing", path)
+		}
+	}
+	for path, statuses := range map[string][]string{
+		"/api/v1/workspaces/{workspace}/runs":      {"200", "201"},
+		"/api/v1/workspaces/{workspace}/runs/wait": {"200", "202"},
+	} {
+		operation := paths[path].(map[string]any)["post"].(map[string]any)
+		responses := operation["responses"].(map[string]any)
+		for _, status := range statuses {
+			headers := responses[status].(map[string]any)["headers"].(map[string]any)
+			for _, name := range []string{"Location", invocationRunIDHeader, invocationRunStateHeader, invocationIdempotencyReusedHeader} {
+				if headers[name] == nil {
+					t.Errorf("Invocation OpenAPI %s response %s is missing header %s", path, status, name)
+				}
+			}
 		}
 	}
 	if !strings.Contains(string(encoded), contract.ServiceTokenPrefix) {
