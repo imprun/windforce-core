@@ -390,6 +390,10 @@ func runServer(args []string, mode string) int {
 	}
 	go runHumanTaskDeadlineLoop(runCtx, stateStore, *humanTaskDeadlineInterval, *humanTaskDeadlineBatch)
 
+	// The standalone Worker registers itself, so the process must wait for its loop to
+	// return before exiting. Otherwise the deferred deregistration never runs and the
+	// registry keeps entries for Workers that are gone.
+	var workerDone chan struct{}
 	if standaloneMode {
 		executionProfiles, err := runtimeRunner.ExecutionProfiles(runCtx)
 		if err != nil {
@@ -434,7 +438,9 @@ func runServer(args []string, mode string) int {
 			RuntimeResolver:   runtimeResolver,
 			ResourcePressure:  pressureObserver,
 		}
+		workerDone = make(chan struct{})
 		go func() {
+			defer close(workerDone)
 			if err := processor.RunLoop(runCtx, *poll); err != nil {
 				fmt.Fprintf(os.Stderr, "standalone worker: %v\n", err)
 			}
@@ -498,6 +504,14 @@ func runServer(args []string, mode string) int {
 	case <-time.After(20 * time.Second):
 		fmt.Fprintf(os.Stderr, "%s trigger manager shutdown timed out\n", mode)
 		exitCode = 1
+	}
+	if workerDone != nil {
+		select {
+		case <-workerDone:
+		case <-time.After(20 * time.Second):
+			fmt.Fprintf(os.Stderr, "%s standalone worker shutdown timed out\n", mode)
+			exitCode = 1
+		}
 	}
 	if runCtx.Err() == nil {
 		stopSignals()
