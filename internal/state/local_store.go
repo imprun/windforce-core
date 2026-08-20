@@ -1229,16 +1229,25 @@ func (s *LocalStore) write(snapshot Snapshot) error {
 // endpoint protection agent scans the file right after it is written. The
 // condition clears on its own, so retry briefly before reporting the failure.
 func replaceFile(source, destination string) error {
-	const attempts = 10
+	return replaceFileWith(source, destination, os.Rename, time.Sleep)
+}
+
+func replaceFileWith(source, destination string, rename func(string, string) error, sleep func(time.Duration)) error {
+	const (
+		attempts  = 10
+		baseDelay = 10 * time.Millisecond
+	)
 	var err error
 	for attempt := 0; attempt < attempts; attempt++ {
-		if err = os.Rename(source, destination); err == nil {
+		if err = rename(source, destination); err == nil {
 			return nil
 		}
 		if !errors.Is(err, fs.ErrPermission) {
 			return err
 		}
-		time.Sleep(time.Duration(attempt+1) * 10 * time.Millisecond)
+		if attempt+1 < attempts {
+			sleep(time.Duration(attempt+1) * baseDelay)
+		}
 	}
 	return err
 }
