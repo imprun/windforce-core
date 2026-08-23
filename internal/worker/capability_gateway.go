@@ -21,6 +21,7 @@ import (
 
 const (
 	defaultCapabilityGatewayTimeout = 15 * time.Second
+	capabilityGatewayRetryInterval  = 100 * time.Millisecond
 	maxCapabilityGatewayBodyBytes   = 1 << 20
 	maxCapabilityGatewayErrorBytes  = 4 << 10
 	maxCapabilityGatewayTTL         = time.Hour
@@ -63,6 +64,15 @@ type capabilityGatewayErrorResponse struct {
 	Phase     string `json:"phase"`
 	Reason    string `json:"reason"`
 	Retryable *bool  `json:"retryable"`
+}
+
+type capabilityGatewayDiscoveryError struct {
+	message   string
+	retryable bool
+}
+
+func (e *capabilityGatewayDiscoveryError) Error() string {
+	return e.message
 }
 
 func NewCapabilityGatewayBinding(
@@ -112,12 +122,34 @@ func NewCapabilityGatewayBinding(
 		Labels:      normalizedLabels,
 		client:      newCapabilityGatewayHTTPClient(timeout),
 	}
-	capabilities, err := binding.discover(context.Background())
+	startupContext, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	capabilities, err := binding.discoverUntilReady(startupContext)
 	if err != nil {
 		return CapabilityGatewayBinding{}, err
 	}
 	binding.Capabilities = capabilities
 	return binding, nil
+}
+
+func (b CapabilityGatewayBinding) discoverUntilReady(ctx context.Context) ([]string, error) {
+	for {
+		capabilities, err := b.discover(ctx)
+		if err == nil {
+			return capabilities, nil
+		}
+		var discoveryError *capabilityGatewayDiscoveryError
+		if !errors.As(err, &discoveryError) || !discoveryError.retryable {
+			return nil, err
+		}
+		timer := time.NewTimer(capabilityGatewayRetryInterval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, err
+		case <-timer.C:
+		}
+	}
 }
 
 func (b CapabilityGatewayBinding) Enabled() bool {
@@ -218,11 +250,18 @@ func (b CapabilityGatewayBinding) discover(ctx context.Context) ([]string, error
 	}
 	resp, err := b.httpClient().Do(req)
 	if err != nil {
-		return nil, errors.New("capability gateway discovery failed")
+		var networkError *net.OpError
+		return nil, &capabilityGatewayDiscoveryError{
+			message:   "capability gateway discovery failed",
+			retryable: errors.As(err, &networkError),
+		}
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("capability gateway discovery returned status %d", resp.StatusCode)
+		return nil, &capabilityGatewayDiscoveryError{
+			message:   fmt.Sprintf("capability gateway discovery returned status %d", resp.StatusCode),
+			retryable: resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= http.StatusInternalServerError,
+		}
 	}
 	var discovery capabilityDiscoveryResponse
 	if err := decodeCapabilityGatewayJSON(resp.Body, &discovery); err != nil {

@@ -147,6 +147,65 @@ func TestCapabilityGatewayBindingDiscoversBindsAndClosesRun(t *testing.T) {
 	}
 }
 
+func TestCapabilityGatewayBindingRetriesTransientStartupDiscovery(t *testing.T) {
+	const workerToken = "worker-secret"
+	var attempts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if attempts.Add(1) < 3 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		writeCapabilityTestJSON(t, w, http.StatusOK, map[string]any{
+			"capabilities": []map[string]any{{
+				"id": "document.pdf/v1", "operations": []string{"recover"}, "ready": true, "maxConcurrency": 1,
+			}},
+		})
+	}))
+	defer server.Close()
+	t.Setenv("TEST_CAPABILITY_GATEWAY_TOKEN", workerToken)
+
+	binding, err := NewCapabilityGatewayBinding(
+		server.URL,
+		"TEST_CAPABILITY_GATEWAY_TOKEN",
+		"",
+		time.Second,
+		[]string{"document.pdf.v1"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attempts.Load() != 3 {
+		t.Fatalf("discovery attempts = %d, want 3", attempts.Load())
+	}
+	if len(binding.Capabilities) != 1 || binding.Capabilities[0] != "document.pdf/v1" {
+		t.Fatalf("ready capabilities = %#v", binding.Capabilities)
+	}
+}
+
+func TestCapabilityGatewayBindingDoesNotRetryPermanentDiscoveryFailure(t *testing.T) {
+	var attempts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts.Add(1)
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer server.Close()
+	t.Setenv("TEST_CAPABILITY_GATEWAY_TOKEN", "worker-secret")
+
+	_, err := NewCapabilityGatewayBinding(
+		server.URL,
+		"TEST_CAPABILITY_GATEWAY_TOKEN",
+		"",
+		time.Second,
+		[]string{"document.pdf.v1"},
+	)
+	if err == nil || !strings.Contains(err.Error(), "status 401") {
+		t.Fatalf("permanent discovery error = %v", err)
+	}
+	if attempts.Load() != 1 {
+		t.Fatalf("discovery attempts = %d, want 1", attempts.Load())
+	}
+}
+
 func TestProcessorClosesAndMasksCapabilityGatewayRun(t *testing.T) {
 	const (
 		workerToken = "worker-secret-value"
