@@ -75,6 +75,18 @@ func (e *capabilityGatewayDiscoveryError) Error() string {
 	return e.message
 }
 
+type capabilityGatewayLoopbackConnectError struct {
+	cause error
+}
+
+func (e *capabilityGatewayLoopbackConnectError) Error() string {
+	return "could not connect to capability gateway loopback"
+}
+
+func (e *capabilityGatewayLoopbackConnectError) Unwrap() error {
+	return e.cause
+}
+
 func NewCapabilityGatewayBinding(
 	serviceURL string,
 	tokenEnv string,
@@ -332,6 +344,7 @@ func dialCapabilityGatewayLoopback(ctx context.Context, network string, address 
 	}
 
 	dialer := net.Dialer{}
+	var lastDialError error
 	for _, candidate := range addresses {
 		if !candidate.IP.IsLoopback() {
 			continue
@@ -340,6 +353,10 @@ func dialCapabilityGatewayLoopback(ctx context.Context, network string, address 
 		if dialErr == nil {
 			return connection, nil
 		}
+		lastDialError = dialErr
+	}
+	if lastDialError != nil {
+		return nil, &capabilityGatewayLoopbackConnectError{cause: lastDialError}
 	}
 	return nil, errors.New("could not connect to capability gateway loopback")
 }
