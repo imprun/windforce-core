@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -663,6 +664,29 @@ func TestCapabilityGatewayBindingRejectsInvalidRunContext(t *testing.T) {
 func TestCapabilityGatewayDialerRejectsNonLoopbackTarget(t *testing.T) {
 	if _, err := dialCapabilityGatewayLoopback(context.Background(), "tcp", "192.0.2.1:80"); err == nil || !strings.Contains(err.Error(), "loopback") {
 		t.Fatalf("non-loopback dial error = %v", err)
+	}
+}
+
+func TestCapabilityGatewayDialerPreservesRetryableConnectionFailure(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := listener.Addr().String()
+	if err := listener.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = dialCapabilityGatewayLoopback(context.Background(), "tcp", address)
+	if err == nil {
+		t.Fatal("dial error = nil, want connection failure")
+	}
+	if err.Error() != "could not connect to capability gateway loopback" {
+		t.Fatalf("dial error = %q, want stable redacted message", err)
+	}
+	var networkError *net.OpError
+	if !errors.As(err, &networkError) {
+		t.Fatalf("dial error type = %T, want wrapped *net.OpError", err)
 	}
 }
 
