@@ -116,12 +116,12 @@ func (h *Handler) handleSetVariable(w http.ResponseWriter, r *http.Request, work
 			writeError(w, http.StatusBadRequest, "actor scope requires an app key")
 			return
 		}
-		principal := workspacePrincipalFrom(r.Context())
-		if principal == nil || strings.TrimSpace(principal.Subject) == "" {
+		subject := requestActorSubject(r)
+		if subject == "" {
 			writeError(w, http.StatusUnauthorized, "actor scope requires an authenticated subject")
 			return
 		}
-		request.Path, err = contract.ActorRuntimeConfigPath(principal.Subject, request.Path)
+		request.Path, err = contract.ActorRuntimeConfigPath(subject, request.Path)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return

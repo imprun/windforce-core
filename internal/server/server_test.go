@@ -531,6 +531,54 @@ func TestCanonicalVariablesAndResourcesAPI(t *testing.T) {
 		t.Fatalf("set scoped variable status = %d, want %d", setVariableResp.StatusCode, http.StatusOK)
 	}
 
+	actorVariableReq, err := http.NewRequest(
+		http.MethodPost,
+		server.URL+"/api/w/ws-a/variables",
+		bytes.NewBufferString(`{"app_key":"echo","scope":"actor","path":"connections/account","value":"actor-scoped"}`),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actorVariableReq.Header.Set("Content-Type", "application/json")
+	actorVariableReq.Header.Set("X-Windforce-Actor", "account:alpha")
+	actorVariableResp, err := http.DefaultClient.Do(actorVariableReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer actorVariableResp.Body.Close()
+	if actorVariableResp.StatusCode != http.StatusOK {
+		t.Fatalf("set actor variable status = %d, want %d", actorVariableResp.StatusCode, http.StatusOK)
+	}
+	expectedActorPath, err := contract.ActorRuntimeConfigPath("account:alpha", "connections/account")
+	if err != nil {
+		t.Fatal(err)
+	}
+	actorVariable, found, err := store.GetVariableExact(context.Background(), "ws-a", "echo", expectedActorPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found || actorVariable.Value != "actor-scoped" {
+		t.Fatalf("stored actor variable found=%v variable=%#v", found, actorVariable)
+	}
+
+	missingActorReq, err := http.NewRequest(
+		http.MethodPost,
+		server.URL+"/api/w/ws-a/variables",
+		bytes.NewBufferString(`{"app_key":"echo","scope":"actor","path":"connections/account","value":"missing-subject"}`),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	missingActorReq.Header.Set("Content-Type", "application/json")
+	missingActorResp, err := http.DefaultClient.Do(missingActorReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer missingActorResp.Body.Close()
+	if missingActorResp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("missing actor subject status = %d, want %d", missingActorResp.StatusCode, http.StatusUnauthorized)
+	}
+
 	invalidVariableResp, err := http.Post(server.URL+"/api/w/ws-a/variables", "application/json", bytes.NewBufferString(`{`))
 	if err != nil {
 		t.Fatal(err)
