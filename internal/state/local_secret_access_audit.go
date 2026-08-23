@@ -2,6 +2,7 @@ package state
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -20,6 +21,15 @@ func (s *LocalStore) AppendSecretAccessAudit(ctx context.Context, record SecretA
 		record.CreatedAt = time.Now().UTC()
 	}
 	return s.update(ctx, func(snapshot *Snapshot, _ time.Time) error {
+		for _, existing := range snapshot.SecretAccessAudits[record.WorkspaceID] {
+			if existing.ID != record.ID {
+				continue
+			}
+			if existing == record {
+				return errSkipLocalStateWrite
+			}
+			return fmt.Errorf("%w: secret access audit %q", ErrConflict, record.ID)
+		}
 		snapshot.SecretAccessAudits[record.WorkspaceID] = append(
 			snapshot.SecretAccessAudits[record.WorkspaceID],
 			record,

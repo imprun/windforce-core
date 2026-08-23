@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/imprun/windforce-core/internal/contract"
 	"github.com/imprun/windforce-core/internal/secretbackend"
@@ -15,9 +16,11 @@ import (
 )
 
 const (
-	defaultMaxDepth      = 16
-	defaultMaxReferences = 256
-	defaultMaxBytes      = 1 << 20
+	defaultMaxDepth              = 16
+	defaultMaxReferences         = 256
+	defaultMaxBytes              = 1 << 20
+	secretAccessAuditMaxAttempts = 2
+	secretAccessAuditRetryDelay  = 100 * time.Millisecond
 )
 
 type Store interface {
@@ -963,7 +966,8 @@ func (r *Resolver) recordSecretAccess(ctx context.Context, path string) error {
 		return nil
 	}
 	job := auditContext.job
-	return r.Audit.AppendSecretAccessAudit(ctx, state.SecretAccessAudit{
+	record := state.SecretAccessAudit{
+		ID:          state.NewID("secret-access"),
 		WorkspaceID: contract.NormalizeWorkspace(job.Payload.Workspace),
 		JobID:       job.ID,
 		Attempt:     job.Attempt,
@@ -971,5 +975,20 @@ func (r *Resolver) recordSecretAccess(ctx context.Context, path string) error {
 		ActionKey:   job.Payload.Action,
 		Path:        path,
 		Source:      auditContext.source,
-	})
+		CreatedAt:   time.Now().UTC(),
+	}
+	for attempt := 0; attempt < secretAccessAuditMaxAttempts; attempt++ {
+		err := r.Audit.AppendSecretAccessAudit(ctx, record)
+		if err == nil || !errors.Is(err, state.ErrLockTimeout) || attempt == secretAccessAuditMaxAttempts-1 {
+			return err
+		}
+		timer := time.NewTimer(secretAccessAuditRetryDelay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return nil
 }
