@@ -12,54 +12,65 @@ import (
 	"github.com/imprun/windforce-core/internal/secretmask"
 )
 
-func TestRuntimeConfigProxyRegistersSecretBeforeAuthenticatedForward(t *testing.T) {
-	const coreToken = "core-job-token"
-	const secret = "new-runtime-secret"
-	var gotAuthorization, gotAttestation string
-	core := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotAuthorization = r.Header.Get("Authorization")
-		gotAttestation = r.Header.Get(secretMaskRegistrationHeader)
-		_, _ = io.Copy(io.Discard, r.Body)
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer core.Close()
+func TestRuntimeConfigProxyRegistersScopedSecretBeforeAuthenticatedForward(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		scope       contract.RuntimeConfigScope
+		querySuffix string
+	}{
+		{name: "app", scope: contract.RuntimeConfigScopeApp},
+		{name: "actor", scope: contract.RuntimeConfigScopeActor, querySuffix: "?scope=actor"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			const coreToken = "core-job-token"
+			const secret = "new-runtime-secret"
+			var gotAuthorization, gotAttestation string
+			core := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotAuthorization = r.Header.Get("Authorization")
+				gotAttestation = r.Header.Get(secretMaskRegistrationHeader)
+				_, _ = io.Copy(io.Discard, r.Body)
+				w.WriteHeader(http.StatusOK)
+			}))
+			defer core.Close()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	registry := secretmask.NewRegistry(nil)
-	proxyURL, localToken, closeProxy, err := startRuntimeConfigProxy(ctx, core.URL, coreToken, registry, contract.RuntimeAccess{
-		WriteVariables: []contract.RuntimeVariableWriteTarget{{
-			RuntimeConfigTarget: contract.RuntimeConfigTarget{Scope: contract.RuntimeConfigScopeApp, Path: "credentials/token"},
-			Storage:             contract.RuntimeVariableStorageSecret,
-		}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer closeProxy()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			registry := secretmask.NewRegistry(nil)
+			proxyURL, localToken, closeProxy, err := startRuntimeConfigProxy(ctx, core.URL, coreToken, registry, contract.RuntimeAccess{
+				WriteVariables: []contract.RuntimeVariableWriteTarget{{
+					RuntimeConfigTarget: contract.RuntimeConfigTarget{Scope: test.scope, Path: "credentials/token"},
+					Storage:             contract.RuntimeVariableStorageSecret,
+				}},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer closeProxy()
 
-	body := `{"value":"` + secret + `","operationId":"op-1"}`
-	req, err := http.NewRequest(http.MethodPut, proxyURL+"/api/w/ws/variables/p/credentials/token", strings.NewReader(body))
-	if err != nil {
-		t.Fatal(err)
-	}
-	req.Header.Set("Authorization", "Bearer "+localToken)
-	response, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d", response.StatusCode)
-	}
-	if gotAuthorization != "Bearer "+coreToken {
-		t.Fatalf("Core authorization = %q", gotAuthorization)
-	}
-	if gotAttestation != secretMaskAttestation(coreToken, []byte(body)) {
-		t.Fatal("Core did not receive the body-bound mask attestation")
-	}
-	if got := registry.String("before " + secret + " after"); strings.Contains(got, secret) {
-		t.Fatalf("dynamic Secret was not masked: %q", got)
+			body := `{"value":"` + secret + `","operationId":"op-1"}`
+			req, err := http.NewRequest(http.MethodPut, proxyURL+"/api/w/ws/variables/p/credentials/token"+test.querySuffix, strings.NewReader(body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("Authorization", "Bearer "+localToken)
+			response, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			response.Body.Close()
+			if response.StatusCode != http.StatusOK {
+				t.Fatalf("status = %d", response.StatusCode)
+			}
+			if gotAuthorization != "Bearer "+coreToken {
+				t.Fatalf("Core authorization = %q", gotAuthorization)
+			}
+			if gotAttestation != secretMaskAttestation(coreToken, []byte(body)) {
+				t.Fatal("Core did not receive the body-bound mask attestation")
+			}
+			if got := registry.String("before " + secret + " after"); strings.Contains(got, secret) {
+				t.Fatalf("dynamic Secret was not masked: %q", got)
+			}
+		})
 	}
 }
 
