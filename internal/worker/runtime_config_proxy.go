@@ -139,7 +139,8 @@ func pinnedSecretVariablePath(access contract.RuntimeAccess, requestPath string)
 		return false
 	}
 	for _, target := range access.WriteVariables {
-		if target.Scope == contract.RuntimeConfigScopeApp && target.Storage == contract.RuntimeVariableStorageSecret && target.Path == path {
+		if (target.Scope == contract.RuntimeConfigScopeApp || target.Scope == contract.RuntimeConfigScopeActor) &&
+			target.Storage == contract.RuntimeVariableStorageSecret && target.Path == path {
 			return true
 		}
 	}
