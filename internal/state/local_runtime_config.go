@@ -63,7 +63,7 @@ func (s *LocalStore) MutateRuntimeVariable(ctx context.Context, request RuntimeV
 		if request.IsSecret {
 			storage = contract.RuntimeVariableStorageSecret
 		}
-		if !allowsVariableWrite(job.Payload.RuntimeAccess, path, storage) {
+		if !allowsVariableWrite(job.Payload.RuntimeAccess, path, storage, job.Payload.PermissionedAs) {
 			return runtimeConfigError(RuntimeConfigCodeStorageClassMismatch, fmt.Errorf("variable write target or storage class is not pinned: %w", ErrForbidden))
 		}
 		operationKey := runtimeConfigOperationKey(workspaceID, request.JobID, request.Attempt, request.OperationID)
@@ -130,7 +130,7 @@ func (s *LocalStore) MutateRuntimeResource(ctx context.Context, request RuntimeR
 		if err != nil {
 			return err
 		}
-		if !allowsResourceWrite(job.Payload.RuntimeAccess, path) {
+		if !allowsResourceWrite(job.Payload.RuntimeAccess, path, job.Payload.PermissionedAs) {
 			return runtimeConfigError(RuntimeConfigCodeForbidden, fmt.Errorf("resource write target is not pinned: %w", ErrForbidden))
 		}
 		operationKey := runtimeConfigOperationKey(workspaceID, request.JobID, request.Attempt, request.OperationID)
@@ -224,19 +224,34 @@ func authorizeRuntimeMutation(snapshot *Snapshot, now time.Time, workspaceID, ap
 	return job, nil
 }
 
-func allowsVariableWrite(access contract.RuntimeAccess, path string, storage contract.RuntimeVariableStorage) bool {
+func allowsVariableWrite(access contract.RuntimeAccess, path string, storage contract.RuntimeVariableStorage, subject string) bool {
 	for _, target := range access.WriteVariables {
-		if target.Scope == contract.RuntimeConfigScopeApp && target.Path == path && target.Storage == storage {
+		if target.Storage != storage {
+			continue
+		}
+		if target.Scope == contract.RuntimeConfigScopeApp && target.Path == path {
 			return true
+		}
+		if target.Scope == contract.RuntimeConfigScopeActor {
+			actorPath, err := contract.ActorRuntimeConfigPath(subject, target.Path)
+			if err == nil && actorPath == path {
+				return true
+			}
 		}
 	}
 	return false
 }
 
-func allowsResourceWrite(access contract.RuntimeAccess, path string) bool {
+func allowsResourceWrite(access contract.RuntimeAccess, path string, subject string) bool {
 	for _, target := range access.WriteResources {
 		if target.Scope == contract.RuntimeConfigScopeApp && target.Path == path {
 			return true
+		}
+		if target.Scope == contract.RuntimeConfigScopeActor {
+			actorPath, err := contract.ActorRuntimeConfigPath(subject, target.Path)
+			if err == nil && actorPath == path {
+				return true
+			}
 		}
 	}
 	return false

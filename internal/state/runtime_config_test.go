@@ -44,6 +44,71 @@ func TestPostgresRuntimeVariableMutationIsAttemptBoundIdempotentAndCASProtected(
 	exerciseRuntimeVariableMutationIsAttemptBoundIdempotentAndCASProtected(t, openIsolatedPostgresCatalogStore(t, dsn))
 }
 
+func TestLocalActorRuntimeMutationsAuthorizeOnlyTheJobSubject(t *testing.T) {
+	exerciseActorRuntimeMutationsAuthorizeOnlyTheJobSubject(t, NewLocalStore(filepath.Join(t.TempDir(), "state.json")))
+}
+
+func TestPostgresActorRuntimeMutationsAuthorizeOnlyTheJobSubject(t *testing.T) {
+	dsn := postgresTestDSN()
+	if dsn == "" {
+		t.Skip("WINDFORCE_CORE_POSTGRES_TEST_DSN is not set")
+	}
+	exerciseActorRuntimeMutationsAuthorizeOnlyTheJobSubject(t, openIsolatedPostgresCatalogStore(t, dsn))
+}
+
+func exerciseActorRuntimeMutationsAuthorizeOnlyTheJobSubject(t *testing.T, store Store) {
+	t.Helper()
+	ctx := context.Background()
+	if err := store.SetResourceType(ctx, "ws-a", ResourceType{
+		Name: "connection", Version: "1", Schema: json.RawMessage(`{"type":"object"}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	access := contract.RuntimeAccess{
+		WriteVariables: []contract.RuntimeVariableWriteTarget{{
+			RuntimeConfigTarget: contract.RuntimeConfigTarget{Scope: contract.RuntimeConfigScopeActor, Path: "connections/session"},
+			Storage:             contract.RuntimeVariableStorageSecret,
+		}},
+		WriteResources: []contract.RuntimeConfigTarget{{Scope: contract.RuntimeConfigScopeActor, Path: "connections/profile"}},
+	}
+	job := enqueueRuntimeConfigJob(t, store, access)
+	variablePath, err := contract.ActorRuntimeConfigPath(job.Payload.PermissionedAs, "connections/session")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resourcePath, err := contract.ActorRuntimeConfigPath(job.Payload.PermissionedAs, "connections/profile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.MutateRuntimeVariable(ctx, RuntimeVariableMutationRequest{
+		WorkspaceID: "ws-a", AppKey: "publisher", Path: variablePath,
+		Value: "encrypted-value", IsSecret: true, OperationID: "actor-variable",
+		RequestFingerprint: "sha256:actor-variable", JobID: job.ID, Attempt: job.Attempt,
+	}); err != nil {
+		t.Fatalf("actor Variable mutation: %v", err)
+	}
+	if _, err := store.MutateRuntimeResource(ctx, RuntimeResourceMutationRequest{
+		WorkspaceID: "ws-a", AppKey: "publisher", Path: resourcePath,
+		Value: json.RawMessage(`{"status":"ready"}`), ResourceType: "connection@1", OperationID: "actor-resource",
+		RequestFingerprint: "sha256:actor-resource", JobID: job.ID, Attempt: job.Attempt,
+	}); err != nil {
+		t.Fatalf("actor Resource mutation: %v", err)
+	}
+
+	otherPath, err := contract.ActorRuntimeConfigPath("account:other", "connections/session")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = store.MutateRuntimeVariable(ctx, RuntimeVariableMutationRequest{
+		WorkspaceID: "ws-a", AppKey: "publisher", Path: otherPath,
+		Value: "encrypted-value", IsSecret: true, OperationID: "other-actor",
+		RequestFingerprint: "sha256:other-actor", JobID: job.ID, Attempt: job.Attempt,
+	})
+	if runtimeConfigCode(err) != RuntimeConfigCodeStorageClassMismatch {
+		t.Fatalf("other actor mutation error = %v", err)
+	}
+}
+
 func exerciseRuntimeVariableMutationIsAttemptBoundIdempotentAndCASProtected(t *testing.T, store Store) {
 	t.Helper()
 	ctx := context.Background()
