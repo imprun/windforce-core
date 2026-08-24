@@ -88,7 +88,7 @@ func (s *PostgresStore) MutateRuntimeVariable(ctx context.Context, request Runti
 		if request.IsSecret {
 			storage = contract.RuntimeVariableStorageSecret
 		}
-		if !allowsVariableWrite(job.Payload.RuntimeAccess, path, storage) {
+		if !allowsVariableWrite(job.Payload.RuntimeAccess, path, storage, job.Payload.PermissionedAs) {
 			return runtimeConfigError(RuntimeConfigCodeStorageClassMismatch, fmt.Errorf("variable write target or storage class is not pinned: %w", ErrForbidden))
 		}
 		replay, found, err := postgresRuntimeOperation(ctx, tx, workspaceID, request.JobID, request.Attempt, request.OperationID)
@@ -162,7 +162,7 @@ func (s *PostgresStore) MutateRuntimeResource(ctx context.Context, request Runti
 		if err != nil {
 			return err
 		}
-		if !allowsResourceWrite(job.Payload.RuntimeAccess, path) {
+		if !allowsResourceWrite(job.Payload.RuntimeAccess, path, job.Payload.PermissionedAs) {
 			return runtimeConfigError(RuntimeConfigCodeForbidden, fmt.Errorf("resource write target is not pinned: %w", ErrForbidden))
 		}
 		replay, found, err := postgresRuntimeOperation(ctx, tx, workspaceID, request.JobID, request.Attempt, request.OperationID)
