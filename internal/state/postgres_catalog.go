@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -443,6 +444,9 @@ func (s *PostgresStore) LoadCatalog(ctx context.Context) (catalog.Snapshot, erro
 		return catalog.Snapshot{}, err
 	}
 	snapshot.SourceMarkers = markers
+	if err := catalog.NormalizeSnapshotPublicInterfaces(&snapshot); err != nil {
+		return catalog.Snapshot{}, fmt.Errorf("load release catalog: %w", err)
+	}
 	return catalog.SnapshotWithAppliedRoutingPolicies(snapshot), nil
 }
 
@@ -594,6 +598,9 @@ FROM control_source_release_marker
 
 func (s *PostgresStore) ImportCatalog(ctx context.Context, imported catalog.Snapshot) error {
 	catalog.NormalizeSnapshot(&imported)
+	if err := catalog.NormalizeSnapshotPublicInterfaces(&imported); err != nil {
+		return fmt.Errorf("import catalog: %w", err)
+	}
 	return s.withTx(ctx, func(tx pgx.Tx) error {
 		for _, history := range imported.History {
 			raw, err := json.Marshal(history)

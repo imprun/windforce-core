@@ -1079,6 +1079,9 @@ func (s *LocalStore) Load(ctx context.Context) (Snapshot, error) {
 		return Snapshot{}, err
 	}
 	ensureSnapshot(&snapshot)
+	if err := catalog.NormalizeSnapshotPublicInterfaces(&snapshot.ReleaseCatalog); err != nil {
+		return Snapshot{}, fmt.Errorf("load release catalog: %w", err)
+	}
 	return snapshot, nil
 }
 
@@ -1206,6 +1209,9 @@ func (s *LocalStore) withLockTimeout(ctx context.Context, timeout time.Duration,
 
 func (s *LocalStore) write(snapshot Snapshot) error {
 	ensureSnapshot(&snapshot)
+	if err := catalog.NormalizeSnapshotPublicInterfaces(&snapshot.ReleaseCatalog); err != nil {
+		return fmt.Errorf("write release catalog: %w", err)
+	}
 	snapshot.SnapshotRevision++
 	if err := os.MkdirAll(filepath.Dir(s.Path), 0o755); err != nil {
 		return err

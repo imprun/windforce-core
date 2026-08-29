@@ -90,3 +90,14 @@ func TestCloneDeploymentDetachesPublicInterfaces(t *testing.T) {
 		t.Fatalf("source declaration mutated: %s", got)
 	}
 }
+
+func TestNormalizeDeploymentPublicInterfacesRequiresV2ForExplicitEmptyArray(t *testing.T) {
+	_, err := NormalizeDeploymentPublicInterfaces(Deployment{
+		Actions: map[string]Action{
+			"run": {PublicInterfaces: []json.RawMessage{}},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "requires apiVersion") {
+		t.Fatalf("error = %v", err)
+	}
+}

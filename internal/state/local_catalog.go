@@ -2,6 +2,7 @@ package state
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/imprun/windforce-core/internal/catalog"
@@ -293,6 +294,10 @@ func (s *LocalStore) ListSourceReleaseMarkers(ctx context.Context) (map[string]c
 }
 
 func (s *LocalStore) ImportCatalog(ctx context.Context, imported catalog.Snapshot) error {
+	catalog.NormalizeSnapshot(&imported)
+	if err := catalog.NormalizeSnapshotPublicInterfaces(&imported); err != nil {
+		return fmt.Errorf("import catalog: %w", err)
+	}
 	return s.update(ctx, func(snapshot *Snapshot, _ time.Time) error {
 		catalog.MergeSnapshot(&snapshot.ReleaseCatalog, imported)
 		return nil

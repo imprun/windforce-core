@@ -258,7 +258,7 @@ func TestPostgresReleaseCandidateAndSourceOperationLeaseContract(t *testing.T) {
 	}
 	ctx := context.Background()
 	store := openIsolatedPostgresCatalogStore(t, dsn)
-	first := releaseCatalogDeployment("workspace-a", "source-a", "echo", "commit-a")
+	first := releaseCatalogV2Deployment("workspace-a", "source-a", "echo", "commit-a")
 	firstSyncedAt := time.Date(2026, 7, 17, 2, 0, 0, 0, time.UTC)
 	if _, err := store.SaveReleaseCandidate(ctx, first, firstSyncedAt); err != nil {
 		t.Fatal(err)
