@@ -64,6 +64,11 @@ func scanReleaseCandidate(row pgx.Row) (catalog.ReleaseCandidate, error) {
 	if err := json.Unmarshal(deploymentJSON, &candidate.Deployment); err != nil {
 		return catalog.ReleaseCandidate{}, err
 	}
+	normalized, err := contract.NormalizeDeploymentPublicInterfaces(candidate.Deployment)
+	if err != nil {
+		return catalog.ReleaseCandidate{}, err
+	}
+	candidate.Deployment = normalized
 	return candidate, nil
 }
 

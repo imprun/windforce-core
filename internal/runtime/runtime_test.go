@@ -181,21 +181,35 @@ func TestBuildExecutionBundleSupportsRelativeCacheRoot(t *testing.T) {
 		ArtifactStore: executionbundle.NewLocalStore(filepath.Join(testRoot, "artifact-store")),
 		CacheRoot:     filepath.Join(testRoot, "cache"),
 	}
-	deployment, err := runner.BuildExecutionBundle(context.Background(), contract.Deployment{
+	sourceDeployment := contract.Deployment{
 		Workspace:   "workspace-a",
 		GitSourceID: "source-a",
+		APIVersion:  contract.AppManifestV2,
 		App:         "echo",
 		Commit:      "commit-a",
 		Entrypoint:  "main.py",
 		ScriptLang:  "python",
 		ObjectURI:   "bundle://workspace-a/source-a/commit-a",
-		Actions:     map[string]contract.Action{"echo": {Action: "echo"}},
-	})
+		Actions: map[string]contract.Action{
+			"echo": {
+				Action:           "echo",
+				PublicInterfaces: []json.RawMessage{json.RawMessage(`{"contract":"example.interface/v1"}`)},
+			},
+		},
+	}
+	deployment, err := runner.BuildExecutionBundle(context.Background(), sourceDeployment)
 	if err != nil {
 		t.Fatalf("BuildExecutionBundle returned error: %v", err)
 	}
 	if deployment.BundleDigest == "" || deployment.BundleURI == "" || deployment.ObjectURI != "bundle://workspace-a/source-a/commit-a" {
 		t.Fatalf("deployment bundle fields = %#v", deployment)
+	}
+	if deployment.APIVersion != contract.AppManifestV2 || len(deployment.Actions["echo"].PublicInterfaces) != 1 {
+		t.Fatalf("deployment public interface metadata = %#v", deployment)
+	}
+	sourceDeployment.Actions["echo"].PublicInterfaces[0][2] = 'X'
+	if got := string(deployment.Actions["echo"].PublicInterfaces[0]); got != `{"contract":"example.interface/v1"}` {
+		t.Fatalf("bundle deployment declaration aliased source: %s", got)
 	}
 }
 

@@ -19,7 +19,11 @@ func (s *LocalStore) PublishRelease(ctx context.Context, deployment contract.Dep
 		}
 		var history catalog.DeploymentHistory
 		var audit catalog.AuditRecord
-		published, history, audit = catalog.PreparePublication(deployment, releasedAt)
+		var err error
+		published, history, audit, err = catalog.PreparePublication(deployment, releasedAt)
+		if err != nil {
+			return err
+		}
 		releaseID = history.ID
 		releaseCatalog := &snapshot.ReleaseCatalog
 		catalog.NormalizeSnapshot(releaseCatalog)

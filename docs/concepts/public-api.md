@@ -94,6 +94,8 @@ POST /api/v1/workspaces/{workspace}/runs/{run_id}/cancel
 GET  /api/v1/workspaces/{workspace}/apps/{app}
 ```
 
+The App description returns the pinned Release `api_version` and each visible Action's schemas, timeout, labels, and optional `public_interfaces`. Public interface declarations are bounded opaque JSON objects from the immutable Release; an API consumer applies any domain-specific meaning. Principal target policy filters Actions before their declarations are returned.
+
 A completed wait or result request returns the raw Action result with HTTP 200. A completed wait still exposes the terminal state and idempotency reuse decision through the admission response headers. If the wait expires or the polled Run is not terminal, the API returns HTTP 202 with the current Run representation; its `state` and any `replayed` field agree with the corresponding headers. Read and cancel operations enforce read-own/cancel-own or read-any/cancel-any scope and workspace ownership.
 
 ## Input settings

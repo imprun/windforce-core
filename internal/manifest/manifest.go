@@ -1,8 +1,11 @@
 package manifest
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -51,11 +54,8 @@ func Parse(data []byte) (contract.App, error) {
 
 func parseNamed(data []byte, fileName string) (contract.App, error) {
 	fileName = ResolveFileName(fileName)
-	var parsed struct {
-		contract.App
-		Flows map[string]json.RawMessage `json:"flows"`
-	}
-	if err := json.Unmarshal(data, &parsed); err != nil {
+	parsed, err := decodeManifestDocument(data)
+	if err != nil {
 		return contract.App{}, fmt.Errorf("parse %s: %w", fileName, err)
 	}
 	app := parsed.App
@@ -113,6 +113,13 @@ func parseNamed(data []byte, fileName string) (contract.App, error) {
 			return contract.App{}, fmt.Errorf("action %s.%s runtime is not supported in %s; set app scriptLang once for the Release", app.App, name, fileName)
 		}
 		clearRuntimeOwnedActionManifestFields(&action)
+		if len(action.PublicInterfaces) > 0 && app.APIVersion != contract.AppManifestV2 {
+			return contract.App{}, fmt.Errorf("action %s.%s publicInterfaces requires apiVersion %q in %s", app.App, name, contract.AppManifestV2, fileName)
+		}
+		action.PublicInterfaces, err = contract.NormalizePublicInterfaces(action.PublicInterfaces)
+		if err != nil {
+			return contract.App{}, fmt.Errorf("action %s.%s: %w", app.App, name, err)
+		}
 		action.ExecutionLimits, err = contract.NormalizeExecutionLimits(action.ExecutionLimits)
 		if err != nil {
 			return contract.App{}, fmt.Errorf("action %s.%s executionLimits: %w", app.App, name, err)
@@ -164,6 +171,51 @@ func parseNamed(data []byte, fileName string) (contract.App, error) {
 		app.Tag = contract.DefaultRouteTag
 	}
 	return app, nil
+}
+
+type manifestDocument struct {
+	contract.App
+	Flows map[string]json.RawMessage `json:"flows"`
+}
+
+func decodeManifestDocument(data []byte) (manifestDocument, error) {
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal(data, &root); err != nil {
+		return manifestDocument{}, err
+	}
+	strict := false
+	if rawVersion, declared := root["apiVersion"]; declared {
+		var version string
+		if err := json.Unmarshal(rawVersion, &version); err != nil {
+			return manifestDocument{}, errors.New("apiVersion must be a string")
+		}
+		if version != contract.AppManifestV2 {
+			return manifestDocument{}, fmt.Errorf("unsupported apiVersion %q", version)
+		}
+		strict = true
+	}
+	var parsed manifestDocument
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	if strict {
+		decoder.DisallowUnknownFields()
+	}
+	if err := decoder.Decode(&parsed); err != nil {
+		return manifestDocument{}, err
+	}
+	if err := ensureManifestEOF(decoder); err != nil {
+		return manifestDocument{}, err
+	}
+	return parsed, nil
+}
+
+func ensureManifestEOF(decoder *json.Decoder) error {
+	var trailing any
+	if err := decoder.Decode(&trailing); errors.Is(err, io.EOF) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	return errors.New("manifest has trailing JSON values")
 }
 
 func clearRuntimeOwnedActionManifestFields(action *contract.Action) {

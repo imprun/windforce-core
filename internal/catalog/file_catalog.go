@@ -110,7 +110,10 @@ func (c *FileCatalog) PublishRelease(ctx context.Context, deployment contract.De
 	if err != nil {
 		return ReleasePublication{}, err
 	}
-	deployment, history, audit := PreparePublication(deployment, releasedAt)
+	deployment, history, audit, err := PreparePublication(deployment, releasedAt)
+	if err != nil {
+		return ReleasePublication{}, err
+	}
 	deploymentKey := DeploymentKey(deployment.SourceWorkspace(), deployment.App)
 	snapshot.Deployments[deploymentKey] = deployment
 	snapshot.ActiveHistoryIDs[deploymentKey] = history.ID
@@ -396,7 +399,7 @@ func NormalizeDeploymentDefaults(deployment contract.Deployment) contract.Deploy
 func normalizeDeploymentMap(deployments map[string]contract.Deployment) map[string]contract.Deployment {
 	normalized := make(map[string]contract.Deployment, len(deployments))
 	for key, deployment := range deployments {
-		deployment = NormalizeDeploymentDefaults(deployment)
+		deployment = normalizeStoredDeployment(deployment)
 		normalizedKey := DeploymentKey(deployment.SourceWorkspace(), deployment.App)
 		if deployment.App == "" {
 			normalizedKey = key
@@ -404,6 +407,16 @@ func normalizeDeploymentMap(deployments map[string]contract.Deployment) map[stri
 		normalized[normalizedKey] = deployment
 	}
 	return normalized
+}
+
+func normalizeStoredDeployment(deployment contract.Deployment) contract.Deployment {
+	normalized, err := contract.NormalizeDeploymentPublicInterfaces(deployment)
+	if err == nil {
+		deployment = normalized
+	} else {
+		deployment = contract.CloneDeployment(deployment)
+	}
+	return NormalizeDeploymentDefaults(deployment)
 }
 
 func DeploymentKey(workspace string, app string) string {
@@ -418,9 +431,14 @@ func timePtr(value time.Time) *time.Time {
 	return &value
 }
 
-func PreparePublication(deployment contract.Deployment, releasedAt time.Time) (contract.Deployment, DeploymentHistory, AuditRecord) {
+func PreparePublication(deployment contract.Deployment, releasedAt time.Time) (contract.Deployment, DeploymentHistory, AuditRecord, error) {
 	if releasedAt.IsZero() {
 		releasedAt = time.Now().UTC()
+	}
+	var err error
+	deployment, err = contract.NormalizeDeploymentPublicInterfaces(deployment)
+	if err != nil {
+		return contract.Deployment{}, DeploymentHistory{}, AuditRecord{}, err
 	}
 	deployment = NormalizeDeploymentDefaults(deployment)
 	// A release is an immutable manifest snapshot. Operator overrides belong to
@@ -428,7 +446,7 @@ func PreparePublication(deployment contract.Deployment, releasedAt time.Time) (c
 	_ = ExtractEmbeddedRoutingPolicy(&deployment, NewRoutingPolicy(deployment.SourceWorkspace(), deployment.App))
 	deployment = EnsureDeploymentUpdatedAt(deployment, releasedAt)
 	history := NewDeploymentHistory(deployment, releasedAt)
-	return deployment, history, NewReleaseAudit(history)
+	return deployment, history, NewReleaseAudit(history), nil
 }
 
 func NewDeploymentHistory(deployment contract.Deployment, createdAt time.Time) DeploymentHistory {
@@ -451,7 +469,7 @@ func NewDeploymentHistory(deployment contract.Deployment, createdAt time.Time) D
 		Message:      deployment.Message,
 		CreatedBy:    cloneStringPtr(deployment.CreatedBy),
 		ObjectURI:    deployment.ObjectURI,
-		Deployment:   deployment,
+		Deployment:   contract.CloneDeployment(deployment),
 		CreatedAt:    createdAt,
 	}
 }
@@ -521,8 +539,15 @@ func NormalizeSnapshot(snapshot *Snapshot) {
 	if snapshot.Candidates == nil {
 		snapshot.Candidates = map[string]ReleaseCandidate{}
 	}
+	for key, candidate := range snapshot.Candidates {
+		candidate.Deployment = normalizeStoredDeployment(candidate.Deployment)
+		snapshot.Candidates[key] = candidate
+	}
 	if snapshot.History == nil {
 		snapshot.History = []DeploymentHistory{}
+	}
+	for index := range snapshot.History {
+		snapshot.History[index].Deployment = normalizeStoredDeployment(snapshot.History[index].Deployment)
 	}
 	if snapshot.Audit == nil {
 		snapshot.Audit = []AuditRecord{}

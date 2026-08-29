@@ -130,6 +130,7 @@ type JobPayload struct {
 	Workspace             string                    `json:"workspace,omitempty"`
 	GitSourceID           string                    `json:"gitSourceId,omitempty"`
 	Commit                string                    `json:"commit,omitempty"`
+	APIVersion            string                    `json:"apiVersion,omitempty"`
 	App                   string                    `json:"app"`
 	Action                string                    `json:"action"`
 	Version               string                    `json:"version,omitempty"`
@@ -1021,7 +1022,7 @@ func NewActionJob(run Run, input json.RawMessage) Job {
 	if len(input) == 0 {
 		input = run.Input
 	}
-	actionSpec := run.Deployment.Actions[run.Action]
+	actionSpec := contract.CloneAction(run.Deployment.Actions[run.Action])
 	inputSchema := cloneRaw(actionSpec.InputSchemaBody)
 	outputSchema := cloneRaw(actionSpec.OutputSchemaBody)
 	actionSpec.InputSchemaBody = nil
@@ -1042,6 +1043,7 @@ func NewActionJob(run Run, input json.RawMessage) Job {
 			Workspace:             run.Deployment.SourceWorkspace(),
 			GitSourceID:           run.Deployment.SourceGitSourceID(),
 			Commit:                run.Deployment.Commit,
+			APIVersion:            run.Deployment.APIVersion,
 			App:                   run.App,
 			Action:                run.Action,
 			Version:               run.Deployment.Version,
@@ -1137,7 +1139,7 @@ func firstNonEmpty(values ...string) string {
 func (p JobPayload) PinnedDeployment() contract.Deployment {
 	deployment := contract.Deployment{}
 	if p.Deployment != nil {
-		deployment = *p.Deployment
+		deployment = contract.CloneDeployment(*p.Deployment)
 	}
 	if deployment.Workspace == "" {
 		deployment.Workspace = p.Workspace
@@ -1147,6 +1149,9 @@ func (p JobPayload) PinnedDeployment() contract.Deployment {
 	}
 	if deployment.Commit == "" {
 		deployment.Commit = p.Commit
+	}
+	if deployment.APIVersion == "" {
+		deployment.APIVersion = p.APIVersion
 	}
 	if deployment.App == "" {
 		deployment.App = p.App
@@ -1197,7 +1202,7 @@ func (p JobPayload) PinnedDeployment() contract.Deployment {
 		deployment.ObjectURI = p.ObjectURI
 	}
 	if deployment.Actions == nil && p.Action != "" {
-		deployment.Actions = map[string]contract.Action{p.Action: p.ActionSpec}
+		deployment.Actions = map[string]contract.Action{p.Action: contract.CloneAction(p.ActionSpec)}
 	}
 	return deployment
 }

@@ -418,6 +418,7 @@ func (s *Service) DescribeApp(ctx context.Context, workspace string, app string)
 }
 
 func (s *Service) describeDeployment(ctx context.Context, deployment contract.Deployment) (AppDescription, error) {
+	deployment = contract.CloneDeployment(deployment)
 	reader := NewSchemaReader(ctx, s.bundles, deployment)
 	defer reader.Close()
 	actions := make(map[string]ActionDescription, len(deployment.Actions))

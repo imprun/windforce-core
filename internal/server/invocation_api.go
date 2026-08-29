@@ -50,15 +50,17 @@ type invocationAppView struct {
 
 type invocationReleaseView struct {
 	DeploymentID *string `json:"deployment_id,omitempty"`
+	APIVersion   string  `json:"api_version,omitempty"`
 	Commit       string  `json:"commit"`
 	BundleDigest string  `json:"bundle_digest"`
 }
 
 type invocationActionView struct {
-	InputSchema  json.RawMessage `json:"input_schema"`
-	OutputSchema json.RawMessage `json:"output_schema"`
-	Timeout      *int32          `json:"timeout,omitempty"`
-	RunsOn       []string        `json:"runs_on,omitempty"`
+	InputSchema      json.RawMessage   `json:"input_schema"`
+	OutputSchema     json.RawMessage   `json:"output_schema"`
+	PublicInterfaces []json.RawMessage `json:"public_interfaces,omitempty"`
+	Timeout          *int32            `json:"timeout,omitempty"`
+	RunsOn           []string          `json:"runs_on,omitempty"`
 }
 
 func (h *Handler) handleInvocationAPI(w http.ResponseWriter, r *http.Request) bool {
@@ -272,16 +274,18 @@ func (h *Handler) handleInvocationDescribeApp(w http.ResponseWriter, r *http.Req
 			resolvedRunsOn = append([]string(nil), (*runsOn)...)
 		}
 		actions[key] = invocationActionView{
-			InputSchema:  action.InputSchema,
-			OutputSchema: action.OutputSchema,
-			Timeout:      timeout,
-			RunsOn:       resolvedRunsOn,
+			InputSchema:      action.InputSchema,
+			OutputSchema:     action.OutputSchema,
+			PublicInterfaces: contract.ClonePublicInterfaces(action.Spec.PublicInterfaces),
+			Timeout:          timeout,
+			RunsOn:           resolvedRunsOn,
 		}
 	}
 	writeJSON(w, http.StatusOK, invocationAppView{
 		App: description.Deployment.App,
 		Release: invocationReleaseView{
 			DeploymentID: description.Deployment.DeploymentID,
+			APIVersion:   description.Deployment.APIVersion,
 			Commit:       description.Deployment.Commit,
 			BundleDigest: description.Deployment.BundleDigest,
 		},

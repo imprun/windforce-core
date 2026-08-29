@@ -1106,9 +1106,16 @@ func controlPlaneSchemas() map[string]any {
 	nullableInteger := map[string]any{"type": []any{"integer", "null"}}
 	nullableDateTime := map[string]any{"type": []any{"string", "null"}, "format": "date-time"}
 	executionLimits := oapiSchemaRef("ExecutionLimits")
+	publicInterfaces := map[string]any{
+		"type":        "array",
+		"description": "Bounded opaque public interface declarations from the pinned Release. Core does not interpret declaration fields.",
+		"maxItems":    contract.MaxPublicInterfacesPerAction,
+		"items":       map[string]any{"type": "object", "additionalProperties": true},
+	}
 	appProperties := map[string]any{
 		"id":                        oapiStringSchema(),
 		"workspace_id":              oapiStringSchema(),
+		"api_version":               oapiStringSchema(),
 		"app_key":                   oapiStringSchema(),
 		"git_source_id":             oapiIntegerSchema(),
 		"commit_sha":                oapiStringSchema(),
@@ -1142,6 +1149,7 @@ func controlPlaneSchemas() map[string]any {
 		"display_name":              map[string]any{"type": "string", "description": "Human-readable label derived from a materialized JSON Schema title, preferring the input schema."},
 		"input_schema":              catalogSchema,
 		"output_schema":             catalogSchema,
+		"public_interfaces":         publicInterfaces,
 		"tag":                       nullableString,
 		"tag_override":              nullableString,
 		"timeout_s":                 nullableInteger,

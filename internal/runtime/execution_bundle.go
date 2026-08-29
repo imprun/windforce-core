@@ -23,6 +23,7 @@ func (r *Runner) BuildExecutionBundle(ctx context.Context, deployment contract.D
 	if r.ArtifactStore == nil {
 		return contract.Deployment{}, errors.New("execution bundle store is required")
 	}
+	deployment = contract.CloneDeployment(deployment)
 	preparedDir, err := r.Prepare(ctx, deployment)
 	if err != nil {
 		return contract.Deployment{}, err

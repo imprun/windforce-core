@@ -27,6 +27,118 @@ func TestParseFillsActionName(t *testing.T) {
 	}
 }
 
+func TestParseV1RemainsTolerantWithoutPublicInterfaces(t *testing.T) {
+	app, err := Parse([]byte(`{
+		"app": "echo",
+		"entrypoint": "main.ts",
+		"unknownRoot": true,
+		"actions": {
+			"run": {"unknownAction": true}
+		}
+	}`))
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	if app.APIVersion != "" || app.Actions["run"].PublicInterfaces != nil {
+		t.Fatalf("v1 app = %#v", app)
+	}
+}
+
+func TestParseV2CanonicalizesOpaquePublicInterfaces(t *testing.T) {
+	app, err := Parse([]byte(`{
+		"apiVersion": "windforce.app-manifest/v2",
+		"app": "echo",
+		"entrypoint": "main.ts",
+		"actions": {
+			"run": {
+				"publicInterfaces": [
+					{"metadata":{"priority":1,"enabled":true},"contract":"example.interface/v1"}
+				]
+			}
+		}
+	}`))
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	if app.APIVersion != contract.AppManifestV2 {
+		t.Fatalf("apiVersion = %q", app.APIVersion)
+	}
+	interfaces := app.Actions["run"].PublicInterfaces
+	if len(interfaces) != 1 {
+		t.Fatalf("publicInterfaces = %#v", interfaces)
+	}
+	if got, want := string(interfaces[0]), `{"contract":"example.interface/v1","metadata":{"enabled":true,"priority":1}}`; got != want {
+		t.Fatalf("canonical declaration = %s, want %s", got, want)
+	}
+}
+
+func TestParseV2RejectsUnknownFields(t *testing.T) {
+	tests := map[string]string{
+		"root": `{
+			"apiVersion":"windforce.app-manifest/v2",
+			"app":"echo","entrypoint":"main.ts","unknownRoot":true,
+			"actions":{"run":{}}
+		}`,
+		"action": `{
+			"apiVersion":"windforce.app-manifest/v2",
+			"app":"echo","entrypoint":"main.ts",
+			"actions":{"run":{"unknownAction":true}}
+		}`,
+	}
+	for name, manifest := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, err := Parse([]byte(manifest))
+			if err == nil || !strings.Contains(err.Error(), "unknown field") {
+				t.Fatalf("error = %v", err)
+			}
+		})
+	}
+}
+
+func TestParseRejectsUnsupportedOrImplicitPublicInterfaceVersion(t *testing.T) {
+	tests := map[string]struct {
+		manifest string
+		want     string
+	}{
+		"unsupported version": {
+			manifest: `{"apiVersion":"windforce.app-manifest/v3","app":"echo","entrypoint":"main.ts","actions":{"run":{}}}`,
+			want:     "unsupported apiVersion",
+		},
+		"v1 declaration": {
+			manifest: `{"app":"echo","entrypoint":"main.ts","actions":{"run":{"publicInterfaces":[{"contract":"example/v1"}]}}}`,
+			want:     "requires apiVersion",
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, err := Parse([]byte(test.manifest))
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("error = %v, want substring %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestParseV2RejectsDuplicateAndOversizedPublicInterfaces(t *testing.T) {
+	duplicate := `{
+		"apiVersion":"windforce.app-manifest/v2",
+		"app":"echo","entrypoint":"main.ts",
+		"actions":{"run":{"publicInterfaces":[{"a":1,"b":2},{"b":2,"a":1}]}}
+	}`
+	if _, err := Parse([]byte(duplicate)); err == nil || !strings.Contains(err.Error(), "duplicates") {
+		t.Fatalf("duplicate error = %v", err)
+	}
+
+	oversized := `{
+		"apiVersion":"windforce.app-manifest/v2",
+		"app":"echo","entrypoint":"main.ts",
+		"actions":{"run":{"publicInterfaces":[{"value":"` + strings.Repeat("a", contract.MaxPublicInterfaceDeclarationBytes) + `"}]}}
+	}`
+	if _, err := Parse([]byte(oversized)); err == nil || !strings.Contains(err.Error(), "maximum") {
+		t.Fatalf("oversized error = %v", err)
+	}
+}
+
 func TestParseAcceptsFCodeAppAndModuleKeys(t *testing.T) {
 	app, err := Parse([]byte(`{
 		"app": "4MDCPCM",

@@ -235,6 +235,7 @@ func TestInvocationAPIPrincipalAuthorizationAndIdempotency(t *testing.T) {
 	deployment := contract.Deployment{
 		Workspace:    "ws-a",
 		GitSourceID:  "source-a",
+		APIVersion:   contract.AppManifestV2,
 		App:          "echo",
 		Commit:       "commit-a",
 		BundleDigest: testExecutionBundleDigest,
@@ -244,12 +245,14 @@ func TestInvocationAPIPrincipalAuthorizationAndIdempotency(t *testing.T) {
 				Entrypoint:       "main.py",
 				InputSchemaBody:  json.RawMessage(`{"type":"object","required":["message"]}`),
 				OutputSchemaBody: json.RawMessage(`{"type":"object","required":["echo"]}`),
+				PublicInterfaces: []json.RawMessage{json.RawMessage(`{"contract":"example.interface/v1"}`)},
 			},
 			"hidden": {
 				Action:           "hidden",
 				Entrypoint:       "hidden.py",
 				InputSchemaBody:  json.RawMessage(`{"type":"object","description":"hidden-action-marker"}`),
 				OutputSchemaBody: json.RawMessage(`{"type":"object"}`),
+				PublicInterfaces: []json.RawMessage{json.RawMessage(`{"contract":"hidden-interface-marker"}`)},
 			},
 		},
 	}
@@ -473,7 +476,11 @@ func TestInvocationAPIPrincipalAuthorizationAndIdempotency(t *testing.T) {
 	}
 	clientApp, clientAppBody := call(http.MethodGet, "/api/v1/workspaces/ws-a/apps/echo", clientToken, "", "")
 	if clientApp.StatusCode != http.StatusOK || !bytes.Contains(clientAppBody, []byte(`"run"`)) ||
-		bytes.Contains(clientAppBody, []byte(`"hidden"`)) || bytes.Contains(clientAppBody, []byte("hidden-action-marker")) {
+		!bytes.Contains(clientAppBody, []byte(`"api_version":"windforce.app-manifest/v2"`)) ||
+		!bytes.Contains(clientAppBody, []byte(`"public_interfaces"`)) ||
+		!bytes.Contains(clientAppBody, []byte("example.interface/v1")) ||
+		bytes.Contains(clientAppBody, []byte(`"hidden"`)) || bytes.Contains(clientAppBody, []byte("hidden-action-marker")) ||
+		bytes.Contains(clientAppBody, []byte("hidden-interface-marker")) {
 		t.Fatalf("client action-filtered discovery status = %d: %s", clientApp.StatusCode, clientAppBody)
 	}
 	if _, replayed, err := store.UpdateClientInvocationPolicy(ctx, state.UpdateClientInvocationPolicyRequest{
@@ -562,7 +569,8 @@ func TestInvocationAPIPrincipalAuthorizationAndIdempotency(t *testing.T) {
 	}
 
 	appResponse, appBody := call(http.MethodGet, "/api/v1/workspaces/ws-a/apps/echo", firstToken, "", "")
-	if appResponse.StatusCode != http.StatusOK || !bytes.Contains(appBody, []byte(`"run"`)) {
+	if appResponse.StatusCode != http.StatusOK || !bytes.Contains(appBody, []byte(`"run"`)) ||
+		!bytes.Contains(appBody, []byte(`"public_interfaces"`)) || !bytes.Contains(appBody, []byte("example.interface/v1")) {
 		t.Fatalf("describe app status = %d: %s", appResponse.StatusCode, appBody)
 	}
 	appForbidden, appForbiddenBody := call(http.MethodGet, "/api/v1/workspaces/ws-a/apps/echo", secondToken, "", "")

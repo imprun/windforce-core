@@ -111,6 +111,7 @@ func TestActionJobUsesCompactExecutionPin(t *testing.T) {
 	deployment := contract.Deployment{
 		Workspace:            "ws-a",
 		GitSourceID:          "source-a",
+		APIVersion:           contract.AppManifestV2,
 		App:                  "echo",
 		Version:              "1.2.3",
 		Tag:                  "default",
@@ -131,8 +132,12 @@ func TestActionJobUsesCompactExecutionPin(t *testing.T) {
 				Action:           "selected",
 				InputSchemaBody:  json.RawMessage(`{"type":"object","required":["message"]}`),
 				OutputSchemaBody: json.RawMessage(`{"type":"object","required":["ok"]}`),
+				PublicInterfaces: []json.RawMessage{json.RawMessage(`{"contract":"example.interface/v1"}`)},
 			},
-			"unrelated": {Action: "unrelated"},
+			"unrelated": {
+				Action:           "unrelated",
+				PublicInterfaces: []json.RawMessage{json.RawMessage(`{"contract":"unrelated.interface/v1"}`)},
+			},
 		},
 	}
 
@@ -142,6 +147,10 @@ func TestActionJobUsesCompactExecutionPin(t *testing.T) {
 	}
 	if len(deployment.Actions) != 2 {
 		t.Fatalf("source deployment was mutated: %#v", deployment.Actions)
+	}
+	deployment.Actions["selected"].PublicInterfaces[0][2] = 'X'
+	if got := string(run.Deployment.Actions["selected"].PublicInterfaces[0]); got != `{"contract":"example.interface/v1"}` {
+		t.Fatalf("run declaration aliased source deployment: %s", got)
 	}
 
 	job := NewActionJob(run, nil)
@@ -154,11 +163,18 @@ func TestActionJobUsesCompactExecutionPin(t *testing.T) {
 	if !strings.Contains(string(job.Payload.InputSchema), `"message"`) || !strings.Contains(string(job.Payload.OutputSchema), `"ok"`) {
 		t.Fatalf("job schemas = input:%s output:%s", job.Payload.InputSchema, job.Payload.OutputSchema)
 	}
+	if job.Payload.APIVersion != contract.AppManifestV2 || len(job.Payload.ActionSpec.PublicInterfaces) != 1 {
+		t.Fatalf("job public interface pin = version:%q declarations:%#v", job.Payload.APIVersion, job.Payload.ActionSpec.PublicInterfaces)
+	}
+	run.Deployment.Actions["selected"].PublicInterfaces[0][2] = 'Y'
+	if got := string(job.Payload.ActionSpec.PublicInterfaces[0]); got != `{"contract":"example.interface/v1"}` {
+		t.Fatalf("job declaration aliased run deployment: %s", got)
+	}
 	encoded, err := json.Marshal(job.Payload)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(encoded), `"deployment":`) || strings.Contains(string(encoded), `"unrelated"`) {
+	if strings.Contains(string(encoded), `"deployment":`) || strings.Contains(string(encoded), "unrelated.interface") || !strings.Contains(string(encoded), `"publicInterfaces"`) {
 		t.Fatalf("compact job payload contains full deployment: %s", encoded)
 	}
 	pinned := job.Payload.PinnedDeployment()
@@ -167,6 +183,13 @@ func TestActionJobUsesCompactExecutionPin(t *testing.T) {
 		pinned.BundleDigest != deployment.BundleDigest || pinned.BundleURI != deployment.BundleURI || pinned.ObjectURI != deployment.ObjectURI ||
 		len(pinned.Actions) != 1 || pinned.Actions["selected"].Action != "selected" {
 		t.Fatalf("reconstructed deployment = %#v", pinned)
+	}
+	if pinned.APIVersion != contract.AppManifestV2 || len(pinned.Actions["selected"].PublicInterfaces) != 1 {
+		t.Fatalf("reconstructed public interface pin = %#v", pinned)
+	}
+	job.Payload.ActionSpec.PublicInterfaces[0][2] = 'Z'
+	if got := string(pinned.Actions["selected"].PublicInterfaces[0]); got != `{"contract":"example.interface/v1"}` {
+		t.Fatalf("reconstructed declaration aliased job payload: %s", got)
 	}
 
 	legacyJSON, err := json.Marshal(map[string]any{
