@@ -159,6 +159,8 @@ type JobPayload struct {
 	Input                 json.RawMessage           `json:"input,omitempty"`
 	InputConfigResolved   bool                      `json:"inputConfigResolved,omitempty"`
 	RuntimeAccess         contract.RuntimeAccess    `json:"runtimeAccess,omitempty"`
+	InvocationPins        contract.InvocationPins   `json:"invocationPins,omitempty,omitzero"`
+	ResponsePolicy        contract.HTTPPolicy       `json:"responsePolicy,omitempty,omitzero"`
 	// Deployment is retained only to decode jobs created before compact pins.
 	Deployment     *contract.Deployment `json:"deployment,omitempty"`
 	CorrelationID  string               `json:"correlationId,omitempty"`

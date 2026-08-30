@@ -43,9 +43,11 @@ The Resolver result contains only:
 
 - workspace, App, and Action;
 - an exact Service Principal with `runs:create`, `runs:read:own`, and one allowed App/Action target;
-- the expected active Deployment ID when available, commit, and bundle digest.
+- the expected active Deployment ID when available, commit, and bundle digest;
+- provider-neutral immutable invocation pins for the publication, route generation, operation, credential, and other resolved control-plane references;
+- the publication-specific response content types and maximum response bytes.
 
-The handler supplies the input and adapter itself. AdmissionService rechecks the active Release precondition before it validates the Action input or creates a Run. Route, credential, or Release mismatches therefore create zero Runs.
+The handler supplies the input and adapter itself. AdmissionService rechecks the active Release precondition before it validates the Action input or creates a Run, including idempotent replay. The immutable invocation pins and resolved response policy are preserved as Job metadata for worker and audit use. They are not copied into the App input. Route, credential, or Release mismatches therefore create zero Runs.
 
 ## App input and result
 
@@ -53,7 +55,9 @@ The App always receives `windforce.opaque-http-app-input/v1`. It contains only t
 
 Admission validates this wire wrapper, not a decoded domain object. Decoding, decryption, defaults, and domain input validation belong inside the App or its Application SDK.
 
-The App returns `windforce.application-wire-response/v1`. The handler accepts only one optional `content-type` header, a status from 200 through 599, and the same strict Base64/length/digest body metadata. Status 204 or 304 cannot carry a non-empty body. The handler writes the decoded bytes exactly; it does not parse or re-encode them.
+The App returns `windforce.application-wire-response/v1`. The handler accepts only one optional `content-type` header, a status from 200 through 599, and the same strict Base64/length/digest body metadata. A supplied content type must be in the resolved publication policy, a missing content type is accepted only when that policy permits it, and the decoded body must fit the resolved route limit as well as the handler-wide ceiling. Status 204 or 304 cannot carry a non-empty body. The handler writes the decoded bytes exactly; it does not parse or re-encode them.
+
+The trusted request deadline is applied to Resolver, Admission, and Run polling calls. Deadline expiry stops the synchronous wait but does not cancel a Run that Admission already created.
 
 If execution has no valid application wire response, the handler returns a stable JSON `windforce.execution-outcome/v1` `platformFailed` envelope. Failure categories are provider-neutral and do not expose Resolver or App details.
 

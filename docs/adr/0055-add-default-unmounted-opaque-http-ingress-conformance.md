@@ -43,13 +43,13 @@ The handler submits exactly this App input:
 
 The selected Action must publish an `inputSchema` for this exact wrapper. AdmissionService validates the wrapper before creating the Job. Domain-shaped validation and any decoding or decryption happen inside the App boundary.
 
-The handler waits only until the trusted request deadline and the configured maximum. It does not cancel an admitted Run when the caller disconnects or the wait expires. A successful App must return `windforce.application-wire-response/v1`; the handler verifies its status, single allowlisted `content-type` header, strict Base64 body, decoded size, length, and digest before writing the exact decoded bytes. Core's generic completion path does not validate Action output against `outputSchema`, so this conformance handler performs the wire-response validation itself. A missing or invalid wire response becomes `windforce.execution-outcome/v1` with `outcome: "platformFailed"`.
+The trusted request deadline bounds Resolver, Admission, and Run polling calls. It does not cancel an admitted Run when the caller disconnects or the wait expires. A successful App must return `windforce.application-wire-response/v1`; the handler verifies its status, single allowlisted `content-type` header, publication-specific response media and byte limit, strict Base64 body, decoded size, length, and digest before writing the exact decoded bytes. Core's generic completion path does not validate Action output against `outputSchema`, so this conformance handler performs the wire-response validation itself. A missing or invalid wire response becomes `windforce.execution-outcome/v1` with `outcome: "platformFailed"`.
 
 `windforce.app-manifest/v2` `publicInterfaces` declarations remain opaque discovery metadata. The handler and Resolver do not select routes or interpret behavior from declaration members.
 
 ## Consequences
 
-The conformance component removes an in-process network hop without adding a new listener or a parallel admission path. Pre-admission protocol and route-snapshot failures create no Run, and Admission pins the same Release chosen by the Resolver. Request and response bytes survive the App boundary without UTF-8 or JSON assumptions.
+The conformance component removes an in-process network hop without adding a new listener or a parallel admission path. Pre-admission protocol and route-snapshot failures create no Run, and Admission pins the same Release chosen by the Resolver, including idempotent replay. Provider-neutral immutable invocation references and the resolved response policy are retained on the Job without changing the exact App input. Request and response bytes survive the App boundary without UTF-8 or JSON assumptions.
 
 The current component is not production ingress. Production activation requires all of the following:
 

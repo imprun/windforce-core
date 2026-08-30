@@ -99,6 +99,8 @@ type CreateRunRequest struct {
 	App             string
 	Action          string
 	ExpectedRelease *ActiveReleasePrecondition
+	InvocationPins  contract.InvocationPins
+	ResponsePolicy  contract.HTTPPolicy
 	Input           json.RawMessage
 	Adapter         string
 	TriggerKind     string
@@ -169,6 +171,8 @@ func (s *AdmissionService) CreateRun(ctx context.Context, request CreateRunReque
 		}
 		request.ExpectedRelease = &expected
 	}
+	request.InvocationPins = contract.CloneInvocationPins(request.InvocationPins)
+	request.ResponsePolicy = contract.CloneHTTPPolicy(request.ResponsePolicy)
 	if len(request.Input) == 0 {
 		request.Input = json.RawMessage([]byte("{}"))
 	}
@@ -234,6 +238,9 @@ func (s *AdmissionService) CreateRun(ctx context.Context, request CreateRunReque
 			return Admission{}, &Fault{Kind: FaultInternal, Message: "could not resolve idempotent run", Err: getErr}
 		}
 		if found {
+			if request.ExpectedRelease != nil && !request.ExpectedRelease.matches(existingRun.Deployment) {
+				return Admission{}, &Fault{Kind: FaultRoutingConflict, Message: "idempotent run does not match the requested release pin"}
+			}
 			return replayAdmission(existingRun, existingJob, fingerprint)
 		}
 	}
@@ -350,6 +357,8 @@ func (s *AdmissionService) CreateRun(ctx context.Context, request CreateRunReque
 		run.PrincipalID = principal.ID
 	}
 	job := state.NewActionJob(run, cloneRaw(resolvedInput))
+	job.Payload.InvocationPins = contract.CloneInvocationPins(request.InvocationPins)
+	job.Payload.ResponsePolicy = contract.CloneHTTPPolicy(request.ResponsePolicy)
 	job.Payload.RuntimeAccess = runtimeAccess
 	job.Payload.TriggerKind = strings.TrimSpace(request.TriggerKind)
 	if job.Payload.TriggerKind == "" {
@@ -372,6 +381,9 @@ func (s *AdmissionService) CreateRun(ctx context.Context, request CreateRunReque
 				return Admission{}, &Fault{Kind: FaultInternal, Message: "could not resolve idempotent run", Err: getErr}
 			}
 			if found {
+				if request.ExpectedRelease != nil && !request.ExpectedRelease.matches(existingRun.Deployment) {
+					return Admission{}, &Fault{Kind: FaultRoutingConflict, Message: "idempotent run does not match the requested release pin"}
+				}
 				return replayAdmission(existingRun, existingJob, fingerprint)
 			}
 			return Admission{}, &Fault{Kind: FaultConflict, Message: "idempotent run already exists", Err: err}

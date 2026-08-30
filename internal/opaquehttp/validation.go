@@ -21,7 +21,11 @@ const (
 	maxJSONNestingDepth       = 16
 )
 
-var publicationRefPattern = regexp.MustCompile(`^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`)
+var (
+	publicationRefPattern = regexp.MustCompile(`^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`)
+	operationRefPattern   = regexp.MustCompile(`^[a-z][a-z0-9.-]*(?:/[a-z][a-z0-9.-]*)+$`)
+	pinNamePattern        = regexp.MustCompile(`^[a-z][A-Za-z0-9.-]*$`)
+)
 
 func decodeInvocation(reader io.Reader, maxEnvelopeBytes int64, maxBodyBytes int64) (OpaqueHTTPInvocationV1, []byte, error) {
 	raw, err := readBoundedJSON(reader, maxEnvelopeBytes)

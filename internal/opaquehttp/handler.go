@@ -35,6 +35,8 @@ type ResolvedAdmission struct {
 	Action          string
 	ExpectedRelease execution.ActiveReleasePrecondition
 	Principal       execution.Principal
+	InvocationPins  contract.InvocationPins
+	ResponsePolicy  contract.HTTPPolicy
 }
 
 // Admission is the existing in-process execution boundary used by the
@@ -102,29 +104,39 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 		h.writePlatformFailure(w, http.StatusBadRequest, FailureDeadlineExceeded, false)
 		return
 	}
+	operationContext, cancel := context.WithDeadline(request.Context(), invocation.DeadlineAt)
+	defer cancel()
 	appInput, err := encodeAppInput(invocation)
 	if err != nil {
 		h.writePlatformFailure(w, http.StatusInternalServerError, FailureInternal, false)
 		return
 	}
-	resolved, err := h.resolver.ResolveOpaqueHTTPInvocation(request.Context(), invocation)
+	resolved, err := h.resolver.ResolveOpaqueHTTPInvocation(operationContext, invocation)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(operationContext.Err(), context.DeadlineExceeded) {
+			h.writePlatformFailure(w, http.StatusGatewayTimeout, FailureDeadlineExceeded, false)
+			return
+		}
 		status, category, retryable := resolutionFailure(err)
 		h.writePlatformFailure(w, status, category, retryable)
 		return
 	}
-	admissionRequest, err := prepareAdmissionRequest(resolved, appInput)
+	admissionRequest, err := prepareAdmissionRequest(resolved, invocation, appInput, h.limits.MaxResponseBytes)
 	if err != nil {
 		h.writePlatformFailure(w, http.StatusInternalServerError, FailureInternal, false)
 		return
 	}
-	admitted, err := h.admission.CreateRun(request.Context(), admissionRequest)
+	admitted, err := h.admission.CreateRun(operationContext, admissionRequest)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(operationContext.Err(), context.DeadlineExceeded) {
+			h.writePlatformFailure(w, http.StatusGatewayTimeout, FailureDeadlineExceeded, false)
+			return
+		}
 		status, category, retryable := admissionFailure(err)
 		h.writePlatformFailure(w, status, category, retryable)
 		return
 	}
-	run, err := h.waitForRun(request.Context(), admitted.Run, admissionRequest.Principal, invocation.DeadlineAt)
+	run, err := h.waitForRun(operationContext, admitted.Run, admissionRequest.Principal, invocation.DeadlineAt)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			h.writePlatformFailure(w, http.StatusGatewayTimeout, FailureDeadlineExceeded, false)
@@ -143,8 +155,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 		h.writePlatformFailure(w, http.StatusBadGateway, FailureInternal, false)
 		return
 	}
-	wireResponse, responseBody, err := decodeApplicationWireResponse(rawResult, h.limits.MaxResponseBytes)
+	wireResponse, responseBody, err := decodeApplicationWireResponse(rawResult, admissionRequest.ResponsePolicy.MaxBodyBytes)
 	if err != nil || wireResponse.Status < 200 || wireResponse.Status == http.StatusNoContent && len(responseBody) > 0 || wireResponse.Status == http.StatusNotModified && len(responseBody) > 0 {
+		h.writePlatformFailure(w, http.StatusBadGateway, FailureApplicationProtocolViolation, false)
+		return
+	}
+	if len(wireResponse.Headers) == 0 && !admissionRequest.ResponsePolicy.AllowMissingContentType ||
+		len(wireResponse.Headers) == 1 && !allowedResponseContentType(admissionRequest.ResponsePolicy, wireResponse.Headers[0].Value) {
 		h.writePlatformFailure(w, http.StatusBadGateway, FailureApplicationProtocolViolation, false)
 		return
 	}
@@ -171,7 +188,12 @@ func (h *Handler) validateDeadline(invocation OpaqueHTTPInvocationV1, now time.T
 	return nil
 }
 
-func prepareAdmissionRequest(resolved ResolvedAdmission, appInput []byte) (execution.CreateRunRequest, error) {
+func prepareAdmissionRequest(
+	resolved ResolvedAdmission,
+	invocation OpaqueHTTPInvocationV1,
+	appInput []byte,
+	maxResponseBytes int64,
+) (execution.CreateRunRequest, error) {
 	workspace := contract.NormalizeWorkspace(resolved.Workspace)
 	app := strings.TrimSpace(resolved.App)
 	action := strings.TrimSpace(resolved.Action)
@@ -186,18 +208,92 @@ func prepareAdmissionRequest(resolved ResolvedAdmission, appInput []byte) (execu
 	target := app + "/" + action
 	if principal.Kind != execution.PrincipalService || principal.Workspace != workspace || principal.ID == "" ||
 		!principal.HasScope(execution.ScopeRunsCreate) || !principal.HasScope(execution.ScopeRunsReadOwn) ||
-		principal.HasScope(execution.ScopeRunsReadAny) || len(principal.AllowedTargets) != 1 || principal.AllowedTargets[0] != target {
+		len(principal.Scopes) != 2 || len(principal.AllowedTargets) != 1 || principal.AllowedTargets[0] != target {
 		return execution.CreateRunRequest{}, errors.New("resolver did not return an exact scoped service principal")
+	}
+	if err := validateResolvedInvocationPins(resolved.InvocationPins, invocation); err != nil {
+		return execution.CreateRunRequest{}, err
+	}
+	if err := validateResolvedResponsePolicy(resolved.ResponsePolicy, maxResponseBytes); err != nil {
+		return execution.CreateRunRequest{}, err
 	}
 	return execution.CreateRunRequest{
 		Workspace:       workspace,
 		App:             app,
 		Action:          action,
 		ExpectedRelease: &expected,
+		InvocationPins:  contract.CloneInvocationPins(resolved.InvocationPins),
+		ResponsePolicy:  contract.CloneHTTPPolicy(resolved.ResponsePolicy),
 		Input:           append(json.RawMessage(nil), appInput...),
 		Adapter:         adapterName,
 		Principal:       principal,
 	}, nil
+}
+
+func validateResolvedInvocationPins(pins contract.InvocationPins, invocation OpaqueHTTPInvocationV1) error {
+	trusted := invocation.TrustedIngress
+	if pins.PublicationRef != trusted.PublicationRef || pins.RouteGeneration != trusted.RouteGeneration {
+		return errors.New("resolver invocation pins do not match the trusted route")
+	}
+	if len(pins.OperationRef) == 0 || len(pins.OperationRef) > 200 || !operationRefPattern.MatchString(pins.OperationRef) {
+		return errors.New("resolver returned an invalid operation reference")
+	}
+	if pins.CredentialRef.ID != trusted.CredentialRef.ID || pins.CredentialRef.Version != trusted.CredentialRef.Revision {
+		return errors.New("resolver credential pin does not match the trusted credential reference")
+	}
+	if len(pins.References) == 0 || len(pins.References) > 32 {
+		return errors.New("resolver must return bounded immutable invocation references")
+	}
+	seen := make(map[string]struct{}, len(pins.References))
+	for _, pin := range pins.References {
+		if len(pin.Name) == 0 || len(pin.Name) > 80 || !pinNamePattern.MatchString(pin.Name) {
+			return errors.New("resolver returned an invalid invocation reference name")
+		}
+		if _, duplicate := seen[pin.Name]; duplicate {
+			return errors.New("resolver returned duplicate invocation reference names")
+		}
+		seen[pin.Name] = struct{}{}
+		if err := validateTrimmedString("invocation reference id", pin.Reference.ID, 200); err != nil {
+			return err
+		}
+		if err := validateTrimmedString("invocation reference version", pin.Reference.Version, 200); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateResolvedResponsePolicy(policy contract.HTTPPolicy, maxResponseBytes int64) error {
+	if policy.MaxBodyBytes <= 0 || policy.MaxBodyBytes > maxResponseBytes {
+		return errors.New("resolver response byte limit exceeds the handler limit")
+	}
+	if len(policy.ContentTypes) == 0 || len(policy.ContentTypes) > 16 {
+		return errors.New("resolver must return bounded response content types")
+	}
+	seen := make(map[string]struct{}, len(policy.ContentTypes))
+	for _, contentType := range policy.ContentTypes {
+		if len(contentType) == 0 || len(contentType) > 160 || strings.TrimSpace(contentType) != contentType || hasControlCharacter(contentType) {
+			return errors.New("resolver returned an invalid response content type")
+		}
+		mediaType, _, err := mime.ParseMediaType(contentType)
+		if err != nil || !strings.Contains(mediaType, "/") || strings.Contains(mediaType, "*") {
+			return errors.New("resolver returned an invalid response content type")
+		}
+		if _, duplicate := seen[contentType]; duplicate {
+			return errors.New("resolver returned duplicate response content types")
+		}
+		seen[contentType] = struct{}{}
+	}
+	return nil
+}
+
+func allowedResponseContentType(policy contract.HTTPPolicy, contentType string) bool {
+	for _, allowed := range policy.ContentTypes {
+		if contentType == allowed {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *Handler) waitForRun(ctx context.Context, initial state.Run, principal execution.Principal, deadline time.Time) (state.Run, error) {
@@ -217,6 +313,12 @@ func (h *Handler) waitForRun(ctx context.Context, initial state.Run, principal e
 			timer.Stop()
 			return state.Run{}, ctx.Err()
 		case <-timer.C:
+		}
+		if err := ctx.Err(); err != nil {
+			return state.Run{}, err
+		}
+		if !time.Now().Before(deadline) {
+			return state.Run{}, context.DeadlineExceeded
 		}
 		var err error
 		run, err = h.admission.GetRunForPrincipal(ctx, principal, principal.Workspace, initial.ID)
