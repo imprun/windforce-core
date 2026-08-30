@@ -23,6 +23,7 @@
           "concepts/app-runtime-interface",
           "concepts/human-task-hold",
           "concepts/run-admission",
+          "concepts/opaque-http-ingress",
           "concepts/execution-limits",
           "concepts/runtime-configuration",
           "guides/runtime-secrets-typescript",

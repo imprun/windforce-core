@@ -1,0 +1,8 @@
+{
+  "kind": "windforce.execution-outcome/v1",
+  "outcome": "platformFailed",
+  "failure": {
+    "category": "workerLost",
+    "retryable": true
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "kind": "windforce.opaque-http-ingress-request/v1",
+  "trustedIngress": {
+    "issuer": "synthetic-private-gateway",
+    "audience": "windforce-opaque-http-ingress",
+    "publicationRef": "synthetic-byte-roundtrip",
+    "routeGeneration": 7,
+    "credentialRef": {
+      "id": "credential/synthetic",
+      "revision": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  "http": {
+    "method": "POST",
+    "exactEscapedPath": "/synthetic/bytes",
+    "contentType": "application/octet-stream"
+  },
+  "body": {
+    "encoding": "RFC4648-BASE64",
+    "data": "AAECf4D/QUJDCg==",
+    "byteLength": 9,
+    "digest": "sha256:1b07ff65446a1e3d40ea19fffed12722cfc3762a0bc8f70ace978c13b1949ad1"
+  },
+  "receivedAt": "2099-01-01T00:00:00Z",
+  "deadlineAt": "2099-01-01T00:00:30Z"
+}

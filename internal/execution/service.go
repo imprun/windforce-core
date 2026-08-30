@@ -95,21 +95,22 @@ func NewService(store Store, catalog Catalog, bundles BundleStore) *AdmissionSer
 }
 
 type CreateRunRequest struct {
-	Workspace      string
-	App            string
-	Action         string
-	Input          json.RawMessage
-	Adapter        string
-	TriggerKind    string
-	TriggerHeaders json.RawMessage
-	CorrelationID  string
-	IdempotencyKey string
-	ScheduledFor   time.Time
-	Env            []string
-	ClientID       string
-	CreatedBy      string
-	PermissionedAs string
-	Principal      Principal
+	Workspace       string
+	App             string
+	Action          string
+	ExpectedRelease *ActiveReleasePrecondition
+	Input           json.RawMessage
+	Adapter         string
+	TriggerKind     string
+	TriggerHeaders  json.RawMessage
+	CorrelationID   string
+	IdempotencyKey  string
+	ScheduledFor    time.Time
+	Env             []string
+	ClientID        string
+	CreatedBy       string
+	PermissionedAs  string
+	Principal       Principal
 }
 
 type Admission struct {
@@ -160,6 +161,13 @@ func (s *AdmissionService) CreateRun(ctx context.Context, request CreateRunReque
 	request.Action = strings.TrimSpace(request.Action)
 	if !contract.ValidAppKey(request.App) || !contract.ValidActionKey(request.Action) {
 		return Admission{}, &Fault{Kind: FaultInvalidRequest, Message: "invalid app/action key"}
+	}
+	if request.ExpectedRelease != nil {
+		expected, err := request.ExpectedRelease.normalized()
+		if err != nil {
+			return Admission{}, &Fault{Kind: FaultInvalidRequest, Message: err.Error(), Err: err}
+		}
+		request.ExpectedRelease = &expected
 	}
 	if len(request.Input) == 0 {
 		request.Input = json.RawMessage([]byte("{}"))
@@ -243,6 +251,9 @@ func (s *AdmissionService) CreateRun(ctx context.Context, request CreateRunReque
 	deployment, err := s.lookupDeployment(ctx, request.Workspace, request.App)
 	if err != nil {
 		return Admission{}, &Fault{Kind: FaultAppNotFound, Message: "app not found: " + request.App, Err: err}
+	}
+	if request.ExpectedRelease != nil && !request.ExpectedRelease.matches(deployment) {
+		return Admission{}, &Fault{Kind: FaultRoutingConflict, Message: "active release does not match the requested release pin"}
 	}
 	actionSpec, ok := deployment.Actions[request.Action]
 	if !ok {

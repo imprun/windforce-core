@@ -1,0 +1,16 @@
+{
+  "kind": "windforce.application-wire-response/v1",
+  "status": 200,
+  "headers": [
+    {
+      "name": "content-type",
+      "value": "application/octet-stream"
+    }
+  ],
+  "body": {
+    "encoding": "RFC4648-BASE64",
+    "data": "/wAQIHt9Cg==",
+    "byteLength": 7,
+    "digest": "sha256:ecb5152cfab1017c6fe09b823bdf0a7f938957c4b64ca66c0c7ed41e47074e60"
+  }
+}

@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/imprun/windforce-core/main/contracts/opaque-http/v1/opaque-http-app-input.schema.json",
+  "title": "Windforce opaque HTTP App input v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "kind",
+    "http",
+    "body"
+  ],
+  "properties": {
+    "kind": {
+      "const": "windforce.opaque-http-app-input/v1"
+    },
+    "http": {
+      "$ref": "#/$defs/httpMedia"
+    },
+    "body": {
+      "$ref": "#/$defs/bodyBytes"
+    }
+  },
+  "$defs": {
+    "httpMedia": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "exactEscapedPath",
+        "contentType"
+      ],
+      "properties": {
+        "method": {
+          "type": "string",
+          "pattern": "^[A-Z]+$",
+          "maxLength": 32
+        },
+        "exactEscapedPath": {
+          "type": "string",
+          "pattern": "^/([A-Za-z0-9._~!$&'()+,;=:@/-]|%[0-9A-F]{2})*$",
+          "allOf": [
+            {
+              "not": {
+                "pattern": "//"
+              }
+            },
+            {
+              "not": {
+                "pattern": "^/.+/$"
+              }
+            },
+            {
+              "not": {
+                "pattern": "/(\\.|\\.\\.)(/|$)"
+              }
+            },
+            {
+              "not": {
+                "pattern": "%2E|%2F|%5C|%25"
+              }
+            }
+          ],
+          "maxLength": 1024
+        },
+        "contentType": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        }
+      }
+    },
+    "bodyBytes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "encoding",
+        "data",
+        "byteLength",
+        "digest"
+      ],
+      "properties": {
+        "encoding": {
+          "const": "RFC4648-BASE64"
+        },
+        "data": {
+          "type": "string",
+          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+        },
+        "byteLength": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16777216
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    }
+  }
+}
