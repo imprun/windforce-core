@@ -135,4 +135,24 @@ func TestControlPlaneOpenAPIIncludesServicePrincipals(t *testing.T) {
 			t.Errorf("OpenAPI schema %q is missing", name)
 		}
 	}
+	createRequest := schemas["CreateServicePrincipalRequest"].(map[string]any)
+	properties := createRequest["properties"].(map[string]any)
+	scopeItems := properties["scopes"].(map[string]any)["items"].(map[string]any)
+	scopeValues := scopeItems["enum"].([]any)
+	wantedScopes := map[string]bool{
+		string(executionpkg.ScopeOpaqueHTTPProjectionsRead):  false,
+		string(executionpkg.ScopeOpaqueHTTPProjectionsWrite): false,
+	}
+	for _, value := range scopeValues {
+		if scope, ok := value.(string); ok {
+			if _, wanted := wantedScopes[scope]; wanted {
+				wantedScopes[scope] = true
+			}
+		}
+	}
+	for scope, found := range wantedScopes {
+		if !found {
+			t.Errorf("OpenAPI service principal scope %q is missing", scope)
+		}
+	}
 }

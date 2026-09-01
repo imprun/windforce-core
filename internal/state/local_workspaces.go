@@ -278,6 +278,37 @@ func purgeLocalWorkspace(snapshot *Snapshot, workspaceID string) {
 	delete(snapshot.WebhookAudits, workspaceID)
 	delete(snapshot.WorkspaceKeys, workspaceID)
 	delete(snapshot.WorkspaceTokens, workspaceID)
+	delete(snapshot.OpaqueIngressAudits, workspaceID)
+	for key, credential := range snapshot.OpaqueIngressCredentials {
+		if credential.WorkspaceID == workspaceID {
+			delete(snapshot.OpaqueIngressCredentials, key)
+		}
+	}
+	for key, revocation := range snapshot.OpaqueIngressRevocations {
+		if revocation.WorkspaceID == workspaceID {
+			delete(snapshot.OpaqueIngressRevocations, key)
+		}
+	}
+	for key, publication := range snapshot.OpaqueIngressPublications {
+		if publication.WorkspaceID == workspaceID {
+			delete(snapshot.OpaqueIngressPublications, key)
+		}
+	}
+	for key, activation := range snapshot.OpaqueIngressActivations {
+		if activation.WorkspaceID == workspaceID {
+			delete(snapshot.OpaqueIngressActivations, key)
+		}
+	}
+	for key, head := range snapshot.OpaqueIngressHeads {
+		if head.WorkspaceID == workspaceID {
+			delete(snapshot.OpaqueIngressHeads, key)
+		}
+	}
+	for key, operation := range snapshot.OpaqueIngressOperations {
+		if operation.WorkspaceID == workspaceID {
+			delete(snapshot.OpaqueIngressOperations, key)
+		}
+	}
 	delete(snapshot.Workspaces, workspaceID)
 
 	for key, subscription := range snapshot.WebhookSubscriptions {

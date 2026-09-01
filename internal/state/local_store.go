@@ -1377,6 +1377,27 @@ func ensureSnapshot(snapshot *Snapshot) {
 	if snapshot.HTTPRouteBindingAudits == nil {
 		snapshot.HTTPRouteBindingAudits = map[string][]HTTPRouteBindingAudit{}
 	}
+	if snapshot.OpaqueIngressCredentials == nil {
+		snapshot.OpaqueIngressCredentials = map[string]OpaqueIngressCredentialSnapshot{}
+	}
+	if snapshot.OpaqueIngressRevocations == nil {
+		snapshot.OpaqueIngressRevocations = map[string]OpaqueIngressCredentialRevocation{}
+	}
+	if snapshot.OpaqueIngressPublications == nil {
+		snapshot.OpaqueIngressPublications = map[string]OpaqueIngressPublicationRevision{}
+	}
+	if snapshot.OpaqueIngressActivations == nil {
+		snapshot.OpaqueIngressActivations = map[string]OpaqueIngressActivation{}
+	}
+	if snapshot.OpaqueIngressHeads == nil {
+		snapshot.OpaqueIngressHeads = map[string]OpaqueIngressProjectionHead{}
+	}
+	if snapshot.OpaqueIngressOperations == nil {
+		snapshot.OpaqueIngressOperations = map[string]OpaqueIngressOperation{}
+	}
+	if snapshot.OpaqueIngressAudits == nil {
+		snapshot.OpaqueIngressAudits = map[string][]OpaqueIngressAudit{}
+	}
 	if snapshot.Workers == nil {
 		snapshot.Workers = map[string]WorkerRecord{}
 	}

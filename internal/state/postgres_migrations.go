@@ -425,6 +425,118 @@ CREATE TABLE IF NOT EXISTS workspace_audit (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS opaque_ingress_operation (
+    workspace_id TEXT NOT NULL REFERENCES workspace_registry(id) ON DELETE CASCADE,
+    operation_id TEXT NOT NULL,
+    request_fingerprint TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    result JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (workspace_id, operation_id)
+);
+
+CREATE TABLE IF NOT EXISTS opaque_ingress_credential_snapshot (
+    workspace_id TEXT NOT NULL REFERENCES workspace_registry(id) ON DELETE CASCADE,
+    issuer TEXT NOT NULL,
+    audience TEXT NOT NULL,
+    credential_id TEXT NOT NULL,
+    credential_revision TEXT NOT NULL,
+    digest TEXT NOT NULL,
+    record JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (issuer, audience, credential_id, credential_revision),
+    UNIQUE (workspace_id, issuer, audience, credential_id, credential_revision)
+);
+
+CREATE INDEX IF NOT EXISTS opaque_ingress_credential_workspace_idx
+    ON opaque_ingress_credential_snapshot (workspace_id, created_at);
+
+CREATE TABLE IF NOT EXISTS opaque_ingress_credential_revocation (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspace_registry(id) ON DELETE CASCADE,
+    issuer TEXT NOT NULL,
+    audience TEXT NOT NULL,
+    credential_id TEXT NOT NULL,
+    credential_revision TEXT NOT NULL,
+    record JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (issuer, audience, credential_id, credential_revision),
+    FOREIGN KEY (workspace_id, issuer, audience, credential_id, credential_revision)
+        REFERENCES opaque_ingress_credential_snapshot (workspace_id, issuer, audience, credential_id, credential_revision)
+        ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS opaque_ingress_publication_revision (
+    workspace_id TEXT NOT NULL REFERENCES workspace_registry(id) ON DELETE CASCADE,
+    issuer TEXT NOT NULL,
+    audience TEXT NOT NULL,
+    publication_ref TEXT NOT NULL,
+    revision TEXT NOT NULL,
+    digest TEXT NOT NULL,
+    app_key TEXT NOT NULL,
+    action_key TEXT NOT NULL,
+    record JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (issuer, audience, publication_ref, revision),
+    UNIQUE (workspace_id, issuer, audience, publication_ref, revision)
+);
+
+CREATE INDEX IF NOT EXISTS opaque_ingress_publication_workspace_idx
+    ON opaque_ingress_publication_revision (workspace_id, created_at);
+
+CREATE TABLE IF NOT EXISTS opaque_ingress_activation (
+    workspace_id TEXT NOT NULL REFERENCES workspace_registry(id) ON DELETE CASCADE,
+    issuer TEXT NOT NULL,
+    audience TEXT NOT NULL,
+    publication_ref TEXT NOT NULL,
+    generation BIGINT NOT NULL CHECK (generation > 0),
+    revision TEXT NOT NULL,
+    publication_digest TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('active', 'revoked')),
+    kind TEXT NOT NULL CHECK (kind IN ('activate', 'rollback', 'revoke')),
+    record JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (issuer, audience, publication_ref, generation),
+    UNIQUE (workspace_id, issuer, audience, publication_ref, generation),
+    FOREIGN KEY (workspace_id, issuer, audience, publication_ref, revision)
+        REFERENCES opaque_ingress_publication_revision (workspace_id, issuer, audience, publication_ref, revision)
+);
+
+CREATE TABLE IF NOT EXISTS opaque_ingress_head (
+    workspace_id TEXT NOT NULL REFERENCES workspace_registry(id) ON DELETE CASCADE,
+    issuer TEXT NOT NULL,
+    audience TEXT NOT NULL,
+    publication_ref TEXT NOT NULL,
+    generation BIGINT NOT NULL CHECK (generation > 0),
+    revision TEXT NOT NULL,
+    publication_digest TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('active', 'revoked')),
+    updated_by TEXT NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (issuer, audience, publication_ref),
+    FOREIGN KEY (workspace_id, issuer, audience, publication_ref, generation)
+        REFERENCES opaque_ingress_activation (workspace_id, issuer, audience, publication_ref, generation)
+);
+
+CREATE TABLE IF NOT EXISTS opaque_ingress_audit (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspace_registry(id) ON DELETE CASCADE,
+    issuer TEXT NOT NULL,
+    audience TEXT NOT NULL,
+    publication_ref TEXT NOT NULL DEFAULT '',
+    generation BIGINT NOT NULL DEFAULT 0 CHECK (generation >= 0),
+    subject_kind TEXT NOT NULL,
+    subject_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    detail TEXT NOT NULL DEFAULT '',
+    operation_id TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS opaque_ingress_audit_lookup_idx
+    ON opaque_ingress_audit (workspace_id, publication_ref, created_at DESC, id DESC);
+
 DO $$
 BEGIN
     IF to_regclass('client_registry') IS NULL AND to_regclass('api_client') IS NOT NULL THEN
