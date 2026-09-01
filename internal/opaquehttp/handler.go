@@ -26,7 +26,16 @@ const (
 // generation, credential snapshot, and route media contract. It returns an
 // exact target, scoped principal, and active-Release precondition for Admission.
 type Resolver interface {
-	ResolveOpaqueHTTPInvocation(ctx context.Context, invocation OpaqueHTTPInvocationV1) (ResolvedAdmission, error)
+	ResolveOpaqueHTTPInvocation(ctx context.Context, request ResolutionRequest) (ResolvedAdmission, error)
+}
+
+// ResolutionRequest is the body-blind view needed for one atomic publication
+// and credential-snapshot decision. The Resolver never receives Base64 body
+// data, decoded bytes, or caller-controlled timestamps.
+type ResolutionRequest struct {
+	TrustedIngress TrustedIngressV1
+	HTTP           HTTPMediaV1
+	BodyByteLength int64
 }
 
 type ResolvedAdmission struct {
@@ -60,15 +69,27 @@ type Handler struct {
 	limits           Limits
 }
 
+// resolverContext preserves cancellation without exposing the caller-supplied
+// absolute deadline carried by the trusted ingress envelope.
+type resolverContext struct {
+	context.Context
+}
+
+func (resolverContext) Deadline() (time.Time, bool) {
+	return time.Time{}, false
+}
+
 // NewHandler creates an opt-in handler only. It does not open a listener or
 // mount itself on Core's primary HTTP server.
 func NewHandler(resolver Resolver, admission Admission, limits Limits) (*Handler, error) {
 	if resolver == nil || admission == nil {
 		return nil, errors.New("opaque HTTP resolver and Admission are required")
 	}
-	if limits.MaxRequestBytes <= 0 || limits.MaxRequestBytes > MaxWireBodyBytes ||
-		limits.MaxResponseBytes <= 0 || limits.MaxResponseBytes > MaxWireBodyBytes {
-		return nil, fmt.Errorf("opaque HTTP request and response byte limits must be between 1 and %d", MaxWireBodyBytes)
+	if limits.MaxRequestBytes <= 0 || limits.MaxRequestBytes > MaxWireBodyBytes {
+		return nil, fmt.Errorf("opaque HTTP request byte limit must be between 1 and %d", MaxWireBodyBytes)
+	}
+	if limits.MaxResponseBytes <= 0 || limits.MaxResponseBytes > contract.MaxApplicationWireResponseBodyBytes {
+		return nil, fmt.Errorf("opaque HTTP response byte limit must be between 1 and %d", contract.MaxApplicationWireResponseBodyBytes)
 	}
 	if limits.MaxWait <= 0 || limits.MaxWait > maxConfiguredWait {
 		return nil, errors.New("opaque HTTP max wait must be positive and no greater than five minutes")
@@ -111,7 +132,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 		h.writePlatformFailure(w, http.StatusInternalServerError, FailureInternal, false)
 		return
 	}
-	resolved, err := h.resolver.ResolveOpaqueHTTPInvocation(operationContext, invocation)
+	resolved, err := h.resolver.ResolveOpaqueHTTPInvocation(resolverContext{Context: operationContext}, ResolutionRequest{
+		TrustedIngress: invocation.TrustedIngress,
+		HTTP:           invocation.HTTP,
+		BodyByteLength: invocation.Body.ByteLength,
+	})
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(operationContext.Err(), context.DeadlineExceeded) {
 			h.writePlatformFailure(w, http.StatusGatewayTimeout, FailureDeadlineExceeded, false)
@@ -142,38 +167,39 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 			h.writePlatformFailure(w, http.StatusGatewayTimeout, FailureDeadlineExceeded, false)
 			return
 		}
-		status, category, retryable := admissionFailure(err)
+		status, category, retryable := pollFailure(err)
 		h.writePlatformFailure(w, status, category, retryable)
 		return
 	}
-	if run.State != state.RunSucceeded {
-		h.writePlatformFailure(w, http.StatusBadGateway, FailureInternal, false)
+	rawResult := runOutput(run)
+	wireResponse, responseBody, wireErr := decodeApplicationWireResponse(rawResult, admissionRequest.ResponsePolicy.MaxBodyBytes)
+	validWireResponse := wireErr == nil && wireResponse.Status >= 200 &&
+		(wireResponse.Status != http.StatusNoContent || len(responseBody) == 0) &&
+		(wireResponse.Status != http.StatusNotModified || len(responseBody) == 0) &&
+		(len(wireResponse.Headers) == 0 && admissionRequest.ResponsePolicy.AllowMissingContentType ||
+			len(wireResponse.Headers) == 1 && allowedResponseContentType(admissionRequest.ResponsePolicy, wireResponse.Headers[0].Value))
+	if validWireResponse {
+		if len(wireResponse.Headers) == 1 {
+			w.Header().Set("Content-Type", wireResponse.Headers[0].Value)
+		} else {
+			// Presence with an empty value suppresses net/http content sniffing while
+			// emitting no application-supplied content-type value.
+			w.Header()["Content-Type"] = nil
+		}
+		w.WriteHeader(wireResponse.Status)
+		_, _ = w.Write(responseBody)
 		return
 	}
-	rawResult := runOutput(run)
+	if run.State != state.RunSucceeded {
+		status, category, retryable := terminalRunFailure(run)
+		h.writePlatformFailure(w, status, category, retryable)
+		return
+	}
 	if len(rawResult) == 0 {
 		h.writePlatformFailure(w, http.StatusBadGateway, FailureInternal, false)
 		return
 	}
-	wireResponse, responseBody, err := decodeApplicationWireResponse(rawResult, admissionRequest.ResponsePolicy.MaxBodyBytes)
-	if err != nil || wireResponse.Status < 200 || wireResponse.Status == http.StatusNoContent && len(responseBody) > 0 || wireResponse.Status == http.StatusNotModified && len(responseBody) > 0 {
-		h.writePlatformFailure(w, http.StatusBadGateway, FailureApplicationProtocolViolation, false)
-		return
-	}
-	if len(wireResponse.Headers) == 0 && !admissionRequest.ResponsePolicy.AllowMissingContentType ||
-		len(wireResponse.Headers) == 1 && !allowedResponseContentType(admissionRequest.ResponsePolicy, wireResponse.Headers[0].Value) {
-		h.writePlatformFailure(w, http.StatusBadGateway, FailureApplicationProtocolViolation, false)
-		return
-	}
-	if len(wireResponse.Headers) == 1 {
-		w.Header().Set("Content-Type", wireResponse.Headers[0].Value)
-	} else {
-		// Presence with an empty value suppresses net/http content sniffing while
-		// emitting no application-supplied content-type value.
-		w.Header()["Content-Type"] = nil
-	}
-	w.WriteHeader(wireResponse.Status)
-	_, _ = w.Write(responseBody)
+	h.writePlatformFailure(w, http.StatusBadGateway, FailureApplicationProtocolViolation, false)
 }
 
 func (h *Handler) validateDeadline(invocation OpaqueHTTPInvocationV1, now time.Time) error {
@@ -218,15 +244,16 @@ func prepareAdmissionRequest(
 		return execution.CreateRunRequest{}, err
 	}
 	return execution.CreateRunRequest{
-		Workspace:       workspace,
-		App:             app,
-		Action:          action,
-		ExpectedRelease: &expected,
-		InvocationPins:  contract.CloneInvocationPins(resolved.InvocationPins),
-		ResponsePolicy:  contract.CloneHTTPPolicy(resolved.ResponsePolicy),
-		Input:           append(json.RawMessage(nil), appInput...),
-		Adapter:         adapterName,
-		Principal:       principal,
+		Workspace:           workspace,
+		App:                 app,
+		Action:              action,
+		ExpectedRelease:     &expected,
+		InvocationPins:      contract.CloneInvocationPins(resolved.InvocationPins),
+		ResponsePolicy:      contract.CloneHTTPPolicy(resolved.ResponsePolicy),
+		Input:               append(json.RawMessage(nil), appInput...),
+		InputConfigResolved: true,
+		Adapter:             adapterName,
+		Principal:           principal,
 	}, nil
 }
 
@@ -306,19 +333,22 @@ func (h *Handler) waitForRun(ctx context.Context, initial state.Run, principal e
 		if remaining <= 0 {
 			return state.Run{}, context.DeadlineExceeded
 		}
-		wait := min(h.limits.PollInterval, remaining)
+		// PollInterval is a maximum cadence. Never sleep the entire remaining
+		// budget, otherwise a Run that finishes during that sleep cannot be
+		// observed before the deadline.
+		wait := h.limits.PollInterval
+		if halfRemaining := remaining / 2; halfRemaining > 0 && wait > halfRemaining {
+			wait = halfRemaining
+		}
+		if wait <= 0 {
+			wait = remaining
+		}
 		timer := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
 			return state.Run{}, ctx.Err()
 		case <-timer.C:
-		}
-		if err := ctx.Err(); err != nil {
-			return state.Run{}, err
-		}
-		if !time.Now().Before(deadline) {
-			return state.Run{}, context.DeadlineExceeded
 		}
 		var err error
 		run, err = h.admission.GetRunForPrincipal(ctx, principal, principal.Workspace, initial.ID)
@@ -372,6 +402,26 @@ func admissionFailure(err error) (int, FailureCategory, bool) {
 	default:
 		return http.StatusInternalServerError, FailureInternal, false
 	}
+}
+
+func pollFailure(err error) (int, FailureCategory, bool) {
+	switch execution.FaultKindOf(err) {
+	case execution.FaultUnavailable:
+		return http.StatusServiceUnavailable, FailureCapacityUnavailable, false
+	default:
+		// Once Admission returned a Run, target, ownership, and not-found faults
+		// are internal consistency failures rather than caller protocol errors.
+		return http.StatusInternalServerError, FailureInternal, false
+	}
+}
+
+func terminalRunFailure(run state.Run) (int, FailureCategory, bool) {
+	if run.State == state.RunExpired || run.Result != nil && run.Result.Interruption != nil &&
+		(run.Result.Interruption.Cause == contract.InterruptionLeaseLost ||
+			run.Result.Interruption.Cause == contract.InterruptionWorkerShutdown) {
+		return http.StatusBadGateway, FailureWorkerLost, false
+	}
+	return http.StatusBadGateway, FailureInternal, false
 }
 
 func failureStatus(category FailureCategory) int {

@@ -31,11 +31,11 @@ Every body uses:
 
 `data` must be canonical padded RFC 4648 Base64. `byteLength` and `digest` are computed over the decoded bytes, never over the Base64 text. SHA-256 uses lowercase hexadecimal with the `sha256:` prefix. A configured handler limit may be lower than the schema ceiling of 16 MiB.
 
-JSON Schema validates the immutable object shape, lexical bounds, and Base64/digest syntax. The Go conformance validator additionally proves decoded length and digest equality, parses media types, and enforces the canonical escaped-path algorithm. An Action's materialized `inputSchema` must use `opaque-http-app-input.schema.json`; a domain-shaped schema does not match this Admission boundary.
+JSON Schema validates the immutable object shape, lexical bounds, and Base64/digest syntax. The Go conformance validator additionally proves decoded length and digest equality, parses media types, and enforces the canonical escaped-path algorithm. An Action's materialized `inputSchema` must use `opaque-http-app-input.schema.json`; a domain-shaped schema does not match this Admission boundary. The schema ceiling is 16 MiB for cross-implementation compatibility. Core's handler limits decoded responses to 7 MiB so the Base64 response and Job completion envelope remain below the authenticated Worker Plane's 10 MiB request limit.
 
 ## Trust boundary
 
-`opaque-http-invocation.schema.json` is a trusted internal envelope, not a public API contract. `trustedIngress.credentialRef` is an immutable snapshot reference and never a raw token or secret. A production Resolver must atomically validate issuer, audience, publication revision and generation, and credential snapshot before returning a scoped Service Principal and active Release precondition.
+`opaque-http-invocation.schema.json` is a trusted internal envelope, not a public API contract. `trustedIngress.credentialRef` is an immutable snapshot reference and never a raw token or secret. A production Resolver receives only the trusted ingress references, HTTP route metadata, and decoded body length; it does not receive `body.data`, decoded bytes, body digest, caller timestamps, or the envelope deadline through `context.Deadline`. Cancellation still propagates. It must atomically validate issuer, audience, publication revision and generation, and credential snapshot before returning a scoped Service Principal and active Release precondition.
 
 The conformance handler accepts application wire statuses from 200 through 599. The schema retains the complete HTTP status integer range for cross-implementation contract compatibility; informational statuses are rejected by this handler because they cannot be the final synchronous response.
 

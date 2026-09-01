@@ -51,10 +51,6 @@ func leaseFromWire(wire workerLeaseWire) state.Lease {
 	}
 }
 
-// workerPlaneMaxBody caps worker plane request bodies (job results and log
-// chunks are the largest payloads; the public API is capped similarly).
-const workerPlaneMaxBody = 10 << 20
-
 // workerPlaneMaxLeaseTTL caps client-supplied lease TTLs so a buggy worker
 // cannot park a claimed job beyond the reaper's reach.
 const workerPlaneMaxLeaseTTL = 15 * time.Minute
@@ -102,7 +98,7 @@ func (h *Handler) handleWorkerPlane(w http.ResponseWriter, r *http.Request) {
 	}
 	r = authorizedRequest
 	if r.Body != nil {
-		r.Body = http.MaxBytesReader(w, r.Body, workerPlaneMaxBody)
+		r.Body = http.MaxBytesReader(w, r.Body, contract.WorkerPlaneMaxRequestBytes)
 	}
 	path := strings.TrimPrefix(r.URL.Path, "/worker/v1")
 	parts := strings.Split(strings.Trim(path, "/"), "/")
@@ -233,7 +229,7 @@ func (h *Handler) workerPlaneWorkerHeartbeat(w http.ResponseWriter, r *http.Requ
 	var req struct {
 		ResourcePressure *state.WorkerResourcePressure `json:"resource_pressure"`
 	}
-	if err := json.NewDecoder(io.LimitReader(r.Body, workerPlaneMaxBody)).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+	if err := json.NewDecoder(io.LimitReader(r.Body, contract.WorkerPlaneMaxRequestBytes)).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}

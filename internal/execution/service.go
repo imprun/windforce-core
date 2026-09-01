@@ -95,24 +95,25 @@ func NewService(store Store, catalog Catalog, bundles BundleStore) *AdmissionSer
 }
 
 type CreateRunRequest struct {
-	Workspace       string
-	App             string
-	Action          string
-	ExpectedRelease *ActiveReleasePrecondition
-	InvocationPins  contract.InvocationPins
-	ResponsePolicy  contract.HTTPPolicy
-	Input           json.RawMessage
-	Adapter         string
-	TriggerKind     string
-	TriggerHeaders  json.RawMessage
-	CorrelationID   string
-	IdempotencyKey  string
-	ScheduledFor    time.Time
-	Env             []string
-	ClientID        string
-	CreatedBy       string
-	PermissionedAs  string
-	Principal       Principal
+	Workspace           string
+	App                 string
+	Action              string
+	ExpectedRelease     *ActiveReleasePrecondition
+	InvocationPins      contract.InvocationPins
+	ResponsePolicy      contract.HTTPPolicy
+	Input               json.RawMessage
+	InputConfigResolved bool
+	Adapter             string
+	TriggerKind         string
+	TriggerHeaders      json.RawMessage
+	CorrelationID       string
+	IdempotencyKey      string
+	ScheduledFor        time.Time
+	Env                 []string
+	ClientID            string
+	CreatedBy           string
+	PermissionedAs      string
+	Principal           Principal
 }
 
 type Admission struct {
@@ -181,6 +182,9 @@ func (s *AdmissionService) CreateRun(ctx context.Context, request CreateRunReque
 	}
 
 	principal := request.Principal.Normalized()
+	if request.InputConfigResolved && principal.Kind != PrincipalService {
+		return Admission{}, &Fault{Kind: FaultForbidden, Message: "only a service principal may submit resolved input"}
+	}
 	if principal.Kind != "" {
 		if principal.Workspace != request.Workspace {
 			return Admission{}, &Fault{Kind: FaultForbidden, Message: "principal workspace mismatch"}
@@ -274,13 +278,16 @@ func (s *AdmissionService) CreateRun(ctx context.Context, request CreateRunReque
 	}
 	reader := NewSchemaReader(ctx, s.bundles, deployment)
 	defer reader.Close()
-	resolvedInput, err := s.store.ResolveInput(ctx, request.Workspace, request.App, request.Action, clientID, request.Input)
-	if err != nil {
-		var locked *state.LockedKeysError
-		if errors.As(err, &locked) {
-			return Admission{}, &Fault{Kind: FaultInvalidRequest, Message: locked.Error(), Err: err}
+	resolvedInput := cloneRaw(request.Input)
+	if !request.InputConfigResolved {
+		resolvedInput, err = s.store.ResolveInput(ctx, request.Workspace, request.App, request.Action, clientID, request.Input)
+		if err != nil {
+			var locked *state.LockedKeysError
+			if errors.As(err, &locked) {
+				return Admission{}, &Fault{Kind: FaultInvalidRequest, Message: locked.Error(), Err: err}
+			}
+			return Admission{}, &Fault{Kind: FaultInternal, Message: "could not validate input settings", Err: err}
 		}
-		return Admission{}, &Fault{Kind: FaultInternal, Message: "could not validate input settings", Err: err}
 	}
 	runtimeResolver := runtimeconfig.New(s.store, nil)
 	operatorSettingsSchema, err := reader.Read(actionSpec.OperatorSettingsSchema, actionSpec.OperatorSettingsSchemaBody)

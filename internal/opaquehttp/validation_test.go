@@ -3,7 +3,10 @@ package opaquehttp
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -65,6 +68,44 @@ func TestContractExamplesMatchSchemasAndRuntimeValidation(t *testing.T) {
 	}
 }
 
+func TestMaximumApplicationWireResponseFitsWorkerPlaneCompletionBudget(t *testing.T) {
+	body := bytes.Repeat([]byte{0xa5}, int(contract.MaxApplicationWireResponseBodyBytes))
+	digest := sha256.Sum256(body)
+	wireResponse, err := json.Marshal(ApplicationWireResponseV1{
+		Kind:    ApplicationWireResponseKindV1,
+		Status:  200,
+		Headers: []ResponseHeaderV1{{Name: "content-type", Value: "application/octet-stream"}},
+		Body: BodyBytesV1{
+			Encoding:   RFC4648Base64Encoding,
+			Data:       base64.StdEncoding.EncodeToString(body),
+			ByteLength: int64(len(body)),
+			Digest:     fmt.Sprintf("sha256:%x", digest),
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal maximum wire response: %v", err)
+	}
+	if _, decoded, err := decodeApplicationWireResponse(wireResponse, contract.MaxApplicationWireResponseBodyBytes); err != nil || !bytes.Equal(decoded, body) {
+		t.Fatalf("validate maximum wire response: decoded=%d err=%v", len(decoded), err)
+	}
+	completion, err := json.Marshal(map[string]any{
+		"lease": map[string]any{
+			"job_id": "job-synthetic", "worker_id": "worker-synthetic", "attempt": 1,
+			"acquired_at": "2026-01-01T00:00:00Z", "expires_at": "2026-01-01T00:01:00Z",
+		},
+		"outcome": "succeeded",
+		"result": contract.JobResult{
+			JobID: "job-synthetic", App: testApp, Action: testAction, Output: wireResponse,
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal Worker Plane completion: %v", err)
+	}
+	if int64(len(completion)) >= contract.WorkerPlaneMaxRequestBytes {
+		t.Fatalf("completion bytes = %d, Worker Plane limit = %d", len(completion), contract.WorkerPlaneMaxRequestBytes)
+	}
+}
+
 func TestExecutionOutcomeSchemaResolvesSiblingWireResponseSchema(t *testing.T) {
 	t.Parallel()
 
@@ -108,6 +149,21 @@ func TestExecutionOutcomeSchemaResolvesSiblingWireResponseSchema(t *testing.T) {
 		if err := compiled.Validate(instance); err != nil {
 			t.Fatalf("%s outcome does not match schema: %v", fixture.name, err)
 		}
+	}
+}
+
+func TestPlatformFailedExampleKeepsPostAdmissionRetryDisabled(t *testing.T) {
+	t.Parallel()
+
+	var outcome ExecutionOutcomeV1
+	if err := json.Unmarshal(contractFixture(t, "platform-failed.example.json"), &outcome); err != nil {
+		t.Fatalf("decode platform-failed example: %v", err)
+	}
+	if outcome.Outcome != ExecutionOutcomePlatformFailed || outcome.Failure == nil {
+		t.Fatalf("platform-failed example = %#v", outcome)
+	}
+	if outcome.Failure.Category != FailureWorkerLost || outcome.Failure.Retryable {
+		t.Fatalf("platform-failed failure = %#v, want workerLost and non-retryable", outcome.Failure)
 	}
 }
 

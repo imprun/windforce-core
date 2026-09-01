@@ -37,7 +37,7 @@ The outer request must be `POST` with an `application/json` media type. The JSON
 
 ## Atomic resolution and Release fencing
 
-The Resolver owns one atomic read of route publication and credential state. For the supplied issuer, audience, publication reference, route generation, and credential reference, it either returns a fully pinned Admission request or returns a generic platform failure.
+The Resolver owns one atomic read of route publication and credential state. It receives a body-blind view containing trusted ingress references, HTTP method/path/content type, and decoded body length. Base64 data, decoded bytes, body digest, and caller-controlled timestamps remain outside the Resolver boundary. The Resolver context hides the envelope deadline value while retaining cancellation. For the supplied issuer, audience, publication reference, route generation, and credential reference, it either returns a fully pinned Admission request or returns a generic platform failure.
 
 The Resolver result contains only:
 
@@ -47,7 +47,7 @@ The Resolver result contains only:
 - provider-neutral immutable invocation pins for the publication, route generation, operation, credential, and other resolved control-plane references;
 - the publication-specific response content types and maximum response bytes.
 
-The handler supplies the input and adapter itself. AdmissionService rechecks the active Release precondition before it validates the Action input or creates a Run, including idempotent replay. The immutable invocation pins and resolved response policy are preserved as Job metadata for worker and audit use. They are not copied into the App input. Route, credential, or Release mismatches therefore create zero Runs.
+The handler supplies the input and adapter itself and marks the exact wrapper as already resolved. AdmissionService permits this mode only for a Service Principal, bypasses App/Action/client InputConfig overlays, rechecks the active Release precondition, and validates the Action input before it creates a Run. The immutable invocation pins and resolved response policy are preserved as Job metadata for worker and audit use. They are not copied into the App input. `InvocationPins` are unsigned metadata, not a capability or downstream authorization proof. Route, credential, or Release mismatches therefore create zero Runs.
 
 ## App input and result
 
@@ -55,11 +55,11 @@ The App always receives `windforce.opaque-http-app-input/v1`. It contains only t
 
 Admission validates this wire wrapper, not a decoded domain object. Decoding, decryption, defaults, and domain input validation belong inside the App or its Application SDK.
 
-The App returns `windforce.application-wire-response/v1`. The handler accepts only one optional `content-type` header, a status from 200 through 599, and the same strict Base64/length/digest body metadata. A supplied content type must be in the resolved publication policy, a missing content type is accepted only when that policy permits it, and the decoded body must fit the resolved route limit as well as the handler-wide ceiling. Status 204 or 304 cannot carry a non-empty body. The handler writes the decoded bytes exactly; it does not parse or re-encode them.
+The App returns `windforce.application-wire-response/v1`. The handler accepts only one optional `content-type` header, a status from 200 through 599, and the same strict Base64/length/digest body metadata. A supplied content type must be in the resolved publication policy, a missing content type is accepted only when that policy permits it, and the decoded body must fit the resolved route limit and the 7 MiB handler-wide response ceiling. This ceiling leaves room for padded Base64 and the completion envelope under the Worker Plane's 10 MiB request limit. Status 204 or 304 cannot carry a non-empty body. The handler writes the decoded bytes exactly; it does not parse or re-encode them.
 
 The trusted request deadline is applied to Resolver, Admission, and Run polling calls. Deadline expiry stops the synchronous wait but does not cancel a Run that Admission already created.
 
-If execution has no valid application wire response, the handler returns a stable JSON `windforce.execution-outcome/v1` `platformFailed` envelope. Failure categories are provider-neutral and do not expose Resolver or App details.
+For every terminal Run, the handler first attempts to validate and restore an application wire response, including an App error status. Only when execution has no valid application wire response does it return a stable JSON `windforce.execution-outcome/v1` `platformFailed` envelope. An expired Run or lease-loss/Worker-shutdown interruption is then classified as `workerLost`; other terminal failures and post-Admission consistency faults stay generic. Because the current handler does not synthesize an idempotency key, every post-Admission failure is non-retryable. Failure categories are provider-neutral and do not expose Resolver or App details.
 
 ## Current activation state
 
@@ -68,10 +68,11 @@ The package is a conformance building block only. It has no server wiring, confi
 Production activation is gated on:
 
 1. A separate private listener protected by mutually authenticated TLS, with issuer and audience derived from the authenticated peer rather than accepted from an untrusted public caller.
-2. A durable atomic Resolver and route-management lifecycle with immutable publication revisions, monotonic generation, credential snapshot status, audit, rollback, and stale-reference rejection.
-3. A retry and idempotency design. The current handler admits at most once per request and does not synthesize an idempotency key.
-4. A deadline and cancellation policy. A wait timeout or disconnected caller does not cancel a Run that Admission already created.
-5. Deployment-specific byte limits, overload control, metrics, traces, and failure-rate alerts.
+2. [Issue #283](https://github.com/imprun/windforce-core/issues/283): a durable publication/projection lifecycle and atomic Resolver with immutable revisions, monotonic generation, credential snapshot status, audit, rollback, and stale-reference rejection.
+3. [Issue #286](https://github.com/imprun/windforce-core/issues/286): an audience-bound signed execution attestation minted only after Admission for any downstream capability authorization. Unsigned `InvocationPins` must not be used for that purpose.
+4. A retry and idempotency design. The current handler admits at most once per request and does not synthesize an idempotency key.
+5. A deadline and cancellation policy. A wait timeout or disconnected caller does not cancel a Run that Admission already created.
+6. Deployment-specific byte limits, overload control, metrics, traces, and failure-rate alerts.
 
 Public gateway authentication, TLS termination, route publication, provider request/response codecs, and secrets remain outside Core's opaque handler.
 

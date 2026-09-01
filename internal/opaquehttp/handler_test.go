@@ -28,10 +28,10 @@ const (
 	testDeploymentID = "deployment-synthetic-v1"
 )
 
-type resolverFunc func(context.Context, OpaqueHTTPInvocationV1) (ResolvedAdmission, error)
+type resolverFunc func(context.Context, ResolutionRequest) (ResolvedAdmission, error)
 
-func (f resolverFunc) ResolveOpaqueHTTPInvocation(ctx context.Context, invocation OpaqueHTTPInvocationV1) (ResolvedAdmission, error) {
-	return f(ctx, invocation)
+func (f resolverFunc) ResolveOpaqueHTTPInvocation(ctx context.Context, request ResolutionRequest) (ResolvedAdmission, error) {
+	return f(ctx, request)
 }
 
 type admissionFake struct {
@@ -110,6 +110,68 @@ func (f *admissionFake) counts() (int, int) {
 	return f.createCalls, f.getCalls
 }
 
+func TestHandlerResolverReceivesBodyBlindMetadata(t *testing.T) {
+	t.Parallel()
+
+	called := false
+	resolver := resolverFunc(func(ctx context.Context, request ResolutionRequest) (ResolvedAdmission, error) {
+		called = true
+		if deadline, ok := ctx.Deadline(); ok {
+			t.Fatalf("Resolver context exposed caller deadline %s", deadline)
+		}
+		if request.TrustedIngress.PublicationRef != "synthetic-byte-roundtrip" || request.TrustedIngress.RouteGeneration != 7 {
+			t.Fatalf("trusted ingress = %#v", request.TrustedIngress)
+		}
+		if request.HTTP.Method != http.MethodPost || request.HTTP.ExactEscapedPath != "/synthetic/bytes" || request.BodyByteLength != 10 {
+			t.Fatalf("body-blind route metadata = %#v", request)
+		}
+		return ResolvedAdmission{}, &ResolutionFailure{Category: FailureInternal, Retryable: false}
+	})
+	handler := mustHandler(t, resolver, &admissionFake{}, 2*time.Second)
+	request := httptest.NewRequest(http.MethodPost, "http://internal.invalid/conformance", bytes.NewReader(invocationEnvelope(t, nil)))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if !called {
+		t.Fatal("Resolver was not called")
+	}
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d; body = %s", response.Code, http.StatusInternalServerError, response.Body.String())
+	}
+}
+
+func TestResolverContextPreservesCancellation(t *testing.T) {
+	t.Parallel()
+
+	parent, cancel := context.WithCancel(context.Background())
+	view := resolverContext{Context: parent}
+	cancel()
+
+	select {
+	case <-view.Done():
+	case <-time.After(time.Second):
+		t.Fatal("Resolver context did not preserve cancellation")
+	}
+	if !errors.Is(view.Err(), context.Canceled) {
+		t.Fatalf("Resolver context error = %v, want context canceled", view.Err())
+	}
+}
+
+func TestNewHandlerRejectsResponseLimitAboveWorkerPlaneBudget(t *testing.T) {
+	t.Parallel()
+
+	limits := testLimits(time.Second)
+	limits.MaxResponseBytes = contract.MaxApplicationWireResponseBodyBytes + 1
+	_, err := NewHandler(resolverFunc(func(context.Context, ResolutionRequest) (ResolvedAdmission, error) {
+		return validResolvedAdmission(), nil
+	}), &admissionFake{}, limits)
+	if err == nil {
+		t.Fatal("response limit above the Worker Plane-safe budget unexpectedly accepted")
+	}
+}
+
 func TestHandlerRejectsBeforeAdmission(t *testing.T) {
 	t.Parallel()
 
@@ -164,7 +226,7 @@ func TestHandlerRejectsBeforeAdmission(t *testing.T) {
 			t.Parallel()
 			admission := &admissionFake{}
 			resolverCalls := 0
-			resolver := resolverFunc(func(context.Context, OpaqueHTTPInvocationV1) (ResolvedAdmission, error) {
+			resolver := resolverFunc(func(context.Context, ResolutionRequest) (ResolvedAdmission, error) {
 				resolverCalls++
 				return validResolvedAdmission(), nil
 			})
@@ -220,7 +282,7 @@ func TestHandlerResolverFencesRouteAndCredentialSnapshotsBeforeAdmission(t *test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			admission := &admissionFake{}
-			resolver := resolverFunc(func(_ context.Context, invocation OpaqueHTTPInvocationV1) (ResolvedAdmission, error) {
+			resolver := resolverFunc(func(_ context.Context, invocation ResolutionRequest) (ResolvedAdmission, error) {
 				if invocation.TrustedIngress.RouteGeneration != 7 || invocation.TrustedIngress.CredentialRef.Revision != "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" {
 					return ResolvedAdmission{}, &ResolutionFailure{Category: FailureApplicationProtocolViolation, Retryable: false}
 				}
@@ -282,7 +344,7 @@ func TestHandlerRejectsInconsistentResolvedPinsAndPolicyBeforeAdmission(t *testi
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			admission := &admissionFake{}
-			handler := mustHandler(t, resolverFunc(func(context.Context, OpaqueHTTPInvocationV1) (ResolvedAdmission, error) {
+			handler := mustHandler(t, resolverFunc(func(context.Context, ResolutionRequest) (ResolvedAdmission, error) {
 				resolved := validResolvedAdmission()
 				test.mutate(&resolved)
 				return resolved, nil
@@ -314,7 +376,7 @@ func TestHandlerWaitIsBoundedWithoutCancelingTheAdmittedRun(t *testing.T) {
 			return queued, nil
 		},
 	}
-	handler := mustHandler(t, resolverFunc(func(context.Context, OpaqueHTTPInvocationV1) (ResolvedAdmission, error) {
+	handler := mustHandler(t, resolverFunc(func(context.Context, ResolutionRequest) (ResolvedAdmission, error) {
 		return validResolvedAdmission(), nil
 	}), admission, time.Second)
 	raw := invocationEnvelope(t, func(invocation *OpaqueHTTPInvocationV1) {
@@ -341,6 +403,47 @@ func TestHandlerWaitIsBoundedWithoutCancelingTheAdmittedRun(t *testing.T) {
 	}
 }
 
+func TestHandlerObservesCompletionWhenPollIntervalExceedsRemainingBudget(t *testing.T) {
+	t.Parallel()
+
+	queued := state.Run{ID: "run-final-poll", State: state.RunQueued, Deployment: contract.Deployment{Workspace: testWorkspace}}
+	succeeded := queued
+	succeeded.State = state.RunSucceeded
+	succeeded.Output = contractFixture(t, "application-wire-response.example.json")
+	admission := &admissionFake{
+		create: func(context.Context, execution.CreateRunRequest) (execution.Admission, error) {
+			return execution.Admission{Run: queued}, nil
+		},
+		get: func(context.Context, execution.Principal, string, string) (state.Run, error) {
+			return succeeded, nil
+		},
+	}
+	limits := testLimits(500 * time.Millisecond)
+	limits.PollInterval = 500 * time.Millisecond
+	handler, err := NewHandler(resolverFunc(func(context.Context, ResolutionRequest) (ResolvedAdmission, error) {
+		return validResolvedAdmission(), nil
+	}), admission, limits)
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+	raw := invocationEnvelope(t, func(invocation *OpaqueHTTPInvocationV1) {
+		invocation.DeadlineAt = invocation.ReceivedAt.Add(400 * time.Millisecond)
+	})
+	request := httptest.NewRequest(http.MethodPost, "http://internal.invalid/conformance", bytes.NewReader(raw))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", response.Code, http.StatusOK, response.Body.String())
+	}
+	_, getCalls := admission.counts()
+	if getCalls != 1 {
+		t.Fatalf("GetRun calls = %d, want 1", getCalls)
+	}
+}
+
 func TestHandlerTrustedDeadlineBoundsResolverAdmissionAndPoll(t *testing.T) {
 	t.Parallel()
 
@@ -356,14 +459,14 @@ func TestHandlerTrustedDeadlineBoundsResolverAdmissionAndPoll(t *testing.T) {
 	}{
 		{
 			name: "resolver",
-			resolver: resolverFunc(func(ctx context.Context, _ OpaqueHTTPInvocationV1) (ResolvedAdmission, error) {
+			resolver: resolverFunc(func(ctx context.Context, _ ResolutionRequest) (ResolvedAdmission, error) {
 				return ResolvedAdmission{}, blockUntilDeadline(ctx)
 			}),
 			admission: &admissionFake{},
 		},
 		{
 			name: "admission",
-			resolver: resolverFunc(func(context.Context, OpaqueHTTPInvocationV1) (ResolvedAdmission, error) {
+			resolver: resolverFunc(func(context.Context, ResolutionRequest) (ResolvedAdmission, error) {
 				return validResolvedAdmission(), nil
 			}),
 			admission: &admissionFake{create: func(ctx context.Context, _ execution.CreateRunRequest) (execution.Admission, error) {
@@ -372,7 +475,7 @@ func TestHandlerTrustedDeadlineBoundsResolverAdmissionAndPoll(t *testing.T) {
 		},
 		{
 			name: "poll",
-			resolver: resolverFunc(func(context.Context, OpaqueHTTPInvocationV1) (ResolvedAdmission, error) {
+			resolver: resolverFunc(func(context.Context, ResolutionRequest) (ResolvedAdmission, error) {
 				return validResolvedAdmission(), nil
 			}),
 			admission: &admissionFake{
@@ -434,16 +537,21 @@ func TestHandlerMapsMissingOrInvalidAppWireResultToPlatformFailure(t *testing.T)
 				resolved.ResponsePolicy.ContentTypes = []string{"application/json"}
 			},
 		},
-		{name: "failed Run with wire-shaped output", state: state.RunFailed, output: contractFixture(t, "application-wire-response.example.json")},
+		{name: "failed Run without valid wire response", state: state.RunFailed, output: json.RawMessage(`{"kind":"windforce.application-wire-response/v1","status":200}`)},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
+			terminalRun := state.Run{ID: "run-result", State: test.state, Output: test.output}
+			if test.state == state.RunFailed {
+				terminalRun.Output = nil
+				terminalRun.Result = &contract.JobResult{Output: test.output}
+			}
 			admission := &admissionFake{
 				create: func(context.Context, execution.CreateRunRequest) (execution.Admission, error) {
-					return execution.Admission{Run: state.Run{ID: "run-result", State: test.state, Output: test.output}}, nil
+					return execution.Admission{Run: terminalRun}, nil
 				},
 			}
-			handler, err := NewHandler(resolverFunc(func(context.Context, OpaqueHTTPInvocationV1) (ResolvedAdmission, error) {
+			handler, err := NewHandler(resolverFunc(func(context.Context, ResolutionRequest) (ResolvedAdmission, error) {
 				resolved := validResolvedAdmission()
 				if test.mutateResolved != nil {
 					test.mutateResolved(&resolved)
@@ -467,17 +575,108 @@ func TestHandlerMapsMissingOrInvalidAppWireResultToPlatformFailure(t *testing.T)
 	}
 }
 
+func TestTerminalRunFailureMapping(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name      string
+		run       state.Run
+		category  FailureCategory
+		retryable bool
+	}{
+		{name: "expired worker", run: state.Run{State: state.RunExpired}, category: FailureWorkerLost, retryable: false},
+		{
+			name: "lost lease",
+			run: state.Run{State: state.RunFailed, Result: &contract.JobResult{Interruption: &contract.ExecutionInterruption{
+				Cause: contract.InterruptionLeaseLost,
+			}}},
+			category: FailureWorkerLost, retryable: false,
+		},
+		{name: "application failed", run: state.Run{State: state.RunFailed}, category: FailureInternal, retryable: false},
+		{name: "canceled", run: state.Run{State: state.RunCanceled}, category: FailureInternal, retryable: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			status, category, retryable := terminalRunFailure(test.run)
+			if status != http.StatusBadGateway || category != test.category || retryable != test.retryable {
+				t.Fatalf("mapping = (%d, %q, %t), want (%d, %q, %t)", status, category, retryable, http.StatusBadGateway, test.category, test.retryable)
+			}
+		})
+	}
+}
+
+func TestHandlerTreatsMissingAdmittedRunAsInternalFailure(t *testing.T) {
+	t.Parallel()
+
+	queued := state.Run{ID: "run-disappeared", State: state.RunQueued, Deployment: contract.Deployment{Workspace: testWorkspace}}
+	admission := &admissionFake{
+		create: func(context.Context, execution.CreateRunRequest) (execution.Admission, error) {
+			return execution.Admission{Run: queued}, nil
+		},
+		get: func(context.Context, execution.Principal, string, string) (state.Run, error) {
+			return state.Run{}, &execution.Fault{Kind: execution.FaultAppNotFound, Message: "run not found"}
+		},
+	}
+	handler := mustHandler(t, resolverFunc(func(context.Context, ResolutionRequest) (ResolvedAdmission, error) {
+		return validResolvedAdmission(), nil
+	}), admission, 2*time.Second)
+	request := httptest.NewRequest(http.MethodPost, "http://internal.invalid/conformance", bytes.NewReader(invocationEnvelope(t, nil)))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d; body = %s", response.Code, http.StatusInternalServerError, response.Body.String())
+	}
+	assertPlatformFailureCategory(t, response.Body.Bytes(), FailureInternal)
+}
+
+func TestHandlerPostAdmissionUnavailableIsNotRetryable(t *testing.T) {
+	t.Parallel()
+
+	queued := state.Run{ID: "run-poll-unavailable", State: state.RunQueued, Deployment: contract.Deployment{Workspace: testWorkspace}}
+	admission := &admissionFake{
+		create: func(context.Context, execution.CreateRunRequest) (execution.Admission, error) {
+			return execution.Admission{Run: queued}, nil
+		},
+		get: func(context.Context, execution.Principal, string, string) (state.Run, error) {
+			return state.Run{}, &execution.Fault{Kind: execution.FaultUnavailable, Message: "poll unavailable"}
+		},
+	}
+	handler := mustHandler(t, resolverFunc(func(context.Context, ResolutionRequest) (ResolvedAdmission, error) {
+		return validResolvedAdmission(), nil
+	}), admission, 2*time.Second)
+	request := httptest.NewRequest(http.MethodPost, "http://internal.invalid/conformance", bytes.NewReader(invocationEnvelope(t, nil)))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d; body = %s", response.Code, http.StatusServiceUnavailable, response.Body.String())
+	}
+	var outcome ExecutionOutcomeV1
+	if err := json.Unmarshal(response.Body.Bytes(), &outcome); err != nil {
+		t.Fatalf("decode platform failure: %v", err)
+	}
+	if outcome.Failure.Category != FailureCapacityUnavailable || outcome.Failure.Retryable {
+		t.Fatalf("failure = %#v, want capacityUnavailable and non-retryable", outcome.Failure)
+	}
+}
+
 func TestHandlerReturnsExactApplicationStatusHeaderAndBytes(t *testing.T) {
 	t.Parallel()
 
 	for _, test := range []struct {
 		name                    string
 		status                  int
+		runState                state.RunState
 		withHeader              bool
 		contentType             string
 		allowMissingContentType bool
 	}{
 		{name: "application error status", status: http.StatusUnprocessableEntity, withHeader: true, contentType: "application/octet-stream"},
+		{name: "failed Run with application response", status: http.StatusUnprocessableEntity, runState: state.RunFailed, withHeader: true, contentType: "application/octet-stream"},
 		{name: "no application content type", status: http.StatusOK, withHeader: false, allowMissingContentType: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -496,10 +695,19 @@ func TestHandlerReturnsExactApplicationStatusHeaderAndBytes(t *testing.T) {
 			if err != nil {
 				t.Fatalf("marshal wire response: %v", err)
 			}
+			runState := test.runState
+			if runState == "" {
+				runState = state.RunSucceeded
+			}
+			terminalRun := state.Run{ID: "run-exact-response", State: runState, Output: raw}
+			if runState == state.RunFailed {
+				terminalRun.Output = nil
+				terminalRun.Result = &contract.JobResult{Output: raw}
+			}
 			admission := &admissionFake{create: func(context.Context, execution.CreateRunRequest) (execution.Admission, error) {
-				return execution.Admission{Run: state.Run{ID: "run-exact-response", State: state.RunSucceeded, Output: raw}}, nil
+				return execution.Admission{Run: terminalRun}, nil
 			}}
-			handler := mustHandler(t, resolverFunc(func(context.Context, OpaqueHTTPInvocationV1) (ResolvedAdmission, error) {
+			handler := mustHandler(t, resolverFunc(func(context.Context, ResolutionRequest) (ResolvedAdmission, error) {
 				resolved := validResolvedAdmission()
 				resolved.ResponsePolicy.AllowMissingContentType = test.allowMissingContentType
 				return resolved, nil
@@ -533,6 +741,15 @@ func TestHandlerComposesWithAdmissionForExactByteRoundTrip(t *testing.T) {
 	appInput := contractFixture(t, "opaque-http-app-input.example.json")
 	wireResponse := contractFixture(t, "application-wire-response.example.json")
 	publicInterface := json.RawMessage(`{"kind":"example.synthetic-http/v1","opaque":{"route":"not-interpreted-by-core"}}`)
+	if _, err := store.SetInputConfig(ctx, state.InputConfig{
+		WorkspaceID: testWorkspace,
+		AppKey:      testApp,
+		ActionKey:   testAction,
+		Config:      json.RawMessage(`{"body":{"tampered":true}}`),
+		LockedKeys:  []string{"body"},
+	}, "synthetic-operator"); err != nil {
+		t.Fatalf("set conflicting input config: %v", err)
+	}
 	deploymentID := testDeploymentID
 	publication, err := store.PublishRelease(ctx, contract.Deployment{
 		Workspace:    testWorkspace,
@@ -556,7 +773,7 @@ func TestHandlerComposesWithAdmissionForExactByteRoundTrip(t *testing.T) {
 		t.Fatalf("publish release: %v", err)
 	}
 
-	resolver := resolverFunc(func(_ context.Context, invocation OpaqueHTTPInvocationV1) (ResolvedAdmission, error) {
+	resolver := resolverFunc(func(_ context.Context, invocation ResolutionRequest) (ResolvedAdmission, error) {
 		if invocation.TrustedIngress.PublicationRef != "synthetic-byte-roundtrip" || invocation.TrustedIngress.RouteGeneration != 7 ||
 			invocation.TrustedIngress.CredentialRef.ID != "credential/synthetic" ||
 			invocation.TrustedIngress.CredentialRef.Revision != "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" {
@@ -616,7 +833,7 @@ func TestAdmissionReleasePreconditionMismatchCreatesZeroRuns(t *testing.T) {
 	}, time.Now().UTC()); err != nil {
 		t.Fatalf("publish release: %v", err)
 	}
-	resolver := resolverFunc(func(context.Context, OpaqueHTTPInvocationV1) (ResolvedAdmission, error) {
+	resolver := resolverFunc(func(context.Context, ResolutionRequest) (ResolvedAdmission, error) {
 		resolved := validResolvedAdmission()
 		resolved.ExpectedRelease.Commit = "stale-commit"
 		return resolved, nil
@@ -737,7 +954,7 @@ func TestOpaqueAppInputMustMatchPinnedActionSchemaBeforeRunCreation(t *testing.T
 	}, time.Now().UTC()); err != nil {
 		t.Fatalf("publish release: %v", err)
 	}
-	handler := mustHandler(t, resolverFunc(func(context.Context, OpaqueHTTPInvocationV1) (ResolvedAdmission, error) {
+	handler := mustHandler(t, resolverFunc(func(context.Context, ResolutionRequest) (ResolvedAdmission, error) {
 		return validResolvedAdmission(), nil
 	}), execution.NewAdmissionService(store, store, nil), 2*time.Second)
 	request := httptest.NewRequest(http.MethodPost, "http://internal.invalid/conformance", bytes.NewReader(invocationEnvelope(t, nil)))
@@ -788,6 +1005,9 @@ func executeSyntheticJob(
 
 	if !jsonBytesEqual(job.Payload.Input, wantInput) {
 		return fmt.Errorf("App input does not match opaque wrapper: %s", job.Payload.Input)
+	}
+	if !job.Payload.InputConfigResolved {
+		return errors.New("opaque App input was not marked as already resolved")
 	}
 	if !jsonBytesEqual(job.Payload.InputSchema, inputSchema) || !jsonBytesEqual(job.Payload.OutputSchema, outputSchema) {
 		return errors.New("pinned action schemas were not preserved on the Job")
