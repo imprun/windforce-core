@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/imprun/windforce-core/main/contracts/opaque-http/v1/application-wire-response.schema.json",
+  "title": "Windforce Application wire response v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "kind",
+    "status",
+    "headers",
+    "body"
+  ],
+  "properties": {
+    "kind": {
+      "const": "windforce.application-wire-response/v1"
+    },
+    "status": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 599
+    },
+    "headers": {
+      "type": "array",
+      "maxItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "value"
+        ],
+        "properties": {
+          "name": {
+            "const": "content-type"
+          },
+          "value": {
+            "type": "string",
+            "pattern": "^[^\u0000-\u001F\u007F]*$",
+            "maxLength": 2048
+          }
+        }
+      }
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "encoding",
+        "data",
+        "byteLength",
+        "digest"
+      ],
+      "properties": {
+        "encoding": {
+          "const": "RFC4648-BASE64"
+        },
+        "data": {
+          "type": "string",
+          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+        },
+        "byteLength": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16777216
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    }
+  }
+}

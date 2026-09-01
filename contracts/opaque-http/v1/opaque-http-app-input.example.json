@@ -1,0 +1,14 @@
+{
+  "kind": "windforce.opaque-http-app-input/v1",
+  "http": {
+    "method": "POST",
+    "exactEscapedPath": "/synthetic/bytes",
+    "contentType": "application/octet-stream"
+  },
+  "body": {
+    "encoding": "RFC4648-BASE64",
+    "data": "AAECf4D/QUJDCg==",
+    "byteLength": 10,
+    "digest": "sha256:1b07ff65446a1e3d40ea19fffed12722cfc3762a0bc8f70ace978c13b1949ad1"
+  }
+}

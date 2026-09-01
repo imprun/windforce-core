@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/imprun/windforce-core/main/contracts/opaque-http/v1/execution-outcome.schema.json",
+  "title": "Windforce opaque HTTP execution outcome v1",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "outcome",
+        "response"
+      ],
+      "properties": {
+        "kind": {
+          "const": "windforce.execution-outcome/v1"
+        },
+        "outcome": {
+          "const": "completed"
+        },
+        "response": {
+          "$ref": "application-wire-response.schema.json"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "outcome",
+        "failure"
+      ],
+      "properties": {
+        "kind": {
+          "const": "windforce.execution-outcome/v1"
+        },
+        "outcome": {
+          "const": "platformFailed"
+        },
+        "failure": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "category",
+            "retryable"
+          ],
+          "properties": {
+            "category": {
+              "enum": [
+                "deadlineExceeded",
+                "capacityUnavailable",
+                "workerLost",
+                "applicationProtocolViolation",
+                "internal"
+              ]
+            },
+            "retryable": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    }
+  ]
+}
