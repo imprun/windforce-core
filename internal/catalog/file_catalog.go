@@ -317,6 +317,9 @@ func (c *FileCatalog) Load(ctx context.Context) (Snapshot, error) {
 		return Snapshot{}, err
 	}
 	NormalizeSnapshot(&snapshot)
+	if err := NormalizeSnapshotPublicInterfaces(&snapshot); err != nil {
+		return Snapshot{}, err
+	}
 	return snapshot, nil
 }
 
@@ -344,6 +347,10 @@ func (c *FileCatalog) ImportCatalog(ctx context.Context, imported Snapshot) erro
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	NormalizeSnapshot(&imported)
+	if err := NormalizeSnapshotPublicInterfaces(&imported); err != nil {
+		return fmt.Errorf("import catalog: %w", err)
+	}
 	snapshot, err := c.Load(ctx)
 	if err != nil {
 		return err
@@ -354,6 +361,9 @@ func (c *FileCatalog) ImportCatalog(ctx context.Context, imported Snapshot) erro
 
 func (c *FileCatalog) write(snapshot Snapshot) error {
 	NormalizeSnapshot(&snapshot)
+	if err := NormalizeSnapshotPublicInterfaces(&snapshot); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(c.Path), 0o755); err != nil {
 		return err
 	}
@@ -556,6 +566,36 @@ func NormalizeSnapshot(snapshot *Snapshot) {
 		snapshot.SourceMarkers = map[string]SourceReleaseMarker{}
 	}
 	backfillActiveHistoryIDs(snapshot)
+}
+
+// NormalizeSnapshotPublicInterfaces validates and canonicalizes every
+// Deployment snapshot that may be activated, rolled back, or published. It is
+// intentionally error-returning so file and import boundaries can fail closed
+// while the legacy structural NormalizeSnapshot API remains compatible.
+func NormalizeSnapshotPublicInterfaces(snapshot *Snapshot) error {
+	for key, deployment := range snapshot.Deployments {
+		normalized, err := contract.NormalizeDeploymentPublicInterfaces(deployment)
+		if err != nil {
+			return fmt.Errorf("deployment %s: %w", key, err)
+		}
+		snapshot.Deployments[key] = normalized
+	}
+	for key, candidate := range snapshot.Candidates {
+		normalized, err := contract.NormalizeDeploymentPublicInterfaces(candidate.Deployment)
+		if err != nil {
+			return fmt.Errorf("release candidate %s: %w", key, err)
+		}
+		candidate.Deployment = normalized
+		snapshot.Candidates[key] = candidate
+	}
+	for index := range snapshot.History {
+		normalized, err := contract.NormalizeDeploymentPublicInterfaces(snapshot.History[index].Deployment)
+		if err != nil {
+			return fmt.Errorf("release history %s: %w", snapshot.History[index].ID, err)
+		}
+		snapshot.History[index].Deployment = normalized
+	}
+	return nil
 }
 
 func MergeSnapshot(target *Snapshot, imported Snapshot) {

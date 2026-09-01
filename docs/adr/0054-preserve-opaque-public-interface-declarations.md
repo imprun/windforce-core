@@ -14,7 +14,7 @@ The unversioned canonical manifest accepts the existing v1 fields and ignores un
 
 The Core-owned canonical manifest v2 is selected by the root field `"apiVersion": "windforce.app-manifest/v2"`. A manifest without `apiVersion` is v1. Any other declared value is unsupported and publication fails.
 
-V2 rejects unknown root and Action fields. `publicInterfaces` is an optional Action field containing an ordered array of opaque JSON objects. It is valid only in v2. Core treats every object body as data and never branches on its member names or values.
+V2 decodes a source-manifest allowlist and rejects unknown root and Action fields, including runtime-owned Deployment fields that are not author inputs. `publicInterfaces` is an optional Action field containing an ordered array of opaque JSON objects. Its presence, including an empty array, is valid only in v2; JSON `null` is not an array and is rejected. Core treats every object body as data and never branches on its member names or values.
 
 Core applies only generic structural rules:
 

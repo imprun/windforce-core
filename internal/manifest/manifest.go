@@ -178,6 +178,38 @@ type manifestDocument struct {
 	Flows map[string]json.RawMessage `json:"flows"`
 }
 
+// manifestV2Document is the source-authored v2 allowlist. Keep runtime-owned
+// Deployment and Action fields out of this type so strict decoding cannot
+// accept a value that parseNamed would later clear or overwrite.
+type manifestV2Document struct {
+	APIVersion      string                      `json:"apiVersion"`
+	App             string                      `json:"app"`
+	Name            string                      `json:"name,omitempty"`
+	Entrypoint      string                      `json:"entrypoint,omitempty"`
+	ScriptLang      string                      `json:"scriptLang,omitempty"`
+	TimeoutS        int32                       `json:"timeout,omitempty"`
+	Tag             string                      `json:"tag,omitempty"`
+	MaxConcurrent   *int32                      `json:"maxConcurrent,omitempty"`
+	ExecutionLimits contract.ExecutionLimits    `json:"executionLimits,omitempty,omitzero"`
+	Capabilities    []string                    `json:"capabilities,omitempty"`
+	RunsOn          []string                    `json:"runsOn,omitempty"`
+	Actions         map[string]manifestV2Action `json:"actions"`
+}
+
+type manifestV2Action struct {
+	Tag                    *string                  `json:"tag,omitempty"`
+	Entrypoint             string                   `json:"entrypoint,omitempty"`
+	InputSchema            string                   `json:"inputSchema,omitempty"`
+	OutputSchema           string                   `json:"outputSchema,omitempty"`
+	OperatorSettingsSchema string                   `json:"operatorSettingsSchema,omitempty"`
+	PublicInterfaces       json.RawMessage          `json:"publicInterfaces,omitempty"`
+	TimeoutS               *int32                   `json:"timeout,omitempty"`
+	Capabilities           *[]string                `json:"capabilities,omitempty"`
+	RunsOn                 *[]string                `json:"runsOn,omitempty"`
+	RuntimeAccess          contract.RuntimeAccess   `json:"runtimeAccess,omitempty"`
+	ExecutionLimits        contract.ExecutionLimits `json:"executionLimits,omitempty,omitzero"`
+}
+
 func decodeManifestDocument(data []byte) (manifestDocument, error) {
 	var root map[string]json.RawMessage
 	if err := json.Unmarshal(data, &root); err != nil {
@@ -194,11 +226,14 @@ func decodeManifestDocument(data []byte) (manifestDocument, error) {
 		}
 		strict = true
 	}
+	if strict {
+		return decodeManifestV2Document(data)
+	}
+	if err := rejectV1PublicInterfaces(root); err != nil {
+		return manifestDocument{}, err
+	}
 	var parsed manifestDocument
 	decoder := json.NewDecoder(bytes.NewReader(data))
-	if strict {
-		decoder.DisallowUnknownFields()
-	}
 	if err := decoder.Decode(&parsed); err != nil {
 		return manifestDocument{}, err
 	}
@@ -206,6 +241,89 @@ func decodeManifestDocument(data []byte) (manifestDocument, error) {
 		return manifestDocument{}, err
 	}
 	return parsed, nil
+}
+
+func decodeManifestV2Document(data []byte) (manifestDocument, error) {
+	var source manifestV2Document
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&source); err != nil {
+		return manifestDocument{}, err
+	}
+	if err := ensureManifestEOF(decoder); err != nil {
+		return manifestDocument{}, err
+	}
+	actions := make(map[string]contract.Action, len(source.Actions))
+	for name, sourceAction := range source.Actions {
+		publicInterfaces, err := decodeV2PublicInterfaces(sourceAction.PublicInterfaces)
+		if err != nil {
+			return manifestDocument{}, fmt.Errorf("action %s publicInterfaces: %w", name, err)
+		}
+		actions[name] = contract.Action{
+			Tag:                    sourceAction.Tag,
+			Entrypoint:             sourceAction.Entrypoint,
+			InputSchema:            sourceAction.InputSchema,
+			OutputSchema:           sourceAction.OutputSchema,
+			OperatorSettingsSchema: sourceAction.OperatorSettingsSchema,
+			PublicInterfaces:       publicInterfaces,
+			TimeoutS:               sourceAction.TimeoutS,
+			Capabilities:           sourceAction.Capabilities,
+			RunsOn:                 sourceAction.RunsOn,
+			RuntimeAccess:          sourceAction.RuntimeAccess,
+			ExecutionLimits:        sourceAction.ExecutionLimits,
+		}
+	}
+	return manifestDocument{
+		App: contract.App{
+			APIVersion:      source.APIVersion,
+			App:             source.App,
+			Name:            source.Name,
+			Entrypoint:      source.Entrypoint,
+			ScriptLang:      source.ScriptLang,
+			TimeoutS:        source.TimeoutS,
+			Tag:             source.Tag,
+			MaxConcurrent:   source.MaxConcurrent,
+			ExecutionLimits: source.ExecutionLimits,
+			Capabilities:    source.Capabilities,
+			RunsOn:          source.RunsOn,
+			Actions:         actions,
+		},
+	}, nil
+}
+
+func decodeV2PublicInterfaces(raw json.RawMessage) ([]json.RawMessage, error) {
+	if raw == nil {
+		return nil, nil
+	}
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return nil, errors.New("must be an array, not null")
+	}
+	var declarations []json.RawMessage
+	if err := json.Unmarshal(raw, &declarations); err != nil {
+		return nil, fmt.Errorf("must be an array: %w", err)
+	}
+	return declarations, nil
+}
+
+func rejectV1PublicInterfaces(root map[string]json.RawMessage) error {
+	rawActions, ok := root["actions"]
+	if !ok {
+		return nil
+	}
+	var actions map[string]json.RawMessage
+	if err := json.Unmarshal(rawActions, &actions); err != nil {
+		return err
+	}
+	for name, rawAction := range actions {
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(rawAction, &fields); err != nil {
+			return err
+		}
+		if _, declared := fields["publicInterfaces"]; declared {
+			return fmt.Errorf("action %s publicInterfaces requires apiVersion %q", name, contract.AppManifestV2)
+		}
+	}
+	return nil
 }
 
 func ensureManifestEOF(decoder *json.Decoder) error {

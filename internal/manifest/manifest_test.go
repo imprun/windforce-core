@@ -84,6 +84,26 @@ func TestParseV2RejectsUnknownFields(t *testing.T) {
 			"app":"echo","entrypoint":"main.ts",
 			"actions":{"run":{"unknownAction":true}}
 		}`,
+		"runtime-owned root": `{
+			"apiVersion":"windforce.app-manifest/v2",
+			"app":"echo","entrypoint":"main.ts","runtime":"typescript",
+			"actions":{"run":{}}
+		}`,
+		"runtime-owned action schema body": `{
+			"apiVersion":"windforce.app-manifest/v2",
+			"app":"echo","entrypoint":"main.ts",
+			"actions":{"run":{"inputSchemaBody":{"type":"object"}}}
+		}`,
+		"runtime-owned action override": `{
+			"apiVersion":"windforce.app-manifest/v2",
+			"app":"echo","entrypoint":"main.ts",
+			"actions":{"run":{"requiredLabelsOverride":["private"]}}
+		}`,
+		"unsupported flows field": `{
+			"apiVersion":"windforce.app-manifest/v2",
+			"app":"echo","entrypoint":"main.ts","actions":{"run":{}},
+			"flows":{}
+		}`,
 	}
 	for name, manifest := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -108,6 +128,18 @@ func TestParseRejectsUnsupportedOrImplicitPublicInterfaceVersion(t *testing.T) {
 			manifest: `{"app":"echo","entrypoint":"main.ts","actions":{"run":{"publicInterfaces":[{"contract":"example/v1"}]}}}`,
 			want:     "requires apiVersion",
 		},
+		"v1 empty declarations": {
+			manifest: `{"app":"echo","entrypoint":"main.ts","actions":{"run":{"publicInterfaces":[]}}}`,
+			want:     "requires apiVersion",
+		},
+		"v1 null declarations": {
+			manifest: `{"app":"echo","entrypoint":"main.ts","actions":{"run":{"publicInterfaces":null}}}`,
+			want:     "requires apiVersion",
+		},
+		"v2 null declarations": {
+			manifest: `{"apiVersion":"windforce.app-manifest/v2","app":"echo","entrypoint":"main.ts","actions":{"run":{"publicInterfaces":null}}}`,
+			want:     "must be an array, not null",
+		},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -116,6 +148,23 @@ func TestParseRejectsUnsupportedOrImplicitPublicInterfaceVersion(t *testing.T) {
 				t.Fatalf("error = %v, want substring %q", err, test.want)
 			}
 		})
+	}
+}
+
+func TestParseV2AcceptsExplicitEmptyPublicInterfaces(t *testing.T) {
+	app, err := Parse([]byte(`{
+		"apiVersion":"windforce.app-manifest/v2",
+		"app":"echo","name":"Echo","entrypoint":"main.ts",
+		"actions":{"run":{"publicInterfaces":[]}}
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if app.Actions["run"].PublicInterfaces == nil || len(app.Actions["run"].PublicInterfaces) != 0 {
+		t.Fatalf("publicInterfaces = %#v, want explicit empty array", app.Actions["run"].PublicInterfaces)
+	}
+	if app.Name != "Echo" {
+		t.Fatalf("name = %q, want Echo", app.Name)
 	}
 }
 

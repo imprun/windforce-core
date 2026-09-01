@@ -120,6 +120,63 @@ func TestFileCatalogRejectsInvalidOpaquePublicInterfacesAtPublication(t *testing
 	}
 }
 
+func TestFileCatalogLoadAndImportFailClosedOnInvalidPublicInterfaces(t *testing.T) {
+	tests := map[string]struct {
+		apiVersion string
+		interfaces []json.RawMessage
+		want       string
+	}{
+		"v1 declaration": {
+			interfaces: []json.RawMessage{json.RawMessage(`{"contract":"example/v1"}`)},
+			want:       "requires apiVersion",
+		},
+		"unsupported version": {
+			apiVersion: "windforce.app-manifest/v3",
+			want:       "unsupported app manifest apiVersion",
+		},
+	}
+	for name, test := range tests {
+		t.Run(name+" load", func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "catalog.json")
+			snapshot := invalidPublicInterfaceSnapshot(test.apiVersion, test.interfaces)
+			data, err := json.Marshal(snapshot)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, data, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			_, err = NewFileCatalog(path).Load(context.Background())
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("Load error = %v, want substring %q", err, test.want)
+			}
+		})
+		t.Run(name+" import", func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "catalog.json")
+			err := NewFileCatalog(path).ImportCatalog(context.Background(), invalidPublicInterfaceSnapshot(test.apiVersion, test.interfaces))
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("ImportCatalog error = %v, want substring %q", err, test.want)
+			}
+			if _, statErr := os.Stat(path); !errors.Is(statErr, os.ErrNotExist) {
+				t.Fatalf("invalid import created catalog: %v", statErr)
+			}
+		})
+	}
+}
+
+func invalidPublicInterfaceSnapshot(apiVersion string, interfaces []json.RawMessage) Snapshot {
+	return Snapshot{
+		Deployments: map[string]contract.Deployment{
+			"ws-a/echo": {
+				Workspace: "ws-a", APIVersion: apiVersion, App: "echo", Commit: "commit-a",
+				Actions: map[string]contract.Action{
+					"run": {Action: "run", PublicInterfaces: interfaces},
+				},
+			},
+		},
+	}
+}
+
 func TestNormalizeSnapshotMigratesEmbeddedRoutingOverrides(t *testing.T) {
 	appOverride := "operator-app"
 	actionOverride := "operator-action"

@@ -74,7 +74,7 @@ func NormalizeDeploymentPublicInterfaces(deployment Deployment) (Deployment, err
 	switch deployment.APIVersion {
 	case "":
 		for actionKey, action := range deployment.Actions {
-			if len(action.PublicInterfaces) > 0 {
+			if action.PublicInterfaces != nil {
 				return Deployment{}, fmt.Errorf("action %s publicInterfaces requires apiVersion %q", actionKey, AppManifestV2)
 			}
 		}
