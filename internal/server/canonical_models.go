@@ -219,6 +219,7 @@ func canonicalDeploymentActions(deployment contract.Deployment) []string {
 type canonicalAppModel struct {
 	ID                      string                                `json:"id"`
 	WorkspaceID             string                                `json:"workspace_id"`
+	APIVersion              string                                `json:"api_version,omitempty"`
 	AppKey                  string                                `json:"app_key"`
 	GitSourceID             int64                                 `json:"git_source_id"`
 	CommitSha               string                                `json:"commit_sha"`
@@ -276,6 +277,7 @@ type canonicalActionModel struct {
 	DisplayName             string                                `json:"display_name,omitempty"`
 	InputSchema             []byte                                `json:"input_schema"`
 	OutputSchema            []byte                                `json:"output_schema"`
+	PublicInterfaces        []json.RawMessage                     `json:"public_interfaces,omitempty"`
 	Tag                     *string                               `json:"tag,omitempty"`
 	TagOverride             *string                               `json:"tag_override,omitempty"`
 	TimeoutS                *int32                                `json:"timeout_s,omitempty"`
@@ -403,6 +405,7 @@ func newCanonicalAppModel(deployment contract.Deployment) canonicalAppModel {
 	return canonicalAppModel{
 		ID:                     canonicalAppID(deployment),
 		WorkspaceID:            contract.NormalizeWorkspace(deployment.SourceWorkspace()),
+		APIVersion:             deployment.APIVersion,
 		AppKey:                 deployment.App,
 		GitSourceID:            parseCanonicalGitSourceID(deployment.SourceGitSourceID()),
 		CommitSha:              deployment.Commit,
@@ -469,6 +472,7 @@ func (h *Handler) newCanonicalActionModel(schemaReader *canonicalSchemaReader, d
 		DisplayName:            canonicalActionDisplayName(schemaView.InputSchema, schemaView.OutputSchema),
 		InputSchema:            canonicalCatalogSchemaBytes(schemaView.InputSchema),
 		OutputSchema:           canonicalCatalogSchemaBytes(schemaView.OutputSchema),
+		PublicInterfaces:       contract.ClonePublicInterfaces(action.PublicInterfaces),
 		Tag:                    cloneStringPtr(action.Tag),
 		TagOverride:            cloneStringPtr(action.TagOverride),
 		TimeoutS:               cloneInt32Ptr(action.TimeoutS),

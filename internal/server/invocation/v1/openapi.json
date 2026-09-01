@@ -547,6 +547,9 @@
               "deployment_id": {
                 "type": "string"
               },
+              "api_version": {
+                "type": "string"
+              },
               "commit": {
                 "type": "string"
               },
@@ -572,6 +575,15 @@
                 "output_schema": {
                   "type": "object",
                   "additionalProperties": true
+                },
+                "public_interfaces": {
+                  "type": "array",
+                  "maxItems": 16,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "description": "Bounded opaque public interface declarations from the pinned Release. Core does not interpret declaration fields."
                 },
                 "timeout": {
                   "type": "integer",

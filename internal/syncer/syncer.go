@@ -168,6 +168,7 @@ func (s *Syncer) inspect(ctx context.Context, src Source) (inspectedSource, erro
 	deployment := contract.Deployment{
 		Workspace:            contract.NormalizeWorkspace(src.Workspace),
 		GitSourceID:          contract.NormalizeGitSourceID(src.GitSourceID, app.App),
+		APIVersion:           app.APIVersion,
 		App:                  app.App,
 		Tag:                  app.Tag,
 		Entrypoint:           app.Entrypoint,

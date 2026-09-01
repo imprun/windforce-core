@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/imprun/windforce-core/internal/bundle"
+	"github.com/imprun/windforce-core/internal/contract"
 )
 
 type failingMaterializeStore struct {
@@ -97,6 +98,7 @@ func TestSyncMaterializesSourceBundle(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(sourceDir, "windforce.json"), []byte(`{
+		"apiVersion": "windforce.app-manifest/v2",
 		"app": "echo",
 		"entrypoint": "main.ts",
 		"scriptLang": "typescript",
@@ -108,7 +110,10 @@ func TestSyncMaterializesSourceBundle(t *testing.T) {
 				"tag": "action-fast",
 				"inputSchema": "input.schema.json",
 				"outputSchema": "output.schema.json",
-				"operatorSettingsSchema": "operator-settings.schema.json"
+				"operatorSettingsSchema": "operator-settings.schema.json",
+				"publicInterfaces": [
+					{"metadata":{"priority":1},"contract":"example.interface/v1"}
+				]
 			}
 		}
 	}`), 0o644); err != nil {
@@ -149,6 +154,10 @@ func TestSyncMaterializesSourceBundle(t *testing.T) {
 	}
 	if deployment.Actions["echo"].Action != "echo" {
 		t.Fatalf("action metadata was not loaded from manifest")
+	}
+	if deployment.APIVersion != contract.AppManifestV2 || len(deployment.Actions["echo"].PublicInterfaces) != 1 ||
+		string(deployment.Actions["echo"].PublicInterfaces[0]) != `{"contract":"example.interface/v1","metadata":{"priority":1}}` {
+		t.Fatalf("public interface declaration was not pinned: %#v", deployment)
 	}
 	if deployment.Tag != "app-main" || deployment.Actions["echo"].Tag == nil || *deployment.Actions["echo"].Tag != "action-fast" {
 		t.Fatalf("route tags were not loaded from manifest: %#v", deployment)

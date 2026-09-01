@@ -111,6 +111,12 @@ Core's Git Source contract starts at a canonical deployment artifact containing 
 
 Core must not run `--describe`, import the App, or infer a Manifest from an SDK. That would execute untrusted author code during registration and couple Core to an SDK-specific output shape. Publication only performs the generic static `main` export check and dependency-graph build against the canonical artifact. The external `demo` and `sample` E2E test demonstrates this boundary with a generated deployment Git and then exercises Register, Sync, Publish, Run, and Result through both local and remote workers.
 
+The Core-owned canonical manifest v2 uses `apiVersion: windforce.app-manifest/v2`. An Action may include bounded opaque `publicInterfaces` JSON objects. Core validates only generic JSON structure and limits, canonicalizes each object, and preserves it through the immutable Release and Admission pin. An App build pipeline or bridge owns any translation from an SDK-specific description into this Core contract; Core never interprets declaration fields. See [ADR 0054](../adr/0054-preserve-opaque-public-interface-declarations.md).
+
+Opaque declaration metadata does not change Admission input validation. The resolved input submitted to Core must match the Action's pinned `inputSchema`. When a transport bridge submits an opaque envelope for App-side decoding, the canonical artifact declares that envelope as its `inputSchema`; validation of a decoded domain object remains inside the App. When the canonical artifact declares a domain object, the bridge translates into that object before Admission.
+
+Core materializes and pins an Action's `outputSchema` for execution and discovery, but it does not validate the returned value against that schema. The runtime requires only valid JSON. The schema describes the App's actual Job result; a gateway-owned response wrapper is represented there only when the App returns that wrapper rather than when a gateway encodes it later.
+
 ## Core responsibilities
 
 Core is responsible for:

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -60,6 +61,119 @@ func TestFileCatalogUpsertAndGet(t *testing.T) {
 	}
 	if !regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`).MatchString(snapshot.History[0].ID) {
 		t.Fatalf("history id = %q, want UUID app version id", snapshot.History[0].ID)
+	}
+}
+
+func TestFileCatalogRejectsInvalidOpaquePublicInterfacesAtPublication(t *testing.T) {
+	base := func() contract.Deployment {
+		return contract.Deployment{
+			Workspace: "ws-a", GitSourceID: "source-a", App: "echo", Commit: "commit-a",
+			Actions: map[string]contract.Action{"run": {Action: "run"}},
+		}
+	}
+	tests := map[string]struct {
+		mutate func(*contract.Deployment)
+		want   string
+	}{
+		"v1 declaration": {
+			mutate: func(deployment *contract.Deployment) {
+				action := deployment.Actions["run"]
+				action.PublicInterfaces = []json.RawMessage{json.RawMessage(`{"contract":"example/v1"}`)}
+				deployment.Actions["run"] = action
+			},
+			want: "requires apiVersion",
+		},
+		"duplicate declarations": {
+			mutate: func(deployment *contract.Deployment) {
+				deployment.APIVersion = contract.AppManifestV2
+				action := deployment.Actions["run"]
+				action.PublicInterfaces = []json.RawMessage{
+					json.RawMessage(`{"a":1,"b":2}`),
+					json.RawMessage(`{"b":2,"a":1}`),
+				}
+				deployment.Actions["run"] = action
+			},
+			want: "duplicates",
+		},
+		"oversized declaration": {
+			mutate: func(deployment *contract.Deployment) {
+				deployment.APIVersion = contract.AppManifestV2
+				action := deployment.Actions["run"]
+				action.PublicInterfaces = []json.RawMessage{
+					json.RawMessage(`{"value":"` + strings.Repeat("a", contract.MaxPublicInterfaceDeclarationBytes) + `"}`),
+				}
+				deployment.Actions["run"] = action
+			},
+			want: "maximum",
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			deployment := base()
+			test.mutate(&deployment)
+			fileCatalog := NewFileCatalog(filepath.Join(t.TempDir(), "catalog.json"))
+			_, err := fileCatalog.PublishRelease(context.Background(), deployment, time.Now().UTC())
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("error = %v, want substring %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestFileCatalogLoadAndImportFailClosedOnInvalidPublicInterfaces(t *testing.T) {
+	tests := map[string]struct {
+		apiVersion string
+		interfaces []json.RawMessage
+		want       string
+	}{
+		"v1 declaration": {
+			interfaces: []json.RawMessage{json.RawMessage(`{"contract":"example/v1"}`)},
+			want:       "requires apiVersion",
+		},
+		"unsupported version": {
+			apiVersion: "windforce.app-manifest/v3",
+			want:       "unsupported app manifest apiVersion",
+		},
+	}
+	for name, test := range tests {
+		t.Run(name+" load", func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "catalog.json")
+			snapshot := invalidPublicInterfaceSnapshot(test.apiVersion, test.interfaces)
+			data, err := json.Marshal(snapshot)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, data, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			_, err = NewFileCatalog(path).Load(context.Background())
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("Load error = %v, want substring %q", err, test.want)
+			}
+		})
+		t.Run(name+" import", func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "catalog.json")
+			err := NewFileCatalog(path).ImportCatalog(context.Background(), invalidPublicInterfaceSnapshot(test.apiVersion, test.interfaces))
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("ImportCatalog error = %v, want substring %q", err, test.want)
+			}
+			if _, statErr := os.Stat(path); !errors.Is(statErr, os.ErrNotExist) {
+				t.Fatalf("invalid import created catalog: %v", statErr)
+			}
+		})
+	}
+}
+
+func invalidPublicInterfaceSnapshot(apiVersion string, interfaces []json.RawMessage) Snapshot {
+	return Snapshot{
+		Deployments: map[string]contract.Deployment{
+			"ws-a/echo": {
+				Workspace: "ws-a", APIVersion: apiVersion, App: "echo", Commit: "commit-a",
+				Actions: map[string]contract.Action{
+					"run": {Action: "run", PublicInterfaces: interfaces},
+				},
+			},
+		},
 	}
 }
 

@@ -40,6 +40,11 @@ func PrepareReleaseCandidate(deployment contract.Deployment, syncedAt time.Time)
 	if syncedAt.IsZero() {
 		syncedAt = time.Now().UTC()
 	}
+	var err error
+	deployment, err = contract.NormalizeDeploymentPublicInterfaces(deployment)
+	if err != nil {
+		return ReleaseCandidate{}, err
+	}
 	deployment = NormalizeDeploymentDefaults(deployment)
 	workspace := deployment.SourceWorkspace()
 	gitSourceID := deployment.SourceGitSourceID()

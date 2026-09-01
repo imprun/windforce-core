@@ -111,6 +111,7 @@ var labelPattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9._-]{0,62}[a-z0-9])?$`)
 
 // App is the deployable source bundle described by windforce.json.
 type App struct {
+	APIVersion string `json:"apiVersion,omitempty"`
 	App        string `json:"app"`
 	Name       string `json:"name,omitempty"`
 	Entrypoint string `json:"entrypoint,omitempty"`
@@ -144,16 +145,17 @@ type Action struct {
 	// not part of the public action request body.
 	OperatorSettingsSchema string `json:"operatorSettingsSchema,omitempty"`
 	// Materialized schema bodies are pinned during sync for control-plane reads.
-	InputSchemaBody            json.RawMessage `json:"inputSchemaBody,omitempty"`
-	OutputSchemaBody           json.RawMessage `json:"outputSchemaBody,omitempty"`
-	OperatorSettingsSchemaBody json.RawMessage `json:"operatorSettingsSchemaBody,omitempty"`
-	TimeoutS                   *int32          `json:"timeout,omitempty"`
-	TimeoutMs                  int64           `json:"timeoutMs,omitempty"`
-	Capabilities               *[]string       `json:"capabilities,omitempty"`
-	RunsOn                     *[]string       `json:"runsOn,omitempty"`
-	RuntimeAccess              RuntimeAccess   `json:"runtimeAccess,omitempty"`
-	ExecutionLimits            ExecutionLimits `json:"executionLimits,omitempty,omitzero"`
-	UpdatedAt                  *time.Time      `json:"updatedAt,omitempty"`
+	InputSchemaBody            json.RawMessage   `json:"inputSchemaBody,omitempty"`
+	OutputSchemaBody           json.RawMessage   `json:"outputSchemaBody,omitempty"`
+	OperatorSettingsSchemaBody json.RawMessage   `json:"operatorSettingsSchemaBody,omitempty"`
+	PublicInterfaces           []json.RawMessage `json:"publicInterfaces,omitempty"`
+	TimeoutS                   *int32            `json:"timeout,omitempty"`
+	TimeoutMs                  int64             `json:"timeoutMs,omitempty"`
+	Capabilities               *[]string         `json:"capabilities,omitempty"`
+	RunsOn                     *[]string         `json:"runsOn,omitempty"`
+	RuntimeAccess              RuntimeAccess     `json:"runtimeAccess,omitempty"`
+	ExecutionLimits            ExecutionLimits   `json:"executionLimits,omitempty,omitzero"`
+	UpdatedAt                  *time.Time        `json:"updatedAt,omitempty"`
 }
 
 // ExecutionLimits contains release-owned, domain-neutral execution limits.
@@ -640,6 +642,7 @@ type ActionAdapter struct {
 type Deployment struct {
 	Workspace              string            `json:"workspace,omitempty"`
 	GitSourceID            string            `json:"gitSourceId,omitempty"`
+	APIVersion             string            `json:"apiVersion,omitempty"`
 	App                    string            `json:"app"`
 	Version                string            `json:"version,omitempty"`
 	Tag                    string            `json:"tag,omitempty"`
@@ -669,27 +672,10 @@ type Deployment struct {
 // PinExecutionDeployment keeps only the selected action while preserving the
 // release coordinates and defaults required to retry the same execution.
 func PinExecutionDeployment(deployment Deployment, actionKey string) Deployment {
-	pinned := deployment
-	pinned.ExecutionLimits = cloneExecutionLimits(deployment.ExecutionLimits)
-	pinned.RequiredCapabilities = append([]string(nil), deployment.RequiredCapabilities...)
-	pinned.RequiredLabels = append([]string(nil), deployment.RequiredLabels...)
-	if deployment.RequiredLabelsOverride != nil {
-		cloned := append([]string{}, (*deployment.RequiredLabelsOverride)...)
-		pinned.RequiredLabelsOverride = &cloned
-	}
+	pinned := CloneDeployment(deployment)
 	pinned.Actions = make(map[string]Action, 1)
 	if action, ok := deployment.Actions[actionKey]; ok {
-		action.Command = append([]string(nil), action.Command...)
-		action.RuntimeAccess = CloneRuntimeAccess(action.RuntimeAccess)
-		action.InputSchemaBody = append(json.RawMessage(nil), action.InputSchemaBody...)
-		action.OutputSchemaBody = append(json.RawMessage(nil), action.OutputSchemaBody...)
-		action.OperatorSettingsSchemaBody = append(json.RawMessage(nil), action.OperatorSettingsSchemaBody...)
-		action.ExecutionLimits = cloneExecutionLimits(action.ExecutionLimits)
-		if action.RequiredLabelsOverride != nil {
-			cloned := append([]string{}, (*action.RequiredLabelsOverride)...)
-			action.RequiredLabelsOverride = &cloned
-		}
-		pinned.Actions[actionKey] = action
+		pinned.Actions[actionKey] = CloneAction(action)
 	}
 	return pinned
 }

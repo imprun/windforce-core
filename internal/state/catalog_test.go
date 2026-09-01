@@ -2,6 +2,7 @@ package state
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"path/filepath"
 	"strings"
@@ -66,6 +67,39 @@ func TestLocalReleaseCatalogPublishesAtomically(t *testing.T) {
 	}
 }
 
+func TestLocalReleaseCatalogPreservesOpaquePublicInterfaces(t *testing.T) {
+	store := NewLocalStore(filepath.Join(t.TempDir(), "state.json"))
+	ctx := context.Background()
+	syncedAt := time.Date(2026, 8, 30, 1, 0, 0, 0, time.UTC)
+	candidateInput := releaseCatalogV2Deployment("workspace-a", "source-a", "echo", "commit-a")
+	if _, err := store.SaveReleaseCandidate(ctx, candidateInput, syncedAt); err != nil {
+		t.Fatal(err)
+	}
+	candidateInput.Actions["run"].PublicInterfaces[0][2] = 'X'
+	candidate, err := store.GetReleaseCandidate(ctx, "workspace-a", "source-a", "commit-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertDeploymentPublicInterface(t, candidate.Deployment)
+
+	publicationInput := releaseCatalogV2Deployment("workspace-a", "source-a", "echo", "commit-a")
+	published, err := store.PublishRelease(ctx, publicationInput, syncedAt.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	publicationInput.Actions["run"].PublicInterfaces[0][2] = 'X'
+	published.Deployment.Actions["run"].PublicInterfaces[0][2] = 'Y'
+	snapshot, err := store.LoadCatalog(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertDeploymentPublicInterface(t, snapshot.Deployments[catalog.DeploymentKey("workspace-a", "echo")])
+	if len(snapshot.History) != 1 {
+		t.Fatalf("history count = %d, want 1", len(snapshot.History))
+	}
+	assertDeploymentPublicInterface(t, snapshot.History[0].Deployment)
+}
+
 func TestLocalReleaseCatalogImportIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	source := NewLocalStore(filepath.Join(t.TempDir(), "source-state.json"))
@@ -110,7 +144,7 @@ func TestPostgresReleaseCatalogContract(t *testing.T) {
 	ctx := context.Background()
 	store := openIsolatedPostgresCatalogStore(t, dsn)
 	releasedAt := time.Date(2026, 7, 16, 10, 30, 0, 0, time.UTC)
-	deployment := releaseCatalogDeployment("workspace-a", "source-a", "echo", "commit-a")
+	deployment := releaseCatalogV2Deployment("workspace-a", "source-a", "echo", "commit-a")
 	actor := "operator@example.test"
 	message := "Release contract test"
 	deployment.CreatedBy = &actor
@@ -120,6 +154,11 @@ func TestPostgresReleaseCatalogContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	active, err := store.GetDeploymentForWorkspace(ctx, "workspace-a", "echo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertDeploymentPublicInterface(t, active)
 	if published.Deployment.UpdatedAt == nil || !published.Deployment.UpdatedAt.Equal(releasedAt) {
 		t.Fatalf("published updatedAt = %v, want %v", published.Deployment.UpdatedAt, releasedAt)
 	}
@@ -130,6 +169,8 @@ func TestPostgresReleaseCatalogContract(t *testing.T) {
 	if len(snapshot.Deployments) != 1 || len(snapshot.History) != 1 || len(snapshot.Audit) != 1 || len(snapshot.SourceMarkers) != 1 {
 		t.Fatalf("published counts = deployments:%d history:%d audit:%d markers:%d", len(snapshot.Deployments), len(snapshot.History), len(snapshot.Audit), len(snapshot.SourceMarkers))
 	}
+	assertDeploymentPublicInterface(t, snapshot.Deployments[catalog.DeploymentKey("workspace-a", "echo")])
+	assertDeploymentPublicInterface(t, snapshot.History[0].Deployment)
 	if published.ReleaseID != snapshot.History[0].ID {
 		t.Fatalf("published release ID = %q, want %q", published.ReleaseID, snapshot.History[0].ID)
 	}
@@ -163,7 +204,7 @@ func TestPostgresReleaseRollbackMovesActiveHistoryPointer(t *testing.T) {
 	}
 	ctx := context.Background()
 	store := openIsolatedPostgresCatalogStore(t, dsn)
-	first := releaseCatalogDeployment("workspace-a", "source-a", "echo", "commit-a")
+	first := releaseCatalogV2Deployment("workspace-a", "source-a", "echo", "commit-a")
 	first.BundleDigest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	second := releaseCatalogDeployment("workspace-a", "source-a", "echo", "commit-b")
 	second.BundleDigest = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -196,6 +237,8 @@ func TestPostgresReleaseRollbackMovesActiveHistoryPointer(t *testing.T) {
 	if after.ActiveHistoryIDs[key] != before.History[0].ID || after.Deployments[key].Commit != "commit-a" {
 		t.Fatalf("active release = id %q deployment %#v", after.ActiveHistoryIDs[key], after.Deployments[key])
 	}
+	assertDeploymentPublicInterface(t, after.Deployments[key])
+	assertDeploymentPublicInterface(t, result.Target.Deployment)
 	if len(after.History) != 2 || len(after.Audit) != 3 {
 		t.Fatalf("rollback counts = history:%d audit:%d", len(after.History), len(after.Audit))
 	}
@@ -215,7 +258,7 @@ func TestPostgresReleaseCandidateAndSourceOperationLeaseContract(t *testing.T) {
 	}
 	ctx := context.Background()
 	store := openIsolatedPostgresCatalogStore(t, dsn)
-	first := releaseCatalogDeployment("workspace-a", "source-a", "echo", "commit-a")
+	first := releaseCatalogV2Deployment("workspace-a", "source-a", "echo", "commit-a")
 	firstSyncedAt := time.Date(2026, 7, 17, 2, 0, 0, 0, time.UTC)
 	if _, err := store.SaveReleaseCandidate(ctx, first, firstSyncedAt); err != nil {
 		t.Fatal(err)
@@ -229,6 +272,7 @@ func TestPostgresReleaseCandidateAndSourceOperationLeaseContract(t *testing.T) {
 	if saved.Deployment.Entrypoint != first.Entrypoint || !saved.SyncedAt.Equal(firstSyncedAt) {
 		t.Fatalf("immutable candidate = %#v", saved)
 	}
+	assertDeploymentPublicInterface(t, saved.Deployment)
 
 	second := releaseCatalogDeployment("workspace-a", "source-a", "echo", "commit-b")
 	if _, err := store.SaveReleaseCandidate(ctx, second, firstSyncedAt.Add(2*time.Minute)); err != nil {
@@ -429,5 +473,30 @@ func releaseCatalogDeployment(workspace string, sourceID string, app string, com
 		Actions: map[string]contract.Action{
 			"run": {Action: "run"},
 		},
+	}
+}
+
+func releaseCatalogV2Deployment(workspace string, sourceID string, app string, commit string) contract.Deployment {
+	deployment := releaseCatalogDeployment(workspace, sourceID, app, commit)
+	deployment.APIVersion = contract.AppManifestV2
+	action := deployment.Actions["run"]
+	action.PublicInterfaces = []json.RawMessage{
+		json.RawMessage(` { "metadata": { "priority": 1 }, "contract": "example.interface/v1" } `),
+	}
+	deployment.Actions["run"] = action
+	return deployment
+}
+
+func assertDeploymentPublicInterface(t *testing.T, deployment contract.Deployment) {
+	t.Helper()
+	if deployment.APIVersion != contract.AppManifestV2 {
+		t.Fatalf("apiVersion = %q", deployment.APIVersion)
+	}
+	interfaces := deployment.Actions["run"].PublicInterfaces
+	if len(interfaces) != 1 {
+		t.Fatalf("publicInterfaces = %#v", interfaces)
+	}
+	if got, want := string(interfaces[0]), `{"contract":"example.interface/v1","metadata":{"priority":1}}`; got != want {
+		t.Fatalf("public interface = %s, want %s", got, want)
 	}
 }

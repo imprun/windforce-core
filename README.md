@@ -206,6 +206,7 @@ Every canonical deployment artifact has a manifest file. Its default filename is
 
 ```json
 {
+  "apiVersion": "windforce.app-manifest/v2",
   "app": "echo",
   "entrypoint": "main.ts",
   "scriptLang": "typescript",
@@ -215,6 +216,12 @@ Every canonical deployment artifact has a manifest file. Its default filename is
       "inputSchema": "input.schema.json",
       "outputSchema": "output.schema.json",
       "operatorSettingsSchema": "operator-settings.schema.json",
+      "publicInterfaces": [
+        {
+          "contract": "example.interface/v1",
+          "operation": "echo"
+        }
+      ],
       "runtimeAccess": {
         "variables": ["deployment/region", "secrets/api-token"],
         "resources": ["connections/main"]
@@ -223,6 +230,8 @@ Every canonical deployment artifact has a manifest file. Its default filename is
   }
 }
 ```
+
+`apiVersion: windforce.app-manifest/v2` selects the strict canonical manifest contract: unknown root and Action fields, including runtime-owned fields that are not source-manifest inputs, are rejected. A manifest without `apiVersion` uses the v1 field set and parsing behavior. `publicInterfaces` is available only in v2 and carries an array of bounded opaque JSON objects; an empty array is valid and JSON `null` is rejected. Core preserves declarations with the immutable Release and Admission pin, canonicalizes the objects for stable storage and duplicate detection, and does not interpret their fields. The exact limits and representation are defined by [ADR 0054](docs/adr/0054-preserve-opaque-public-interface-declarations.md).
 
 `entrypoint`, `scriptLang`, and `timeout` follow the canonical Windforce
 manifest shape. `entrypoint` and `scriptLang` are app-level; actions branch

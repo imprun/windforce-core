@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -17,7 +18,10 @@ import (
 var _ catalog.Store = (*PostgresStore)(nil)
 
 func (s *PostgresStore) PublishRelease(ctx context.Context, deployment contract.Deployment, releasedAt time.Time) (catalog.ReleasePublication, error) {
-	deployment, history, audit := catalog.PreparePublication(deployment, releasedAt)
+	deployment, history, audit, err := catalog.PreparePublication(deployment, releasedAt)
+	if err != nil {
+		return catalog.ReleasePublication{}, err
+	}
 	deploymentJSON, err := json.Marshal(deployment)
 	if err != nil {
 		return catalog.ReleasePublication{}, err
@@ -122,6 +126,10 @@ FOR SHARE
 		}
 		var target catalog.DeploymentHistory
 		if err := json.Unmarshal(historyJSON, &target); err != nil {
+			return err
+		}
+		target.Deployment, err = contract.NormalizeDeploymentPublicInterfaces(target.Deployment)
+		if err != nil {
 			return err
 		}
 		previous, err := postgresPreviousRelease(ctx, tx, request.Workspace, request.App)
@@ -315,6 +323,10 @@ WHERE release.workspace_id = $1 AND release.app_key = $2
 	if err := json.Unmarshal(raw, &deployment); err != nil {
 		return contract.Deployment{}, err
 	}
+	deployment, err = contract.NormalizeDeploymentPublicInterfaces(deployment)
+	if err != nil {
+		return contract.Deployment{}, err
+	}
 	policy := catalog.NewRoutingPolicy(workspace, app)
 	if len(policyRaw) > 0 {
 		if err := json.Unmarshal(policyRaw, &policy); err != nil {
@@ -432,6 +444,9 @@ func (s *PostgresStore) LoadCatalog(ctx context.Context) (catalog.Snapshot, erro
 		return catalog.Snapshot{}, err
 	}
 	snapshot.SourceMarkers = markers
+	if err := catalog.NormalizeSnapshotPublicInterfaces(&snapshot); err != nil {
+		return catalog.Snapshot{}, fmt.Errorf("load release catalog: %w", err)
+	}
 	return catalog.SnapshotWithAppliedRoutingPolicies(snapshot), nil
 }
 
@@ -583,6 +598,9 @@ FROM control_source_release_marker
 
 func (s *PostgresStore) ImportCatalog(ctx context.Context, imported catalog.Snapshot) error {
 	catalog.NormalizeSnapshot(&imported)
+	if err := catalog.NormalizeSnapshotPublicInterfaces(&imported); err != nil {
+		return fmt.Errorf("import catalog: %w", err)
+	}
 	return s.withTx(ctx, func(tx pgx.Tx) error {
 		for _, history := range imported.History {
 			raw, err := json.Marshal(history)
@@ -723,6 +741,10 @@ FOR UPDATE
 	}
 	var deployment contract.Deployment
 	if err := json.Unmarshal(raw, &deployment); err != nil {
+		return contract.Deployment{}, err
+	}
+	deployment, err = contract.NormalizeDeploymentPublicInterfaces(deployment)
+	if err != nil {
 		return contract.Deployment{}, err
 	}
 	return deployment, nil
