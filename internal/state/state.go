@@ -789,53 +789,60 @@ type JobLogUpdate struct {
 }
 
 type Snapshot struct {
-	StoreEpoch                string                                 `json:"storeEpoch,omitempty"`
-	SnapshotRevision          int64                                  `json:"snapshotRevision,omitempty"`
-	Sequence                  int64                                  `json:"sequence"`
-	Runs                      map[string]Run                         `json:"runs"`
-	Jobs                      map[string]Job                         `json:"jobs"`
-	HumanTasks                map[string]HumanTask                   `json:"humanTasks"`
-	Events                    []RunEvent                             `json:"events"`
-	JobLogs                   map[string]JobLog                      `json:"jobLogs"`
-	JobState                  map[string]map[string]json.RawMessage  `json:"jobState"`
-	Variables                 map[string]map[string]Variable         `json:"variables"`
-	Resources                 map[string]map[string]Resource         `json:"resources"`
-	RuntimeConfigOperations   map[string]RuntimeConfigOperation      `json:"runtimeConfigOperations,omitempty"`
-	RuntimeConfigAudits       map[string][]RuntimeConfigAudit        `json:"runtimeConfigAudits,omitempty"`
-	AppRuntimeLifecycles      map[string]AppRuntimeLifecycle         `json:"appRuntimeLifecycles,omitempty"`
-	AppRuntimeLifecycleAudits map[string][]AppRuntimeLifecycleAudit  `json:"appRuntimeLifecycleAudits,omitempty"`
-	ResourceTypes             map[string]map[string]ResourceType     `json:"resourceTypes"`
-	Clients                   map[string]map[string]Client           `json:"clients"`
-	ClientAudits              map[string][]ClientAudit               `json:"clientAudits"`
-	ClientTokenVersion        int                                    `json:"clientTokenVersion,omitempty"`
-	ServicePrincipals         map[string]map[string]ServicePrincipal `json:"servicePrincipals"`
-	ServicePrincipalAudits    map[string][]ServicePrincipalAudit     `json:"servicePrincipalAudits"`
-	InputConfigs              map[string]map[string]InputConfig      `json:"inputConfigs"`
-	InputConfigAudits         map[string][]InputConfigAudit          `json:"inputConfigAudits"`
-	SecretAccessAudits        map[string][]SecretAccessAudit         `json:"secretAccessAudits,omitempty"`
-	LegacyClients             map[string]map[string]Client           `json:"apiClients,omitempty"`
-	LegacyClientAudits        map[string][]ClientAudit               `json:"apiClientAudits,omitempty"`
-	ReleaseCatalog            catalog.Snapshot                       `json:"releaseCatalog"`
-	WebhookSubscriptions      map[string]WebhookSubscriptionRecord   `json:"webhookSubscriptions"`
-	ControlPlaneEvents        map[string]controlevent.Envelope       `json:"controlPlaneEvents"`
-	WebhookDeliveries         map[string]webhook.Delivery            `json:"webhookDeliveries"`
-	WebhookAudits             map[string][]webhook.Audit             `json:"webhookAudits"`
-	Triggers                  map[string]TriggerRecord               `json:"triggers"`
-	TriggerAudits             map[string][]TriggerAudit              `json:"triggerAudits"`
-	TriggerDeliveries         map[string]TriggerDelivery             `json:"triggerDeliveries"`
-	HTTPRouteBindings         map[string]HTTPRouteBinding            `json:"httpRouteBindings"`
-	HTTPRouteBindingAudits    map[string][]HTTPRouteBindingAudit     `json:"httpRouteBindingAudits"`
-	Workers                   map[string]WorkerRecord                `json:"workers,omitempty"`
-	WorkerLeaseIdentities     map[string]WorkerLeaseIdentity         `json:"workerLeaseIdentities,omitempty"`
-	WorkerCredentials         map[string]WorkerCredential            `json:"workerCredentials,omitempty"`
-	WorkerGroupRunStates      map[string]WorkerGroupRunState         `json:"workerGroupRunStates,omitempty"`
-	ExecutionLimitPolicies    map[string]ExecutionLimitPolicy        `json:"executionLimitPolicies,omitempty"`
-	ExecutionLimitAudits      map[string][]ExecutionLimitPolicyAudit `json:"executionLimitAudits,omitempty"`
-	ExecutionRateBuckets      map[string]ExecutionRateBucket         `json:"executionRateBuckets,omitempty"`
-	Workspaces                map[string]Workspace                   `json:"workspaces"`
-	WorkspaceKeys             map[string]WorkspaceKey                `json:"workspaceKeys,omitempty"`
-	WorkspaceTokens           map[string]map[string]WorkspaceToken   `json:"workspaceTokens"`
-	WorkspaceAudits           []WorkspaceAudit                       `json:"workspaceAudits"`
+	StoreEpoch                string                                       `json:"storeEpoch,omitempty"`
+	SnapshotRevision          int64                                        `json:"snapshotRevision,omitempty"`
+	Sequence                  int64                                        `json:"sequence"`
+	Runs                      map[string]Run                               `json:"runs"`
+	Jobs                      map[string]Job                               `json:"jobs"`
+	HumanTasks                map[string]HumanTask                         `json:"humanTasks"`
+	Events                    []RunEvent                                   `json:"events"`
+	JobLogs                   map[string]JobLog                            `json:"jobLogs"`
+	JobState                  map[string]map[string]json.RawMessage        `json:"jobState"`
+	Variables                 map[string]map[string]Variable               `json:"variables"`
+	Resources                 map[string]map[string]Resource               `json:"resources"`
+	RuntimeConfigOperations   map[string]RuntimeConfigOperation            `json:"runtimeConfigOperations,omitempty"`
+	RuntimeConfigAudits       map[string][]RuntimeConfigAudit              `json:"runtimeConfigAudits,omitempty"`
+	AppRuntimeLifecycles      map[string]AppRuntimeLifecycle               `json:"appRuntimeLifecycles,omitempty"`
+	AppRuntimeLifecycleAudits map[string][]AppRuntimeLifecycleAudit        `json:"appRuntimeLifecycleAudits,omitempty"`
+	ResourceTypes             map[string]map[string]ResourceType           `json:"resourceTypes"`
+	Clients                   map[string]map[string]Client                 `json:"clients"`
+	ClientAudits              map[string][]ClientAudit                     `json:"clientAudits"`
+	ClientTokenVersion        int                                          `json:"clientTokenVersion,omitempty"`
+	ServicePrincipals         map[string]map[string]ServicePrincipal       `json:"servicePrincipals"`
+	ServicePrincipalAudits    map[string][]ServicePrincipalAudit           `json:"servicePrincipalAudits"`
+	InputConfigs              map[string]map[string]InputConfig            `json:"inputConfigs"`
+	InputConfigAudits         map[string][]InputConfigAudit                `json:"inputConfigAudits"`
+	SecretAccessAudits        map[string][]SecretAccessAudit               `json:"secretAccessAudits,omitempty"`
+	LegacyClients             map[string]map[string]Client                 `json:"apiClients,omitempty"`
+	LegacyClientAudits        map[string][]ClientAudit                     `json:"apiClientAudits,omitempty"`
+	ReleaseCatalog            catalog.Snapshot                             `json:"releaseCatalog"`
+	WebhookSubscriptions      map[string]WebhookSubscriptionRecord         `json:"webhookSubscriptions"`
+	ControlPlaneEvents        map[string]controlevent.Envelope             `json:"controlPlaneEvents"`
+	WebhookDeliveries         map[string]webhook.Delivery                  `json:"webhookDeliveries"`
+	WebhookAudits             map[string][]webhook.Audit                   `json:"webhookAudits"`
+	Triggers                  map[string]TriggerRecord                     `json:"triggers"`
+	TriggerAudits             map[string][]TriggerAudit                    `json:"triggerAudits"`
+	TriggerDeliveries         map[string]TriggerDelivery                   `json:"triggerDeliveries"`
+	HTTPRouteBindings         map[string]HTTPRouteBinding                  `json:"httpRouteBindings"`
+	HTTPRouteBindingAudits    map[string][]HTTPRouteBindingAudit           `json:"httpRouteBindingAudits"`
+	OpaqueIngressCredentials  map[string]OpaqueIngressCredentialSnapshot   `json:"opaqueIngressCredentials,omitempty"`
+	OpaqueIngressRevocations  map[string]OpaqueIngressCredentialRevocation `json:"opaqueIngressRevocations,omitempty"`
+	OpaqueIngressPublications map[string]OpaqueIngressPublicationRevision  `json:"opaqueIngressPublications,omitempty"`
+	OpaqueIngressActivations  map[string]OpaqueIngressActivation           `json:"opaqueIngressActivations,omitempty"`
+	OpaqueIngressHeads        map[string]OpaqueIngressProjectionHead       `json:"opaqueIngressHeads,omitempty"`
+	OpaqueIngressOperations   map[string]OpaqueIngressOperation            `json:"opaqueIngressOperations,omitempty"`
+	OpaqueIngressAudits       map[string][]OpaqueIngressAudit              `json:"opaqueIngressAudits,omitempty"`
+	Workers                   map[string]WorkerRecord                      `json:"workers,omitempty"`
+	WorkerLeaseIdentities     map[string]WorkerLeaseIdentity               `json:"workerLeaseIdentities,omitempty"`
+	WorkerCredentials         map[string]WorkerCredential                  `json:"workerCredentials,omitempty"`
+	WorkerGroupRunStates      map[string]WorkerGroupRunState               `json:"workerGroupRunStates,omitempty"`
+	ExecutionLimitPolicies    map[string]ExecutionLimitPolicy              `json:"executionLimitPolicies,omitempty"`
+	ExecutionLimitAudits      map[string][]ExecutionLimitPolicyAudit       `json:"executionLimitAudits,omitempty"`
+	ExecutionRateBuckets      map[string]ExecutionRateBucket               `json:"executionRateBuckets,omitempty"`
+	Workspaces                map[string]Workspace                         `json:"workspaces"`
+	WorkspaceKeys             map[string]WorkspaceKey                      `json:"workspaceKeys,omitempty"`
+	WorkspaceTokens           map[string]map[string]WorkspaceToken         `json:"workspaceTokens"`
+	WorkspaceAudits           []WorkspaceAudit                             `json:"workspaceAudits"`
 }
 
 type Store interface {
@@ -955,6 +962,13 @@ type Store interface {
 	RequestDeleteHTTPRouteBinding(ctx context.Context, workspaceID string, triggerID string, id string, actor string) (HTTPRouteBinding, error)
 	UpdateHTTPRouteBindingStatus(ctx context.Context, workspaceID string, id string, status HTTPRouteBindingStatus, actor string) (HTTPRouteBinding, error)
 	ListHTTPRouteBindingAudit(ctx context.Context, workspaceID string, triggerID string, id string) ([]HTTPRouteBindingAudit, error)
+	PutOpaqueIngressCredentialSnapshot(ctx context.Context, request OpaqueIngressCredentialSnapshotRequest) (OpaqueIngressCredentialSnapshot, bool, error)
+	RevokeOpaqueIngressCredentialSnapshot(ctx context.Context, request OpaqueIngressCredentialRevocationRequest) (OpaqueIngressCredentialRevocation, bool, error)
+	PutOpaqueIngressPublicationRevision(ctx context.Context, request OpaqueIngressPublicationRevisionRequest) (OpaqueIngressPublicationRevision, bool, error)
+	ActivateOpaqueIngressPublication(ctx context.Context, request OpaqueIngressActivationRequest) (OpaqueIngressActivation, bool, error)
+	ResolveOpaqueIngressProjection(ctx context.Context, request OpaqueIngressResolutionRequest) (OpaqueIngressResolvedProjection, error)
+	ListOpaqueIngressProjectionAudit(ctx context.Context, workspaceID string, publicationRef string, limit int) ([]OpaqueIngressAudit, error)
+	PruneOpaqueIngressProjectionHistory(ctx context.Context, request OpaqueIngressRetentionRequest) (OpaqueIngressRetentionResult, bool, error)
 	ClaimJob(ctx context.Context, workerID string, leaseTTL time.Duration) (Job, Lease, error)
 	ClaimJobForWorker(ctx context.Context, workerID string, tags []string, labels []string, leaseTTL time.Duration) (Job, Lease, error)
 	RegisterWorker(ctx context.Context, record WorkerRecord) error

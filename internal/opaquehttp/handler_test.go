@@ -84,6 +84,28 @@ func TestResolvedAdmissionRequiresExactScopedServicePrincipal(t *testing.T) {
 	}
 }
 
+func TestResolvedAdmissionRequiresReleaseCommitAndBundleDigest(t *testing.T) {
+	t.Parallel()
+
+	invocation := invocationValue(t, nil)
+	for _, test := range []struct {
+		name   string
+		mutate func(*execution.ActiveReleasePrecondition)
+	}{
+		{name: "commit", mutate: func(release *execution.ActiveReleasePrecondition) { release.Commit = "" }},
+		{name: "bundle digest", mutate: func(release *execution.ActiveReleasePrecondition) { release.BundleDigest = "" }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			candidate := validResolvedAdmission()
+			test.mutate(&candidate.ExpectedRelease)
+			if _, err := prepareAdmissionRequest(candidate, invocation, []byte(`{}`), 1024); err == nil {
+				t.Fatal("incomplete Release identity unexpectedly accepted")
+			}
+		})
+	}
+}
+
 func (f *admissionFake) CreateRun(ctx context.Context, request execution.CreateRunRequest) (execution.Admission, error) {
 	f.mu.Lock()
 	f.createCalls++

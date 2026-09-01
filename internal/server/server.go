@@ -298,6 +298,9 @@ func (h *Handler) handleRuntimeAPI(w http.ResponseWriter, r *http.Request) bool 
 
 func (h *Handler) handleAPI(w http.ResponseWriter, r *http.Request) bool {
 	parts := splitPath(r.URL.Path)
+	if h.handleCanonicalOpaqueHTTPProjectionAPI(w, r, parts) {
+		return true
+	}
 	if h.handleCanonicalHumanTaskAPI(w, r, parts) {
 		return true
 	}
@@ -859,6 +862,10 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 
 func (h *Handler) authorizeAPIRequest(r *http.Request) (*http.Request, int, string) {
 	bearerToken := bearer(r)
+	projectionScope, projectionRequest := opaqueHTTPProjectionRequestScope(r)
+	if projectionRequest && bearerToken == "" {
+		return r, http.StatusUnauthorized, "missing bearer token"
+	}
 	if token.IsJobToken(bearerToken) {
 		claims, ok := token.VerifyJobAny([]string{h.jobTokenSecret}, bearerToken)
 		if !ok {
@@ -879,7 +886,14 @@ func (h *Handler) authorizeAPIRequest(r *http.Request) (*http.Request, int, stri
 		return r.WithContext(context.WithValue(r.Context(), principalContextKey{}, principal)), 0, ""
 	}
 	workspaceID := workspaceFromRequestPath(r.URL.Path)
-	if authorized(r, h.adminToken) {
+	adminAuthorized := authorized(r, h.adminToken)
+	if projectionRequest && h.adminToken == "" {
+		// Projection state controls a trusted pre-Admission boundary. Unlike the
+		// general development Control Plane, it must never inherit the
+		// no-admin-token anonymous bypass.
+		adminAuthorized = false
+	}
+	if adminAuthorized {
 		if workspaceID != "" && h.managedWorkspaces {
 			if status, message := h.validateWorkspaceRequest(r, workspaceID); status != 0 {
 				return r, status, message
@@ -897,13 +911,21 @@ func (h *Handler) authorizeAPIRequest(r *http.Request) (*http.Request, int, stri
 	}
 	workspaceToken, err := h.store.GetWorkspaceTokenByTokenHash(r.Context(), workspaceID, state.HashWorkspaceToken(bearerToken))
 	if err == nil {
+		if projectionRequest {
+			return r, http.StatusForbidden, "workspace token may not access opaque HTTP projections"
+		}
 		if workspace.Status == state.WorkspaceArchived && workspaceRequestChangesState(r) {
 			return r, http.StatusConflict, "workspace is archived"
 		}
 		principal := &workspacePrincipal{Workspace: workspaceID, Subject: "workspace-token:" + workspaceToken.ID}
 		return r.WithContext(context.WithValue(r.Context(), workspacePrincipalContextKey{}, principal)), 0, ""
 	}
-	if !isHumanTaskControlRequest(r) {
+	required := executionpkg.ScopeHumanTasksRead
+	operation := "HumanTask"
+	if projectionRequest {
+		required = projectionScope
+		operation = "opaque HTTP projection"
+	} else if !isHumanTaskControlRequest(r) {
 		return r, http.StatusUnauthorized, "unauthorized"
 	}
 	service, err := h.store.GetServicePrincipalByTokenHash(r.Context(), workspaceID, state.HashBearerToken(bearerToken))
@@ -911,12 +933,11 @@ func (h *Handler) authorizeAPIRequest(r *http.Request) (*http.Request, int, stri
 		return r, http.StatusUnauthorized, "unauthorized"
 	}
 	executionPrincipal := executionpkg.ServicePrincipal(workspaceID, service)
-	required := executionpkg.ScopeHumanTasksRead
-	if r.Method == http.MethodPost {
+	if !projectionRequest && r.Method == http.MethodPost {
 		required = executionpkg.ScopeHumanTasksDecide
 	}
 	if !executionPrincipal.HasScope(required) {
-		return r, http.StatusForbidden, "service principal scope does not allow this HumanTask operation"
+		return r, http.StatusForbidden, "service principal scope does not allow this " + operation + " operation"
 	}
 	if workspace.Status == state.WorkspaceArchived && workspaceRequestChangesState(r) {
 		return r, http.StatusConflict, "workspace is archived"
@@ -992,6 +1013,17 @@ func isJobSDKCallback(r *http.Request) bool {
 func isHumanTaskControlRequest(r *http.Request) bool {
 	parts := splitPath(r.URL.Path)
 	return len(parts) >= 4 && parts[0] == "api" && parts[1] == "w" && parts[3] == "human-tasks"
+}
+
+func opaqueHTTPProjectionRequestScope(r *http.Request) (executionpkg.Scope, bool) {
+	parts := splitPath(r.URL.Path)
+	if len(parts) < 4 || parts[0] != "api" || parts[1] != "w" || parts[3] != "opaque-http-projections" {
+		return "", false
+	}
+	if r.Method == http.MethodGet || r.Method == http.MethodHead {
+		return executionpkg.ScopeOpaqueHTTPProjectionsRead, true
+	}
+	return executionpkg.ScopeOpaqueHTTPProjectionsWrite, true
 }
 
 func workspaceFromAPIPath(path string) string {

@@ -103,6 +103,8 @@ func addServicePrincipalControlPlaneSchemas(schemas map[string]any) {
 				"apps:read",
 				"human_tasks:read",
 				"human_tasks:decide",
+				"opaque-http-projections:read",
+				"opaque-http-projections:write",
 			),
 		}
 	}
