@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/imprun/windforce-core/internal/catalog"
+	wfcrypto "github.com/imprun/windforce-core/internal/crypto"
 	controlevent "github.com/imprun/windforce-core/internal/event"
 	"github.com/imprun/windforce-core/internal/webhook"
 )
@@ -55,6 +56,52 @@ func TestLocalWebhookSubscriptionEncryptsSecrets(t *testing.T) {
 	}
 	if _, err := store.CreateSubscription(ctx, subscription); !errors.Is(err, webhook.ErrConflict) {
 		t.Fatalf("duplicate name error = %v, want conflict", err)
+	}
+}
+
+func TestLocalWebhookSubscriptionUsesWorkspaceDEK(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	store := NewLocalStore(path)
+	ctx := context.Background()
+	const instanceSecret = "workspace-webhook-instance-secret"
+	store.ConfigureInputCrypto(instanceSecret, "")
+	if _, err := store.CreateWorkspace(ctx, "workspace-a", "Workspace A", "operator@example.test"); err != nil {
+		t.Fatal(err)
+	}
+	created, err := store.CreateSubscription(ctx, webhook.Subscription{
+		WorkspaceID:   "workspace-a",
+		Name:          "Operations",
+		Endpoint:      "https://hooks.example.test/workspace-dek",
+		SigningSecret: "workspace-dek-signing-secret",
+		EventTypes:    []string{controlevent.ReleasePublishedType},
+		Enabled:       true,
+		CreatedBy:     "operator@example.test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := store.Load(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := snapshot.WebhookSubscriptions[webhookSubscriptionKey("workspace-a", created.ID)]
+	workspaceKey := snapshot.WorkspaceKeys["workspace-a"]
+	dek, err := wfcrypto.ResolveDEK(workspaceKey.Key, workspaceKey.KEKVersion, []string{wfcrypto.DeriveKEK(instanceSecret)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wfcrypto.UnwrapEnc(dek, record.EndpointEncrypted); err != nil {
+		t.Fatal("Webhook endpoint is not encrypted with the workspace data-encryption key")
+	}
+	if _, err := wfcrypto.UnwrapEnc(wfcrypto.DeriveWorkspaceKey(instanceSecret, "workspace-a"), record.EndpointEncrypted); err == nil {
+		t.Fatal("Webhook endpoint remains readable by the legacy derived key")
+	}
+	loaded, err := store.GetSubscription(ctx, "workspace-a", created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Endpoint != "https://hooks.example.test/workspace-dek" || loaded.SigningSecret != "workspace-dek-signing-secret" {
+		t.Fatalf("loaded subscription = %#v", loaded)
 	}
 }
 

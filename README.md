@@ -551,6 +551,25 @@ without extra setup.
 
 The built-in Database Secret backend creates no external runtime candidate and needs no collector. A side-effecting backend may implement the optional prefix-scoped, versioned cleanup contract from [ADR 0051](docs/adr/0051-collect-orphaned-runtime-secret-candidates.md). Core then preserves current App-owned Secret references and reclaims only old unreferenced candidates. Tune its safety window and bounded work with `--runtime-secret-candidate-grace-period`, `--runtime-secret-candidate-sweep-interval`, and `--runtime-secret-candidate-sweep-limit`; a zero grace period disables collection without changing `Store` or `Resolve` behavior.
 
+Local-state operators can rotate `SECRET_KEY` explicitly with the environment-only, default-dry-run command from [ADR 0058](docs/adr/0058-rotate-local-state-encryption-keys-explicitly.md). The target current key and source previous key are named by environment variable; raw values are never accepted as flags or emitted in the count-only report:
+
+```powershell
+go run ./cmd/windforce-core rotate-secret-key `
+  --state .windforce-core/state.json `
+  --current-secret-env ROTATION_TARGET_SECRET `
+  --previous-secret-env ROTATION_SOURCE_SECRET `
+  --json
+
+go run ./cmd/windforce-core rotate-secret-key `
+  --state .windforce-core/state.json `
+  --current-secret-env ROTATION_TARGET_SECRET `
+  --previous-secret-env ROTATION_SOURCE_SECRET `
+  --apply `
+  --json
+```
+
+This is an offline maintenance command: drain admission and asynchronous delivery, then stop every process that can access the local state file before dry-run or apply. Start again with the target key current and source key previous, verify existing reads and a new write, then stop briefly once more before removing the source key. The command refuses queued/running Jobs, pending HumanTasks, unexpired rate buckets, active Webhook or Trigger completion deliveries, and legacy secret Variables whose bound-ciphertext migration is not yet supported. Wrapped workspace records already using their DEK are not rewritten; mixed legacy-derived records are migrated once. PostgreSQL is intentionally rejected rather than partially migrated.
+
 Input settings are resolved in this order: app default, action default, client app, client action, then request input. Each layer performs a shallow top-level merge. Locked keys are the union of all applied layers, and their configured values cannot be overridden by the request. Admission resolves and validates the effective input once and pins it in the Run and Job, so later InputConfig changes cannot alter queued execution. Keys under `_SCRAPING_RUNTIME` are reserved for worker-owned runtime service metadata and cannot be stored as app input settings.
 
 Runtime service bindings are worker configuration. For example, an

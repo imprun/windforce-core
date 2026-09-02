@@ -37,7 +37,7 @@ func deriveExecutionKeyDigest(ctx context.Context, provider inputWorkspaceKeyPro
 	if storedKey == "" && strings.TrimSpace(config.SecretKey) == "" {
 		return "", errors.New("execution limit key derivation requires SECRET_KEY")
 	}
-	key, err := resolveInputDEK(ctx, provider, config, workspaceID)
+	key, _, err := resolveInputDEK(ctx, provider, config, workspaceID)
 	if err != nil {
 		return "", err
 	}

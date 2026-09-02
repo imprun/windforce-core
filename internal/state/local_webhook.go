@@ -522,11 +522,11 @@ func normalizedWebhookRetentionBatchSize(batchSize int) int {
 
 func (s *LocalStore) localSubscription(ctx context.Context, record WebhookSubscriptionRecord) (webhook.Subscription, error) {
 	config := inputCryptoConfig{SecretKey: s.SecretKey, SecretKeyPrevious: s.SecretKeyPrevious}
-	endpoint, err := decryptWebhookString(ctx, nil, config, record.WorkspaceID, record.EndpointEncrypted, "webhook endpoint")
+	endpoint, err := decryptWebhookString(ctx, s, config, record.WorkspaceID, record.EndpointEncrypted, "webhook endpoint")
 	if err != nil {
 		return webhook.Subscription{}, err
 	}
-	secret, err := decryptWebhookString(ctx, nil, config, record.WorkspaceID, record.SigningSecretEncrypted, "webhook signing secret")
+	secret, err := decryptWebhookString(ctx, s, config, record.WorkspaceID, record.SigningSecretEncrypted, "webhook signing secret")
 	if err != nil {
 		return webhook.Subscription{}, err
 	}
@@ -535,11 +535,11 @@ func (s *LocalStore) localSubscription(ctx context.Context, record WebhookSubscr
 
 func (s *LocalStore) encryptLocalSubscription(ctx context.Context, subscription webhook.Subscription) (json.RawMessage, json.RawMessage, error) {
 	config := inputCryptoConfig{SecretKey: s.SecretKey, SecretKeyPrevious: s.SecretKeyPrevious}
-	endpoint, err := encryptWebhookString(ctx, nil, config, subscription.WorkspaceID, subscription.Endpoint, "webhook endpoint")
+	endpoint, err := encryptWebhookString(ctx, s, config, subscription.WorkspaceID, subscription.Endpoint, "webhook endpoint")
 	if err != nil {
 		return nil, nil, err
 	}
-	secret, err := encryptWebhookString(ctx, nil, config, subscription.WorkspaceID, subscription.SigningSecret, "webhook signing secret")
+	secret, err := encryptWebhookString(ctx, s, config, subscription.WorkspaceID, subscription.SigningSecret, "webhook signing secret")
 	if err != nil {
 		return nil, nil, err
 	}
