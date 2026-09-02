@@ -43,7 +43,7 @@ func encryptJSONAtRest(ctx context.Context, provider inputWorkspaceKeyProvider, 
 	if strings.TrimSpace(config.SecretKey) == "" || wfcrypto.IsEnc(value) {
 		return cloneRaw(value), nil
 	}
-	dek, err := resolveInputDEK(ctx, provider, config, workspaceID)
+	dek, _, err := resolveInputDEK(ctx, provider, config, workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -62,12 +62,12 @@ func decryptJSONAtRest(ctx context.Context, provider inputWorkspaceKeyProvider, 
 	if strings.TrimSpace(config.SecretKey) == "" {
 		return nil, fmt.Errorf("%s is encrypted but SECRET_KEY is not configured", label)
 	}
-	dek, err := resolveInputDEK(ctx, provider, config, workspaceID)
+	dek, legacyDerived, err := resolveInputDEK(ctx, provider, config, workspaceID)
 	if err != nil {
 		return nil, err
 	}
 	plain, err := wfcrypto.UnwrapEnc(dek, value)
-	if err != nil && provider == nil && strings.TrimSpace(config.SecretKeyPrevious) != "" {
+	if err != nil && legacyDerived && strings.TrimSpace(config.SecretKeyPrevious) != "" {
 		previousDEK := wfcrypto.DeriveWorkspaceKey(strings.TrimSpace(config.SecretKeyPrevious), contract.NormalizeWorkspace(workspaceID))
 		plain, err = wfcrypto.UnwrapEnc(previousDEK, value)
 	}
@@ -80,18 +80,19 @@ func decryptJSONAtRest(ctx context.Context, provider inputWorkspaceKeyProvider, 
 	return json.RawMessage(append([]byte(nil), plain...)), nil
 }
 
-func resolveInputDEK(ctx context.Context, provider inputWorkspaceKeyProvider, config inputCryptoConfig, workspaceID string) (string, error) {
+func resolveInputDEK(ctx context.Context, provider inputWorkspaceKeyProvider, config inputCryptoConfig, workspaceID string) (string, bool, error) {
 	workspaceID = contract.NormalizeWorkspace(workspaceID)
 	if provider != nil {
 		key, version, err := provider.GetWorkspaceKeyVersioned(ctx, workspaceID)
 		if err != nil {
-			return "", err
+			return "", false, err
 		}
 		if key != "" {
-			return wfcrypto.ResolveDEK(key, version, inputKEKs(config))
+			dek, err := wfcrypto.ResolveDEK(key, version, inputKEKs(config))
+			return dek, false, err
 		}
 	}
-	return wfcrypto.DeriveWorkspaceKey(strings.TrimSpace(config.SecretKey), workspaceID), nil
+	return wfcrypto.DeriveWorkspaceKey(strings.TrimSpace(config.SecretKey), workspaceID), true, nil
 }
 
 func inputKEKs(config inputCryptoConfig) []string {
