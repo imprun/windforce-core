@@ -79,6 +79,33 @@ returns HTTP 409.
 
 Every successful admission response includes `Location`, `X-WF-Run-Id`, `X-WF-Run-State`, and `X-WF-Idempotency-Reused`. The state header is the lowercase Run state observed for that response. The reuse header is always `true` or `false`; it is true only when the authenticated principal and canonical request exactly reused the existing Run for the supplied `Idempotency-Key`. Invocation responses never expose Job ID, lease, attempt, stored credentials, or principal internals.
 
+## Authenticated admission probe and outcome
+
+An external policy gateway can authenticate and bind an idempotent request without creating a Run by sending the exact request with `X-WF-Admission-Probe: true`. A probe requires `Idempotency-Key` and returns HTTP 200:
+
+```json
+{
+  "admission_id": "run_3a0f7f916c7b2e50431e546a",
+  "request_fingerprint": "7db48b7d8fb0...",
+  "state": "ready",
+  "replayed": false
+}
+```
+
+The response includes matching `X-WF-Admission-Id`, `X-WF-Admission-Fingerprint`, and `X-WF-Admission-Probed: true` headers. A successful ordinary admission returns the same admission ID and fingerprint together with `X-WF-Run-Id`, forming the receipt an external gateway can commit. `state` is `ready` when no terminal outcome exists, `admitted` with `run_id` when the exact request already created a Run, or `aborted` when an administrator previously fenced an ambiguous request. A probe performs credential or signature verification and canonical request binding but is not an admission approval; the ordinary request re-evaluates all current Core policy.
+
+If the ordinary response is lost, an administrator atomically resolves the outcome instead of treating a not-found read as proof:
+
+```http
+POST /api/w/{workspace}/admission-outcomes/{admission_id}/resolve
+Authorization: Bearer <ADMIN_TOKEN>
+Content-Type: application/json
+
+{"request_fingerprint":"7db48b7d8fb0..."}
+```
+
+The operation returns terminal `admitted` with the authoritative `run_id`, or terminal `aborted` and permanently prevents that admission identity from creating a Run. A fingerprint mismatch returns 409. Only this atomic `aborted` result is safe negative evidence; an absent or unknown outcome is not. Core retains the resolving actor in its internal audit state but never returns that principal identifier from the outcome API.
+
 `client_id`, `created_by`, `permissioned_as`, `env`, adapter, and trigger
 identity fields are not accepted. Client and service identity comes from the
 credential. Operator settings use InputConfig, Variable, or Resource; action
@@ -117,7 +144,7 @@ Run-plus-first-Job admission.
 
 | Status | Meaning |
 | --- | --- |
-| 200 | Existing Run replayed, status read, cancel completed, or terminal result returned |
+| 200 | Admission probe completed, existing Run replayed, status read, cancel completed, or terminal result returned |
 | 201 | New asynchronous Run admitted |
 | 202 | Wait timeout expired or result is not terminal |
 | 400 | Request shape, app/action key, input, schema, or locked-key validation failed |

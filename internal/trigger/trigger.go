@@ -41,6 +41,10 @@ type AdmissionService interface {
 	CreateRun(ctx context.Context, request execution.CreateRunRequest) (execution.Admission, error)
 }
 
+type admissionProber interface {
+	ProbeRun(ctx context.Context, request execution.CreateRunRequest) (execution.AdmissionProbe, error)
+}
+
 type Trigger interface {
 	Initialize(Runtime) error
 	Start(context.Context) error
@@ -64,10 +68,22 @@ type Event struct {
 }
 
 type Submission struct {
-	State    string
-	RunID    string
-	Replayed bool
-	Err      error
+	State              string
+	RunID              string
+	RunState           state.RunState
+	AdmissionID        string
+	RequestFingerprint string
+	Replayed           bool
+	Err                error
+}
+
+type ProbeResult struct {
+	AdmissionID        string
+	RequestFingerprint string
+	State              string
+	RunID              string
+	RunState           state.RunState
+	Replayed           bool
 }
 
 type Submitter struct {
@@ -80,21 +96,9 @@ func (s *Submitter) Submit(ctx context.Context, definition state.TriggerDefiniti
 	if s == nil || s.Store == nil || s.Admission == nil {
 		return Submission{State: DeliveryRetryable, Err: errors.New("trigger submitter is not configured")}
 	}
-	event.TriggerID = strings.TrimSpace(event.TriggerID)
-	event.DeliveryID = strings.TrimSpace(event.DeliveryID)
-	if event.TriggerID == "" || event.TriggerID != definition.ID || event.DeliveryID == "" {
-		return s.record(ctx, definition, event, Submission{State: DeliveryTerminal, Err: ErrInvalidEvent})
-	}
-	input := event.Input
-	if len(input) == 0 {
-		input = json.RawMessage("{}")
-	}
-	if !json.Valid(input) {
-		return s.record(ctx, definition, event, Submission{State: DeliveryTerminal, Err: fmt.Errorf("%w: input must be valid JSON", ErrInvalidEvent)})
-	}
-	headers, err := json.Marshal(event.SafeMetadata)
+	request, err := triggerCreateRunRequest(definition, &event)
 	if err != nil {
-		return s.record(ctx, definition, event, Submission{State: DeliveryTerminal, Err: fmt.Errorf("%w: metadata", ErrInvalidEvent)})
+		return s.record(ctx, definition, event, Submission{State: DeliveryTerminal, Err: err})
 	}
 	ctx = telemetry.IngressContext(
 		ctx,
@@ -102,7 +106,65 @@ func (s *Submitter) Submit(ctx context.Context, definition state.TriggerDefiniti
 		metadataValue(event.SafeMetadata, "tracestate"),
 		"trigger:"+definition.Kind,
 	)
-	admission, err := s.Admission.CreateRun(ctx, execution.CreateRunRequest{
+	admission, err := s.Admission.CreateRun(ctx, request)
+	if err != nil {
+		state := DeliveryTerminal
+		switch execution.FaultKindOf(err) {
+		case execution.FaultUnavailable, execution.FaultInternal:
+			state = DeliveryRetryable
+		}
+		return s.record(ctx, definition, event, Submission{State: state, Err: err})
+	}
+	return s.record(ctx, definition, event, Submission{
+		State: DeliveryAdmitted, RunID: admission.Run.ID, RunState: admission.Run.State,
+		AdmissionID: admission.AdmissionID, RequestFingerprint: admission.RequestFingerprint,
+		Replayed: admission.Replayed,
+	})
+}
+
+// Probe returns the idempotent Run identity for a validated trigger event
+// without recording a delivery or creating a Run. The ordinary Submit path
+// remains authoritative and re-evaluates all admission policy.
+func (s *Submitter) Probe(ctx context.Context, definition state.TriggerDefinition, event Event) (ProbeResult, error) {
+	if s == nil || s.Admission == nil {
+		return ProbeResult{}, errors.New("trigger submitter is not configured")
+	}
+	prober, ok := s.Admission.(admissionProber)
+	if !ok {
+		return ProbeResult{}, errors.New("trigger admission probe is not configured")
+	}
+	request, err := triggerCreateRunRequest(definition, &event)
+	if err != nil {
+		return ProbeResult{}, err
+	}
+	probe, err := prober.ProbeRun(ctx, request)
+	if err != nil {
+		return ProbeResult{}, err
+	}
+	return ProbeResult{
+		AdmissionID: probe.AdmissionID, RequestFingerprint: probe.RequestFingerprint, State: probe.State,
+		RunID: probe.RunID, RunState: probe.RunState, Replayed: probe.Replayed,
+	}, nil
+}
+
+func triggerCreateRunRequest(definition state.TriggerDefinition, event *Event) (execution.CreateRunRequest, error) {
+	event.TriggerID = strings.TrimSpace(event.TriggerID)
+	event.DeliveryID = strings.TrimSpace(event.DeliveryID)
+	if event.TriggerID == "" || event.TriggerID != definition.ID || event.DeliveryID == "" {
+		return execution.CreateRunRequest{}, ErrInvalidEvent
+	}
+	input := event.Input
+	if len(input) == 0 {
+		input = json.RawMessage("{}")
+	}
+	if !json.Valid(input) {
+		return execution.CreateRunRequest{}, fmt.Errorf("%w: input must be valid JSON", ErrInvalidEvent)
+	}
+	headers, err := json.Marshal(event.SafeMetadata)
+	if err != nil {
+		return execution.CreateRunRequest{}, fmt.Errorf("%w: metadata", ErrInvalidEvent)
+	}
+	return execution.CreateRunRequest{
 		Workspace:      definition.WorkspaceID,
 		App:            definition.AppKey,
 		Action:         definition.ActionKey,
@@ -114,20 +176,7 @@ func (s *Submitter) Submit(ctx context.Context, definition state.TriggerDefiniti
 		IdempotencyKey: event.DeliveryID,
 		ScheduledFor:   event.ScheduledFor,
 		Principal:      execution.TriggerPrincipal(definition.WorkspaceID, definition.ID, definition.AppKey, definition.ActionKey),
-	})
-	if err != nil {
-		state := DeliveryTerminal
-		switch execution.FaultKindOf(err) {
-		case execution.FaultUnavailable, execution.FaultInternal:
-			state = DeliveryRetryable
-		}
-		return s.record(ctx, definition, event, Submission{State: state, Err: err})
-	}
-	return s.record(ctx, definition, event, Submission{
-		State:    DeliveryAdmitted,
-		RunID:    admission.Run.ID,
-		Replayed: admission.Replayed,
-	})
+	}, nil
 }
 
 func metadataValue(metadata map[string]string, name string) string {

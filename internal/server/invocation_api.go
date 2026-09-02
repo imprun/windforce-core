@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -16,12 +17,16 @@ import (
 )
 
 const (
-	invocationRunIDHeader             = "X-WF-Run-Id"
-	invocationRunStateHeader          = "X-WF-Run-State"
-	invocationIdempotencyReusedHeader = "X-WF-Idempotency-Reused"
-	maxInvocationIdempotencyKeyBytes  = 200
-	defaultInvocationWaitTimeout      = 30 * time.Second
-	maxInvocationWaitTimeout          = 30 * time.Second
+	invocationRunIDHeader                = "X-WF-Run-Id"
+	invocationRunStateHeader             = "X-WF-Run-State"
+	invocationIdempotencyReusedHeader    = "X-WF-Idempotency-Reused"
+	invocationAdmissionProbeHeader       = "X-WF-Admission-Probe"
+	invocationAdmissionProbedHeader      = "X-WF-Admission-Probed"
+	invocationAdmissionIDHeader          = "X-WF-Admission-Id"
+	invocationAdmissionFingerprintHeader = "X-WF-Admission-Fingerprint"
+	maxInvocationIdempotencyKeyBytes     = 200
+	defaultInvocationWaitTimeout         = 30 * time.Second
+	maxInvocationWaitTimeout             = 30 * time.Second
 )
 
 type invocationCreateRunRequest struct {
@@ -40,6 +45,14 @@ type invocationRunView struct {
 	Replayed      bool      `json:"replayed,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
+}
+
+type invocationAdmissionProbeView struct {
+	AdmissionID        string `json:"admission_id"`
+	RequestFingerprint string `json:"request_fingerprint"`
+	State              string `json:"state"`
+	RunID              string `json:"run_id,omitempty"`
+	Replayed           bool   `json:"replayed"`
 }
 
 type invocationAppView struct {
@@ -183,7 +196,12 @@ func (h *Handler) handleInvocationCreateRun(w http.ResponseWriter, r *http.Reque
 		writeInvocationError(w, http.StatusBadRequest, string(executionpkg.FaultInvalidRequest), "Idempotency-Key is too long")
 		return
 	}
-	admission, err := h.execution.CreateRun(r.Context(), executionpkg.CreateRunRequest{
+	probeRequested, err := invocationAdmissionProbeRequested(r)
+	if err != nil {
+		writeInvocationError(w, http.StatusBadRequest, string(executionpkg.FaultInvalidRequest), err.Error())
+		return
+	}
+	createRequest := executionpkg.CreateRunRequest{
 		Workspace:      workspaceID,
 		App:            request.App,
 		Action:         request.Action,
@@ -193,13 +211,30 @@ func (h *Handler) handleInvocationCreateRun(w http.ResponseWriter, r *http.Reque
 		Adapter:        "http",
 		TriggerKind:    "http",
 		Principal:      principal,
-	})
+	}
+	if probeRequested {
+		probe, err := h.execution.ProbeRun(r.Context(), createRequest)
+		if err != nil {
+			writeInvocationFault(w, err)
+			return
+		}
+		if probe.RunID != "" {
+			setInvocationRunHeaders(w, r, workspaceID, probe.RunID)
+		}
+		setInvocationProbeHeaders(w, probe.AdmissionID, probe.RequestFingerprint, probe.RunState, probe.Replayed)
+		writeJSON(w, http.StatusOK, invocationAdmissionProbeView{
+			AdmissionID: probe.AdmissionID, RequestFingerprint: probe.RequestFingerprint,
+			State: probe.State, RunID: probe.RunID, Replayed: probe.Replayed,
+		})
+		return
+	}
+	admission, err := h.execution.CreateRun(r.Context(), createRequest)
 	if err != nil {
 		writeInvocationFault(w, err)
 		return
 	}
 	setInvocationRunHeaders(w, r, workspaceID, admission.Run.ID)
-	setInvocationAdmissionHeaders(w, admission.Run, admission.Replayed)
+	setInvocationAdmissionHeaders(w, admission)
 	if wait {
 		timeout, ok := parseInvocationWaitTimeout(w, r)
 		if !ok {
@@ -367,9 +402,33 @@ func setInvocationRunHeaders(w http.ResponseWriter, r *http.Request, workspaceID
 	w.Header().Set("Location", "/api/v1/workspaces/"+workspaceID+"/runs/"+runID)
 }
 
-func setInvocationAdmissionHeaders(w http.ResponseWriter, run state.Run, replayed bool) {
-	w.Header().Set(invocationRunStateHeader, strings.ToLower(string(run.State)))
+func setInvocationAdmissionHeaders(w http.ResponseWriter, admission executionpkg.Admission) {
+	w.Header().Set(invocationAdmissionIDHeader, admission.AdmissionID)
+	w.Header().Set(invocationAdmissionFingerprintHeader, admission.RequestFingerprint)
+	w.Header().Set(invocationRunStateHeader, strings.ToLower(string(admission.Run.State)))
+	w.Header().Set(invocationIdempotencyReusedHeader, strconv.FormatBool(admission.Replayed))
+}
+
+func setInvocationProbeHeaders(w http.ResponseWriter, admissionID string, fingerprint string, runState state.RunState, replayed bool) {
+	w.Header().Set(invocationAdmissionProbedHeader, "true")
+	w.Header().Set(invocationAdmissionIDHeader, admissionID)
+	w.Header().Set(invocationAdmissionFingerprintHeader, fingerprint)
 	w.Header().Set(invocationIdempotencyReusedHeader, strconv.FormatBool(replayed))
+	if runState != "" {
+		w.Header().Set(invocationRunStateHeader, strings.ToLower(string(runState)))
+	}
+}
+
+func invocationAdmissionProbeRequested(r *http.Request) (bool, error) {
+	value := strings.TrimSpace(r.Header.Get(invocationAdmissionProbeHeader))
+	if value == "" {
+		return false, nil
+	}
+	probe, err := strconv.ParseBool(value)
+	if err != nil {
+		return false, fmt.Errorf("%s must be a boolean", invocationAdmissionProbeHeader)
+	}
+	return probe, nil
 }
 
 func writeInvocationRawResult(w http.ResponseWriter, run state.Run) {

@@ -152,6 +152,10 @@ func clearRunResultOutput(run *Run) {
 
 func (s *LocalStore) CreateRunAndEnqueue(ctx context.Context, run Run, job Job) error {
 	return s.update(ctx, func(snapshot *Snapshot, now time.Time) error {
+		workspaceID := normalizedJobWorkspace("", job)
+		if err := bindLocalAdmissionOutcome(snapshot, workspaceID, run, now); err != nil {
+			return err
+		}
 		if _, ok := snapshot.Runs[run.ID]; ok {
 			return fmt.Errorf("%w: run %q already exists", ErrConflict, run.ID)
 		}
@@ -165,7 +169,6 @@ func (s *LocalStore) CreateRunAndEnqueue(ctx context.Context, run Run, job Job) 
 		if job.Payload.CorrelationID == "" {
 			job.Payload.CorrelationID = run.CorrelationID
 		}
-		workspaceID := normalizedJobWorkspace("", job)
 		runInput, err := s.encryptInput(ctx, workspaceID, run.Input)
 		if err != nil {
 			return err
@@ -1275,6 +1278,10 @@ func ensureSnapshot(snapshot *Snapshot) {
 	if snapshot.Jobs == nil {
 		snapshot.Jobs = map[string]Job{}
 	}
+	if snapshot.AdmissionOutcomes == nil {
+		snapshot.AdmissionOutcomes = map[string]AdmissionOutcome{}
+	}
+	migrateLocalAdmissionOutcomes(snapshot)
 	if snapshot.WorkerLeaseIdentities == nil {
 		snapshot.WorkerLeaseIdentities = map[string]WorkerLeaseIdentity{}
 	}
@@ -1585,9 +1592,9 @@ func canceledJobResult(job Job, run Run, message string, now time.Time) *contrac
 
 // PruneSettledJobs removes settled runs together with their jobs, logs,
 // events, and human tasks: succeeded runs older than successOlderThan, and
-// failed/canceled/expired runs older than failureOlderThan. Queued, running,
-// and waiting-human runs are never touched. It returns the number of jobs
-// removed.
+// failed/canceled/expired runs older than failureOlderThan. Admission outcomes
+// are terminal fences and outlive Run retention. Queued, running, and
+// waiting-human runs are never touched. It returns the number of jobs removed.
 func (s *LocalStore) PruneSettledJobs(ctx context.Context, successOlderThan time.Time, failureOlderThan time.Time) (int64, error) {
 	var pruned int64
 	err := s.update(ctx, func(snapshot *Snapshot, _ time.Time) error {

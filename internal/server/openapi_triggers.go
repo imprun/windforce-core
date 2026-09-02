@@ -179,9 +179,11 @@ func addTriggerControlPlanePaths(paths map[string]any, workspaceID string) {
 		"post": map[string]any{
 			"operationId": "deliverWebhookTrigger",
 			"summary":     "Deliver a signed event to a webhook trigger",
-			"description": "Authentication is the configured HMAC-SHA256 signature header, not the control-plane bearer token. Async responses identify authenticated Invocation API status and result resources. A Trigger response policy may instead wait and return the raw Action result.",
+			"description": "Authentication is the configured HMAC-SHA256 signature header, not the control-plane bearer token. Async responses identify authenticated Invocation API status and result resources. A Trigger response policy may instead wait and return the raw Action result. An exact signed delivery sent with X-WF-Admission-Probe: true is authenticated and bound without creating a Run or TriggerDelivery.",
 			"security":    []any{},
-			"parameters":  triggerParameters,
+			"parameters": append(append([]any(nil), triggerParameters...),
+				oapiHeaderParam(invocationAdmissionProbeHeader, "Set true to authenticate and bind this exact signed delivery without creating a Run or TriggerDelivery.", oapiBooleanSchema(), false),
+			),
 			"requestBody": map[string]any{
 				"required": true,
 				"content": map[string]any{
@@ -189,11 +191,11 @@ func addTriggerControlPlanePaths(paths map[string]any, workspaceID string) {
 				},
 			},
 			"responses": withErrors(map[string]any{
-				"200": map[string]any{
-					"description": "Trigger configured to wait and the Run completed; body is the raw Action result.",
-					"content":     map[string]any{"application/json": map[string]any{"schema": map[string]any{}}},
-				},
-				"202": oapiResponse("Event admitted, or wait timeout reached.", oapiSchemaRef("TriggerAdmissionResponse")),
+				"200": oapiInvocationProbeResponse(
+					"Trigger configured to wait and the Run completed, or an authenticated admission probe completed.",
+					map[string]any{"anyOf": []any{map[string]any{}, oapiSchemaRef("AdmissionProbe")}},
+				),
+				"202": oapiInvocationAdmissionResponse("Event admitted, or wait timeout reached.", oapiSchemaRef("TriggerAdmissionResponse")),
 			}, "400", "401", "404", "413", "429", "503"),
 		},
 	}
@@ -327,6 +329,7 @@ func addTriggerControlPlaneSchemas(schemas map[string]any) {
 			"status_url": oapiStringSchema(), "result_url": oapiStringSchema(),
 		},
 	}
+	schemas["AdmissionProbe"] = oapiAdmissionProbeSchema()
 	schemas["HTTPRouteBinding"] = map[string]any{
 		"type":        "object",
 		"description": "Provider-neutral desired and observed state for exposing a webhook Trigger. Provider-specific Kubernetes or hosted router fields are intentionally absent.",

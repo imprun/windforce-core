@@ -404,6 +404,59 @@ CREATE TABLE IF NOT EXISTS workspace_registry (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS admission_outcome (
+    workspace_id TEXT NOT NULL,
+    admission_id TEXT NOT NULL,
+    run_id TEXT,
+    state TEXT NOT NULL CHECK (state IN ('admitted', 'aborted')),
+    request_fingerprint TEXT NOT NULL,
+    resolved_by TEXT NOT NULL DEFAULT 'system',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (workspace_id, admission_id),
+    CHECK (
+        (state = 'admitted' AND run_id IS NOT NULL) OR
+        (state = 'aborted' AND run_id IS NULL)
+    )
+);
+
+CREATE INDEX IF NOT EXISTS admission_outcome_updated_idx
+    ON admission_outcome (workspace_id, updated_at, admission_id);
+
+INSERT INTO admission_outcome (
+    workspace_id, admission_id, run_id, state, request_fingerprint,
+    resolved_by, created_at, updated_at
+)
+SELECT DISTINCT ON (
+    COALESCE(NULLIF(j.payload->>'workspace', ''), NULLIF(j.payload->'deployment'->>'workspace', ''), 'default'),
+    r.id
+)
+    COALESCE(NULLIF(j.payload->>'workspace', ''), NULLIF(j.payload->'deployment'->>'workspace', ''), 'default'),
+    r.id,
+    r.id,
+    'admitted',
+    BTRIM(r.request_fingerprint),
+    'core:legacy-admission',
+    r.created_at,
+    r.updated_at
+FROM runs r
+JOIN jobs j ON j.run_id = r.id
+WHERE COALESCE(r.idempotency_hash, '') <> ''
+  AND BTRIM(COALESCE(r.request_fingerprint, '')) <> ''
+  AND OCTET_LENGTH(BTRIM(r.request_fingerprint)) <= 512
+ORDER BY
+    COALESCE(NULLIF(j.payload->>'workspace', ''), NULLIF(j.payload->'deployment'->>'workspace', ''), 'default'),
+    r.id,
+    j.created_at ASC,
+    j.id ASC
+ON CONFLICT (workspace_id, admission_id) DO NOTHING;
+
+-- Earlier admission-outcome builds attached admitted rows to Run retention.
+-- Detach that foreign key without deleting either terminal state so upgrades
+-- preserve the fence before the Run pruner can remove historical Runs.
+ALTER TABLE admission_outcome
+    DROP CONSTRAINT IF EXISTS admission_outcome_run_id_fkey;
+
 CREATE TABLE IF NOT EXISTS workspace_token (
     id TEXT PRIMARY KEY,
     workspace_id TEXT NOT NULL REFERENCES workspace_registry(id) ON DELETE CASCADE,

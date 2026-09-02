@@ -298,6 +298,14 @@ func (h *Handler) handleRuntimeAPI(w http.ResponseWriter, r *http.Request) bool 
 
 func (h *Handler) handleAPI(w http.ResponseWriter, r *http.Request) bool {
 	parts := splitPath(r.URL.Path)
+	if len(parts) == 5 && parts[0] == "api" && parts[1] == "w" && parts[3] == "admission-outcomes" && r.Method == http.MethodGet {
+		h.handleAdmissionOutcome(w, r, parts[2], parts[4], false)
+		return true
+	}
+	if len(parts) == 6 && parts[0] == "api" && parts[1] == "w" && parts[3] == "admission-outcomes" && parts[5] == "resolve" && r.Method == http.MethodPost {
+		h.handleAdmissionOutcome(w, r, parts[2], parts[4], true)
+		return true
+	}
 	if h.handleCanonicalOpaqueHTTPProjectionAPI(w, r, parts) {
 		return true
 	}
@@ -964,10 +972,16 @@ func (h *Handler) validateWorkspaceRequest(r *http.Request, workspaceID string) 
 }
 
 func workspaceRequestChangesState(r *http.Request) bool {
-	if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions || isJobSDKCallback(r) {
+	if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions || isJobSDKCallback(r) || isAdmissionOutcomeResolution(r) {
 		return false
 	}
 	return !isCredentialRevocation(r)
+}
+
+func isAdmissionOutcomeResolution(r *http.Request) bool {
+	parts := splitPath(r.URL.Path)
+	return r.Method == http.MethodPost && len(parts) == 6 &&
+		parts[0] == "api" && parts[1] == "w" && parts[3] == "admission-outcomes" && parts[5] == "resolve"
 }
 
 func isCredentialRevocation(r *http.Request) bool {

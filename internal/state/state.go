@@ -86,15 +86,16 @@ const (
 )
 
 var (
-	ErrNotFound      = errors.New("not found")
-	ErrNoQueuedJob   = errors.New("no queued job")
-	ErrConflict      = errors.New("conflict")
-	ErrForbidden     = errors.New("forbidden")
-	ErrInvalidState  = errors.New("invalid state")
-	ErrInvalidLease  = errors.New("invalid lease")
-	ErrNoCompletion  = errors.New("no pending trigger completion")
-	ErrLockTimeout   = errors.New("state lock timeout")
-	defaultLeaseTime = 30 * time.Second
+	ErrNotFound         = errors.New("not found")
+	ErrNoQueuedJob      = errors.New("no queued job")
+	ErrConflict         = errors.New("conflict")
+	ErrAdmissionAborted = errors.New("admission identity is permanently aborted")
+	ErrForbidden        = errors.New("forbidden")
+	ErrInvalidState     = errors.New("invalid state")
+	ErrInvalidLease     = errors.New("invalid lease")
+	ErrNoCompletion     = errors.New("no pending trigger completion")
+	ErrLockTimeout      = errors.New("state lock timeout")
+	defaultLeaseTime    = 30 * time.Second
 )
 
 type Run struct {
@@ -788,6 +789,27 @@ type JobLogUpdate struct {
 	Offset  int64  `json:"offset"`
 }
 
+type AdmissionOutcomeState string
+
+const (
+	AdmissionOutcomeAdmitted AdmissionOutcomeState = "admitted"
+	AdmissionOutcomeAborted  AdmissionOutcomeState = "aborted"
+)
+
+// AdmissionOutcome is the engine-authoritative resolution of an idempotent Run
+// identity. Both terminal states outlive Run retention: aborted can never be
+// admitted later, and admitted can never be reused or reclassified as aborted.
+type AdmissionOutcome struct {
+	WorkspaceID        string                `json:"workspace_id"`
+	AdmissionID        string                `json:"admission_id"`
+	RunID              string                `json:"run_id,omitempty"`
+	State              AdmissionOutcomeState `json:"state"`
+	RequestFingerprint string                `json:"request_fingerprint,omitempty"`
+	ResolvedBy         string                `json:"resolved_by"`
+	CreatedAt          time.Time             `json:"created_at"`
+	UpdatedAt          time.Time             `json:"updated_at"`
+}
+
 type Snapshot struct {
 	StoreEpoch                string                                       `json:"storeEpoch,omitempty"`
 	SnapshotRevision          int64                                        `json:"snapshotRevision,omitempty"`
@@ -839,6 +861,7 @@ type Snapshot struct {
 	ExecutionLimitPolicies    map[string]ExecutionLimitPolicy              `json:"executionLimitPolicies,omitempty"`
 	ExecutionLimitAudits      map[string][]ExecutionLimitPolicyAudit       `json:"executionLimitAudits,omitempty"`
 	ExecutionRateBuckets      map[string]ExecutionRateBucket               `json:"executionRateBuckets,omitempty"`
+	AdmissionOutcomes         map[string]AdmissionOutcome                  `json:"admissionOutcomes,omitempty"`
 	Workspaces                map[string]Workspace                         `json:"workspaces"`
 	WorkspaceKeys             map[string]WorkspaceKey                      `json:"workspaceKeys,omitempty"`
 	WorkspaceTokens           map[string]map[string]WorkspaceToken         `json:"workspaceTokens"`
@@ -861,6 +884,8 @@ type Store interface {
 	ListWorkspaceAudit(ctx context.Context, workspaceID string) ([]WorkspaceAudit, error)
 	GetWorkspaceKeyVersioned(ctx context.Context, workspaceID string) (string, int32, error)
 	CreateRunAndEnqueue(ctx context.Context, run Run, job Job) error
+	GetAdmissionOutcome(ctx context.Context, workspaceID string, admissionID string) (AdmissionOutcome, bool, error)
+	ResolveAdmissionOutcome(ctx context.Context, workspaceID string, admissionID string, expectedFingerprint string, actor string) (AdmissionOutcome, error)
 	GetRun(ctx context.Context, runID string) (Run, error)
 	GetJob(ctx context.Context, workspaceID string, jobID string) (Job, Run, bool, error)
 	GetJobByRunID(ctx context.Context, workspaceID string, runID string) (Job, Run, bool, error)

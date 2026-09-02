@@ -4,6 +4,35 @@ import "github.com/imprun/windforce-core/internal/contract"
 
 func buildControlPlaneOpenAPI(baseURL string, workspaceID string) map[string]any {
 	paths := map[string]any{
+		"/api/w/{workspace}/admission-outcomes/{admission_id}": map[string]any{
+			"get": map[string]any{
+				"operationId": "getAdmissionOutcome",
+				"summary":     "Read an idempotent admission outcome",
+				"description": "Instance-admin operation. Unknown is observational only and is not safe negative evidence.",
+				"parameters": []any{
+					oapiPathParam("workspace", "Workspace id."),
+					oapiPathParam("admission_id", "Opaque admission identity returned by an authenticated probe."),
+				},
+				"responses": withErrors(map[string]any{
+					"200": oapiResponse("Current admitted, aborted, or unknown outcome.", oapiSchemaRef("AdmissionOutcome")),
+				}, "400", "401", "403", "409", "500"),
+			},
+		},
+		"/api/w/{workspace}/admission-outcomes/{admission_id}/resolve": map[string]any{
+			"post": map[string]any{
+				"operationId": "resolveAdmissionOutcome",
+				"summary":     "Atomically resolve an ambiguous admission",
+				"description": "Instance-admin operation. Returns admitted if Run creation won the shared fence, otherwise writes terminal aborted.",
+				"parameters": []any{
+					oapiPathParam("workspace", "Workspace id."),
+					oapiPathParam("admission_id", "Opaque admission identity returned by an authenticated probe."),
+				},
+				"requestBody": oapiJSONBody(oapiSchemaRef("ResolveAdmissionOutcomeRequest"), true),
+				"responses": withErrors(map[string]any{
+					"200": oapiResponse("Terminal admitted or aborted outcome.", oapiSchemaRef("AdmissionOutcome")),
+				}, "400", "401", "403", "409", "500"),
+			},
+		},
 		"/api/queue-demand-snapshots": map[string]any{
 			"post": map[string]any{
 				"operationId": "createQueueDemandSnapshot",
@@ -1171,6 +1200,28 @@ func controlPlaneSchemas() map[string]any {
 	appActionProperties["effective_required_labels"] = stringArray
 
 	return map[string]any{
+		"ResolveAdmissionOutcomeRequest": map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"properties": map[string]any{
+				"request_fingerprint": oapiStringSchema(),
+			},
+			"required": []any{"request_fingerprint"},
+		},
+		"AdmissionOutcome": map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"properties": map[string]any{
+				"workspace_id":        oapiStringSchema(),
+				"admission_id":        oapiStringSchema(),
+				"run_id":              oapiStringSchema(),
+				"state":               map[string]any{"type": "string", "enum": []any{"unknown", "admitted", "aborted"}},
+				"request_fingerprint": oapiStringSchema(),
+				"created_at":          oapiDateTimeSchema(),
+				"updated_at":          oapiDateTimeSchema(),
+			},
+			"required": []any{"workspace_id", "admission_id", "state"},
+		},
 		"ExecutionProfile": map[string]any{
 			"type":                 "object",
 			"additionalProperties": false,

@@ -71,15 +71,41 @@ func (t *WebhookTrigger) Stop(context.Context) error {
 }
 
 func (t *WebhookTrigger) Deliver(ctx context.Context, request WebhookRequest) Submission {
+	event, err := t.prepare(request)
+	if err != nil {
+		state := DeliveryTerminal
+		if !errors.Is(err, ErrUnauthorized) && !errors.Is(err, ErrInvalidEvent) {
+			state = DeliveryRetryable
+		}
+		result := Submission{State: state, Err: err}
+		if errors.Is(err, ErrInvalidEvent) && event.DeliveryID != "" {
+			return t.submitter.record(ctx, t.definition, event, result)
+		}
+		return result
+	}
+	return t.submitter.Submit(ctx, t.definition, event)
+}
+
+// Probe validates the same webhook authentication and source mapping as
+// Deliver, but does not create a Run or write a TriggerDelivery.
+func (t *WebhookTrigger) Probe(ctx context.Context, request WebhookRequest) (ProbeResult, error) {
+	event, err := t.prepare(request)
+	if err != nil {
+		return ProbeResult{}, err
+	}
+	return t.submitter.Probe(ctx, t.definition, event)
+}
+
+func (t *WebhookTrigger) prepare(request WebhookRequest) (Event, error) {
 	t.mu.RLock()
 	started := t.started
 	t.mu.RUnlock()
 	if !started {
-		return Submission{State: DeliveryRetryable, Err: errors.New("webhook trigger is not running")}
+		return Event{}, errors.New("webhook trigger is not running")
 	}
 	signature := firstHeader(request.Headers, t.config.SignatureHeader)
 	if !validWebhookSignature(t.secret, request.Body, signature) {
-		return Submission{State: DeliveryTerminal, Err: ErrUnauthorized}
+		return Event{}, ErrUnauthorized
 	}
 	deliveryID := strings.TrimSpace(firstHeader(request.Headers, t.config.DeliveryIDHeader))
 	if deliveryID == "" {
@@ -93,19 +119,16 @@ func (t *WebhookTrigger) Deliver(ctx context.Context, request WebhookRequest) Su
 			"content_type": firstHeader(request.Headers, "Content-Type"),
 		})
 	} else if !json.Valid(input) {
-		return t.submitter.record(ctx, t.definition, Event{TriggerID: t.definition.ID, DeliveryID: deliveryID}, Submission{
-			State: DeliveryTerminal,
-			Err:   fmt.Errorf("%w: webhook body must be JSON", ErrInvalidEvent),
-		})
+		return Event{TriggerID: t.definition.ID, DeliveryID: deliveryID}, fmt.Errorf("%w: webhook body must be JSON", ErrInvalidEvent)
 	}
-	return t.submitter.Submit(ctx, t.definition, Event{
+	return Event{
 		TriggerID:     t.definition.ID,
 		DeliveryID:    deliveryID,
 		CorrelationID: firstHeader(request.Headers, t.config.CorrelationHeader),
 		Input:         input,
 		RawPayload:    append([]byte(nil), request.Body...),
 		SafeMetadata:  safeWebhookHeaders(request.Headers, t.config.SignatureHeader),
-	})
+	}, nil
 }
 
 func (m *Manager) DeliverWebhook(ctx context.Context, workspaceID string, triggerID string, request WebhookRequest) Submission {
@@ -120,6 +143,20 @@ func (m *Manager) DeliverWebhook(ctx context.Context, workspaceID string, trigge
 		return Submission{State: DeliveryTerminal, Err: ErrNotFound}
 	}
 	return receiver.Deliver(ctx, request)
+}
+
+func (m *Manager) ProbeWebhook(ctx context.Context, workspaceID string, triggerID string, request WebhookRequest) (ProbeResult, error) {
+	m.mu.RLock()
+	current := m.instances[managerKey(workspaceID, triggerID)]
+	m.mu.RUnlock()
+	if current == nil {
+		return ProbeResult{}, ErrNotFound
+	}
+	receiver, ok := current.trigger.(*WebhookTrigger)
+	if !ok {
+		return ProbeResult{}, ErrNotFound
+	}
+	return receiver.Probe(ctx, request)
 }
 
 func parseWebhookDefinition(definition state.TriggerDefinition) (WebhookConfig, string, error) {

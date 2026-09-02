@@ -344,6 +344,10 @@ func (s *PostgresStore) CreateRunAndEnqueue(ctx context.Context, run Run, job Jo
 			job.Payload.CorrelationID = run.CorrelationID
 		}
 		workspaceID := normalizedJobWorkspace("", job)
+		admissionOutcome, err := preparePostgresAdmissionOutcome(ctx, tx, workspaceID, run, now)
+		if err != nil {
+			return err
+		}
 		runInput, err := s.encryptInput(ctx, workspaceID, run.Input)
 		if err != nil {
 			return err
@@ -373,6 +377,11 @@ INSERT INTO runs (
 			nullableString(run.RequestFingerprint), run.CreatedBy, run.PermissionedAs,
 			run.CreatedAt, run.UpdatedAt, run.ExpiresAt, nullableTraceContext(run.TraceContext), mustRaw(run.ExecutionLimits)); err != nil {
 			return err
+		}
+		if admissionOutcome != nil {
+			if err := postgresInsertAdmissionOutcome(ctx, tx, *admissionOutcome); err != nil {
+				return err
+			}
 		}
 		if _, err := tx.Exec(ctx, `
 INSERT INTO jobs (
@@ -1348,9 +1357,9 @@ func (s *PostgresStore) withTx(ctx context.Context, fn func(pgx.Tx) error) error
 
 // PruneSettledJobs removes settled runs together with their jobs, logs,
 // events, and human tasks: succeeded runs older than successOlderThan, and
-// failed/canceled/expired runs older than failureOlderThan. Queued, running,
-// and waiting-human runs are never touched. It returns the number of jobs
-// removed.
+// failed/canceled/expired runs older than failureOlderThan. Admission outcomes
+// are terminal fences and outlive Run retention. Queued, running, and
+// waiting-human runs are never touched. It returns the number of jobs removed.
 func (s *PostgresStore) PruneSettledJobs(ctx context.Context, successOlderThan time.Time, failureOlderThan time.Time) (int64, error) {
 	var pruned int64
 	err := s.withTx(ctx, func(tx pgx.Tx) error {

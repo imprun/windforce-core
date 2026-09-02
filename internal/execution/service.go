@@ -27,6 +27,7 @@ type Catalog interface {
 
 type Store interface {
 	CreateRunAndEnqueue(ctx context.Context, run state.Run, job state.Job) error
+	GetAdmissionOutcome(ctx context.Context, workspaceID string, admissionID string) (state.AdmissionOutcome, bool, error)
 	GetRun(ctx context.Context, runID string) (state.Run, error)
 	GetJobByRunID(ctx context.Context, workspaceID string, runID string) (state.Job, state.Run, bool, error)
 	CancelRun(ctx context.Context, runID string, reason string) (state.Run, error)
@@ -117,9 +118,24 @@ type CreateRunRequest struct {
 }
 
 type Admission struct {
-	Run      state.Run
-	Job      state.Job
-	Replayed bool
+	Run                state.Run
+	Job                state.Job
+	AdmissionID        string
+	RequestFingerprint string
+	Replayed           bool
+}
+
+// AdmissionProbe identifies the Run that an idempotent admission would use
+// without creating the Run or its first Job. A probe is not an admission
+// approval: lifecycle, release, schema, and runtime policy are re-evaluated by
+// CreateRun.
+type AdmissionProbe struct {
+	AdmissionID        string
+	RequestFingerprint string
+	State              string
+	RunID              string
+	RunState           state.RunState
+	Replayed           bool
 }
 
 type ActionDescription struct {
@@ -131,6 +147,99 @@ type ActionDescription struct {
 type AppDescription struct {
 	Deployment contract.Deployment          `json:"deployment"`
 	Actions    map[string]ActionDescription `json:"actions"`
+}
+
+// ProbeRun authenticates the normalized principal boundary and derives the
+// stable Run identity used for an idempotent CreateRun. It intentionally does
+// not resolve the active release or mutate Core state. External gateways can
+// use the returned identity to reconcile an ambiguous proxied response through
+// the ordinary Run status API without learning credential material or Core's
+// principal-scoping algorithm.
+func (s *AdmissionService) ProbeRun(ctx context.Context, request CreateRunRequest) (AdmissionProbe, error) {
+	if s == nil || s.store == nil {
+		return AdmissionProbe{}, &Fault{Kind: FaultUnavailable, Message: "admission service is not configured"}
+	}
+	request.Workspace = contract.NormalizeWorkspace(request.Workspace)
+	request.App = strings.TrimSpace(request.App)
+	request.Action = strings.TrimSpace(request.Action)
+	if !contract.ValidAppKey(request.App) || !contract.ValidActionKey(request.Action) {
+		return AdmissionProbe{}, &Fault{Kind: FaultInvalidRequest, Message: "invalid app/action key"}
+	}
+	if len(request.Input) == 0 {
+		request.Input = json.RawMessage([]byte("{}"))
+	}
+	if !json.Valid(request.Input) {
+		return AdmissionProbe{}, &Fault{Kind: FaultInvalidRequest, Message: "input must be valid JSON"}
+	}
+	key := strings.TrimSpace(request.IdempotencyKey)
+	if key == "" {
+		return AdmissionProbe{}, &Fault{Kind: FaultInvalidRequest, Message: "Idempotency-Key is required for an admission probe"}
+	}
+
+	principal := request.Principal.Normalized()
+	if principal.Kind == "" || principal.Workspace != request.Workspace {
+		return AdmissionProbe{}, &Fault{Kind: FaultForbidden, Message: "principal workspace mismatch"}
+	}
+	if !principal.HasScope(ScopeRunsCreate) {
+		return AdmissionProbe{}, &Fault{Kind: FaultForbidden, Message: "principal lacks runs:create"}
+	}
+	if !principal.AllowsTarget(request.App, request.Action) {
+		return AdmissionProbe{}, &Fault{Kind: FaultForbidden, Message: "principal is not allowed to invoke this app/action"}
+	}
+
+	clientID := ""
+	if principal.Kind == PrincipalClient {
+		client, err := s.store.GetClient(ctx, request.Workspace, principal.ID)
+		if err != nil {
+			if errors.Is(err, state.ErrNotFound) {
+				return AdmissionProbe{}, &Fault{Kind: FaultForbidden, Message: "principal is not available", Err: err}
+			}
+			return AdmissionProbe{}, &Fault{Kind: FaultInternal, Message: "could not resolve client", Err: err}
+		}
+		principal.TargetPolicy = client.EffectiveInvocationPolicy()
+		if !principal.AllowsTarget(request.App, request.Action) {
+			return AdmissionProbe{}, &Fault{Kind: FaultForbidden, Message: "principal is not allowed to invoke this app/action"}
+		}
+		clientID = client.ID
+	}
+
+	fingerprint, err := invocationRequestFingerprint(request.App, request.Action, request.Input, request.CorrelationID, request.ScheduledFor)
+	if err != nil {
+		return AdmissionProbe{}, &Fault{Kind: FaultInvalidRequest, Message: "input must be valid JSON", Err: err}
+	}
+	admissionID := deterministicRunID(request.Workspace, principal.IdempotencyScope(), key)
+	existingJob, existingRun, found, err := s.store.GetJobByRunID(ctx, request.Workspace, admissionID)
+	if err != nil {
+		return AdmissionProbe{}, &Fault{Kind: FaultInternal, Message: "could not resolve idempotent run", Err: err}
+	}
+	if found {
+		if clientID != "" && existingRun.ClientID != clientID {
+			return AdmissionProbe{}, &Fault{Kind: FaultConflict, Message: "idempotency key was already used by a different request"}
+		}
+		if _, err := replayAdmission(existingRun, existingJob, fingerprint); err != nil {
+			return AdmissionProbe{}, err
+		}
+		return AdmissionProbe{
+			AdmissionID: admissionID, RequestFingerprint: fingerprint, State: "admitted",
+			RunID: existingRun.ID, RunState: existingRun.State, Replayed: true,
+		}, nil
+	}
+	outcome, found, err := s.store.GetAdmissionOutcome(ctx, request.Workspace, admissionID)
+	if err != nil {
+		return AdmissionProbe{}, &Fault{Kind: FaultInternal, Message: "could not resolve admission outcome", Err: err}
+	}
+	if found {
+		if outcome.RequestFingerprint != fingerprint {
+			return AdmissionProbe{}, &Fault{Kind: FaultConflict, Message: "idempotency key was already used by a different request"}
+		}
+		if outcome.State == state.AdmissionOutcomeAborted {
+			return AdmissionProbe{
+				AdmissionID: admissionID, RequestFingerprint: fingerprint, State: "aborted",
+			}, nil
+		}
+		return AdmissionProbe{}, &Fault{Kind: FaultInternal, Message: "admitted outcome has no Run", Err: state.ErrInvalidState}
+	}
+	return AdmissionProbe{AdmissionID: admissionID, RequestFingerprint: fingerprint, State: "ready"}, nil
 }
 
 func (s *AdmissionService) CreateRun(ctx context.Context, request CreateRunRequest) (admission Admission, returnErr error) {
@@ -382,6 +491,9 @@ func (s *AdmissionService) CreateRun(ctx context.Context, request CreateRunReque
 		return Admission{}, &Fault{Kind: FaultInternal, Message: fmt.Sprintf("output schema for %s/%s: %v", request.App, request.Action, err), Err: err}
 	}
 	if err := s.store.CreateRunAndEnqueue(ctx, run, job); err != nil {
+		if errors.Is(err, state.ErrAdmissionAborted) {
+			return Admission{}, &Fault{Kind: FaultConflict, Message: "admission identity was permanently aborted", Err: err}
+		}
 		if errors.Is(err, state.ErrConflict) && runID != "" {
 			existingJob, existingRun, found, getErr := s.store.GetJobByRunID(ctx, request.Workspace, runID)
 			if getErr != nil {
@@ -401,7 +513,10 @@ func (s *AdmissionService) CreateRun(ctx context.Context, request CreateRunReque
 		}
 		return Admission{}, &Fault{Kind: kind, Err: err}
 	}
-	return Admission{Run: run, Job: job}, nil
+	return Admission{
+		Run: run, Job: job, AdmissionID: run.ID,
+		RequestFingerprint: fingerprint,
+	}, nil
 }
 
 func (s *Service) GetRun(ctx context.Context, workspace string, runID string) (state.Run, error) {
@@ -591,7 +706,10 @@ func replayAdmission(run state.Run, job state.Job, fingerprint string) (Admissio
 	if run.RequestFingerprint != "" && run.RequestFingerprint != fingerprint {
 		return Admission{}, &Fault{Kind: FaultConflict, Message: "idempotency key was already used for a different request"}
 	}
-	return Admission{Run: run, Job: job, Replayed: true}, nil
+	return Admission{
+		Run: run, Job: job, AdmissionID: run.ID,
+		RequestFingerprint: fingerprint, Replayed: true,
+	}, nil
 }
 
 func cloneRaw(value json.RawMessage) json.RawMessage {

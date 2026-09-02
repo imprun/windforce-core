@@ -233,6 +233,12 @@ Invocation APIs and SDKs expose Run identity and never expose Job identity as th
 7. Adapters never write the catalog, Run table, Job queue or worker API directly.
 8. ADRs explain decision history; this document and the current OpenAPI describe the architecture operators and integrators should use now.
 
+## External policy coordination
+
+An external Gateway that must apply policy before Run creation cannot safely inspect Cell-owned credentials itself. Core therefore exposes a neutral authenticated admission probe and terminal outcome fence. The Gateway sends the exact request to Core in probe mode, stores only the returned opaque admission ID and canonical fingerprint, applies its own environment policy, and then sends the ordinary request.
+
+The probe does not add a second admission implementation and does not approve the later Run. AdmissionService still owns current lifecycle, Release, schema, runtime configuration, limit, idempotency, and Run-plus-Job decisions. If the ordinary HTTP result is ambiguous, the Cell administrator atomically resolves that identity to `admitted` or `aborted`; a simple not-found observation is never terminal negative evidence. Both terminal outcomes outlive ordinary Run retention, so a pruned admitted Run cannot later be reclassified as aborted or recreated under the same identity. [ADR 0057](../adr/0057-expose-authenticated-admission-probes-and-atomic-outcomes.md) records this contract.
+
 ## Related current specifications
 
 - [Architecture](../architecture.md) describes all Core planes and process roles.
