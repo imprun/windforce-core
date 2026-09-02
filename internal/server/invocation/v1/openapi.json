@@ -46,6 +46,9 @@
           },
           {
             "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/AdmissionProbe"
           }
         ],
         "requestBody": {
@@ -60,17 +63,23 @@
         },
         "responses": {
           "200": {
-            "description": "An idempotent retry replayed the existing Run.",
+            "description": "An authenticated admission probe completed or an idempotent retry replayed the existing Run.",
             "headers": {
               "Location": { "$ref": "#/components/headers/RunLocation" },
               "X-WF-Run-Id": { "$ref": "#/components/headers/RunID" },
               "X-WF-Run-State": { "$ref": "#/components/headers/RunState" },
-              "X-WF-Idempotency-Reused": { "$ref": "#/components/headers/IdempotencyReused" }
+              "X-WF-Idempotency-Reused": { "$ref": "#/components/headers/IdempotencyReused" },
+              "X-WF-Admission-Probed": { "$ref": "#/components/headers/AdmissionProbed" },
+              "X-WF-Admission-Id": { "$ref": "#/components/headers/AdmissionID" },
+              "X-WF-Admission-Fingerprint": { "$ref": "#/components/headers/AdmissionFingerprint" }
             },
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Run"
+                  "oneOf": [
+                    { "$ref": "#/components/schemas/Run" },
+                    { "$ref": "#/components/schemas/AdmissionProbe" }
+                  ]
                 }
               }
             }
@@ -81,7 +90,9 @@
               "Location": { "$ref": "#/components/headers/RunLocation" },
               "X-WF-Run-Id": { "$ref": "#/components/headers/RunID" },
               "X-WF-Run-State": { "$ref": "#/components/headers/RunState" },
-              "X-WF-Idempotency-Reused": { "$ref": "#/components/headers/IdempotencyReused" }
+              "X-WF-Idempotency-Reused": { "$ref": "#/components/headers/IdempotencyReused" },
+              "X-WF-Admission-Id": { "$ref": "#/components/headers/AdmissionID" },
+              "X-WF-Admission-Fingerprint": { "$ref": "#/components/headers/AdmissionFingerprint" }
             },
             "content": {
               "application/json": {
@@ -127,6 +138,9 @@
             "$ref": "#/components/parameters/IdempotencyKey"
           },
           {
+            "$ref": "#/components/parameters/AdmissionProbe"
+          },
+          {
             "name": "timeout",
             "in": "query",
             "required": false,
@@ -149,12 +163,15 @@
         },
         "responses": {
           "200": {
-            "description": "Terminal Run result.",
+            "description": "Authenticated admission probe or terminal Run result.",
             "headers": {
               "Location": { "$ref": "#/components/headers/RunLocation" },
               "X-WF-Run-Id": { "$ref": "#/components/headers/RunID" },
               "X-WF-Run-State": { "$ref": "#/components/headers/RunState" },
-              "X-WF-Idempotency-Reused": { "$ref": "#/components/headers/IdempotencyReused" }
+              "X-WF-Idempotency-Reused": { "$ref": "#/components/headers/IdempotencyReused" },
+              "X-WF-Admission-Probed": { "$ref": "#/components/headers/AdmissionProbed" },
+              "X-WF-Admission-Id": { "$ref": "#/components/headers/AdmissionID" },
+              "X-WF-Admission-Fingerprint": { "$ref": "#/components/headers/AdmissionFingerprint" }
             },
             "content": {
               "application/json": {
@@ -168,7 +185,9 @@
               "Location": { "$ref": "#/components/headers/RunLocation" },
               "X-WF-Run-Id": { "$ref": "#/components/headers/RunID" },
               "X-WF-Run-State": { "$ref": "#/components/headers/RunState" },
-              "X-WF-Idempotency-Reused": { "$ref": "#/components/headers/IdempotencyReused" }
+              "X-WF-Idempotency-Reused": { "$ref": "#/components/headers/IdempotencyReused" },
+              "X-WF-Admission-Id": { "$ref": "#/components/headers/AdmissionID" },
+              "X-WF-Admission-Fingerprint": { "$ref": "#/components/headers/AdmissionFingerprint" }
             },
             "content": {
               "application/json": {
@@ -404,6 +423,16 @@
           "type": "string",
           "maxLength": 200
         }
+      },
+      "AdmissionProbe": {
+        "name": "X-WF-Admission-Probe",
+        "in": "header",
+        "required": false,
+        "description": "When true, authenticate and bind the idempotent request without creating a Run. Idempotency-Key is then required.",
+        "schema": {
+          "type": "boolean",
+          "default": false
+        }
       }
     },
     "headers": {
@@ -440,6 +469,18 @@
         "schema": {
           "type": "boolean"
         }
+      },
+      "AdmissionProbed": {
+        "description": "True only for a non-mutating authenticated admission probe response.",
+        "schema": { "type": "boolean" }
+      },
+      "AdmissionID": {
+        "description": "Opaque stable identity for the idempotent admission.",
+        "schema": { "type": "string" }
+      },
+      "AdmissionFingerprint": {
+        "description": "Canonical request fingerprint bound by Core; contains no raw request or credential material.",
+        "schema": { "type": "string" }
       }
     },
     "schemas": {
@@ -471,6 +512,26 @@
           "reason": {
             "type": "string"
           }
+        }
+      },
+      "AdmissionProbe": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "admission_id",
+          "request_fingerprint",
+          "state",
+          "replayed"
+        ],
+        "properties": {
+          "admission_id": { "type": "string" },
+          "request_fingerprint": { "type": "string" },
+          "state": {
+            "type": "string",
+            "enum": ["ready", "admitted", "aborted"]
+          },
+          "run_id": { "type": "string" },
+          "replayed": { "type": "boolean" }
         }
       },
       "Run": {

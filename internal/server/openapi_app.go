@@ -66,12 +66,16 @@ func buildAppOpenAPI(baseURL string, workspaceID string, deployment contract.Dep
 		},
 		"required": []any{"run_id", "state", "app", "action", "created_at", "updated_at"},
 	}
+	admissionProbeSchema := oapiAdmissionProbeSchema()
 	runResponses := withErrors(map[string]any{
 		"200": oapiResponse("Run state.", runSchema),
 		"201": oapiResponse("Run admitted.", runSchema),
 	}, "400", "401", "403", "404", "409", "422")
 	admissionRunResponses := withErrors(map[string]any{
-		"200": oapiInvocationAdmissionResponse("Existing Run reused.", runSchema),
+		"200": oapiInvocationProbeResponse(
+			"Authenticated admission probe completed, or an existing Run was reused.",
+			map[string]any{"anyOf": []any{runSchema, oapiSchemaRef("AdmissionProbe")}},
+		),
 		"201": oapiInvocationAdmissionResponse("Run admitted.", runSchema),
 	}, "400", "401", "403", "404", "409", "422")
 	runIDParameter := oapiPathParam("run_id", "Caller-visible Run identifier.")
@@ -82,10 +86,11 @@ func buildAppOpenAPI(baseURL string, workspaceID string, deployment contract.Dep
 			"post": map[string]any{
 				"operationId": "createRun",
 				"summary":     fmt.Sprintf("Admit a %s Run", deployment.App),
-				"description": "Creates the caller-visible Run lifecycle resource. Supply Idempotency-Key as an HTTP header when retries must replay the same Run.",
+				"description": "Creates the caller-visible Run lifecycle resource. Supply Idempotency-Key as an HTTP header when retries must replay the same Run. An authenticated non-mutating probe sends the exact request with X-WF-Admission-Probe: true and requires Idempotency-Key.",
 				"parameters": []any{
 					workspaceParameter,
 					oapiHeaderParam("Idempotency-Key", "Principal-scoped idempotency key.", oapiStringSchema(), false),
+					oapiHeaderParam(invocationAdmissionProbeHeader, "Set true to authenticate and bind this exact request without creating a Run.", oapiBooleanSchema(), false),
 				},
 				"requestBody": oapiJSONBody(createSchema, true),
 				"responses":   admissionRunResponses,
@@ -95,15 +100,19 @@ func buildAppOpenAPI(baseURL string, workspaceID string, deployment contract.Dep
 			"post": map[string]any{
 				"operationId": "createRunAndWait",
 				"summary":     fmt.Sprintf("Admit a %s Run and wait", deployment.App),
-				"description": "Returns the action result when the Run settles before the timeout. Response headers identify the Run, its observed state, and whether admission reused an existing idempotent Run.",
+				"description": "Returns the action result when the Run settles before the timeout. Response headers identify the Run, its observed state, and whether admission reused an existing idempotent Run. Probe mode authenticates and binds the request without creating or waiting for a Run.",
 				"parameters": []any{
 					workspaceParameter,
 					oapiHeaderParam("Idempotency-Key", "Principal-scoped idempotency key.", oapiStringSchema(), false),
+					oapiHeaderParam(invocationAdmissionProbeHeader, "Set true to authenticate and bind this exact request without creating a Run.", oapiBooleanSchema(), false),
 					oapiQueryParam("timeout", "Wait duration such as 30s.", oapiStringSchema(), false),
 				},
 				"requestBody": oapiJSONBody(createSchema, true),
 				"responses": withErrors(map[string]any{
-					"200": oapiInvocationAdmissionResponse("Terminal action result.", resultSchema),
+					"200": oapiInvocationProbeResponse(
+						"Terminal action result or authenticated admission probe result.",
+						map[string]any{"anyOf": []any{resultSchema, oapiSchemaRef("AdmissionProbe")}},
+					),
 					"202": oapiInvocationAdmissionResponse("Run is still active.", runSchema),
 				}, "400", "401", "403", "404", "409", "422"),
 			},
@@ -161,6 +170,7 @@ func buildAppOpenAPI(baseURL string, workspaceID string, deployment contract.Dep
 		"security": []any{map[string]any{"bearerAuth": []any{}}},
 		"components": map[string]any{
 			"schemas": map[string]any{
+				"AdmissionProbe": admissionProbeSchema,
 				"Error": map[string]any{
 					"type":       "object",
 					"properties": map[string]any{"error": oapiStringSchema()},
@@ -184,6 +194,21 @@ func oapiInvocationRunStateSchema() map[string]any {
 	return oapiStringEnumSchema("queued", "running", "waiting_human", "resuming", "succeeded", "failed", "canceled", "expired")
 }
 
+func oapiAdmissionProbeSchema() map[string]any {
+	return map[string]any{
+		"type":                 "object",
+		"additionalProperties": false,
+		"properties": map[string]any{
+			"admission_id":        oapiStringSchema(),
+			"request_fingerprint": oapiStringSchema(),
+			"state":               oapiStringEnumSchema("ready", "admitted", "aborted"),
+			"run_id":              oapiStringSchema(),
+			"replayed":            oapiBooleanSchema(),
+		},
+		"required": []any{"admission_id", "request_fingerprint", "state", "replayed"},
+	}
+}
+
 func oapiInvocationAdmissionResponse(description string, schema any) map[string]any {
 	response := oapiResponse(description, schema)
 	response["headers"] = map[string]any{
@@ -203,6 +228,24 @@ func oapiInvocationAdmissionResponse(description string, schema any) map[string]
 			"description": "True when this admission reused the existing Run for the same Idempotency-Key and request.",
 			"schema":      oapiBooleanSchema(),
 		},
+		invocationAdmissionIDHeader: map[string]any{
+			"description": "Opaque principal-scoped admission identity committed by this response.",
+			"schema":      oapiStringSchema(),
+		},
+		invocationAdmissionFingerprintHeader: map[string]any{
+			"description": "Canonical fingerprint committed by this response.",
+			"schema":      oapiStringSchema(),
+		},
+	}
+	return response
+}
+
+func oapiInvocationProbeResponse(description string, schema any) map[string]any {
+	response := oapiInvocationAdmissionResponse(description, schema)
+	headers := response["headers"].(map[string]any)
+	headers[invocationAdmissionProbedHeader] = map[string]any{
+		"description": "True when this response is a non-mutating authenticated admission probe.",
+		"schema":      oapiBooleanSchema(),
 	}
 	return response
 }

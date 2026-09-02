@@ -90,7 +90,8 @@ Content-Type: application/json
 The configured HMAC is the ingress credential; this exact route does not use a
 Control or Invocation bearer token. Missing or invalid signatures return 401.
 Async admission returns 202 with `run_id`, `replayed`, `status_url`, and
-`result_url`, plus `Location` and `X-WF-Run-Id` headers. The status and result
+`result_url`, plus `Location`, `X-WF-Run-Id`, `X-WF-Run-State`, and
+`X-WF-Idempotency-Reused` headers. The status and result
 URLs are authenticated Invocation API resources; the ingress HMAC does not
 grant workspace read access. Use a workspace access token or operator session
 for polling; a least-privilege external partner should normally use `wait` or a
@@ -99,6 +100,8 @@ with `timeout_seconds` from 1 through 60. A completed wait returns the raw
 Action result; a timeout still returns 202 for the admitted Run. The request
 body is bounded to 1 MiB. Authorization, cookie, and signature headers are
 excluded from safe metadata.
+
+An external policy gateway may send the same signed delivery with `X-WF-Admission-Probe: true`. Core verifies the HMAC, normalizes the configured delivery identity and input, and returns the same non-mutating `admission_id`, request fingerprint, and terminal-outcome contract described by the Invocation API. The probe writes neither a Run nor a TriggerDelivery. The actual delivery remains authoritative and synchronous wait responses preserve the real idempotency replay signal.
 
 Use `input_mode: raw` only when the Action expects a JSON envelope containing
 `raw_base64` and `content_type`. If no delivery header is present, Core derives

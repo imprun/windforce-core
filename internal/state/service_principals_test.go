@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 	"errors"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -29,9 +30,10 @@ func TestPostgresStoreServicePrincipalsAndConcurrentRunIdempotency(t *testing.T)
 	if err := store.Migrate(ctx); err != nil {
 		t.Fatal(err)
 	}
-	workspaceID := "test-service-principals-" + time.Now().UTC().Format("20060102150405.000000000")
+	workspaceID := "test-service-principals-" + strconv.FormatInt(time.Now().UTC().UnixNano(), 10)
 	defer func() {
 		_, _ = store.pool.Exec(ctx, `DELETE FROM jobs WHERE workspace_id=$1`, workspaceID)
+		_, _ = store.pool.Exec(ctx, `DELETE FROM admission_outcome WHERE workspace_id=$1`, workspaceID)
 		_, _ = store.pool.Exec(ctx, `DELETE FROM runs WHERE workspace_id=$1`, workspaceID)
 		_, _ = store.pool.Exec(ctx, `DELETE FROM service_principal_audit WHERE workspace_id=$1`, workspaceID)
 		_, _ = store.pool.Exec(ctx, `DELETE FROM service_principal WHERE workspace_id=$1`, workspaceID)

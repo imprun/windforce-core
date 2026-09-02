@@ -343,6 +343,8 @@ func TestInvocationAPIPrincipalAuthorizationAndIdempotency(t *testing.T) {
 		t.Fatal(err)
 	}
 	if created.RunID == "" || response.Header.Get(invocationRunIDHeader) != created.RunID ||
+		response.Header.Get(invocationAdmissionIDHeader) != created.RunID ||
+		response.Header.Get(invocationAdmissionFingerprintHeader) == "" ||
 		response.Header.Get("Location") != "/api/v1/workspaces/ws-a/runs/"+created.RunID {
 		t.Fatalf("create response = %#v headers=%v", created, response.Header)
 	}
@@ -617,13 +619,29 @@ func TestInvocationOpenAPIContainsOnlyRunBoundary(t *testing.T) {
 		"/api/v1/workspaces/{workspace}/runs/wait": {"200", "202"},
 	} {
 		operation := paths[path].(map[string]any)["post"].(map[string]any)
+		probeParameterFound := false
+		for _, item := range operation["parameters"].([]any) {
+			parameter := item.(map[string]any)
+			if reference, _ := parameter["$ref"].(string); reference == "#/components/parameters/AdmissionProbe" {
+				probeParameterFound = true
+			}
+		}
+		if !probeParameterFound {
+			t.Errorf("Invocation OpenAPI %s is missing AdmissionProbe parameter", path)
+		}
 		responses := operation["responses"].(map[string]any)
 		for _, status := range statuses {
 			headers := responses[status].(map[string]any)["headers"].(map[string]any)
-			for _, name := range []string{"Location", invocationRunIDHeader, invocationRunStateHeader, invocationIdempotencyReusedHeader} {
+			for _, name := range []string{"Location", invocationRunIDHeader, invocationRunStateHeader, invocationIdempotencyReusedHeader, invocationAdmissionIDHeader, invocationAdmissionFingerprintHeader} {
 				if headers[name] == nil {
 					t.Errorf("Invocation OpenAPI %s response %s is missing header %s", path, status, name)
 				}
+			}
+		}
+		probeHeaders := responses["200"].(map[string]any)["headers"].(map[string]any)
+		for _, name := range []string{invocationAdmissionProbedHeader, invocationAdmissionIDHeader, invocationAdmissionFingerprintHeader} {
+			if probeHeaders[name] == nil {
+				t.Errorf("Invocation OpenAPI %s probe response is missing header %s", path, name)
 			}
 		}
 	}
@@ -633,6 +651,7 @@ func TestInvocationOpenAPIContainsOnlyRunBoundary(t *testing.T) {
 	for _, name := range []string{
 		"invocation/v1/examples/create-run.request.json",
 		"invocation/v1/examples/create-run.response.json",
+		"invocation/v1/examples/admission-probe.response.json",
 	} {
 		example, err := invocationExamples.ReadFile(name)
 		if err != nil {
@@ -645,6 +664,49 @@ func TestInvocationOpenAPIContainsOnlyRunBoundary(t *testing.T) {
 			if bytes.Contains(example, []byte(forbidden)) {
 				t.Errorf("Invocation example %q contains forbidden field %q", name, forbidden)
 			}
+		}
+	}
+}
+
+func TestAppOpenAPIDocumentsAdmissionProbeContract(t *testing.T) {
+	document := buildAppOpenAPI(
+		"http://core.example.test",
+		"ws",
+		contract.Deployment{Workspace: "ws", App: "demo", Commit: "0123456789abcdef"},
+		[]openAPIAction{{ActionKey: "run"}},
+	)
+	paths := document["paths"].(map[string]any)
+	for _, path := range []string{
+		"/api/v1/workspaces/{workspace}/runs",
+		"/api/v1/workspaces/{workspace}/runs/wait",
+	} {
+		post := paths[path].(map[string]any)["post"].(map[string]any)
+		probeParameterFound := false
+		for _, item := range post["parameters"].([]any) {
+			parameter := item.(map[string]any)
+			if parameter["name"] == invocationAdmissionProbeHeader && parameter["in"] == "header" {
+				probeParameterFound = true
+			}
+		}
+		if !probeParameterFound {
+			t.Errorf("App OpenAPI %s is missing %s", path, invocationAdmissionProbeHeader)
+		}
+		headers := post["responses"].(map[string]any)["200"].(map[string]any)["headers"].(map[string]any)
+		for _, name := range []string{
+			"Location", invocationRunIDHeader, invocationRunStateHeader, invocationIdempotencyReusedHeader,
+			invocationAdmissionProbedHeader, invocationAdmissionIDHeader, invocationAdmissionFingerprintHeader,
+		} {
+			if headers[name] == nil {
+				t.Errorf("App OpenAPI %s probe response is missing header %s", path, name)
+			}
+		}
+	}
+	schemas := document["components"].(map[string]any)["schemas"].(map[string]any)
+	probe := schemas["AdmissionProbe"].(map[string]any)
+	properties := probe["properties"].(map[string]any)
+	for _, name := range []string{"admission_id", "request_fingerprint", "state", "run_id", "replayed"} {
+		if properties[name] == nil {
+			t.Errorf("App OpenAPI AdmissionProbe is missing %s", name)
 		}
 	}
 }

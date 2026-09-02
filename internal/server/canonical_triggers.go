@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -238,6 +239,44 @@ func (h *Handler) handleTriggerIngress(w http.ResponseWriter, r *http.Request) b
 	for name, values := range r.Header {
 		headers[name] = append([]string(nil), values...)
 	}
+	probeRequested, err := invocationAdmissionProbeRequested(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return true
+	}
+	if probeRequested {
+		probe, err := h.triggerManager.ProbeWebhook(r.Context(), parts[3], parts[5], triggerpkg.WebhookRequest{
+			Headers: headers,
+			Body:    body,
+		})
+		if err != nil {
+			switch {
+			case errors.Is(err, triggerpkg.ErrUnauthorized):
+				writeError(w, http.StatusUnauthorized, "invalid webhook signature")
+			case errors.Is(err, triggerpkg.ErrNotFound):
+				writeError(w, http.StatusNotFound, "webhook trigger not found")
+			case errors.Is(err, triggerpkg.ErrInvalidEvent):
+				writeError(w, http.StatusBadRequest, err.Error())
+			default:
+				var fault *executionpkg.Fault
+				if errors.As(err, &fault) {
+					writeInvocationFault(w, err)
+				} else {
+					writeError(w, http.StatusServiceUnavailable, "trigger admission probe unavailable")
+				}
+			}
+			return true
+		}
+		if probe.RunID != "" {
+			setInvocationRunHeaders(w, r, parts[3], probe.RunID)
+		}
+		setInvocationProbeHeaders(w, probe.AdmissionID, probe.RequestFingerprint, probe.RunState, probe.Replayed)
+		writeJSON(w, http.StatusOK, invocationAdmissionProbeView{
+			AdmissionID: probe.AdmissionID, RequestFingerprint: probe.RequestFingerprint,
+			State: probe.State, RunID: probe.RunID, Replayed: probe.Replayed,
+		})
+		return true
+	}
 	submission := h.triggerManager.DeliverWebhook(r.Context(), parts[3], parts[5], triggerpkg.WebhookRequest{
 		Headers: headers,
 		Body:    body,
@@ -247,11 +286,15 @@ func (h *Handler) handleTriggerIngress(w http.ResponseWriter, r *http.Request) b
 		statusURL := "/api/v1/workspaces/" + parts[3] + "/runs/" + submission.RunID
 		resultURL := statusURL + "/result"
 		w.Header().Set("Location", statusURL)
-		w.Header().Set("X-WF-Run-Id", submission.RunID)
+		w.Header().Set(invocationRunIDHeader, submission.RunID)
+		w.Header().Set(invocationAdmissionIDHeader, submission.AdmissionID)
+		w.Header().Set(invocationAdmissionFingerprintHeader, submission.RequestFingerprint)
+		w.Header().Set(invocationRunStateHeader, strings.ToLower(string(submission.RunState)))
+		w.Header().Set(invocationIdempotencyReusedHeader, strconv.FormatBool(submission.Replayed))
 		definition, err := h.store.GetTrigger(r.Context(), parts[3], parts[5])
 		if err == nil && definition.Response.Mode == state.TriggerResponseWait {
 			principal := executionpkg.TriggerPrincipal(definition.WorkspaceID, definition.ID, definition.AppKey, definition.ActionKey)
-			h.waitForInvocationRun(w, r, definition.WorkspaceID, submission.RunID, principal, time.Duration(definition.Response.TimeoutSeconds)*time.Second, false)
+			h.waitForInvocationRun(w, r, definition.WorkspaceID, submission.RunID, principal, time.Duration(definition.Response.TimeoutSeconds)*time.Second, submission.Replayed)
 			return true
 		}
 		writeJSON(w, http.StatusAccepted, map[string]any{
