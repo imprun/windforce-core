@@ -1,0 +1,48 @@
+{
+  "binding": {
+    "kind": "windforce.execution-attestation-binding/v1",
+    "audience": "synthetic-capability-service",
+    "issuerKeyId": "synthetic-issuer-key-1",
+    "expiresAt": "2099-01-01T00:05:00Z",
+    "runRef": "run_0123456789abcdef",
+    "workspace": "synthetic",
+    "app": "synthetic_app",
+    "action": "verify",
+    "publicationRef": "synthetic-publication",
+    "routeGeneration": 7,
+    "operationRef": "operations/synthetic/v1",
+    "credentialRef": {
+      "id": "credential/synthetic",
+      "version": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "release": {
+      "deploymentId": "deployment-7",
+      "commit": "0123456789abcdef",
+      "bundleDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "references": [
+      {
+        "name": "customerExecutionSnapshot",
+        "reference": {
+          "id": "snapshot/synthetic",
+          "version": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
+      },
+      {
+        "name": "materialVersion",
+        "reference": {
+          "id": "material/synthetic",
+          "version": "v4"
+        }
+      },
+      {
+        "name": "securityEpoch",
+        "reference": {
+          "id": "grant/synthetic",
+          "version": "3"
+        }
+      }
+    ]
+  },
+  "bindingDigest": "sha256:7d77c32bd620a6c82787351811e973efc8549ef9bed006db859185ef3b2abdc1"
+}

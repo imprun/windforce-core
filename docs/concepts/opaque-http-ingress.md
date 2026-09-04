@@ -72,6 +72,16 @@ Admission on this path is idempotent per delivery. The handler derives the Admis
 - Core does not retry a delivery on its own, and an intermediary must not automatically retry this `POST`. A missing response is not evidence that Admission did not commit. The boundary reconciles by redelivering the same delivery identity, which replays the committed Run instead of creating another one.
 - A wait timeout or a disconnected caller does not cancel an admitted Run. The Run stays queryable, and redelivering the same identity returns it.
 
+## Execution attestation
+
+An App admitted through this boundary may need to call a private downstream capability service that holds material the App must not hold itself. The invocation pins cannot authorize that call: they are unsigned Job metadata, so they identify an execution without proving one.
+
+When a deployment configures an issuer, Admission mints a signed execution attestation for every Run it admits from resolved invocation pins and stores it in the Job payload beside them. It binds exactly what Core pinned — Run reference, workspace, App and Action, publication reference and route generation, operation reference, credential snapshot reference, and the pinned Release — plus the issuer's audience, key id, and expiry. Values Core does not interpret travel in `references` as named immutable pins, verbatim from the projection.
+
+The attestation is host-private: it never becomes an HTTP header, a public API response, a Run outcome, or an event payload, and the public job status omits it exactly as it omits the pins. Without a configured issuer nothing is minted and Runs are admitted unchanged.
+
+[ADR 0060](../adr/0060-mint-audience-bound-execution-attestations-after-admission.md) records the decision; [`contracts/execution-attestation/v1`](../../contracts/execution-attestation/v1/README.md) holds the schemas, the canonical byte rules, and the synthetic fixture.
+
 ## Current activation state
 
 The package is a conformance building block only. It has no server wiring, configuration flag, public route, DNS, gateway reconciliation, or credential store implementation.
@@ -80,7 +90,7 @@ Production activation is gated on:
 
 1. A separate private listener protected by mutually authenticated TLS, with issuer and audience derived from the authenticated peer rather than accepted from an untrusted public caller.
 2. [Issue #283](https://github.com/imprun/windforce-core/issues/283): a durable publication/projection lifecycle and atomic Resolver with immutable revisions, monotonic generation, credential snapshot status, audit, rollback, and stale-reference rejection.
-3. [Issue #286](https://github.com/imprun/windforce-core/issues/286): an audience-bound signed execution attestation minted only after Admission for any downstream capability authorization. Unsigned `InvocationPins` must not be used for that purpose.
+3. A configured execution attestation issuer, if an App on this boundary calls a private downstream capability service. Unsigned `InvocationPins` must not be used for that purpose.
 4. A deadline and cancellation policy. A wait timeout or disconnected caller does not cancel a Run that Admission already created.
 5. Deployment-specific byte limits, overload control, metrics, traces, and failure-rate alerts.
 
