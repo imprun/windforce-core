@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/imprun/windforce-core/main/contracts/execution-attestation/v1/execution-attestation-binding.schema.json",
+  "title": "Windforce execution attestation binding v1",
+  "description": "The canonical value an execution attestation signature covers. Property order in this document is the canonical encoding order; references are sorted by name.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "kind",
+    "audience",
+    "issuerKeyId",
+    "expiresAt",
+    "runRef",
+    "workspace",
+    "app",
+    "action",
+    "publicationRef",
+    "routeGeneration",
+    "operationRef",
+    "credentialRef",
+    "release"
+  ],
+  "properties": {
+    "kind": {
+      "const": "windforce.execution-attestation-binding/v1"
+    },
+    "audience": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "issuerKeyId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "runRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "workspace": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "app": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "action": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "publicationRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "routeGeneration": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "operationRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "credentialRef": {
+      "$ref": "#/$defs/immutableReference"
+    },
+    "release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "commit",
+        "bundleDigest"
+      ],
+      "properties": {
+        "deploymentId": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "commit": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "bundleDigest": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      }
+    },
+    "references": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "reference"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "reference": {
+            "$ref": "#/$defs/immutableReference"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "immutableReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      }
+    }
+  }
+}

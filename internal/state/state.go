@@ -161,7 +161,11 @@ type JobPayload struct {
 	InputConfigResolved   bool                      `json:"inputConfigResolved,omitempty"`
 	RuntimeAccess         contract.RuntimeAccess    `json:"runtimeAccess,omitempty"`
 	InvocationPins        contract.InvocationPins   `json:"invocationPins,omitempty,omitzero"`
-	ResponsePolicy        contract.HTTPPolicy       `json:"responsePolicy,omitempty,omitzero"`
+	// ExecutionAttestation is host-private execution metadata for a downstream
+	// capability service. Like InvocationPins it stays inside the Job payload
+	// and is never part of a public job status, outcome, or event payload.
+	ExecutionAttestation *contract.ExecutionAttestation `json:"executionAttestation,omitempty"`
+	ResponsePolicy       contract.HTTPPolicy            `json:"responsePolicy,omitempty,omitzero"`
 	// Deployment is retained only to decode jobs created before compact pins.
 	Deployment     *contract.Deployment `json:"deployment,omitempty"`
 	CorrelationID  string               `json:"correlationId,omitempty"`

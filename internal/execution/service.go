@@ -80,19 +80,43 @@ func FaultKindOf(err error) FaultKind {
 }
 
 type AdmissionService struct {
-	store   Store
-	catalog Catalog
-	bundles BundleStore
+	store       Store
+	catalog     Catalog
+	bundles     BundleStore
+	attestation ExecutionAttestationIssuer
 }
 
 type Service = AdmissionService
 
-func NewAdmissionService(store Store, catalog Catalog, bundles BundleStore) *AdmissionService {
-	return &AdmissionService{store: store, catalog: catalog, bundles: bundles}
+func NewAdmissionService(store Store, catalog Catalog, bundles BundleStore, options ...AdmissionOption) *AdmissionService {
+	service := &AdmissionService{store: store, catalog: catalog, bundles: bundles}
+	for _, option := range options {
+		if option != nil {
+			option(service)
+		}
+	}
+	return service
 }
 
-func NewService(store Store, catalog Catalog, bundles BundleStore) *AdmissionService {
-	return NewAdmissionService(store, catalog, bundles)
+// ExecutionAttestationIssuer mints the signed execution attestation a private
+// downstream capability service verifies after Admission accepted an
+// invocation. It is optional: a deployment that configures no issuer admits
+// Runs exactly as before and simply cannot use such a service.
+type ExecutionAttestationIssuer interface {
+	Issue(binding contract.ExecutionAttestationBinding, now time.Time) (contract.ExecutionAttestation, error)
+}
+
+// AdmissionOption configures an optional Admission capability.
+type AdmissionOption func(*AdmissionService)
+
+// WithExecutionAttestationIssuer mints an execution attestation for every Run
+// admitted from resolved invocation pins.
+func WithExecutionAttestationIssuer(issuer ExecutionAttestationIssuer) AdmissionOption {
+	return func(service *AdmissionService) { service.attestation = issuer }
+}
+
+func NewService(store Store, catalog Catalog, bundles BundleStore, options ...AdmissionOption) *AdmissionService {
+	return NewAdmissionService(store, catalog, bundles, options...)
 }
 
 type CreateRunRequest struct {
@@ -490,6 +514,11 @@ func (s *AdmissionService) CreateRun(ctx context.Context, request CreateRunReque
 	if err != nil {
 		return Admission{}, &Fault{Kind: FaultInternal, Message: fmt.Sprintf("output schema for %s/%s: %v", request.App, request.Action, err), Err: err}
 	}
+	attestation, err := s.mintExecutionAttestation(run, request, deployment, time.Now().UTC())
+	if err != nil {
+		return Admission{}, &Fault{Kind: FaultInternal, Message: "could not mint the execution attestation", Err: err}
+	}
+	job.Payload.ExecutionAttestation = attestation
 	if err := s.store.CreateRunAndEnqueue(ctx, run, job); err != nil {
 		if errors.Is(err, state.ErrAdmissionAborted) {
 			return Admission{}, &Fault{Kind: FaultConflict, Message: "admission identity was permanently aborted", Err: err}
@@ -710,6 +739,46 @@ func replayAdmission(run state.Run, job state.Job, fingerprint string) (Admissio
 		Run: run, Job: job, AdmissionID: run.ID,
 		RequestFingerprint: fingerprint, Replayed: true,
 	}, nil
+}
+
+// mintExecutionAttestation binds an admitted Run to the immutable references
+// the resolver pinned for it. It mints only for a resolved invocation that
+// carries pins, and only when the deployment configured an issuer; otherwise
+// the Run is admitted exactly as before with no attestation.
+func (s *AdmissionService) mintExecutionAttestation(
+	run state.Run,
+	request CreateRunRequest,
+	deployment contract.Deployment,
+	now time.Time,
+) (*contract.ExecutionAttestation, error) {
+	if s.attestation == nil || strings.TrimSpace(request.InvocationPins.PublicationRef) == "" {
+		return nil, nil
+	}
+	pins := contract.CloneInvocationPins(request.InvocationPins)
+	deploymentID := ""
+	if deployment.DeploymentID != nil {
+		deploymentID = strings.TrimSpace(*deployment.DeploymentID)
+	}
+	minted, err := s.attestation.Issue(contract.ExecutionAttestationBinding{
+		RunRef:          run.ID,
+		Workspace:       request.Workspace,
+		App:             request.App,
+		Action:          request.Action,
+		PublicationRef:  pins.PublicationRef,
+		RouteGeneration: pins.RouteGeneration,
+		OperationRef:    pins.OperationRef,
+		CredentialRef:   pins.CredentialRef,
+		Release: contract.ExecutionReleasePin{
+			DeploymentID: deploymentID,
+			Commit:       deployment.Commit,
+			BundleDigest: deployment.BundleDigest,
+		},
+		References: pins.References,
+	}, now)
+	if err != nil {
+		return nil, err
+	}
+	return &minted, nil
 }
 
 func cloneRaw(value json.RawMessage) json.RawMessage {
