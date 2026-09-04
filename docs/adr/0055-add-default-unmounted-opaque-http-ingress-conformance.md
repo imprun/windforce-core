@@ -1,6 +1,6 @@
 # ADR 0055: Add a default-unmounted opaque HTTP ingress conformance handler
 
-- Status: Accepted. The mutually authenticated TLS activation gate is superseded in part (2026-09-04) by [ADR 0061](0061-accept-any-authenticated-peer-boundary-for-opaque-ingress.md), which requires an authenticated peer boundary and leaves the mechanism to the deployment; every other gate stands.
+- Status: Accepted. The mutually authenticated TLS activation gate is superseded in part (2026-09-04) by [ADR 0061](0061-accept-any-authenticated-peer-boundary-for-opaque-ingress.md), which requires an authenticated peer boundary and leaves the mechanism to the deployment; every other gate stands. The default-unmounted posture is superseded in part (2026-09-04) by [ADR 0062](0062-serve-the-opaque-ingress-on-its-own-listener.md), which gives the handler a configured isolated listener that stays unmounted until an address is set.
 - Date: 2026-08-30
 - Issue: [#280](https://github.com/imprun/windforce-core/issues/280)
 

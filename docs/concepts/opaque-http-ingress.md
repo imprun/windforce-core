@@ -82,17 +82,36 @@ The attestation is host-private: it never becomes an HTTP header, a public API r
 
 [ADR 0060](../adr/0060-mint-audience-bound-execution-attestations-after-admission.md) records the decision; [`contracts/execution-attestation/v1`](../../contracts/execution-attestation/v1/README.md) holds the schemas, the canonical byte rules, and the synthetic fixture.
 
-## Current activation state
+## Isolated listener
 
-The package is a conformance building block only. It has no server wiring, configuration flag, public route, DNS, gateway reconciliation, or credential store implementation.
+The handler is served on its own listener, separate from Core's primary API ([ADR 0062](../adr/0062-serve-the-opaque-ingress-on-its-own-listener.md)). `-opaque-ingress-addr`, or `WINDFORCE_CORE_OPAQUE_INGRESS_ADDR`, mounts it; with no address Core does not open it.
 
-Production activation is gated on:
+That listener serves exactly two paths:
 
-1. A separate private listener that only authenticated allowed peers can reach, with issuer and audience asserted by that isolated boundary rather than accepted from an untrusted public caller. The mechanism is a deployment choice: mutually authenticated TLS with the peer identity taken from the verified client certificate, or a network boundary whose listener carries no other traffic and whose bidirectional policy allowlists the calling namespace, pod, and port. A network-boundary deployment has no per-request cryptographic peer proof, so its activation evidence must show that the network layer actually enforces the allowlist and that the listener is unreachable from anywhere else ([ADR 0061](../adr/0061-accept-any-authenticated-peer-boundary-for-opaque-ingress.md)).
+| Path | Method | Purpose |
+| --- | --- | --- |
+| `/ingress/opaque-http/v1` | POST | admits one trusted envelope |
+| `/readyz` | GET, HEAD | reports whether this boundary is serving |
+
+Every other path answers 404 with an `applicationProtocolViolation` platform failure, and Core's primary listener does not serve the ingress path at all.
+
+Readiness reports ready once the listener is bound with its resolver and Admission wired, and unready from the moment a drain starts, so a gateway stops delivering into a listener that is going away. It does not probe the projection store: storage faults surface as platform failures on the delivery itself.
+
+The listener admits a bounded number of concurrent deliveries, 64 by default with a ceiling of 4096, because each one holds a synchronous wait on a Run. A delivery waits at most 50 milliseconds for a slot, with a ceiling of one second, before the listener answers 503 with a retryable `capacityUnavailable`. Both bounds are flags: `-opaque-ingress-max-concurrent` and `-opaque-ingress-acquire-wait`. Byte limits, the synchronous wait and the poll interval are configured alongside them.
+
+Core fails closed on this path. An unbindable address, an unusable limit, or an unusable execution attestation key stops the process before it serves anything, and a listener that dies while the process runs drains the primary listener and exits non-zero.
+
+The listener terminates no TLS and verifies no certificate. Which mechanism proves the peer is a deployment property ([ADR 0061](../adr/0061-accept-any-authenticated-peer-boundary-for-opaque-ingress.md)), and Core neither implements nor detects it.
+
+## Remaining activation gates
+
+Mounting the listener does not by itself make the path production-ready. Activation is gated on:
+
+1. A boundary in front of that listener which only authenticated allowed peers can reach, with issuer and audience asserted by the boundary rather than accepted from an untrusted caller. The mechanism is a deployment choice: mutually authenticated TLS with the peer identity taken from the verified client certificate, or a network boundary whose listener carries no other traffic and whose bidirectional policy allowlists the calling namespace, pod, and port. A network-boundary deployment has no per-request cryptographic peer proof, so its activation evidence must show that the network layer actually enforces the allowlist and that the listener is unreachable from anywhere else ([ADR 0061](../adr/0061-accept-any-authenticated-peer-boundary-for-opaque-ingress.md)).
 2. [Issue #283](https://github.com/imprun/windforce-core/issues/283): a durable publication/projection lifecycle and atomic Resolver with immutable revisions, monotonic generation, credential snapshot status, audit, rollback, and stale-reference rejection.
-3. A configured execution attestation issuer, if an App on this boundary calls a private downstream capability service. Unsigned `InvocationPins` must not be used for that purpose.
+3. A configured execution attestation issuer, if an App on this boundary calls a private downstream capability service. Unsigned `InvocationPins` must not be used for that purpose. The key file, key id, audience and lifetime are configured with the listener, and a partial configuration stops the process rather than falling back to unsigned pins.
 4. A deadline and cancellation policy. A wait timeout or disconnected caller does not cancel a Run that Admission already created.
-5. Deployment-specific byte limits, overload control, metrics, traces, and failure-rate alerts.
+5. Deployment-specific byte limits, concurrency bounds, metrics, traces, and failure-rate alerts. The defaults are a starting point, not a capacity model.
 
 Public gateway authentication, TLS termination, route publication, provider request/response codecs, and secrets remain outside Core's opaque handler.
 
