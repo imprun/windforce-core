@@ -278,6 +278,7 @@ func storeResolverFixture() (ResolutionRequest, state.OpaqueIngressResolvedProje
 					ID:       credential.Reference.ID,
 					Revision: credential.Reference.Revision,
 				},
+				DeliveryID: "delivery-7f3a",
 			},
 			HTTP: HTTPMediaV1{
 				Method:           publication.HTTP.Method,

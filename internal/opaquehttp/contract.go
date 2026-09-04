@@ -37,6 +37,10 @@ type TrustedIngressV1 struct {
 	PublicationRef  string         `json:"publicationRef"`
 	RouteGeneration int64          `json:"routeGeneration"`
 	CredentialRef   ImmutableRefV1 `json:"credentialRef"`
+	// DeliveryID is the identity the isolated ingress boundary assigns to one
+	// delivery. It is trusted boundary input, never a caller-supplied value,
+	// and it is the only source of Admission idempotency on this path.
+	DeliveryID string `json:"deliveryId"`
 }
 
 type HTTPMediaV1 struct {

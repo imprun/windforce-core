@@ -253,6 +253,7 @@ func prepareAdmissionRequest(
 		Input:               append(json.RawMessage(nil), appInput...),
 		InputConfigResolved: true,
 		Adapter:             adapterName,
+		IdempotencyKey:      deliveryAdmissionKey(invocation.TrustedIngress),
 		Principal:           principal,
 	}, nil
 }
