@@ -8,7 +8,8 @@
     "credentialRef": {
       "id": "credential/synthetic",
       "revision": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    }
+    },
+    "deliveryId": "synthetic-delivery-0001"
   },
   "http": {
     "method": "POST",

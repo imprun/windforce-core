@@ -24,7 +24,8 @@
         "audience",
         "publicationRef",
         "routeGeneration",
-        "credentialRef"
+        "credentialRef",
+        "deliveryId"
       ],
       "properties": {
         "issuer": {
@@ -48,6 +49,11 @@
         },
         "credentialRef": {
           "$ref": "#/$defs/immutableRef"
+        },
+        "deliveryId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
         }
       }
     },

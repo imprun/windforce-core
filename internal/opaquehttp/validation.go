@@ -42,11 +42,11 @@ func decodeInvocation(reader io.Reader, maxEnvelopeBytes int64, maxBodyBytes int
 	if err := exactFieldTypes(root, []string{"kind", "receivedAt", "deadlineAt"}, nil); err != nil {
 		return OpaqueHTTPInvocationV1{}, nil, err
 	}
-	trusted, err := exactObject(root["trustedIngress"], "issuer", "audience", "publicationRef", "routeGeneration", "credentialRef")
+	trusted, err := exactObject(root["trustedIngress"], "issuer", "audience", "publicationRef", "routeGeneration", "credentialRef", "deliveryId")
 	if err != nil {
 		return OpaqueHTTPInvocationV1{}, nil, fmt.Errorf("trustedIngress: %w", err)
 	}
-	if err := exactFieldTypes(trusted, []string{"issuer", "audience", "publicationRef"}, []string{"routeGeneration"}); err != nil {
+	if err := exactFieldTypes(trusted, []string{"issuer", "audience", "publicationRef", "deliveryId"}, []string{"routeGeneration"}); err != nil {
 		return OpaqueHTTPInvocationV1{}, nil, fmt.Errorf("trustedIngress: %w", err)
 	}
 	credentialRef, err := exactObject(trusted["credentialRef"], "id", "revision")
@@ -101,10 +101,34 @@ func validateInvocation(invocation OpaqueHTTPInvocationV1, maxBodyBytes int64) (
 	if err := validateImmutableRef(trusted.CredentialRef); err != nil {
 		return nil, fmt.Errorf("credential reference: %w", err)
 	}
+	if err := validateTrimmedString("trusted ingress delivery identity", trusted.DeliveryID, 200); err != nil {
+		return nil, err
+	}
 	if err := validateHTTPMedia(invocation.HTTP); err != nil {
 		return nil, err
 	}
 	return decodeBodyBytes(invocation.Body, maxBodyBytes)
+}
+
+// deliveryAdmissionKey derives the Admission idempotency key of one trusted
+// delivery. The key binds the delivery identity to the exact trusted ingress
+// tuple, so the same identity presented for another publication, route
+// generation, or credential snapshot is a different admission identity.
+// AdmissionService adds the principal scope and stores only a digest, so the
+// identity itself never reaches durable state, a response, or the App input.
+func deliveryAdmissionKey(trusted TrustedIngressV1) string {
+	canonical := strings.Join([]string{
+		OpaqueHTTPInvocationKindV1,
+		trusted.Issuer,
+		trusted.Audience,
+		trusted.PublicationRef,
+		fmt.Sprintf("%d", trusted.RouteGeneration),
+		trusted.CredentialRef.ID,
+		trusted.CredentialRef.Revision,
+		trusted.DeliveryID,
+	}, "\x00")
+	digest := sha256.Sum256([]byte(canonical))
+	return "opaque-http-delivery:" + hex.EncodeToString(digest[:])
 }
 
 func decodeApplicationWireResponse(raw []byte, maxBodyBytes int64) (ApplicationWireResponseV1, []byte, error) {

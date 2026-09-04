@@ -29,7 +29,9 @@ The outer request must be `POST` with an `application/json` media type. The JSON
 - `receivedAt`
 - `deadlineAt`
 
-`trustedIngress` carries only immutable references and routing identity: issuer, audience, publication reference, route generation, and credential reference. It never carries a raw API key, token, password, encryption key, or decrypted provider payload.
+`trustedIngress` carries only immutable references, routing identity, and the delivery identity: issuer, audience, publication reference, route generation, credential reference, and `deliveryId`. It never carries a raw API key, token, password, encryption key, or decrypted provider payload.
+
+`deliveryId` is the identity the isolated ingress boundary assigns to one delivery. It is trusted boundary input: an external caller cannot supply or influence it, because the handler reads it from the trusted envelope the boundary itself constructs and never from a caller header, path, or body.
 
 `body.data` is canonical RFC 4648 Base64. `body.byteLength` is the decoded byte count. `body.digest` is lowercase `sha256:` plus the digest of the decoded bytes. The handler checks all three values before resolution or Admission.
 
@@ -59,7 +61,16 @@ The App returns `windforce.application-wire-response/v1`. The handler accepts on
 
 The trusted request deadline is applied to Resolver, Admission, and Run polling calls. Deadline expiry stops the synchronous wait but does not cancel a Run that Admission already created.
 
-For every terminal Run, the handler first attempts to validate and restore an application wire response, including an App error status. Only when execution has no valid application wire response does it return a stable JSON `windforce.execution-outcome/v1` `platformFailed` envelope. An expired Run or lease-loss/Worker-shutdown interruption is then classified as `workerLost`; other terminal failures and post-Admission consistency faults stay generic. Because the current handler does not synthesize an idempotency key, every post-Admission failure is non-retryable. Failure categories are provider-neutral and do not expose Resolver or App details.
+For every terminal Run, the handler first attempts to validate and restore an application wire response, including an App error status. Only when execution has no valid application wire response does it return a stable JSON `windforce.execution-outcome/v1` `platformFailed` envelope. An expired Run or lease-loss/Worker-shutdown interruption is then classified as `workerLost`; other terminal failures and post-Admission consistency faults stay generic. Post-Admission failures are reported as non-retryable: the Run already exists, so the boundary reconciles it by redelivering the same delivery identity rather than by retrying blindly. Failure categories are provider-neutral and do not expose Resolver or App details.
+
+## Delivery identity and replay
+
+Admission on this path is idempotent per delivery. The handler derives the Admission idempotency key from `deliveryId` bound to the exact trusted tuple — issuer, audience, publication reference, route generation, and credential snapshot — so the same identity presented for another route or credential is a different admission identity. AdmissionService then adds the principal scope. The raw identity is never stored, echoed in a response, written to a log, or copied into the App input; durable state keeps only a digest.
+
+- The same delivery with the same payload resolves to the same Run. Concurrent identical deliveries converge on one Run and one first Job; the losers of the creation race read the committed Run back and replay it.
+- The same delivery identity with a different payload is a conflict. The handler answers `409` with an `applicationProtocolViolation` platform failure and creates no second Run.
+- Core does not retry a delivery on its own, and an intermediary must not automatically retry this `POST`. A missing response is not evidence that Admission did not commit. The boundary reconciles by redelivering the same delivery identity, which replays the committed Run instead of creating another one.
+- A wait timeout or a disconnected caller does not cancel an admitted Run. The Run stays queryable, and redelivering the same identity returns it.
 
 ## Current activation state
 
@@ -70,9 +81,8 @@ Production activation is gated on:
 1. A separate private listener protected by mutually authenticated TLS, with issuer and audience derived from the authenticated peer rather than accepted from an untrusted public caller.
 2. [Issue #283](https://github.com/imprun/windforce-core/issues/283): a durable publication/projection lifecycle and atomic Resolver with immutable revisions, monotonic generation, credential snapshot status, audit, rollback, and stale-reference rejection.
 3. [Issue #286](https://github.com/imprun/windforce-core/issues/286): an audience-bound signed execution attestation minted only after Admission for any downstream capability authorization. Unsigned `InvocationPins` must not be used for that purpose.
-4. A retry and idempotency design. The current handler admits at most once per request and does not synthesize an idempotency key.
-5. A deadline and cancellation policy. A wait timeout or disconnected caller does not cancel a Run that Admission already created.
-6. Deployment-specific byte limits, overload control, metrics, traces, and failure-rate alerts.
+4. A deadline and cancellation policy. A wait timeout or disconnected caller does not cancel a Run that Admission already created.
+5. Deployment-specific byte limits, overload control, metrics, traces, and failure-rate alerts.
 
 Public gateway authentication, TLS termination, route publication, provider request/response codecs, and secrets remain outside Core's opaque handler.
 
