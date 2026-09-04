@@ -88,7 +88,7 @@ The package is a conformance building block only. It has no server wiring, confi
 
 Production activation is gated on:
 
-1. A separate private listener protected by mutually authenticated TLS, with issuer and audience derived from the authenticated peer rather than accepted from an untrusted public caller.
+1. A separate private listener that only authenticated allowed peers can reach, with issuer and audience asserted by that isolated boundary rather than accepted from an untrusted public caller. The mechanism is a deployment choice: mutually authenticated TLS with the peer identity taken from the verified client certificate, or a network boundary whose listener carries no other traffic and whose bidirectional policy allowlists the calling namespace, pod, and port. A network-boundary deployment has no per-request cryptographic peer proof, so its activation evidence must show that the network layer actually enforces the allowlist and that the listener is unreachable from anywhere else ([ADR 0061](../adr/0061-accept-any-authenticated-peer-boundary-for-opaque-ingress.md)).
 2. [Issue #283](https://github.com/imprun/windforce-core/issues/283): a durable publication/projection lifecycle and atomic Resolver with immutable revisions, monotonic generation, credential snapshot status, audit, rollback, and stale-reference rejection.
 3. A configured execution attestation issuer, if an App on this boundary calls a private downstream capability service. Unsigned `InvocationPins` must not be used for that purpose.
 4. A deadline and cancellation policy. A wait timeout or disconnected caller does not cancel a Run that Admission already created.
