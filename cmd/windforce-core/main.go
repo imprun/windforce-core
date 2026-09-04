@@ -167,6 +167,7 @@ func runServer(args []string, mode string) int {
 	publicAPIRPS := flags.Float64("public-api-rps", 100, "maximum public API requests per second per instance")
 	publicAPIBurst := flags.Int("public-api-burst", 100, "maximum public API request burst per instance")
 	webhookDispatcherFlags := bindWebhookDispatcherFlags(flags, "webhook-")
+	opaqueIngress := bindOpaqueIngressFlags(flags, "opaque-ingress-")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -275,7 +276,16 @@ func runServer(args []string, mode string) int {
 	}
 	bundleStore := bundle.NewLocalStore(*storeDir)
 	executionBundleStore := executionbundle.NewLocalStore(executionBundleStoreRoot(*storeDir))
-	admission := execution.NewService(stateStore, releaseCatalog, bundleStore)
+	attestationIssuer, err := opaqueIngress.executionAttestationIssuer()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s execution attestation: %v\n", mode, err)
+		return 1
+	}
+	var admissionOptions []execution.AdmissionOption
+	if attestationIssuer != nil {
+		admissionOptions = append(admissionOptions, execution.WithExecutionAttestationIssuer(attestationIssuer))
+	}
+	admission := execution.NewService(stateStore, releaseCatalog, bundleStore, admissionOptions...)
 	triggerMetrics := triggerpkg.NewMetrics()
 	runtimeSecretCandidateMetrics := secretbackend.NewRuntimeCandidateMetrics()
 	triggerManager := &triggerpkg.Manager{
@@ -470,6 +480,12 @@ func runServer(args []string, mode string) int {
 		triggerDone <- err
 	}()
 
+	ingress, err := startOpaqueIngress(opaqueIngress, mode, stateStore, admission)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s opaque ingress: %v\n", mode, err)
+		return 1
+	}
+
 	fmt.Fprintf(os.Stderr, "windforce-core %s listening on %s\n", mode, *addr)
 	httpServer := &http.Server{Addr: *addr, Handler: telemetry.HTTPHandler(handler, "windforce.http.server")}
 	serverDone := make(chan error, 1)
@@ -484,7 +500,33 @@ func runServer(args []string, mode string) int {
 			fmt.Fprintf(os.Stderr, "%s: %v\n", mode, err)
 			exitCode = 1
 		}
+		if err := ingress.stop(); err != nil {
+			fmt.Fprintf(os.Stderr, "%s opaque ingress shutdown: %v\n", mode, err)
+			exitCode = 1
+		}
+	case err := <-ingress.wait():
+		// The isolated ingress is a data path of its own. Losing it while the
+		// primary listener keeps answering hides an outage behind a process
+		// that still looks healthy, so the whole process stops.
+		stopSignals()
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			fmt.Fprintf(os.Stderr, "%s opaque ingress: %v\n", mode, err)
+		}
+		exitCode = 1
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if err := httpServer.Shutdown(shutdownCtx); err != nil {
+			fmt.Fprintf(os.Stderr, "%s shutdown: %v\n", mode, err)
+			_ = httpServer.Close()
+		}
+		<-serverDone
 	case <-runCtx.Done():
+		// Both listeners drain at once. In series they would add their budgets
+		// together and push the process past its termination grace period.
+		ingressStopped := make(chan error, 1)
+		go func() {
+			ingressStopped <- ingress.stop()
+		}()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		if err := httpServer.Shutdown(shutdownCtx); err != nil {
@@ -494,6 +536,10 @@ func runServer(args []string, mode string) int {
 		}
 		if err := <-serverDone; err != nil && !errors.Is(err, http.ErrServerClosed) {
 			fmt.Fprintf(os.Stderr, "%s: %v\n", mode, err)
+			exitCode = 1
+		}
+		if err := <-ingressStopped; err != nil {
+			fmt.Fprintf(os.Stderr, "%s opaque ingress shutdown: %v\n", mode, err)
 			exitCode = 1
 		}
 	}

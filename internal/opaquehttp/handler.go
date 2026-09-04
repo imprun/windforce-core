@@ -448,6 +448,13 @@ func validFailureCategory(category FailureCategory) bool {
 }
 
 func (h *Handler) writePlatformFailure(w http.ResponseWriter, status int, category FailureCategory, retryable bool) {
+	writePlatformFailureResponse(w, status, category, retryable)
+}
+
+// writePlatformFailureResponse writes the stable provider-neutral failure
+// envelope. The isolated listener uses the same shape for the failures it owns,
+// so a caller never has to parse two error formats from one port.
+func writePlatformFailureResponse(w http.ResponseWriter, status int, category FailureCategory, retryable bool) {
 	if !validFailureCategory(category) {
 		category = FailureInternal
 		retryable = false
