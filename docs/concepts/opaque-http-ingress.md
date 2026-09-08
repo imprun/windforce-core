@@ -80,6 +80,8 @@ When a deployment configures an issuer, Admission mints a signed execution attes
 
 The attestation is host-private: it never becomes an HTTP header, a public API response, a Run outcome, or an event payload, and the public job status omits it exactly as it omits the pins. Without a configured issuer nothing is minted and Runs are admitted unchanged.
 
+The worker hands it to the capability gateway when it opens the run that serves the App, as an opaque document Core does not read. It lives only for that run and goes with it when the run closes. A Run whose Action requires no capability opens no gateway run, and a deployment that mints no attestation opens one exactly as it did before.
+
 [ADR 0060](../adr/0060-mint-audience-bound-execution-attestations-after-admission.md) records the decision; [`contracts/execution-attestation/v1`](../../contracts/execution-attestation/v1/README.md) holds the schemas, the canonical byte rules, and the synthetic fixture.
 
 ## Isolated listener

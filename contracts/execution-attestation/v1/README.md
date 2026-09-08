@@ -36,6 +36,12 @@ Everything a downstream service needs but Core does not interpret travels in `re
 
 Core resolves no secret and opens no material.
 
+## How a consumer receives it
+
+The worker that executes the Run opens a capability gateway run to serve the App, and sends the attestation in that request as `executionAttestation`. A run opened for a Run with no attestation omits the field entirely, so a gateway that rejects unknown fields keeps working until the deployment configures an issuer.
+
+The attestation is scoped to that gateway run. Nothing re-sends it, and closing the run ends the consumer's claim to it.
+
 ## Verification
 
 A verifier checks, in order: the document kind and algorithm, that the binding digest covers the binding, the signature against a trusted public key selected by `issuerKeyId`, the expiry, the audience it requires, and exact equality with the binding its own policy expects. It never learns a value from the attestation — it confirms the one it already holds.

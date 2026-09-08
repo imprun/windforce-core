@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/imprun/windforce-core/internal/contract"
 	"github.com/imprun/windforce-core/internal/state"
 )
 
@@ -31,6 +32,10 @@ type RuntimeBindingContext struct {
 	RunID   string
 	JobID   string
 	Attempt int
+	// Attestation is the execution attestation Admission minted for this Run,
+	// or nil when the deployment mints none. The engine carries it to the
+	// capability gateway without reading it and never places it in App input.
+	Attestation *contract.ExecutionAttestation
 }
 
 // RuntimeBindingFailure carries classification data from a trusted runtime

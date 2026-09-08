@@ -53,6 +53,15 @@ type capabilityDiscoveryResponse struct {
 	} `json:"capabilities"`
 }
 
+// capabilityRunRequest opens one gateway run. The attestation is omitted when
+// the deployment mints none, so such a run is byte-identical to one opened
+// before this field existed; a gateway that rejects unknown fields keeps
+// working until the deployment mints one.
+type capabilityRunRequest struct {
+	TTLSeconds           uint64                         `json:"ttlSeconds"`
+	ExecutionAttestation *contract.ExecutionAttestation `json:"executionAttestation,omitempty"`
+}
+
 type capabilityRunResponse struct {
 	RunRef           string `json:"runRef"`
 	RunToken         string `json:"runToken"`
@@ -199,7 +208,10 @@ func (b CapabilityGatewayBinding) open(
 		return capabilityGatewaySession{}, errors.New("capability gateway run context has an invalid job attempt")
 	}
 	ttlSeconds := capabilityTTLSeconds(ttl)
-	payload, err := json.Marshal(map[string]uint64{"ttlSeconds": ttlSeconds})
+	payload, err := json.Marshal(capabilityRunRequest{
+		TTLSeconds:           ttlSeconds,
+		ExecutionAttestation: execution.Attestation,
+	})
 	if err != nil {
 		return capabilityGatewaySession{}, err
 	}
