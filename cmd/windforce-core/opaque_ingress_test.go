@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -8,12 +10,16 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"flag"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/imprun/windforce-core/internal/execution"
 	"github.com/imprun/windforce-core/internal/opaquehttp"
@@ -27,6 +33,20 @@ func (stubProjectionStore) ResolveOpaqueIngressProjection(
 	context.Context,
 	state.OpaqueIngressResolutionRequest,
 ) (state.OpaqueIngressResolvedProjection, error) {
+	return state.OpaqueIngressResolvedProjection{}, nil
+}
+
+type recordingProjectionStore struct {
+	requests chan state.OpaqueIngressResolutionRequest
+}
+
+func (s recordingProjectionStore) ResolveOpaqueIngressProjection(
+	_ context.Context,
+	request state.OpaqueIngressResolutionRequest,
+) (state.OpaqueIngressResolvedProjection, error) {
+	s.requests <- request
+	// Deliberately unavailable after capturing the validated request. This
+	// distinguishes reaching the resolver from a transport or timeout fault.
 	return state.OpaqueIngressResolvedProjection{}, nil
 }
 
@@ -44,6 +64,13 @@ func testOpaqueIngressFlags(t *testing.T, args ...string) opaqueIngressFlags {
 	t.Helper()
 	for _, name := range []string{
 		"WINDFORCE_CORE_OPAQUE_INGRESS_ADDR",
+		"WINDFORCE_CORE_OPAQUE_INGRESS_TRANSPORT",
+		"WINDFORCE_CORE_OPAQUE_INGRESS_MAX_REQUEST_BYTES",
+		"WINDFORCE_CORE_OPAQUE_INGRESS_MAX_RESPONSE_BYTES",
+		"WINDFORCE_CORE_OPAQUE_INGRESS_MAX_WAIT",
+		"WINDFORCE_CORE_OPAQUE_INGRESS_POLL_INTERVAL",
+		"WINDFORCE_CORE_OPAQUE_INGRESS_MAX_CONCURRENT",
+		"WINDFORCE_CORE_OPAQUE_INGRESS_ACQUIRE_WAIT",
 		"WINDFORCE_CORE_EXECUTION_ATTESTATION_KEY_FILE",
 		"WINDFORCE_CORE_EXECUTION_ATTESTATION_KEY_ID",
 		"WINDFORCE_CORE_EXECUTION_ATTESTATION_AUDIENCE",
@@ -78,7 +105,9 @@ func writeTestSigningKey(t *testing.T) string {
 }
 
 func TestOpaqueIngressStaysUnmountedWithoutAnAddress(t *testing.T) {
-	flags := testOpaqueIngressFlags(t)
+	// Settings for an unmounted listener are ignored, including a transport
+	// another installed version might not understand yet.
+	flags := testOpaqueIngressFlags(t, "-opaque-ingress-transport", "unknown", "-opaque-ingress-max-wait", "0s")
 	if flags.enabled() {
 		t.Fatal("the ingress is mounted without an address")
 	}
@@ -106,6 +135,7 @@ func TestOpaqueIngressFailsClosedOnUnusableConfiguration(t *testing.T) {
 		{name: "concurrency above the bound", args: []string{"-opaque-ingress-addr", "127.0.0.1:0", "-opaque-ingress-max-concurrent", "100000"}},
 		{name: "acquire wait above the bound", args: []string{"-opaque-ingress-addr", "127.0.0.1:0", "-opaque-ingress-acquire-wait", "10s"}},
 		{name: "request bytes above the wire limit", args: []string{"-opaque-ingress-addr", "127.0.0.1:0", "-opaque-ingress-max-request-bytes", "0"}},
+		{name: "unknown transport", args: []string{"-opaque-ingress-addr", "127.0.0.1:0", "-opaque-ingress-transport", "unknown"}},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -117,6 +147,200 @@ func TestOpaqueIngressFailsClosedOnUnusableConfiguration(t *testing.T) {
 			}
 			if ingress != nil {
 				t.Fatal("a failed start produced a server")
+			}
+		})
+	}
+}
+
+func TestOpaqueIngressTransportConfiguration(t *testing.T) {
+	t.Run("default preserves envelope", func(t *testing.T) {
+		flags := testOpaqueIngressFlags(t)
+		if got := *flags.transport; got != string(opaquehttp.TransportEnvelopeV1) {
+			t.Fatalf("transport %q, want envelope-v1", got)
+		}
+	})
+	t.Run("raw flag", func(t *testing.T) {
+		flags := testOpaqueIngressFlags(t, "-opaque-ingress-transport", "raw-body-v1")
+		if got := *flags.transport; got != string(opaquehttp.TransportRawBodyV1) {
+			t.Fatalf("transport %q, want raw-body-v1", got)
+		}
+	})
+	t.Run("environment and flag override", func(t *testing.T) {
+		_ = testOpaqueIngressFlags(t) // Clear unrelated deployment settings.
+		t.Setenv("WINDFORCE_CORE_OPAQUE_INGRESS_TRANSPORT", "raw-body-v1")
+		set := flag.NewFlagSet("opaque-ingress-environment-test", flag.ContinueOnError)
+		set.SetOutput(io.Discard)
+		flags := bindOpaqueIngressFlags(set, "opaque-ingress-")
+		if got := *flags.transport; got != string(opaquehttp.TransportRawBodyV1) {
+			t.Fatalf("environment transport %q, want raw-body-v1", got)
+		}
+		if err := set.Parse([]string{"-opaque-ingress-transport", "envelope-v1"}); err != nil {
+			t.Fatal(err)
+		}
+		if got := *flags.transport; got != string(opaquehttp.TransportEnvelopeV1) {
+			t.Fatalf("flag override transport %q, want envelope-v1", got)
+		}
+	})
+}
+
+func rawOpaqueIngressContext(t *testing.T, lifetime time.Duration) string {
+	t.Helper()
+	now := time.Now().UTC()
+	value := map[string]any{
+		"kind": "windforce.opaque-http-ingress-context/v1",
+		"trustedIngress": map[string]any{
+			"issuer": "synthetic-private-gateway", "audience": "windforce-opaque-http-ingress",
+			"publicationRef": "synthetic-byte-roundtrip", "routeGeneration": 7,
+			"credentialRef": map[string]string{"id": "credential/synthetic", "revision": "sha256:" + strings.Repeat("a", 64)},
+			"deliveryId":    "synthetic-delivery-0001",
+		},
+		"http": map[string]string{
+			"method": "PATCH", "exactEscapedPath": "/synthetic/bytes", "contentType": "application/octet-stream",
+		},
+		"receivedAt": now.Format(time.RFC3339Nano), "deadlineAt": now.Add(lifetime).Format(time.RFC3339Nano),
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(encoded)
+}
+
+func TestOpaqueIngressRawTransportReachesResolverThroughTelemetry(t *testing.T) {
+	flags := testOpaqueIngressFlags(t, "-opaque-ingress-addr", "127.0.0.1:0", "-opaque-ingress-transport", "raw-body-v1")
+	store := recordingProjectionStore{requests: make(chan state.OpaqueIngressResolutionRequest, 1)}
+	ingress, err := startOpaqueIngress(flags, "server", store, stubAdmission{})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	t.Cleanup(func() { _ = ingress.stop() })
+	if ingress.server.ReadHeaderTimeout != 5*time.Second || ingress.server.ReadTimeout != *flags.maxWait || ingress.server.MaxHeaderBytes != 32<<10 {
+		t.Fatalf("unbounded server read configuration: %+v", ingress.server)
+	}
+	if ingress.server.WriteTimeout != 0 {
+		t.Fatal("the listener must not truncate a terminal response with a write timeout")
+	}
+	body := []byte{0, 1, 0xff, '\r', '\n'}
+	request, err := http.NewRequest(http.MethodPost, "http://"+ingress.addr+opaquehttp.IngressPath, bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Content-Type", "application/octet-stream")
+	request.Header.Set("X-Windforce-Opaque-Context", rawOpaqueIngressContext(t, 5*time.Second))
+	client := &http.Client{Timeout: 3 * time.Second}
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("raw transport status %d, want resolver's 503", response.StatusCode)
+	}
+	select {
+	case captured := <-store.requests:
+		if captured.Issuer != "synthetic-private-gateway" || captured.Method != http.MethodPatch || captured.ExactEscapedPath != "/synthetic/bytes" || captured.BodyByteLength != int64(len(body)) {
+			t.Fatalf("resolved request %+v", captured)
+		}
+	default:
+		t.Fatal("raw delivery did not reach the projection resolver")
+	}
+
+	unknown, err := client.Post("http://"+ingress.addr+"/synthetic/bytes", "application/octet-stream", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unknown.Body.Close()
+	if unknown.StatusCode != http.StatusNotFound {
+		t.Fatalf("original path status %d, want 404", unknown.StatusCode)
+	}
+}
+
+func TestOpaqueIngressRawTransportBoundsSlowBodyReads(t *testing.T) {
+	flags := testOpaqueIngressFlags(t, "-opaque-ingress-addr", "127.0.0.1:0", "-opaque-ingress-transport", "raw-body-v1")
+	store := recordingProjectionStore{requests: make(chan state.OpaqueIngressResolutionRequest, 1)}
+	ingress, err := startOpaqueIngress(flags, "server", store, stubAdmission{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ingress.stop() })
+	connection, err := net.DialTimeout("tcp", ingress.addr, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close()
+	if err := connection.SetDeadline(time.Now().Add(3 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	// The final byte never arrives. The metadata deadline, not the 30-second
+	// server bound or the client's timeout, must end this body read.
+	_, err = fmt.Fprintf(connection, "POST %s HTTP/1.1\r\nHost: %s\r\nContent-Type: application/octet-stream\r\nX-Windforce-Opaque-Context: %s\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{", opaquehttp.IngressPath, ingress.addr, rawOpaqueIngressContext(t, 200*time.Millisecond))
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := http.ReadResponse(bufio.NewReader(connection), nil)
+	if err != nil {
+		t.Fatalf("read bounded response: %v", err)
+	}
+	defer response.Body.Close()
+	var outcome opaquehttp.ExecutionOutcomeV1
+	if err := json.NewDecoder(response.Body).Decode(&outcome); err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusGatewayTimeout || outcome.Failure == nil || outcome.Failure.Category != opaquehttp.FailureDeadlineExceeded {
+		t.Fatalf("slow body status %d outcome %+v, want 504 deadlineExceeded", response.StatusCode, outcome)
+	}
+	select {
+	case <-store.requests:
+		t.Fatal("an incomplete raw body reached the projection resolver")
+	default:
+	}
+}
+
+func TestOpaqueIngressRawTransportRejectsTrailersThroughTelemetry(t *testing.T) {
+	for _, declared := range []bool{false, true} {
+		name := "undeclared"
+		if declared {
+			name = "declared"
+		}
+		t.Run(name, func(t *testing.T) {
+			flags := testOpaqueIngressFlags(t, "-opaque-ingress-addr", "127.0.0.1:0", "-opaque-ingress-transport", "raw-body-v1")
+			store := recordingProjectionStore{requests: make(chan state.OpaqueIngressResolutionRequest, 1)}
+			ingress, err := startOpaqueIngress(flags, "server", store, stubAdmission{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = ingress.stop() })
+			connection, err := net.DialTimeout("tcp", ingress.addr, time.Second)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer connection.Close()
+			if err := connection.SetDeadline(time.Now().Add(3 * time.Second)); err != nil {
+				t.Fatal(err)
+			}
+			declaration := ""
+			if declared {
+				declaration = "Trailer: X-Untrusted-Trailer\r\n"
+			}
+			// Real net/http populates trailers on its original request only once
+			// Body reaches EOF. A telemetry request clone must not hide them from
+			// the adapter, including when there was no Trailer declaration.
+			_, err = fmt.Fprintf(connection, "POST %s HTTP/1.1\r\nHost: %s\r\nContent-Type: application/octet-stream\r\nX-Windforce-Opaque-Context: %s\r\nTransfer-Encoding: chunked\r\n%sConnection: close\r\n\r\n2\r\n{}\r\n0\r\nX-Untrusted-Trailer: forged\r\n\r\n", opaquehttp.IngressPath, ingress.addr, rawOpaqueIngressContext(t, 5*time.Second), declaration)
+			if err != nil {
+				t.Fatal(err)
+			}
+			response, err := http.ReadResponse(bufio.NewReader(connection), nil)
+			if err != nil {
+				t.Fatalf("read trailer rejection: %v", err)
+			}
+			defer response.Body.Close()
+			if response.StatusCode != http.StatusBadRequest {
+				t.Fatalf("trailer status %d, want 400", response.StatusCode)
+			}
+			select {
+			case <-store.requests:
+				t.Fatal("a raw delivery with trailers reached the projection resolver")
+			default:
 			}
 		})
 	}

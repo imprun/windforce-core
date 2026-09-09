@@ -56,6 +56,7 @@ type Admission interface {
 }
 
 type Limits struct {
+	Transport        TransportMode
 	MaxRequestBytes  int64
 	MaxResponseBytes int64
 	MaxWait          time.Duration
@@ -85,6 +86,12 @@ func NewHandler(resolver Resolver, admission Admission, limits Limits) (*Handler
 	if resolver == nil || admission == nil {
 		return nil, errors.New("opaque HTTP resolver and Admission are required")
 	}
+	if limits.Transport == "" {
+		limits.Transport = TransportEnvelopeV1
+	}
+	if limits.Transport != TransportEnvelopeV1 && limits.Transport != TransportRawBodyV1 {
+		return nil, errors.New("opaque HTTP transport must be envelope-v1 or raw-body-v1")
+	}
 	if limits.MaxRequestBytes <= 0 || limits.MaxRequestBytes > MaxWireBodyBytes {
 		return nil, fmt.Errorf("opaque HTTP request byte limit must be between 1 and %d", MaxWireBodyBytes)
 	}
@@ -111,6 +118,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 		h.writePlatformFailure(w, http.StatusMethodNotAllowed, FailureApplicationProtocolViolation, false)
 		return
 	}
+	if h.limits.Transport == TransportRawBodyV1 {
+		h.serveRawBody(w, request)
+		return
+	}
+	// Trusted raw context is never ignored or interpreted as an envelope-mode
+	// override. The transport is a deployment choice, not caller negotiation.
+	if hasOpaqueContextHeader(request.Header) {
+		h.writePlatformFailure(w, http.StatusBadRequest, FailureApplicationProtocolViolation, false)
+		return
+	}
 	mediaType, _, err := mime.ParseMediaType(request.Header.Get("Content-Type"))
 	if err != nil || !strings.EqualFold(mediaType, "application/json") {
 		h.writePlatformFailure(w, http.StatusUnsupportedMediaType, FailureApplicationProtocolViolation, false)
@@ -121,6 +138,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 		h.writePlatformFailure(w, http.StatusBadRequest, FailureApplicationProtocolViolation, false)
 		return
 	}
+	h.serveInvocation(w, request, invocation)
+}
+
+// Both transports normalize to the same invocation before resolution and
+// Admission. Transport metadata must never change the App input or delivery key.
+func (h *Handler) serveInvocation(w http.ResponseWriter, request *http.Request, invocation OpaqueHTTPInvocationV1) {
 	if err := h.validateDeadline(invocation, time.Now().UTC()); err != nil {
 		h.writePlatformFailure(w, http.StatusBadRequest, FailureDeadlineExceeded, false)
 		return

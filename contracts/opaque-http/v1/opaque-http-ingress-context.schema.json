@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/imprun/windforce-core/main/contracts/opaque-http/v1/opaque-http-ingress-context.schema.json",
+  "title": "Windforce opaque HTTP raw ingress context v1",
+  "$comment": "For raw-body-v1 only: one X-Windforce-Opaque-Context header, at most 16384 printable ASCII bytes of single-line JSON. Header multiplicity, byte limits, duplicate JSON members, deadlines and semantic validation are enforced by the runtime, not JSON Schema. Nested constraints share the invocation schema.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["kind", "trustedIngress", "http", "receivedAt", "deadlineAt"],
+  "properties": {
+    "kind": {
+      "const": "windforce.opaque-http-ingress-context/v1"
+    },
+    "trustedIngress": {
+      "$ref": "opaque-http-invocation.schema.json#/properties/trustedIngress"
+    },
+    "http": {
+      "$ref": "opaque-http-invocation.schema.json#/$defs/httpMedia"
+    },
+    "receivedAt": {
+      "$ref": "opaque-http-invocation.schema.json#/properties/receivedAt"
+    },
+    "deadlineAt": {
+      "$ref": "opaque-http-invocation.schema.json#/properties/deadlineAt"
+    }
+  }
+}
