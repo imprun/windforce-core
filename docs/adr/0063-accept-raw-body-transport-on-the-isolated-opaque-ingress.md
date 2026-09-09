@@ -1,6 +1,6 @@
 # ADR 0063: Accept raw-body transport on the isolated opaque HTTP ingress
 
-- Status: Proposed — implementation and contract are subject to review; this is not production activation approval.
+- Status: Accepted — maintainer approved merge on 2026-09-09; production activation of the opt-in transport remains a separate deployment decision.
 - Date: 2026-09-09
 - Issue: [#296](https://github.com/imprun/windforce-core/issues/296)
 - Amends: [ADR 0055](0055-add-default-unmounted-opaque-http-ingress-conformance.md) and [ADR 0059](0059-bind-opaque-ingress-delivery-identity-to-admission-idempotency.md) for transport, not trust or Admission semantics.
