@@ -24,6 +24,8 @@ const (
 	defaultOpaqueIngressMaxWait          = 30 * time.Second
 	defaultOpaqueIngressPollInterval     = 50 * time.Millisecond
 	opaqueIngressShutdownBudget          = 15 * time.Second
+	opaqueIngressReadHeaderTimeout       = 5 * time.Second
+	opaqueIngressMaxHeaderBytes          = 32 << 10
 )
 
 // opaqueIngressFlags configures the isolated opaque HTTP ingress listener and
@@ -31,6 +33,7 @@ const (
 // The listener stays unmounted until an address is given.
 type opaqueIngressFlags struct {
 	addr                *string
+	transport           *string
 	maxRequestBytes     *int
 	maxResponseBytes    *int
 	maxWait             *time.Duration
@@ -44,15 +47,21 @@ type opaqueIngressFlags struct {
 }
 
 func bindOpaqueIngressFlags(flags *flag.FlagSet, prefix string) opaqueIngressFlags {
+	transport := envString("WINDFORCE_CORE_OPAQUE_INGRESS_TRANSPORT")
+	if transport == "" {
+		transport = string(opaquehttp.TransportEnvelopeV1)
+	}
 	return opaqueIngressFlags{
 		addr: flags.String(prefix+"addr", envString("WINDFORCE_CORE_OPAQUE_INGRESS_ADDR"),
-			"address of the isolated private listener that admits trusted opaque HTTP envelopes; empty leaves it unmounted"),
+			"address of the isolated private listener that admits trusted opaque HTTP deliveries; empty leaves it unmounted"),
+		transport: flags.String(prefix+"transport", transport,
+			"opaque ingress transport: envelope-v1 (JSON envelope) or raw-body-v1 (original body with trusted context header)"),
 		maxRequestBytes: flags.Int(prefix+"max-request-bytes", envInt("WINDFORCE_CORE_OPAQUE_INGRESS_MAX_REQUEST_BYTES", defaultOpaqueIngressMaxRequestBytes),
 			"maximum decoded request body bytes admitted through the opaque ingress"),
 		maxResponseBytes: flags.Int(prefix+"max-response-bytes", envInt("WINDFORCE_CORE_OPAQUE_INGRESS_MAX_RESPONSE_BYTES", defaultOpaqueIngressMaxResponseBytes),
 			"maximum decoded response body bytes returned through the opaque ingress"),
 		maxWait: flags.Duration(prefix+"max-wait", envParsedDuration("WINDFORCE_CORE_OPAQUE_INGRESS_MAX_WAIT", defaultOpaqueIngressMaxWait),
-			"maximum synchronous wait for an admitted Run before the ingress reports a deadline"),
+			"maximum request read and synchronous execution wait for an opaque ingress delivery"),
 		pollInterval: flags.Duration(prefix+"poll-interval", envParsedDuration("WINDFORCE_CORE_OPAQUE_INGRESS_POLL_INTERVAL", defaultOpaqueIngressPollInterval),
 			"how often the opaque ingress polls an admitted Run for completion"),
 		maxConcurrent: flags.Int(prefix+"max-concurrent", envInt("WINDFORCE_CORE_OPAQUE_INGRESS_MAX_CONCURRENT", opaquehttp.DefaultMaxConcurrent),
@@ -93,7 +102,7 @@ func (f opaqueIngressFlags) executionAttestationIssuer() (*attestation.Issuer, e
 }
 
 // newOpaqueIngressListener builds the isolated listener surface: the resolver
-// reads the projection store, the conformance handler admits one envelope, and
+// reads the projection store, the conformance handler admits one delivery, and
 // the listener bounds concurrency and answers readiness.
 func (f opaqueIngressFlags) newOpaqueIngressListener(
 	store opaquehttp.ProjectionStore,
@@ -105,6 +114,7 @@ func (f opaqueIngressFlags) newOpaqueIngressListener(
 		return nil, err
 	}
 	handler, err := opaquehttp.NewHandler(resolver, admission, opaquehttp.Limits{
+		Transport:        opaquehttp.TransportMode(*f.transport),
 		MaxRequestBytes:  int64(*f.maxRequestBytes),
 		MaxResponseBytes: int64(*f.maxResponseBytes),
 		MaxWait:          *f.maxWait,
@@ -156,7 +166,10 @@ func startOpaqueIngress(
 		return nil, fmt.Errorf("listen: %w", err)
 	}
 	ingress.server = &http.Server{
-		Handler: telemetry.HTTPHandler(listener, "windforce.opaque-ingress.server"),
+		Handler:           telemetry.HTTPHandler(listener, "windforce.opaque-ingress.server"),
+		ReadHeaderTimeout: opaqueIngressReadHeaderTimeout,
+		ReadTimeout:       *f.maxWait,
+		MaxHeaderBytes:    opaqueIngressMaxHeaderBytes,
 	}
 	ingress.addr = bound.Addr().String()
 	ingress.ready.Store(true)

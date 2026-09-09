@@ -68,6 +68,10 @@ jobs:
         env:
           WINDFORCE_CORE_POSTGRES_TEST_DSN: postgres://postgres@127.0.0.1:5432/windforce_core?sslmode=disable
         run: go test ./internal/state -run Postgres -count=1 -v
+      - name: Test opaque ingress transport parity with PostgreSQL
+        env:
+          WINDFORCE_CORE_POSTGRES_TEST_DSN: postgres://postgres@127.0.0.1:5432/windforce_core?sslmode=disable
+        run: go test ./internal/opaquehttp -run TestRawBodyAdmissionTransportParity -count=1 -v
       - name: Test RabbitMQ trigger
         env:
           WINDFORCE_RABBITMQ_TEST_URL: amqp://guest:guest@127.0.0.1:5672/

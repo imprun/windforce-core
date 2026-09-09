@@ -232,7 +232,14 @@ func HTTPHandler(next http.Handler, spanName string) http.Handler {
 			reason = ReasonContinued
 			origin = "ambient"
 		}
+		// Body still belongs to the original server request. net/http populates
+		// its Trailer map only at EOF (including undeclared chunked trailers).
+		// Keep one live map across the clone so downstream validation sees them.
+		if r.Trailer == nil {
+			r.Trailer = make(http.Header)
+		}
 		clone := r.Clone(context.WithValue(r.Context(), ingressInfoKey{}, ingressInfo{origin: origin, reason: reason}))
+		clone.Trailer = r.Trailer
 		clone.Header = r.Header.Clone()
 		clone.Header.Del("baggage")
 		clone.Header.Del("traceparent")
