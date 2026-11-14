@@ -448,7 +448,11 @@ func TestRunTypeScriptHumanTaskHoldPreservesLiveChromiumSession(t *testing.T) {
 			_, _ = w.Write([]byte(`<!doctype html><title>HumanTask hold fixture</title><main id="app">ready</main>`))
 		case "/api/w/ws-a/human-tasks/wait":
 			requestReceived <- struct{}{}
-			<-releaseDecision
+			select {
+			case <-releaseDecision:
+			case <-r.Context().Done():
+				return
+			}
 			writeJSON(w, map[string]any{"task_id": "task-browser", "outcome": "submit", "value": map[string]string{"otp": "654321"}})
 		default:
 			http.NotFound(w, r)
@@ -458,17 +462,28 @@ func TestRunTypeScriptHumanTaskHoldPreservesLiveChromiumSession(t *testing.T) {
 
 	entrypoint := filepath.Join(t.TempDir(), "browser-hold.ts")
 	if err := os.WriteFile(entrypoint, []byte(`
-async function devtoolsURL(process) {
-  const reader = process.stderr.getReader()
-  const decoder = new TextDecoder()
-  let text = ""
-  while (true) {
-    const { value, done } = await reader.read()
-    if (done) throw new Error("Chromium exited before exposing DevTools")
-    text += decoder.decode(value, { stream: true })
-    const match = text.match(/DevTools listening on (ws:\/\/[^\s]+)/)
-    if (match) return match[1]
+import { readFile } from "node:fs/promises"
+
+async function devtoolsURL(browser, profile) {
+  const portFile = profile + "/DevToolsActivePort"
+  const deadline = Date.now() + 15000
+  while (Date.now() < deadline) {
+    // On Windows the launcher can exit successfully before the browser is ready.
+    if (browser.exitCode !== null && browser.exitCode !== 0) {
+      throw new Error("Chromium exited before exposing DevTools (exit " + browser.exitCode + ")")
+    }
+    try {
+      const [portText, path] = (await readFile(portFile, "utf8")).trim().split(/\r?\n/)
+      const port = Number(portText)
+      if (Number.isInteger(port) && port > 0 && port <= 65535 && path?.startsWith("/devtools/browser/")) {
+        return "ws://127.0.0.1:" + port + path
+      }
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error
+    }
+    await Bun.sleep(50)
   }
+  throw new Error("Chromium did not write DevToolsActivePort")
 }
 
 function cdp(url) {
@@ -513,7 +528,7 @@ async function waitForFixture(session) {
 }
 
 export async function main(ctx) {
-  const profile = (process.env.TEMP || ".") + "/wf-human-" + crypto.randomUUID()
+  const profile = process.env.WF_TEST_CHROME_PROFILE
   const browser = Bun.spawn([
     process.env.WF_TEST_CHROME,
     "--headless=new",
@@ -522,11 +537,12 @@ export async function main(ctx) {
     "--no-first-run",
     "--disable-default-apps",
     "about:blank",
-  ], { stdout: "ignore", stderr: "pipe" })
-  let session
+  ], { stdout: "ignore", stderr: "inherit" })
+  let browserSession, session
   try {
-    const browserWS = await devtoolsURL(browser)
-    const debugOrigin = new URL(browserWS.replace("ws://", "http://")).origin
+    const browserURL = await devtoolsURL(browser, profile)
+    browserSession = cdp(browserURL)
+    const debugOrigin = new URL(browserURL.replace("ws://", "http://")).origin
     const target = await fetch(debugOrigin + "/json/new?" + encodeURIComponent(process.env.WF_TEST_PAGE), { method: "PUT" }).then((response) => response.json())
     session = cdp(target.webSocketDebuggerUrl)
     await session.send("Runtime.enable")
@@ -535,7 +551,7 @@ export async function main(ctx) {
       expression: 'window.__wfSession = { marker: "browser-session" }; window.__wfAlias = window.__wfSession; localStorage.setItem("wf-cookie", "preserved"); ({ title: document.title, marker: window.__wfSession.marker })',
       returnByValue: true,
     })
-    const browserPIDBefore = browser.pid
+    const browserPIDBefore = (await browserSession.send("SystemInfo.getProcessInfo")).processInfo.find((process) => process.type === "browser").id
     const decision = await ctx.human.wait({
       key: "browser-otp",
       title: "Enter browser code",
@@ -548,15 +564,20 @@ export async function main(ctx) {
     })
     return {
       browserPIDBefore,
-      browserPIDAfter: browser.pid,
+      browserPIDAfter: (await browserSession.send("SystemInfo.getProcessInfo")).processInfo.find((process) => process.type === "browser").id,
       before: before.result.value,
       after: after.result.value,
       decision,
     }
   } finally {
     session?.close()
-    browser.kill()
-    await browser.exited
+    try {
+      if (browserSession) await browserSession.send("Browser.close")
+    } finally {
+      browserSession?.close()
+      if (browser.exitCode === null) browser.kill()
+      await browser.exited
+    }
   }
 }
 `), 0o644); err != nil {
@@ -567,22 +588,44 @@ export async function main(ctx) {
 		result Result
 		err    error
 	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	profile := filepath.Join(t.TempDir(), "profile")
+	t.Cleanup(func() {
+		// Chromium can still hold profile files briefly after Browser.close.
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			err := os.RemoveAll(profile)
+			if err == nil {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Errorf("remove Chromium profile: %v", err)
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+	})
+	baseDir := t.TempDir()
 	runDone := make(chan runResult, 1)
 	go func() {
-		result, err := Run(context.Background(), RunParams{
-			BunPath: bun, ScriptLang: "typescript", BaseDir: t.TempDir(), EntrypointAbsPath: entrypoint,
+		result, err := Run(ctx, RunParams{
+			BunPath: bun, ScriptLang: "typescript", BaseDir: baseDir, EntrypointAbsPath: entrypoint,
 			Input: []byte(`{}`), Timeout: time.Minute,
 			Env: append(os.Environ(),
 				"WF_JOB_ID=job-browser", "WF_WORKSPACE=ws-a", "WF_BASE_URL="+server.URL,
 				"WF_TOKEN=job-token", "WF_APP=browser-demo", "WF_ACTION=wait",
 				"WF_TEST_CHROME="+chrome, "WF_TEST_PAGE="+server.URL+"/fixture",
+				"WF_TEST_CHROME_PROFILE="+profile,
 			),
 		})
 		runDone <- runResult{result: result, err: err}
 	}()
 	select {
 	case <-requestReceived:
-	case <-time.After(15 * time.Second):
+	case finished := <-runDone:
+		t.Fatalf("Chromium Action exited before HumanTask hold: result=%s logs=%s err=%v", finished.result.Result, finished.result.Logs, finished.err)
+	case <-time.After(35 * time.Second):
 		t.Fatal("Chromium Action did not enter HumanTask hold")
 	}
 	close(releaseDecision)
